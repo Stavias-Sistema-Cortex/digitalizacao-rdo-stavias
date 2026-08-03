@@ -350,7 +350,15 @@ export function OperationalMap({
   const providers = useMemo(() => availableMapProviders(), []);
   const [providerId, setProviderId] =
     useState<MapProviderId>(defaultProvider.id);
-  const [mode, setMode] = useState<MapViewMode>("2d");
+  /*
+   * O painel é tridimensional, e só.
+   *
+   * O alternador oferecia um 2D que duplicava o mapa ao lado — o Leaflet já
+   * mostra a rodovia em planta. Manter os dois pintando a mesma leitura tirava
+   * do painel a única coisa que ele faz e o outro não: mostrar o relevo
+   * construído do canteiro.
+   */
+  const [mode] = useState<MapViewMode>("3d");
   const [centerRequest, setCenterRequest] = useState(0);
 
   const provider = useMemo(
@@ -425,23 +433,6 @@ export function OperationalMap({
               </select>
             </label>
           ) : null}
-          <div className="operational-map-view-toggle" role="group" aria-label="Visualização">
-            <button
-              type="button"
-              className={mode === "2d" ? "active" : ""}
-              onClick={() => setMode("2d")}
-            >
-              2D
-            </button>
-            <button
-              type="button"
-              className={mode === "3d" ? "active" : ""}
-              disabled={!provider.capabilities.perspective3d}
-              onClick={() => setMode("3d")}
-            >
-              3D
-            </button>
-          </div>
           <button
             type="button"
             className="operational-map-center-button"

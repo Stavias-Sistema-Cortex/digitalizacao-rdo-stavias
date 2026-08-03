@@ -484,7 +484,10 @@ function prepararMapa(
       resolve({
         centerOn: (longitude, latitude) => {
           if (destruido) return;
-          map.easeTo({ center: [longitude, latitude], zoom: 15 });
+          map.easeTo({
+            center: [longitude, latitude],
+            zoom: ZOOM_AO_CENTRALIZAR,
+          });
         },
         setViewMode: (mode) => {
           if (destruido) return;
@@ -492,7 +495,7 @@ function prepararMapa(
             extensao.alternarVolume(mode === "3d");
           }
           map.easeTo({
-            pitch: mode === "3d" ? 52 : 0,
+            pitch: mode === "3d" ? INCLINACAO_3D : 0,
             bearing: mode === "3d" ? -18 : 0,
           });
         },
@@ -542,6 +545,28 @@ const BUILDING_LAYER_ID = "cortex-3d-buildings";
  * em estilo raster ou satélite a inclinação da câmera continua funcionando sem
  * volume, e nenhuma altura é inventada.
  */
+/*
+ * Enquadramento e inclinação de abertura do painel vetorial.
+ *
+ * O painel abria em zoom 14, que na escala de uma rodovia mostra o município e
+ * quase nada da obra: quem abre quer ver o canteiro, não a região. A inclinação
+ * mais acentuada e o zoom mais fechado são o que fazem o relevo construído
+ * aparecer — em 14 as extrusões existem e não se leem.
+ */
+const ZOOM_DE_ABERTURA = 16;
+const ZOOM_AO_CENTRALIZAR = 16;
+const INCLINACAO_3D = 60;
+const ROTACAO_3D = -18;
+
+/*
+ * Onde as edificações começam a existir.
+ *
+ * Uma faixa abaixo do zoom de abertura, para que afastar um pouco não apague o
+ * relevo de uma vez — que era o efeito de amarrar o mínimo ao próprio
+ * enquadramento inicial.
+ */
+const ZOOM_MINIMO_DAS_EDIFICACOES = 13;
+
 function addBuildingExtrusion(map: import("maplibre-gl").Map): boolean {
   const style = map.getStyle();
   const source = style?.layers?.find(
@@ -562,11 +587,12 @@ function addBuildingExtrusion(map: import("maplibre-gl").Map): boolean {
     type: "fill-extrusion",
     source: source.source,
     "source-layer": "building",
-    minzoom: 14,
+    minzoom: ZOOM_MINIMO_DAS_EDIFICACOES,
     layout: { visibility: "none" },
     paint: {
       "fill-extrusion-color": corDoToken("--color-border-strong"),
-      "fill-extrusion-opacity": 0.65,
+      "fill-extrusion-opacity": 0.82,
+      "fill-extrusion-vertical-gradient": true,
       "fill-extrusion-height": [
         "coalesce",
         ["get", "render_height"],
@@ -595,9 +621,9 @@ async function mountMapLibre(
       options.provider.styleUrl ??
       "") as never,
     center: options.center,
-    zoom: 14,
-    pitch: options.mode === "3d" ? 52 : 0,
-    bearing: options.mode === "3d" ? -18 : 0,
+    zoom: ZOOM_DE_ABERTURA,
+    pitch: options.mode === "3d" ? INCLINACAO_3D : 0,
+    bearing: options.mode === "3d" ? ROTACAO_3D : 0,
     attributionControl: false,
     // Sem preservar o buffer, o conteúdo desenhado é descartado logo após a
     // composição e o canvas lido devolve vazio — a medição do retângulo mudo
@@ -641,8 +667,8 @@ async function mountMapbox(
     container: options.container,
     style: options.provider.styleUrl ?? "",
     center: options.center,
-    zoom: 14,
-    pitch: options.mode === "3d" ? 52 : 0,
+    zoom: ZOOM_DE_ABERTURA,
+    pitch: options.mode === "3d" ? INCLINACAO_3D : 0,
     bearing: 0,
     attributionControl: false,
     preserveDrawingBuffer: true,

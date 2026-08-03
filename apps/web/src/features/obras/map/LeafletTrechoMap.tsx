@@ -167,7 +167,9 @@ export function LeafletTrechoMap({
       leafletRef.current = leaflet;
       const map = leaflet.map(alvo, {
         center: [center[1], center[0]],
-        zoom: 14,
+        // Abre sobre o canteiro, não sobre a região: em 14 a obra
+        // vira um traço no meio do município.
+        zoom: 15,
         attributionControl: true,
       });
       leaflet
