@@ -1238,3 +1238,116 @@
   background: var(--surface-glass-active);
   box-shadow: var(--shadow-overlay);
 }
+
+/*
+ * Seletor de pessoa.
+ *
+ * Herda a caixa dos outros campos do modal de propósito: quem preenche o
+ * formulário não deve perceber que este campo é feito de outra matéria. O que
+ * muda é só o que ele faz — buscar em vez de listar.
+ */
+.seletor-pessoa {
+  position: relative;
+  display: grid;
+  gap: 5px;
+}
+
+.seletor-pessoa__rotulo {
+  color: #44534b;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.seletor-pessoa__campo,
+.seletor-pessoa__escolhida {
+  width: 100%;
+  min-height: 41px;
+  padding: 8px 10px;
+  border: 1px solid #ccd7d0;
+  border-radius: var(--radius-control, 8px);
+  background: #fff;
+  color: #24332b;
+}
+
+.seletor-pessoa__escolhida {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.seletor-pessoa__escolhida button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-brand-teal, #0f6b5c);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/*
+ * O painel flutua para não empurrar os campos seguintes a cada tecla. Um
+ * formulário que muda de altura enquanto se digita move o botão de salvar
+ * para debaixo do dedo de quem ainda está escolhendo.
+ */
+.seletor-pessoa__painel {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid #ccd7d0;
+  border-radius: var(--radius-control, 8px);
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(20, 40, 33, 0.16);
+}
+
+.seletor-pessoa__lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seletor-pessoa__opcao {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.seletor-pessoa__opcao strong {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #24332b;
+}
+
+.seletor-pessoa__opcao small {
+  font-size: 0.6875rem;
+  color: #6b7a72;
+}
+
+/*
+ * Teclado e mouse acendem a mesma linha. Tê-los com destaques diferentes faria
+ * a lista mostrar dois "selecionados" quando a mão troca de dispositivo.
+ */
+.seletor-pessoa__opcao.is-destacada {
+  background: #eef4f1;
+}
+
+.seletor-pessoa__aviso {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 0.6875rem;
+  color: #6b7a72;
+  border-top: 1px solid #eef2f0;
+}
+
+.seletor-pessoa__lista:empty + .seletor-pessoa__aviso {
+  border-top: 0;
+}
