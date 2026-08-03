@@ -2,6 +2,7 @@ import { processObjectUploads } from "../../features/mensagens/objectUploadSync"
 import { refreshMessagingAfterPull } from "../../features/mensagens/mensagensHydration";
 import {
   hydrateBlockedRdoCreationContextsForSync,
+  recoverErroredWorkforceRdoMutationsForSync,
   recoverRejectedRdoMutationsForSync,
   repairRdoCreateMutationsForSync,
 } from "../db/localRdoService";
@@ -11,6 +12,7 @@ import { pullEvents } from "./pullEvents";
 import { pushOutbox } from "./pushOutbox";
 import { ensureRegisteredDevice } from "./registerDevice";
 import {
+  queueErroredMutationsForRetry,
   recoverInterruptedMutations,
   recoverCanonicalConflictReconciliations,
   recoverRejectedArchivedObraMutationsForSync,
@@ -72,6 +74,10 @@ async function executeSync(
     await assertSyncExecution(guard, lease);
     await repairRdoCreateMutationsForSync(guard);
     await assertSyncExecution(guard, lease);
+    // Antes do reenvio genérico: o vínculo de mão de obra recusado tem reparo
+    // próprio, e reenviar sem repará-lo só repetiria a mesma recusa.
+    await recoverErroredWorkforceRdoMutationsForSync(guard);
+    await assertSyncExecution(guard, lease);
     await recoverRejectedRdoMutationsForSync(guard, {
       executionLease: lease,
     });
@@ -79,6 +85,10 @@ async function executeSync(
     await recoverRejectedGeometryMutationsForSync(guard);
     await assertSyncExecution(guard, lease);
     await recoverRejectedArchivedObraMutationsForSync(guard);
+    await assertSyncExecution(guard, lease);
+    // Nenhuma alteração de campo fica parada sem retentativa: o que sobrou em
+    // ERROR volta à fila com espera escalonada, em vez de morrer ali.
+    await queueErroredMutationsForRetry(guard);
     await assertSyncExecution(guard, lease);
 
     const deviceId = await ensureRegisteredDevice(guard);
@@ -99,6 +109,11 @@ async function executeSync(
           executionLease: lease,
           recoveredReplacementIds,
           recoveredReplacementByOriginalId,
+        }) +
+        // O reparo do vínculo no mesmo ciclo do envio: quem chegou ao campo
+        // hoje sobe hoje, sem esperar a próxima janela de sincronização.
+        await recoverErroredWorkforceRdoMutationsForSync(guard, {
+          requeuedMutationIds: recoveredReplacementByOriginalId,
         })
       : 0;
     await assertSyncExecution(guard, lease);

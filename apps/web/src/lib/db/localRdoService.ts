@@ -28,6 +28,7 @@ import { getCortexDb } from "./cortexDb";
 import type {
   CanonicalOperationalEventRecord,
   CanonicalOutboxMutationRecord,
+  LegacyOutboxMutationRecord,
   LocalRdoChildRecord,
   LocalRdoRecord,
   LocalSyncStatus,
@@ -58,6 +59,7 @@ import {
 } from "../sync/syncExecutionLease";
 import {
   assertCanonicalMutationEventProvenance,
+  MAO_OBRA_SEM_VINCULO_EXIGE_DECISAO,
 } from "../sync/syncStorage";
 import { getSession } from "../../features/auth/authSession";
 import {
@@ -2387,6 +2389,259 @@ function repairInvalidWorkforceLinks(
     invalidStructuredAllocationIds,
     repairedNominalWorkforceLinks,
   };
+}
+
+/**
+ * O vínculo de mão de obra recusado, quando o envelope é legado.
+ *
+ * O servidor recusa a mesma coisa de dois jeitos: `REJEITADA` para o envelope
+ * canônico e `ERRO` para o legado. Só a primeira forma tem dono aqui — a fila
+ * de saída reenvia apenas `PENDING`, o botão de revisão só enxerga `REJECTED`,
+ * e a recuperação canônica exige o envelope v13. Um RDO legado que esbarra no
+ * vínculo encerrado fica em `ERROR` para sempre: nenhum ciclo o repara, nada na
+ * tela o desbloqueia, e tudo o que depende dele espera atrás na fila. Do lado
+ * de quem opera, é a mesma falha repetindo o mesmo motivo indefinidamente, com
+ * as alterações de campo presas no aparelho.
+ *
+ * O reparo é o que a recuperação canônica já faz: quem perdeu o vínculo
+ * continua no RDO pelo nome, sem o identificador que o servidor recusa. Nada do
+ * que veio do campo se perde — perde-se a ligação com um cadastro que já não
+ * autoriza a pessoa naquela obra.
+ */
+const VINCULO_RECUPERADO_COMO_NOMINAL =
+  "Vínculo encerrado na obra: a pessoa segue no RDO pelo nome. Reenviando.";
+
+const ALOCACAO_SEM_VINCULO_EXIGE_DECISAO =
+  "Uma alocação aponta para quem não está mais vinculado à obra. " +
+  "Reatribua ou remova a alocação no RDO para concluir o envio.";
+
+const MAO_OBRA_SEM_NOME_EXIGE_DECISAO =
+  "Um item da mão de obra aponta para quem não está mais vinculado à obra e " +
+  "não tem nome para manter o registro. Corrija o item no RDO para concluir o envio.";
+
+export function isErroDeVinculoDeMaoObraNaFilaLegada(
+  mutation: OutboxMutationRecord,
+): mutation is LegacyOutboxMutationRecord {
+  return !isCanonicalOutboxMutation(mutation) &&
+    mutation.status === "ERROR" &&
+    mutation.entidadeTipo === "RDO" &&
+    (
+      mutation.operacao === "CRIAR_RDO" ||
+      mutation.operacao === "ATUALIZAR_RDO_RASCUNHO"
+    ) &&
+    normalizedServerMessage(mutation.ultimoErro) ===
+      RDO_WORKFORCE_LINK_REJECTION;
+}
+
+export interface ErroredWorkforceRecoveryOptions {
+  now?: () => string;
+  loadAuthorizedCollaboratorIds?: (
+    obraId: string,
+    dataRdo: string,
+  ) => Promise<ReadonlySet<string>>;
+  /** Recebe os identificadores devolvidos à fila, para a contagem do ciclo. */
+  requeuedMutationIds?: Map<string, string>;
+}
+
+export async function recoverErroredWorkforceRdoMutationsForSync(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+  options: ErroredWorkforceRecoveryOptions = {},
+): Promise<number> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+  const now = options.now ?? nowUtc;
+  const loadAuthorizedIds =
+    options.loadAuthorizedCollaboratorIds ??
+      currentAuthorizedCollaboratorIds;
+  const candidates = (
+    await database.getAllFromIndex(
+      "outbox_mutations",
+      "by-status",
+      "ERROR",
+    )
+  ).filter(isErroDeVinculoDeMaoObraNaFilaLegada);
+  let recuperadas = 0;
+  const visitados = new Set<string>();
+
+  for (const candidate of candidates) {
+    assertSyncSession(guard);
+    if (visitados.has(candidate.entidadeId)) continue;
+    visitados.add(candidate.entidadeId);
+
+    const rdo = await database.get("rdos", candidate.entidadeId);
+    assertSyncSession(guard);
+    if (
+      !rdo ||
+      rdo.id !== candidate.entidadeId ||
+      rdo.syncStatus === "SYNCED"
+    ) {
+      continue;
+    }
+
+    let authorizedIds: ReadonlySet<string>;
+    try {
+      authorizedIds = await loadAuthorizedIds(rdo.obraId, rdo.dataRdo);
+    } catch {
+      // Sem o conjunto autoritativo não há reparo comprovável. O registro fica
+      // como está e o próximo ciclo tenta de novo — nada é descartado.
+      continue;
+    }
+    assertSyncSession(guard);
+
+    const reparo = repairInvalidWorkforceLinks(
+      rdoDraftFromLocalRecord(rdo),
+      authorizedIds,
+    );
+    // A alocação estruturada não tem forma nominal: o servidor exige ali um
+    // cadastro que autorize a pessoa naquela obra. Reparar a mão de obra e
+    // deixar a alocação para trás só devolveria a mesma recusa.
+    const exigeDecisao =
+      reparo.invalidStructuredAllocationIds.length > 0
+        ? ALOCACAO_SEM_VINCULO_EXIGE_DECISAO
+        : reparo.unresolvedInvalidIds.length > 0
+          ? MAO_OBRA_SEM_NOME_EXIGE_DECISAO
+          : null;
+    if (exigeDecisao) {
+      await marcarVinculoQueExigeDecisao(
+        database,
+        guard,
+        candidate,
+        exigeDecisao,
+        now(),
+      );
+      continue;
+    }
+    if (!reparo.changed) {
+      // O contexto local já concorda com o servidor. A recusa veio de um
+      // vínculo que ainda não subiu, ou de um que voltará: o reenvio comum,
+      // com espera escalonada, é o que resolve — e não descarta nada.
+      continue;
+    }
+
+    const draft = reparo.draft;
+    const eventosPendentes = (
+      await queryOperationalEvents({ rdoId: rdo.id, limit: 500 })
+    ).filter((event) => event.syncStatus !== "SYNCED");
+    assertSyncSession(guard);
+    const timestamp = now();
+
+    const guardedTransaction = guardSyncTransaction(
+      database.transaction(
+        [
+          "rdos",
+          "outbox_mutations",
+          "rdoMaoObra",
+          "rdoEquipamentos",
+          "rdoMateriais",
+          "rdoControlesGeometricos",
+        ],
+        "readwrite",
+      ),
+      guard,
+    );
+    const transaction = guardedTransaction.transaction;
+    const outboxStore = transaction.objectStore("outbox_mutations");
+    const rdoStore = transaction.objectStore("rdos");
+    const mutacaoAtual = await outboxStore.get(
+      candidate.clientMutationId,
+    );
+    const rdoAtual = await rdoStore.get(rdo.id);
+    if (
+      !mutacaoAtual ||
+      !rdoAtual ||
+      !isErroDeVinculoDeMaoObraNaFilaLegada(mutacaoAtual) ||
+      canonicalMutationJson(mutacaoAtual) !==
+        canonicalMutationJson(candidate) ||
+      canonicalMutationJson(rdoAtual) !== canonicalMutationJson(rdo)
+    ) {
+      await guardedTransaction.complete();
+      continue;
+    }
+
+    const creationContextCache =
+      typeof rdoAtual.payload.creationContextCache === "object" &&
+      rdoAtual.payload.creationContextCache !== null
+        ? { creationContextCache: rdoAtual.payload.creationContextCache }
+        : {};
+
+    await outboxStore.put({
+      ...mutacaoAtual,
+      payload: buildRdoSyncPayload(draft, eventosPendentes),
+      status: "PENDING",
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      nextAttemptAt: null,
+      blockedReason: mutacaoAtual.operacao === "CRIAR_RDO"
+        ? rdoCreationContextBlockReason(draft)
+        : rdoUpdateCreationContextBlockReason(draft, rdoAtual),
+      lastSafeCode: "MAO_OBRA_RECUPERADA_COMO_NOMINAL",
+      ultimoErro: VINCULO_RECUPERADO_COMO_NOMINAL,
+      conflito: null,
+      updatedAt: timestamp,
+    });
+    await rdoStore.put({
+      ...rdoAtual,
+      payload: {
+        ...buildRdoLocalPayload(draft),
+        ...creationContextCache,
+      },
+      syncStatus: "PENDING_SYNC",
+      updatedAt: timestamp,
+    });
+    await replaceChildRecords(
+      transaction,
+      draft,
+      "PENDING_SYNC",
+      timestamp,
+    );
+    await guardedTransaction.complete();
+
+    options.requeuedMutationIds?.set(
+      candidate.clientMutationId,
+      candidate.clientMutationId,
+    );
+    recuperadas += 1;
+  }
+
+  return recuperadas;
+}
+
+/**
+ * O que o nome não substitui fica visível, com o que fazer a respeito. Sem
+ * isto, a tela repetiria a frase do servidor — verdadeira e inútil — enquanto
+ * o reenvio automático bate na mesma recusa para sempre.
+ */
+async function marcarVinculoQueExigeDecisao(
+  database: Awaited<ReturnType<typeof getCortexDb>>,
+  guard: SyncSessionGuard,
+  candidate: LegacyOutboxMutationRecord,
+  motivo: string,
+  timestamp: string,
+): Promise<void> {
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(["outbox_mutations"], "readwrite"),
+    guard,
+  );
+  const outboxStore = guardedTransaction.transaction.objectStore(
+    "outbox_mutations",
+  );
+  const atual = await outboxStore.get(candidate.clientMutationId);
+  if (
+    !atual ||
+    canonicalMutationJson(atual) !== canonicalMutationJson(candidate)
+  ) {
+    await guardedTransaction.complete();
+    return;
+  }
+  await outboxStore.put({
+    ...atual,
+    blockedReason: MAO_OBRA_SEM_VINCULO_EXIGE_DECISAO,
+    lastSafeCode: MAO_OBRA_SEM_VINCULO_EXIGE_DECISAO,
+    ultimoErro: motivo,
+    updatedAt: timestamp,
+  });
+  await guardedTransaction.complete();
 }
 
 interface WorkforceOperationalEventRecovery {

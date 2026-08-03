@@ -2487,14 +2487,22 @@ export async function repairMissingMaoObraReferencesForSync(
   return repaired;
 }
 
-export async function queueErroredMutationsForRetry(): Promise<number> {
+export async function queueErroredMutationsForRetry(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<number> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
   const timestamp = nowUtc();
 
-  const transaction = database.transaction(
-    RDO_SYNC_TRANSACTION_STORES,
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(
+      RDO_SYNC_TRANSACTION_STORES,
+      "readwrite",
+    ),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
 
   const outboxStore =
     transaction.objectStore("outbox_mutations");
@@ -2575,7 +2583,7 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
     }
   }
 
-  await transaction.done;
+  await guardedTransaction.complete();
 
   return queued;
 }
@@ -2736,9 +2744,29 @@ function erroIndicaRdoAusente(error: string | null): boolean {
   );
 }
 
+/**
+ * O bloqueio que nenhuma retentativa resolve: um vínculo de mão de obra que o
+ * servidor recusa e que o nome registrado não substitui. Quem opera decide.
+ */
+export const MAO_OBRA_SEM_VINCULO_EXIGE_DECISAO =
+  "MAO_OBRA_SEM_VINCULO_EXIGE_DECISAO";
+
+/**
+ * Devolve à fila o envelope legado que parou em `ERROR`.
+ *
+ * `ERROR` é o destino de toda recusa de mutação legada, e nada o lia: a fila de
+ * saída só considera `PENDING` e o botão de revisão só enxerga `REJECTED`. O
+ * registro ficava parado sem retentativa e sem ação possível na tela, segurando
+ * atrás de si a fila inteira daquela entidade.
+ *
+ * O reenvio é escalonado pelo mesmo relógio das demais retentativas — sem isso,
+ * uma recusa determinística voltaria à rede a cada ciclo de trinta segundos,
+ * para sempre.
+ */
 export function mutationAfterErroredRetry(
   mutation: OutboxMutationRecord,
   timestamp: string,
+  random?: () => number,
 ): OutboxMutationRecord | null {
   if (isCanonicalOutboxMutation(mutation)) {
     return null;
@@ -2746,25 +2774,38 @@ export function mutationAfterErroredRetry(
   if (isDefinitelyNonAppliedSuperseded(mutation)) {
     return null;
   }
+  // Reenviar não resolve o que depende de uma decisão de quem opera; insistir
+  // só substituiria o motivo já explicado por um ciclo mudo de retentativas.
+  if (mutation.blockedReason === MAO_OBRA_SEM_VINCULO_EXIGE_DECISAO) {
+    return null;
+  }
   const serverMissingRdo =
     mutation.status === "ERROR" &&
     mutation.operacao === "ATUALIZAR_RDO_RASCUNHO" &&
     mutation.baseVersao === 0 &&
     erroIndicaRdoAusente(mutation.ultimoErro);
+  const parsedTimestamp = Date.parse(timestamp);
 
-  return {
-    ...mutation,
-    operacao: serverMissingRdo ? "CRIAR_RDO" : mutation.operacao,
-    baseVersao: serverMissingRdo ? null : mutation.baseVersao,
-    status: "PENDING",
-    tentativas: 0,
-    ultimaTentativaEm: null,
-    ultimoErro: serverMissingRdo
-      ? "Reenviando como criação porque o servidor não possui este RDO."
-      : "Tentando novamente após correção da sincronização.",
-    conflito: null,
-    updatedAt: timestamp,
-  };
+  return mutationAfterRetryScheduled(
+    {
+      ...mutation,
+      operacao: serverMissingRdo ? "CRIAR_RDO" : mutation.operacao,
+      baseVersao: serverMissingRdo ? null : mutation.baseVersao,
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      conflito: null,
+    },
+    {
+      safeCode: serverMissingRdo
+        ? "LEGACY_RDO_RECREATED"
+        : "LEGACY_ERROR_REQUEUED",
+      message: serverMissingRdo
+        ? "Reenviando como criação porque o servidor não possui este RDO."
+        : "Tentando novamente após correção da sincronização.",
+      now: Number.isFinite(parsedTimestamp) ? parsedTimestamp : undefined,
+      random,
+    },
+  );
 }
 
 function conflictServerVersion(
