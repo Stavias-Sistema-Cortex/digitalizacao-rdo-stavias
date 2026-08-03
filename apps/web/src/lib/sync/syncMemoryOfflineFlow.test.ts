@@ -26,6 +26,7 @@ vi.mock("../../features/mensagens/mensagensHydration", () => ({
 vi.mock("../db/localRdoService", () => ({
   hydrateBlockedRdoCreationContextsForSync: vi.fn(async () => 0),
   repairRdoCreateMutationsForSync: vi.fn(async () => 0),
+  recoverErroredWorkforceRdoMutationsForSync: vi.fn(async () => 0),
   recoverRejectedRdoMutationsForSync: vi.fn(async () => 0),
 }));
 vi.mock("./ackCursor", () => ({ acknowledgeCurrentCursor: syncMocks.ack }));
@@ -35,6 +36,7 @@ vi.mock("./registerDevice", () => ({
   ensureRegisteredDevice: syncMocks.ensureDevice,
 }));
 vi.mock("./syncStorage", () => ({
+  queueErroredMutationsForRetry: vi.fn(async () => 0),
   recoverInterruptedMutations: vi.fn(async () => undefined),
   recoverCanonicalConflictReconciliations: vi.fn(async () => 0),
   recoverRejectedGeometryMutationsForSync: vi.fn(async () => 0),
