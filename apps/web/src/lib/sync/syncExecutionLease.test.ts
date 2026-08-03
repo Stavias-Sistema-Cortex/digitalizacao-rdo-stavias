@@ -16,7 +16,9 @@ import {
 import { databaseNameForScope } from "../db/localDataNamespace";
 import { captureOnlineSyncSession } from "./syncSession";
 import {
+  isSyncLeaseContentionError,
   runWithSyncExecutionLease,
+  SyncLeaseLostError,
   SyncLeaseUnavailableError,
 } from "./syncExecutionLease";
 
@@ -327,5 +329,32 @@ describe("durable sync execution lease", () => {
       SyncLeaseUnavailableError,
     );
     expect(secondTask).not.toHaveBeenCalled();
+  });
+
+  /**
+   * As duas saídas da disputa entre abas são normais e precisam ser
+   * reconhecidas juntas: quem lê apenas uma delas anuncia falha para metade dos
+   * casos em que o trabalho está justamente sendo feito por outra aba.
+   */
+  describe("reconhecimento da disputa entre abas", () => {
+    it("cobre as duas metades da disputa", () => {
+      expect(
+        isSyncLeaseContentionError(new SyncLeaseUnavailableError()),
+      ).toBe(true);
+      expect(
+        isSyncLeaseContentionError(new SyncLeaseLostError()),
+      ).toBe(true);
+    });
+
+    it("não engole falha de verdade", () => {
+      expect(
+        isSyncLeaseContentionError(new Error("rede indisponível")),
+      ).toBe(false);
+      expect(isSyncLeaseContentionError(null)).toBe(false);
+      expect(isSyncLeaseContentionError(undefined)).toBe(false);
+      expect(
+        isSyncLeaseContentionError({ code: "OUTRA_COISA" }),
+      ).toBe(false);
+    });
   });
 });

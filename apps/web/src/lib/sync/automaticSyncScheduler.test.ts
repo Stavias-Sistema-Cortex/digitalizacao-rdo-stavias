@@ -4,7 +4,10 @@ import {
   createAutomaticSyncScheduler,
   type AutomaticSyncTrigger,
 } from "./automaticSyncScheduler";
-import { SyncLeaseUnavailableError } from "./syncExecutionLease";
+import {
+  SyncLeaseLostError,
+  SyncLeaseUnavailableError,
+} from "./syncLeaseContention";
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { LOCAL_MUTATION_QUEUED_EVENT } from "./localMutationCoordinator";
 
@@ -37,6 +40,58 @@ describe("automatic sync scheduler", () => {
 
     expect(onError).not.toHaveBeenCalled();
     expect(onSuccess).not.toHaveBeenCalled();
+    scheduler.dispose();
+  });
+
+  /**
+   * Perder o lease é a mesma disputa que não conseguir assumi-lo, com o
+   * resultado invertido: outra aba assumiu e segue sincronizando. Só a primeira
+   * metade era reconhecida, e a segunda chegava à tela como falha.
+   */
+  it("treats losing the lease mid-run as the same contention", async () => {
+    const target = new EventTarget();
+    const onError = vi.fn();
+    const onSuccess = vi.fn();
+    const scheduler = createAutomaticSyncScheduler({
+      syncNow: vi.fn(async () => {
+        throw new SyncLeaseLostError();
+      }),
+      hasOnlineSession: () => true,
+      isOnline: () => true,
+      eventTarget: target,
+      visibilityTarget: target,
+      loadNextRetryAt: async () => null,
+      onError,
+      onSuccess,
+    });
+
+    scheduler.start();
+    await flush();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    scheduler.dispose();
+  });
+
+  it("still reports a real sync failure", async () => {
+    const target = new EventTarget();
+    const onError = vi.fn();
+    const scheduler = createAutomaticSyncScheduler({
+      syncNow: vi.fn(async () => {
+        throw new Error("rede indisponível");
+      }),
+      hasOnlineSession: () => true,
+      isOnline: () => true,
+      eventTarget: target,
+      visibilityTarget: target,
+      loadNextRetryAt: async () => null,
+      onError,
+    });
+
+    scheduler.start();
+    await flush();
+
+    expect(onError).toHaveBeenCalledTimes(1);
     scheduler.dispose();
   });
 

@@ -10,6 +10,7 @@ import {
   retryFinancePurchase,
 } from "./financeiroOfflineRepository";
 import { syncNow } from "../../lib/sync/syncEngine";
+import { isSyncLeaseContentionError } from "../../lib/sync/syncLeaseContention";
 import type {
   FinanceAuditEvent,
   FinanceCategory,
@@ -462,6 +463,12 @@ function PurchaseDetail({
       }
       onArchived();
     } catch (reason: unknown) {
+      // A compra já voltou para a fila antes do envio; se outra aba assumiu a
+      // sincronização, o desfecho é o mesmo do caminho de sucesso.
+      if (isSyncLeaseContentionError(reason)) {
+        onArchived();
+        return;
+      }
       setError(reason instanceof Error ? reason.message : "Não foi possível reenviar a compra.");
       setRetrying(false);
     }

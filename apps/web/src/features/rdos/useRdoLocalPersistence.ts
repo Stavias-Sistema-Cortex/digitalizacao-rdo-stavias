@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { saveRdoDraftAtomically } from "../../lib/db/localRdoService";
 import { syncNow } from "../../lib/sync/syncEngine";
+import { isSyncLeaseContentionError } from "../../lib/sync/syncLeaseContention";
 import type { RdoDraft } from "./rdo.types";
 
 export interface RdoPersistenceState {
@@ -143,6 +144,20 @@ export function useRdoLocalPersistence() {
         error: "",
       });
     } catch (error: unknown) {
+      // Disputa entre abas não é falha, e também não é silêncio: quem apertou o
+      // botão precisa saber que o envio continua, só que na outra aba.
+      if (isSyncLeaseContentionError(error)) {
+        setState({
+          isSaving: false,
+          isSyncing: false,
+          message:
+            "Outra aba está sincronizando; o envio continua por lá.",
+          error: "",
+        });
+
+        throw error;
+      }
+
       setState({
         isSaving: false,
         isSyncing: false,

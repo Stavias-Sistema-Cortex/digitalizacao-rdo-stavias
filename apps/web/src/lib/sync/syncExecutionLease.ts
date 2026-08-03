@@ -1,4 +1,8 @@
 import { getCortexDb } from "../db/cortexDb";
+import {
+  SyncLeaseLostError,
+  SyncLeaseUnavailableError,
+} from "./syncLeaseContention";
 import type { SyncStateRecord } from "../db/db.types";
 import { getSyncState } from "../db/syncStateRepository";
 import {
@@ -22,34 +26,13 @@ const WEB_LOCK_NAME = "cortex-sync-execution-v1";
 const DEFAULT_LEASE_TTL_MS = 45_000;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
 
-export class SyncLeaseUnavailableError extends Error {
-  readonly code = "SYNC_LEASE_UNAVAILABLE";
-
-  constructor() {
-    super("A sincronização já está ativa em outra aba.");
-    this.name = "SyncLeaseUnavailableError";
-  }
-}
-
-export function isSyncLeaseUnavailableError(
-  error: unknown,
-): error is SyncLeaseUnavailableError {
-  return Boolean(
-    error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === "SYNC_LEASE_UNAVAILABLE",
-  );
-}
-
-export class SyncLeaseLostError extends Error {
-  readonly code = "SYNC_LEASE_LOST";
-
-  constructor() {
-    super("A sincronização perdeu a exclusividade para outra aba.");
-    this.name = "SyncLeaseLostError";
-  }
-}
+export {
+  isSyncLeaseContentionError,
+  isSyncLeaseLostError,
+  isSyncLeaseUnavailableError,
+  SyncLeaseLostError,
+  SyncLeaseUnavailableError,
+} from "./syncLeaseContention";
 
 export async function runWithSyncExecutionLease<T>(
   guard: SyncSessionGuard,

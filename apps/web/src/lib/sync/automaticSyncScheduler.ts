@@ -1,6 +1,6 @@
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { LOCAL_MUTATION_QUEUED_EVENT } from "./localMutationCoordinator";
-import { isSyncLeaseUnavailableError } from "./syncExecutionLease";
+import { isSyncLeaseContentionError } from "./syncLeaseContention";
 
 export const AUTOMATIC_SYNC_INTERVAL_MS = 30_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -111,9 +111,13 @@ export function createAutomaticSyncScheduler(
       const result = await options.syncNow();
       if (!disposed) options.onSuccess?.(trigger, result);
     } catch (error: unknown) {
+      // Não assumir o lease já era reconhecido como disputa, e não falha.
+      // Perdê-lo no meio do caminho é a mesma disputa com o resultado invertido
+      // — outra aba assumiu e segue sincronizando —, mas escapava por aqui e
+      // chegava à tela como falha.
       if (
         !disposed &&
-        !isSyncLeaseUnavailableError(error)
+        !isSyncLeaseContentionError(error)
       ) {
         options.onError?.(trigger, error);
       }

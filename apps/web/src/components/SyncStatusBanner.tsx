@@ -10,6 +10,7 @@ import {
   type SyncUiStatus,
 } from "../lib/sync/useSyncStatus";
 import { syncNow } from "../lib/sync/syncEngine";
+import { isSyncLeaseContentionError } from "../lib/sync/syncLeaseContention";
 import { requeueMutationsInReview } from "../lib/sync/syncStorage";
 import "./SyncStatusBanner.css";
 
@@ -270,11 +271,16 @@ export function SyncStatusBanner() {
     try {
       await syncNow();
     } catch (error: unknown) {
-      setManualSyncError(
-        error instanceof Error
-          ? error.message
-          : "Falha ao sincronizar agora.",
-      );
+      // Outra aba já está sincronizando: o trabalho está sendo feito, e
+      // anunciar falha aqui faria quem está em campo achar que o apontamento
+      // não subiu. O `refresh` abaixo mostra o que a outra aba conseguiu.
+      if (!isSyncLeaseContentionError(error)) {
+        setManualSyncError(
+          error instanceof Error
+            ? error.message
+            : "Falha ao sincronizar agora.",
+        );
+      }
     } finally {
       setIsManualSyncing(false);
       await refresh();
@@ -291,11 +297,16 @@ export function SyncStatusBanner() {
       await requeueMutationsInReview();
       await syncNow();
     } catch (error: unknown) {
-      setManualSyncError(
-        error instanceof Error
-          ? error.message
-          : "Falha ao reenviar os registros em revisão.",
-      );
+      // O reenvio já aconteceu antes do envio: se a disputa de aba interrompe
+      // aqui, dizer "falha ao reenviar" nega um reenvio que de fato ocorreu, e
+      // convida a repetir um gesto que já surtiu efeito.
+      if (!isSyncLeaseContentionError(error)) {
+        setManualSyncError(
+          error instanceof Error
+            ? error.message
+            : "Falha ao reenviar os registros em revisão.",
+        );
+      }
     } finally {
       setIsManualSyncing(false);
       await refresh();

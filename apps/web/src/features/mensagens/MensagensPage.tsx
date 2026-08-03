@@ -17,6 +17,7 @@ import type {
 } from "../../lib/db/db.types";
 import { listObrasLocais } from "../../lib/db/obraLocalRepository";
 import { syncNow } from "../../lib/sync/syncEngine";
+import { isSyncLeaseContentionError } from "../../lib/sync/syncLeaseContention";
 import { useSyncStatus } from "../../lib/sync/useSyncStatus";
 import { getSession, hasOnlineSession, isAlfa } from "../auth/authSession";
 import { ConversationInfoPane } from "./components/ConversationInfoPane";
@@ -229,7 +230,10 @@ export function MensagensPage() {
         );
       }
     } catch (cause: unknown) {
-      setError(messageFrom(cause));
+      // Outra aba sincronizando não é falha desta: o trabalho está sendo feito.
+      if (!isSyncLeaseContentionError(cause)) {
+        setError(messageFrom(cause));
+      }
     } finally {
       setRefreshing(false);
     }
@@ -306,7 +310,12 @@ export function MensagensPage() {
         await loadMessages(selectedId);
       }
     } catch (cause: unknown) {
-      setError(messageFrom(cause));
+      // A mensagem já voltou para a fila antes do envio. Dizer que a
+      // retentativa falhou porque outra aba assumiu a sincronização nega um
+      // gesto que surtiu efeito, e convida a repeti-lo à toa.
+      if (!isSyncLeaseContentionError(cause)) {
+        setError(messageFrom(cause));
+      }
     }
   }
 
