@@ -298,8 +298,15 @@
   box-shadow: var(--shadow-overlay);
 }
 
+/*
+ * A cor é declarada, não herdada, porque a herança aqui vem do lugar errado: o
+ * menu abre dentro do cabeçalho teal, cujo texto é quase branco. O painel tem
+ * fundo claro, e o nome herdava o branco do cabeçalho — nome branco sobre
+ * fundo branco, a pessoa "sem nome" no próprio perfil.
+ */
 .profile-menu-name {
   margin: 0;
+  color: var(--color-brand-teal);
   font-size: 0.85rem;
   font-weight: 600;
 }
