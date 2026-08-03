@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   corDaLinhaExpression,
   DASH_POR_ZOOM,
+  fonteDeTextoDoEstilo,
   larguraDaLinhaExpression,
   ROTULO_DO_SERVICO,
 } from "./mapAdapter";
@@ -105,6 +106,38 @@ describe("expressões de estilo do mapa operacional", () => {
 
   it("compila o tracejado por zoom sem depender de dado", () => {
     expect(erros(DASH_POR_ZOOM, LINE_DASHARRAY)).toEqual([]);
+  });
+
+  /**
+   * O rótulo do serviço precisa pedir uma fonte que o provider sirva. Sem
+   * `text-font` explícito vale o padrão da especificação, que o estilo em uso
+   * não publica: cada caractere virava um 404 no endpoint de glyphs.
+   */
+  describe("fonte do rótulo", () => {
+    it("reaproveita a pilha de fontes de uma camada de símbolo do estilo", () => {
+      expect(fonteDeTextoDoEstilo([
+        { type: "background" },
+        { type: "line", layout: {} },
+        { type: "symbol", layout: { "text-font": ["Noto Sans Regular"] } },
+        { type: "symbol", layout: { "text-font": ["Outra Fonte"] } },
+      ])).toEqual(["Noto Sans Regular"]);
+    });
+
+    /** Estilo sem símbolo é estilo sem glyphs: melhor não pedir texto nenhum. */
+    it("devolve nulo quando o estilo não declara fonte utilizável", () => {
+      expect(fonteDeTextoDoEstilo(undefined)).toBeNull();
+      expect(fonteDeTextoDoEstilo([])).toBeNull();
+      expect(fonteDeTextoDoEstilo([{ type: "raster" }])).toBeNull();
+      expect(fonteDeTextoDoEstilo([{ type: "symbol", layout: {} }])).toBeNull();
+      expect(
+        fonteDeTextoDoEstilo([{ type: "symbol", layout: { "text-font": [] } }]),
+      ).toBeNull();
+      expect(
+        fonteDeTextoDoEstilo([
+          { type: "symbol", layout: { "text-font": ["  "] } },
+        ]),
+      ).toBeNull();
+    });
   });
 
   /**

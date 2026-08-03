@@ -150,6 +150,38 @@ export const ROTULO_DO_SERVICO = [
 /** De onde o traçado passa a caber com texto legível por cima. */
 const ZOOM_MINIMO_DOS_ROTULOS = 14;
 
+/**
+ * A pilha de fontes que o estilo do provider realmente serve.
+ *
+ * Camada de texto sem `text-font` herda o padrão da especificação — "Open Sans
+ * Regular, Arial Unicode MS Regular" —, e nenhum provider é obrigado a servir
+ * essa pilha. O nosso não serve: cada caractere do rótulo virava um 404 no
+ * endpoint de glyphs, um por codepoint, e o renderizador caía no desenho local
+ * caractere a caractere. Reaproveitar a fonte de uma camada de símbolo que o
+ * próprio estilo já usa garante que o `.pbf` pedido é um que existe.
+ *
+ * Devolve `null` quando o estilo não tem símbolo nenhum — estilo sem rótulo é
+ * estilo sem glyphs servidos, e aí a camada de texto não deve ser criada.
+ */
+export function fonteDeTextoDoEstilo(
+  layers: readonly EstiloDeCamada[] | undefined,
+): string[] | null {
+  for (const layer of layers ?? []) {
+    if (layer?.type !== "symbol") {
+      continue;
+    }
+    const fonte = layer.layout?.["text-font"];
+    if (
+      Array.isArray(fonte) &&
+      fonte.length > 0 &&
+      fonte.every((nome) => typeof nome === "string" && nome.trim())
+    ) {
+      return fonte as string[];
+    }
+  }
+  return null;
+}
+
 /*
  * Ritmo do tracejado do trecho encerrado.
  *
@@ -346,6 +378,12 @@ interface GlMapaOperacional {
     bounds: [[number, number], [number, number]],
     options: { padding: number; maxZoom: number; duration: number },
   ): unknown;
+  getStyle?(): { layers?: readonly EstiloDeCamada[] } | undefined;
+}
+
+interface EstiloDeCamada {
+  type?: string;
+  layout?: Record<string, unknown>;
 }
 
 interface GlPopupCompativel {
@@ -459,27 +497,31 @@ function addOperationalLayers(
    * que exista espaço sobre a linha — de longe seria uma sopa de texto sobre um
    * traçado que ainda cabe inteiro na tela.
    */
-  map.addLayer({
-    id: "cortex-lines-rotulos",
-    type: "symbol",
-    source: SOURCE_ID,
-    minzoom: ZOOM_MINIMO_DOS_ROTULOS,
-    filter: ["in", ["geometry-type"], ["literal", ["LineString"]]],
-    layout: {
-      "symbol-placement": "line-center",
-      "text-field": ROTULO_DO_SERVICO,
-      "text-size": 11,
-      "text-letter-spacing": 0.02,
-      "text-max-angle": 40,
-      "text-padding": 6,
-      "text-allow-overlap": false,
-    },
-    paint: {
-      "text-color": corDoToken("--color-ink"),
-      "text-halo-color": corDoToken("--color-surface"),
-      "text-halo-width": 1.6,
-    },
-  } as never);
+  const fonteDoRotulo = fonteDeTextoDoEstilo(map.getStyle?.()?.layers);
+  if (fonteDoRotulo) {
+    map.addLayer({
+      id: "cortex-lines-rotulos",
+      type: "symbol",
+      source: SOURCE_ID,
+      minzoom: ZOOM_MINIMO_DOS_ROTULOS,
+      filter: ["in", ["geometry-type"], ["literal", ["LineString"]]],
+      layout: {
+        "symbol-placement": "line-center",
+        "text-field": ROTULO_DO_SERVICO,
+        "text-font": fonteDoRotulo,
+        "text-size": 11,
+        "text-letter-spacing": 0.02,
+        "text-max-angle": 40,
+        "text-padding": 6,
+        "text-allow-overlap": false,
+      },
+      paint: {
+        "text-color": corDoToken("--color-ink"),
+        "text-halo-color": corDoToken("--color-surface"),
+        "text-halo-width": 1.6,
+      },
+    } as never);
+  }
 
   for (const layerId of [
     "cortex-polygons",
