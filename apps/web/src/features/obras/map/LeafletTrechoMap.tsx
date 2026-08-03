@@ -66,6 +66,15 @@ interface LeafletTrechoMapProps {
   onPontoMarcado?: (extremo: ExtremoDoTrecho, ponto: PontoGeografico) => void;
 }
 
+/*
+ * Tracejado do trecho encerrado, em pixels da tela.
+ *
+ * O traço é mais longo que o vão de propósito: com as duas medidas iguais o
+ * risco lê como pontilhado solto, e o que precisa ficar claro é que houve
+ * execução ali — ela é que deixou de valer.
+ */
+const DASH_DO_ENCERRADO = "11 6";
+
 const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
@@ -341,10 +350,19 @@ export function LeafletTrechoMap({
     camada.clearLayers();
     if (features.features.length === 0) return;
 
-    // O contorno escuro é desenhado primeiro para que a linha colorida assente
-    // sobre ele e o trecho leia como pista, e não como risco solto no mapa.
+    /*
+     * O contorno escuro é desenhado primeiro para que a linha colorida assente
+     * sobre ele e o trecho leia como pista, e não como risco solto no mapa.
+     *
+     * O encerrado fica de fora: seu traço é interrompido, e um contorno sólido
+     * por baixo reaparece exatamente nos vãos — o tracejado virava uma linha
+     * escura contínua com marcas claras por cima, o oposto do que "encerrado"
+     * precisa comunicar.
+     */
     leaflet
       .geoJSON(features as never, {
+        filter: (feature) =>
+          faseDaFeature(feature as never) !== "ENCERRADA",
         style: (feature) => {
           const fase = feature
             ? faseDaFeature(feature as never)
@@ -354,7 +372,7 @@ export function LeafletTrechoMap({
             weight: fase
               ? pesoDaFase(fase) + 4
               : feature?.properties?.categoria === "TRECHO" ? 10 : 6,
-            opacity: fase === "ENCERRADA" ? 0.45 : 0.85,
+            opacity: 0.85,
             fill: false,
             lineCap: "round",
             lineJoin: "round",
@@ -380,9 +398,12 @@ export function LeafletTrechoMap({
             : feature?.properties?.categoria === "TRECHO" ? 6 : 3,
           opacity: 0.95,
           fillOpacity: 0.25,
-          lineCap: "round",
+          // Ponta reta só no tracejado: a ponta arredondada acrescenta meio
+          // círculo a cada extremo do traço e fecha os vãos, apagando o
+          // tracejado justamente onde ele precisa se ler.
+          lineCap: fase === "ENCERRADA" ? "butt" : "round",
           lineJoin: "round",
-          dashArray: fase === "ENCERRADA" ? "6 6" : undefined,
+          dashArray: fase === "ENCERRADA" ? DASH_DO_ENCERRADO : undefined,
         };
       },
       pointToLayer: (feature, latlng) =>

@@ -123,27 +123,51 @@ export function canvasEstaMudo(canvas: HTMLCanvasElement): boolean {
  * A espessura acompanha o zoom para que o trecho continue legível de longe sem
  * cobrir a pista quando a câmera se aproxima.
  */
-const LARGURA_LINHA = [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
-  10,
-  2,
-  14,
-  5,
-  18,
-  12,
+const PARADAS_DE_LARGURA: readonly (readonly [number, number])[] = [
+  [10, 2],
+  [14, 5],
+  [18, 12],
 ];
-const LARGURA_LINHA_CASING = [
-  "interpolate",
-  ["linear"],
+/** O contorno é a mesma rampa engrossada; o fator mantém a proporção. */
+const FATOR_DO_CASING = 1.8;
+
+/*
+ * O nome do serviço, procurado nas chaves que os registros realmente usam.
+ *
+ * As propriedades da geometria são livres: a captura de campo e a gestão do
+ * mapa gravaram chaves diferentes conforme a época. `coalesce` atravessa as
+ * conhecidas na mesma ordem da leitura do popup, e cai em texto vazio quando
+ * ninguém disse qual serviço é — rótulo vazio não é desenhado.
+ */
+export const ROTULO_DO_SERVICO = [
+  "coalesce",
+  ["get", "servico"],
+  ["get", "descricao"],
+  ["get", "nome"],
+  "",
+];
+
+/** De onde o traçado passa a caber com texto legível por cima. */
+const ZOOM_MINIMO_DOS_ROTULOS = 14;
+
+/*
+ * Ritmo do tracejado do trecho encerrado.
+ *
+ * O `line-dasharray` do MapLibre é medido em múltiplos da largura da linha, não
+ * em pixels: com um valor fixo, o traço bem desenhado de longe vira um
+ * pontilhado gigante quando a linha engrossa na aproximação. Encurtar os
+ * múltiplos conforme o zoom sobe mantém o traço com o mesmo ritmo na tela em
+ * qualquer distância. É a única propriedade da linha que não aceita expressão
+ * por dado — mas aceita `step` por zoom, que é o que basta aqui.
+ */
+export const DASH_POR_ZOOM = [
+  "step",
   ["zoom"],
-  10,
-  4,
+  ["literal", [3.4, 2.2]],
   14,
-  9,
-  18,
-  18,
+  ["literal", [2.6, 1.8]],
+  17,
+  ["literal", [2, 1.4]],
 ];
 
 /**
@@ -153,7 +177,7 @@ const LARGURA_LINHA_CASING = [
  * queimado, o consolidado em teal. Perímetros e demais linhas sem fase seguem
  * lidos pela categoria, como sempre.
  */
-function corDaLinhaExpression(): unknown[] {
+export function corDaLinhaExpression(): unknown[] {
   return [
     "case",
     ["has", PROPRIEDADE_FASE],
@@ -171,24 +195,43 @@ function corDaLinhaExpression(): unknown[] {
 }
 
 /**
- * O avanço de hoje é mais grosso que o consolidado: quem abre o mapa no fim do
- * dia acha a jornada com o olho, sem procurar. O fator multiplica a rampa de
- * zoom para a hierarquia sobreviver em qualquer aproximação.
+ * Fator de espessura por fase: o avanço de hoje é mais grosso que o
+ * consolidado, para quem abre o mapa no fim do dia achar a jornada com o olho.
  */
-function larguraDaLinhaExpression(): unknown[] {
+function fatorDaFaseExpression(): unknown[] {
   return [
-    "*",
-    LARGURA_LINHA,
-    [
-      "case",
-      ["==", ["get", PROPRIEDADE_FASE], "HOJE"],
-      1.6,
-      ["==", ["get", PROPRIEDADE_FASE], "RECENTE"],
-      1.25,
-      ["==", ["get", PROPRIEDADE_FASE], "ENCERRADA"],
-      0.6,
-      1,
-    ],
+    "case",
+    ["==", ["get", PROPRIEDADE_FASE], "HOJE"],
+    1.6,
+    ["==", ["get", PROPRIEDADE_FASE], "RECENTE"],
+    1.25,
+    ["==", ["get", PROPRIEDADE_FASE], "ENCERRADA"],
+    0.6,
+    1,
+  ];
+}
+
+/**
+ * Espessura da linha: rampa de zoom com o fator de fase aplicado em cada parada.
+ *
+ * A ordem importa e não é estética. O MapLibre só aceita `["zoom"]` como
+ * entrada direta de um `step`/`interpolate` no topo da expressão; multiplicar a
+ * rampa inteira pelo fator (`["*", rampa, fator]`) enterra o zoom dentro de um
+ * operador e o estilo é recusado na hora de somar a camada — foi o que apagou o
+ * tracejado dos encerrados e acendeu o aviso de erro sobre o mapa. Aplicando o
+ * fator em cada parada, o zoom continua no topo e a hierarquia sobrevive em
+ * qualquer aproximação.
+ */
+export function larguraDaLinhaExpression(fatorExtra = 1): unknown[] {
+  const fase = fatorDaFaseExpression();
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    ...PARADAS_DE_LARGURA.flatMap(([zoom, largura]) => [
+      zoom,
+      ["*", largura * fatorExtra, fase],
+    ]),
   ];
 }
 
@@ -330,21 +373,28 @@ function addOperationalLayers(
       "fill-opacity": 0.28,
     },
   } as never);
-  // Contorno escuro sob a linha colorida: é o que faz o trecho ler como uma
-  // pista sobre a imagem, em vez de um risco solto por cima do mapa.
+  /*
+   * Contorno escuro sob a linha colorida: é o que faz o trecho ler como uma
+   * pista sobre a imagem, em vez de um risco solto por cima do mapa.
+   *
+   * Os encerrados ficam de fora. O contorno é sólido e mais largo que a linha,
+   * então sob um traço interrompido ele reaparecia justamente nos vãos: o
+   * tracejado virava uma linha escura contínua com marcas claras por cima, que
+   * é o oposto do que "encerrado" precisa comunicar.
+   */
   map.addLayer({
     id: "cortex-lines-casing",
     type: "line",
     source: SOURCE_ID,
     filter: [
-      "in",
-      ["geometry-type"],
-      ["literal", ["LineString", "Polygon"]],
+      "all",
+      ["in", ["geometry-type"], ["literal", ["LineString", "Polygon"]]],
+      ["!=", ["get", PROPRIEDADE_FASE], "ENCERRADA"],
     ],
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
       "line-color": corDoToken("--color-ink"),
-      "line-width": LARGURA_LINHA_CASING,
+      "line-width": larguraDaLinhaExpression(FATOR_DO_CASING),
       "line-opacity": 0.85,
     },
   } as never);
@@ -378,12 +428,14 @@ function addOperationalLayers(
       ["in", ["geometry-type"], ["literal", ["LineString", "Polygon"]]],
       ["==", ["get", PROPRIEDADE_FASE], "ENCERRADA"],
     ],
-    layout: { "line-join": "round" },
+    // Ponta reta: a ponta arredondada acrescenta meio círculo em cada extremo
+    // do traço, e num tracejado isso engorda a marca até os vãos fecharem.
+    layout: { "line-cap": "butt", "line-join": "round" },
     paint: {
       "line-color": corDoToken(TOKEN_POR_FASE.ENCERRADA),
       "line-width": larguraDaLinhaExpression(),
-      "line-opacity": 0.8,
-      "line-dasharray": [2, 2],
+      "line-opacity": 0.9,
+      "line-dasharray": DASH_POR_ZOOM,
     },
   } as never);
   map.addLayer({
@@ -396,6 +448,36 @@ function addOperationalLayers(
       "circle-radius": 7,
       "circle-stroke-color": corDoToken("--color-surface"),
       "circle-stroke-width": 2,
+    },
+  } as never);
+  /*
+   * O serviço escrito sobre o próprio traço.
+   *
+   * A cor já diz quando o segmento avançou; o que ela não diz é o que foi
+   * executado ali. Quem lê o mapa em campo precisava clicar risco por risco
+   * para descobrir. O rótulo entra quando a câmera chega perto o bastante para
+   * que exista espaço sobre a linha — de longe seria uma sopa de texto sobre um
+   * traçado que ainda cabe inteiro na tela.
+   */
+  map.addLayer({
+    id: "cortex-lines-rotulos",
+    type: "symbol",
+    source: SOURCE_ID,
+    minzoom: ZOOM_MINIMO_DOS_ROTULOS,
+    filter: ["in", ["geometry-type"], ["literal", ["LineString"]]],
+    layout: {
+      "symbol-placement": "line-center",
+      "text-field": ROTULO_DO_SERVICO,
+      "text-size": 11,
+      "text-letter-spacing": 0.02,
+      "text-max-angle": 40,
+      "text-padding": 6,
+      "text-allow-overlap": false,
+    },
+    paint: {
+      "text-color": corDoToken("--color-ink"),
+      "text-halo-color": corDoToken("--color-surface"),
+      "text-halo-width": 1.6,
     },
   } as never);
 
@@ -691,6 +773,17 @@ const ROTACAO_3D = -18;
  */
 const ZOOM_MINIMO_DAS_EDIFICACOES = 13;
 
+/**
+ * Altura publicada pelo estilo vetorial, com o piso de 6 m para a edificação
+ * que existe no dado sem altura declarada — sem inventar andar em nenhuma.
+ */
+const ALTURA_DA_EDIFICACAO = [
+  "coalesce",
+  ["get", "render_height"],
+  ["get", "height"],
+  6,
+];
+
 function addBuildingExtrusion(map: import("maplibre-gl").Map): boolean {
   const style = map.getStyle();
   const source = style?.layers?.find(
@@ -714,15 +807,27 @@ function addBuildingExtrusion(map: import("maplibre-gl").Map): boolean {
     minzoom: ZOOM_MINIMO_DAS_EDIFICACOES,
     layout: { visibility: "none" },
     paint: {
-      "fill-extrusion-color": corDoToken("--color-border-strong"),
+      /*
+       * O volume ganha leitura pela própria altura: com uma cor só, um bloco
+       * de galpão e um prédio de dez andares viravam a mesma mancha cinza e o
+       * relevo não informava nada. A rampa escurece conforme sobe, então a
+       * silhueta do entorno passa a ser legível de relance — que é o ponto de
+       * inclinar a câmera.
+       */
+      "fill-extrusion-color": [
+        "interpolate",
+        ["linear"],
+        ALTURA_DA_EDIFICACAO,
+        0,
+        corDoToken("--color-border"),
+        12,
+        corDoToken("--color-border-strong"),
+        45,
+        corDoToken("--color-ink"),
+      ],
       "fill-extrusion-opacity": 0.82,
       "fill-extrusion-vertical-gradient": true,
-      "fill-extrusion-height": [
-        "coalesce",
-        ["get", "render_height"],
-        ["get", "height"],
-        6,
-      ],
+      "fill-extrusion-height": ALTURA_DA_EDIFICACAO,
       "fill-extrusion-base": [
         "coalesce",
         ["get", "render_min_height"],
