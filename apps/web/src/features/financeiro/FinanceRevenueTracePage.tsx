@@ -142,14 +142,24 @@ export function FinanceRevenueTracePage({
     <section className="finance-revenue-trace" aria-labelledby="finance-revenue-title">
       <header>
         <div>
-          <span>RDO → serviço → preço vigente → receita → evento</span>
+          <span>Receita confirmada</span>
           <h2 id="finance-revenue-title">Receita realizada</h2>
           <p>Cada valor abaixo vem de trabalho executado e de um preço versionado preservado.</p>
         </div>
         <div className="finance-revenue-total">
           <span>Total confirmado pelo servidor</span>
           <strong>{totalResult.text}</strong>
-          <small>{rows.length} {rows.length === 1 ? "evidência" : "evidências"}</small>
+          {/*
+            Os agregados saem das linhas já carregadas — nenhuma consulta a
+            mais. Quem abre a tela lê de onde o total vem sem somar de cabeça:
+            quantas evidências, de quantos serviços, em quantos RDOs.
+          */}
+          <small>
+            {rows.length} {rows.length === 1 ? "evidência" : "evidências"}
+            {rows.length > 0
+              ? ` · ${new Set(rows.map((row) => row.serviceCode)).size} serviço(s) · ${new Set(rows.map((row) => row.rdoNumber)).size} RDO(s)`
+              : ""}
+          </small>
         </div>
       </header>
 
@@ -183,8 +193,7 @@ export function FinanceRevenueTracePage({
       ) : null}
       {!loading && !visibleError && hasConfirmedData && rows.length === 0 ? (
         <div className="finance-empty">
-          <div className="finance-empty-mark" aria-hidden="true">∅</div>
-          <div><h3>Nenhuma receita aceita neste período</h3><p>O total permanece zerado até existir uma execução validada com preço exato.</p></div>
+                    <div><h3>Nenhuma receita aceita neste período</h3><p>O total permanece zerado até existir uma execução validada com preço exato.</p></div>
         </div>
       ) : null}
 

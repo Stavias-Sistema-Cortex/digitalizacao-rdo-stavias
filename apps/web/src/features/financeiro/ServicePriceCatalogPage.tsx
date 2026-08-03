@@ -591,8 +591,7 @@ export function ServicePriceCatalogPage({
 
       {!loading && rows.length === 0 ? (
         <div className="finance-empty">
-          <div className="finance-empty-mark" aria-hidden="true">∅</div>
-          <div><h3>Nenhum serviço encontrado</h3><p>O catálogo permanece vazio até um registro real ser criado ou sincronizado.</p></div>
+                    <div><h3>Nenhum serviço encontrado</h3><p>O catálogo permanece vazio até um registro real ser criado ou sincronizado.</p></div>
         </div>
       ) : null}
 

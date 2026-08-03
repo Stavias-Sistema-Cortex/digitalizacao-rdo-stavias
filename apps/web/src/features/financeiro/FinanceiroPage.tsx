@@ -362,8 +362,7 @@ export function FinanceiroPage() {
     if (!filters.obraId) {
       return (
         <section className="finance-empty">
-          <div className="finance-empty-mark" aria-hidden="true">↳</div>
-          <div>
+                    <div>
             <h2>Selecione uma obra</h2>
             <p>Selecione uma obra para ver preços e PDOR.</p>
           </div>
@@ -480,8 +479,7 @@ export function FinanceiroPage() {
           </div>
         ) : !canViewSelectedWorksite ? (
           <section className="finance-denied" role="status">
-            <span aria-hidden="true">⊘</span>
-            <div>
+                        <div>
               <h2>Acesso à receita não concedido</h2>
               <p>
                 Seu perfil não possui a capacidade
