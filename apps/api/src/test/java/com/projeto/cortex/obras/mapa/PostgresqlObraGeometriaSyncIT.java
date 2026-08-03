@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
@@ -229,6 +230,43 @@ class PostgresqlObraGeometriaSyncIT {
     }
 
     /**
+     * O trecho desenhado no mapa, que é o grosso da fila entalada em campo.
+     * Mesma travessia, outra porta de criação: categoria TRECHO, linha em vez
+     * de ponto e o método restrito ao Alfa.
+     */
+    @Test
+    void drawnStretchAlsoDrainsPreservingTheDeviceMintedIdentity()
+            throws Exception {
+        Fixture fixture = fixture();
+        String entityId = UUID.randomUUID().toString();
+
+        SyncPushResponse response = fixture.service().push(new SyncPushRequest(
+                fixture.deviceId(),
+                List.of(drawnStretchMutation(
+                        fixture, UUID.randomUUID().toString(), entityId
+                ))
+        ));
+
+        assertThat(response.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.erro()).as("erro da mutação").isNull();
+            assertThat(result.status()).isEqualTo("APLICADA");
+            assertThat(result.resultado().path("id").asText()).isEqualTo(entityId);
+        });
+        assertThat(jdbc.queryForMap(
+                """
+                SELECT categoria, fonte, tipo_geometria,
+                       propriedades_json ->> 'servico' AS servico
+                FROM obra_geometria
+                WHERE id = ?
+                """,
+                entityId
+        )).containsEntry("categoria", "TRECHO")
+                .containsEntry("fonte", "GESTAO_MAPA")
+                .containsEntry("tipo_geometria", "LINESTRING")
+                .containsEntry("servico", "Pavimentação CBUQ");
+    }
+
+    /**
      * A atualização atravessa o mesmo funil e dependia do mesmo nome de
      * entidade na memória operacional: com a grafia divergente, o commit do
      * evento nunca era encontrado e a mutação retentava para sempre.
@@ -396,7 +434,59 @@ class PostgresqlObraGeometriaSyncIT {
         payload.put("fonte", "CAPTURA_CAMPO");
         payload.put("validoDesde", "2026-08-01T10:00:00.000Z");
         payload.putNull("validoAte");
+        return createMutation(
+                fixture,
+                clientMutationId,
+                entityId,
+                "REGISTRAR_GEOMETRIA_CAMPO",
+                payload
+        );
+    }
 
+    /**
+     * O envelope do trecho desenhado sobre o mapa.
+     *
+     * É a outra porta de criação — a que passa pelo método restrito ao Alfa,
+     * com linha em vez de ponto — e é dela que vem a maior parte da fila
+     * entalada em campo. Cobrir só a captura de ponto deixaria metade do
+     * caminho corrigido sem prova.
+     */
+    private SyncPushRequest.MutacaoCliente drawnStretchMutation(
+            Fixture fixture,
+            String clientMutationId,
+            String entityId
+    ) throws Exception {
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("id", entityId);
+        payload.put("obraId", fixture.obraId());
+        payload.put("categoria", "TRECHO");
+        payload.put("objetoTipo", "TRECHO");
+        payload.put("objetoId", UUID.randomUUID().toString());
+        ObjectNode geometry = payload.putObject("geometry");
+        geometry.put("type", "LineString");
+        ArrayNode coordinates = geometry.putArray("coordinates");
+        coordinates.addArray().add(-54.65).add(-20.44);
+        coordinates.addArray().add(-54.63).add(-20.43);
+        payload.putObject("properties").put("servico", "Pavimentação CBUQ");
+        payload.put("fonte", "GESTAO_MAPA");
+        payload.put("validoDesde", "2026-08-01T10:00:00.000Z");
+        payload.putNull("validoAte");
+        return createMutation(
+                fixture,
+                clientMutationId,
+                entityId,
+                "REGISTRAR_GEOMETRIA_OBRA",
+                payload
+        );
+    }
+
+    private SyncPushRequest.MutacaoCliente createMutation(
+            Fixture fixture,
+            String clientMutationId,
+            String entityId,
+            String operation,
+            ObjectNode payload
+    ) throws Exception {
         List<String> changedFields = new ArrayList<>();
         payload.fieldNames().forEachRemaining(changedFields::add);
         changedFields.sort(String::compareTo);
@@ -405,7 +495,7 @@ class PostgresqlObraGeometriaSyncIT {
                 clientMutationId,
                 "GEOMETRIA_OBRA",
                 entityId,
-                "REGISTRAR_GEOMETRIA_CAMPO",
+                operation,
                 null,
                 payload,
                 LocalDateTime.parse("2026-08-01T10:00:00"),
