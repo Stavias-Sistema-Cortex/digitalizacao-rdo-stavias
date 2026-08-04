@@ -53,9 +53,10 @@ class SyncPullScopeTest {
 
         assertThat(filtro.condicaoSql())
                 .contains("tipo_entidade NOT IN")
-                .contains("obra_id IN (?)")
+                .contains("cortex_evento_operacional.obra_id IN (?)")
                 .contains("tipo_entidade IN")
-                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?)");
+                .contains("cortex_evento_operacional.obra_id IS NULL AND "
+                        + "cortex_evento_operacional.tipo_entidade IN (?,?,?)");
         assertThat(filtro.parametros())
                 .contains("obra-1", "ATIVO", "EQUIPAMENTO", "SERVICO")
                 .contains("ITEM_CONTRATUAL", "PREVISAO_FINANCEIRA", "PDOR")
@@ -94,9 +95,10 @@ class SyncPullScopeTest {
                 service.filtroPorEscopo(Optional.of(Set.of()), Set.of());
 
         assertThat(filtro.condicaoSql())
-                .doesNotContain("obra_id IN (")
-                .doesNotContain(" OR (tipo_entidade IN")
-                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?)");
+                .doesNotContain("cortex_evento_operacional.obra_id IN (")
+                .doesNotContain(" OR (cortex_evento_operacional.tipo_entidade IN")
+                .contains("cortex_evento_operacional.obra_id IS NULL AND "
+                        + "cortex_evento_operacional.tipo_entidade IN (?,?,?)");
         assertThat(filtro.parametros())
                 .contains("ATIVO", "EQUIPAMENTO", "SERVICO")
                 .contains("PERMISSAO_FINANCEIRA");

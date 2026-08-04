@@ -28,6 +28,21 @@ public final class OperationalEventVisibilityPolicy {
     private OperationalEventVisibilityPolicy() {
     }
 
+    /**
+     * Tabela que o pull consulta, usada como qualificador das colunas.
+     *
+     * <p>A Memória sempre passou um alias; o sync passava vazio, e sem
+     * qualificador o predicado emitia {@code restricted_visibility.evento_id =
+     * id} dentro de uma subconsulta sobre {@code cortex_evento_visibilidade} —
+     * que também tem uma coluna {@code id}. O PostgreSQL recusa isso como
+     * referência ambígua, e o pull inteiro virava 500.
+     *
+     * <p>Só o Beta chegava aqui: para Alfa {@code forSync} devolve predicado
+     * vazio e a consulta é trivial. Quem administra o sistema nunca via o erro,
+     * e quem estava em campo não via outra coisa.
+     */
+    private static final String SYNC_EVENT_TABLE = "cortex_evento_operacional";
+
     public static SqlPredicate forSync(
             Optional<Set<String>> allowedWorksites,
             Set<String> financialWorksites,
@@ -38,7 +53,7 @@ public final class OperationalEventVisibilityPolicy {
             return new SqlPredicate("", List.of());
         }
         return beta(
-                "",
+                SYNC_EVENT_TABLE,
                 allowedWorksites.orElseThrow(),
                 financialWorksites,
                 financialUnits,
