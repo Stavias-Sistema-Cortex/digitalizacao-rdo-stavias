@@ -24,6 +24,8 @@ export type MemoryDocumentStatus =
   | "LOCAL_PENDING"
   | "SYNCING"
   | "CONFLICT"
+  /* Edição abandonada por decisão de quem a fez; o rastro fica, a fila não. */
+  | "DISCARDED"
   | "REJECTED";
 
 export interface MemoryStructuralKeys {
@@ -123,6 +125,7 @@ export interface MemoryCoverageView {
     | "Local pendente"
     | "Sincronizando"
     | "Conflito"
+    | "Descartado"
     | "Rejeitado";
   detail: string;
 }
@@ -340,6 +343,7 @@ export function memoryStatusLabel(
     LOCAL_PENDING: "Local pendente",
     SYNCING: "Sincronizando",
     CONFLICT: "Conflito",
+    DISCARDED: "Descartado",
     REJECTED: "Rejeitado",
   };
   return labels[status];
@@ -347,6 +351,7 @@ export function memoryStatusLabel(
 
 function localStatus(event: OperationalEventRecord): MemoryDocumentStatus {
   if (event.result === "CONFLICT") return "CONFLICT";
+  if (event.result === "DISCARDED") return "DISCARDED";
   if (event.result === "REJECTED") return "REJECTED";
   if (event.result === "SYNCING" || event.syncStatus === "SYNCING") {
     return "SYNCING";

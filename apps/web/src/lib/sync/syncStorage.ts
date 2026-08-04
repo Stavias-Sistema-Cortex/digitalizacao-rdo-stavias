@@ -4437,6 +4437,86 @@ export async function rejectMutationLocally(
   await guardedTransaction.complete();
 }
 
+/**
+ * Descarta a edição local presa em conflito, mantendo a versão do servidor.
+ *
+ * <p>Quando os dois lados alteram o mesmo campo, não existe fusão automática
+ * possível e o registro fica travado indefinidamente — com o marcador de
+ * conflito fixo na tela e nenhuma ação capaz de apagá-lo. Esta é a decisão que
+ * faltava poder tomar: abrir mão da própria versão.</p>
+ *
+ * <p>O que sai é a intenção de escrita, não a evidência dela. A mutação deixa
+ * a fila, mas o evento que a registrou permanece na Memória marcado como
+ * descartado — quem for auditar depois continua vendo que a edição existiu,
+ * quando foi feita e que foi abandonada em favor do servidor. Apagar o rastro
+ * para limpar um aviso seria trocar um incômodo de tela por um buraco no
+ * histórico.</p>
+ *
+ * <p>O registro local volta a acompanhar o servidor: sem mutação pendente, a
+ * próxima descida de eventos reescreve o estado por cima.</p>
+ *
+ * @returns a entidade cuja edição foi descartada, ou null se não havia
+ *          conflito com esse identificador.
+ */
+export async function descartarEdicaoEmConflito(
+  clientMutationId: string,
+): Promise<{ entidadeTipo: string; entidadeId: string } | null> {
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    RDO_SYNC_TRANSACTION_STORES,
+    "readwrite",
+  );
+  const outbox = transaction.objectStore("outbox_mutations");
+  const mutation = await outbox.get(clientMutationId);
+  if (!mutation || mutation.status !== "CONFLICT") {
+    await transaction.done;
+    return null;
+  }
+  const timestamp = nowUtc();
+  await outbox.delete(clientMutationId);
+
+  const eventStore = transaction.objectStore("operational_events");
+  const events = await eventStore
+    .index("by-client-mutation-id")
+    .getAll(clientMutationId);
+  for (const event of events) {
+    await eventStore.put({
+      ...event,
+      result: "DISCARDED",
+      syncStatus: "SYNC_FAILED",
+      errorCategory: "VERSION_CONFLICT_DISCARDED",
+    });
+  }
+
+  if (mutation.entidadeTipo === "RDO") {
+    const rdoStore = transaction.objectStore("rdos");
+    const rdo = await rdoStore.get(mutation.entidadeId);
+    if (rdo) {
+      const aggregateSyncStatus = await rdoSyncStatusFromOutbox(
+        outbox,
+        mutation.entidadeId,
+      );
+      await rdoStore.put({
+        ...rdo,
+        syncStatus: aggregateSyncStatus,
+        updatedAt: timestamp,
+      });
+      await updateRdoChildrenSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        aggregateSyncStatus,
+        timestamp,
+      );
+    }
+  }
+
+  await transaction.done;
+  return {
+    entidadeTipo: mutation.entidadeTipo,
+    entidadeId: mutation.entidadeId,
+  };
+}
+
 export async function returnMutationToPending(
   clientMutationId: string,
   errorMessage: string,

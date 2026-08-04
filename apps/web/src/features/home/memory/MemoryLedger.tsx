@@ -357,6 +357,8 @@ function MemoryReviewCard({
   if (!review) return null;
   const reconciling = review.clientMutationId !== null &&
     ledger.reconcilingMutationId === review.clientMutationId;
+  const descartando = review.clientMutationId !== null &&
+    ledger.descartandoMutationId === review.clientMutationId;
   return (
     <li className="memory-review__item" data-status={review.status}>
       <div>
@@ -389,15 +391,35 @@ function MemoryReviewCard({
       {review.unavailableReason ? (
         <p>{reviewReason(review.unavailableReason)}</p>
       ) : null}
-      {review.canReconcile && review.clientMutationId ? (
-        <button
-          type="button"
-          disabled={reconciling}
-          onClick={() => ledger.reconcileReview(item)}
-        >
-          {reconciling ? "Conciliando…" : "Conciliar alterações"}
-        </button>
-      ) : null}
+      <div className="memory-review__acoes">
+        {review.canReconcile && review.clientMutationId ? (
+          <button
+            type="button"
+            disabled={reconciling}
+            onClick={() => ledger.reconcileReview(item)}
+          >
+            {reconciling ? "Conciliando…" : "Conciliar alterações"}
+          </button>
+        ) : null}
+        {/*
+          Quando não há fusão possível, a única decisão que destrava é abrir
+          mão da própria versão. Sem ela o registro fica preso para sempre e o
+          aviso não sai da tela — e é ela, não a conciliação, que resolve o
+          impasse de campo contra campo.
+        */}
+        {review.status === "CONFLICT" && review.clientMutationId ? (
+          <button
+            type="button"
+            className="memory-review__descartar"
+            disabled={descartando}
+            onClick={() => ledger.descartarConflito(item)}
+          >
+            {descartando
+              ? "Descartando…"
+              : "Descartar minha versão"}
+          </button>
+        ) : null}
+      </div>
     </li>
   );
 }

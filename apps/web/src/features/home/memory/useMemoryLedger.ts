@@ -7,7 +7,10 @@ import {
 } from "../../auth/authSession";
 import { getCortexDb } from "../../../lib/db/cortexDb";
 import { LOCAL_MUTATION_QUEUED_EVENT } from "../../../lib/sync/localMutationCoordinator";
-import { reconcileCanonicalConflict } from "../../../lib/sync/syncStorage";
+import {
+  descartarEdicaoEmConflito,
+  reconcileCanonicalConflict,
+} from "../../../lib/sync/syncStorage";
 import { fetchMemoryPage, type MemoryFilters, type MemoryPage } from "./memoryApi";
 import {
   buildMemoryExport,
@@ -238,6 +241,8 @@ export interface MemoryLedgerViewModel {
   setViewMode: (mode: "CONSOLIDATED" | "THIS_DEVICE") => void;
   exportLedger: () => void;
   reconcileReview: (item: MemorySearchDocument) => void;
+  descartandoMutationId: string | null;
+  descartarConflito: (item: MemorySearchDocument) => void;
   /** Restringe a lista ao que está preso em conflito ou recusa. */
   somenteRevisao: boolean;
   setSomenteRevisao: (ativo: boolean) => void;
@@ -253,6 +258,8 @@ export function useMemoryLedger(
   options: UseMemoryLedgerOptions = {},
 ): MemoryLedgerViewModel {
   const [filters, setFilterState] = useState<MemoryFilters>({});
+  const [descartandoMutationId, setDescartandoMutationId] =
+    useState<string | null>(null);
   const [somenteRevisao, setSomenteRevisao] = useState(
     options.somenteRevisaoInicial ?? false,
   );
@@ -379,6 +386,43 @@ export function useMemoryLedger(
       await readLedgerRef.current();
     }
   }, [reconcilingMutationId]);
+
+  /*
+   * Descartar é a decisão que destrava o impasse insolúvel: quando os dois
+   * lados mexeram no mesmo campo, não há fusão a propor e a única saída é
+   * abrir mão da própria versão. A evidência não se perde — o evento fica na
+   * Memória marcado como descartado, e é isso que separa esta ação de apagar
+   * o registro.
+   */
+  const descartarConflito = useCallback(async (item: MemorySearchDocument) => {
+    const mutationId = item.review?.clientMutationId ?? null;
+    if (
+      item.review?.status !== "CONFLICT" ||
+      !mutationId ||
+      descartandoMutationId
+    ) {
+      return;
+    }
+    setDescartandoMutationId(mutationId);
+    setReviewNotice(null);
+    try {
+      const descartada = await descartarEdicaoEmConflito(mutationId);
+      setReviewNotice(
+        descartada
+          ? "Sua versão foi descartada e a do servidor passa a valer. O registro da tentativa continua na Memória."
+          : "O conflito já havia sido resolvido; nada foi descartado.",
+      );
+    } catch (cause: unknown) {
+      setReviewNotice(
+        cause instanceof Error
+          ? `O descarte não foi concluído: ${cause.message}`
+          : "O descarte não foi concluído.",
+      );
+    } finally {
+      setDescartandoMutationId(null);
+      await readLedgerRef.current();
+    }
+  }, [descartandoMutationId]);
 
   const readLedgerRef = useRef(readLedger);
   useEffect(() => {
@@ -559,6 +603,10 @@ export function useMemoryLedger(
     },
     reconcileReview(item) {
       void reconcileReview(item);
+    },
+    descartandoMutationId,
+    descartarConflito(item) {
+      void descartarConflito(item);
     },
   };
 }

@@ -88,6 +88,13 @@ export type CanonicalMutationResult =
   | "SYNCING"
   | "SYNCED"
   | "CONFLICT"
+  /*
+   * A pessoa abriu mão da própria edição para ficar com a do servidor. É
+   * diferente de REJECTED, onde quem recusou foi o servidor: aqui houve uma
+   * decisão humana, e o histórico precisa distinguir as duas — o evento
+   * permanece na Memória em vez de sumir junto com a mutação.
+   */
+  | "DISCARDED"
   | "REJECTED";
 
 export interface CanonicalMutationEnvelopeV13 {
@@ -741,7 +748,13 @@ export interface MemorySearchDocumentRecord {
     origin: string | null;
     result: string | null;
   };
-  syncStatus: "UPDATED" | "LOCAL_PENDING" | "SYNCING" | "CONFLICT" | "REJECTED";
+  syncStatus:
+    | "UPDATED"
+    | "LOCAL_PENDING"
+    | "SYNCING"
+    | "CONFLICT"
+    | "DISCARDED"
+    | "REJECTED";
   sourceKind: "SERVER" | "LOCAL";
   occurredAt: string;
   eventType: string;

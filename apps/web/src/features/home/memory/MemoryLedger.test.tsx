@@ -12,6 +12,8 @@ function model(overrides: Partial<MemoryLedgerViewModel> = {}): MemoryLedgerView
     somenteRevisao: false,
     setSomenteRevisao: () => {},
     totalEmRevisao: 0,
+    descartandoMutationId: null,
+    descartarConflito: () => {},
     filters: {},
     coverage: {
       code: "PARTIAL",

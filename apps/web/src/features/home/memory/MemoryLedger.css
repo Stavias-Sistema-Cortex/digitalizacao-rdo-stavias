@@ -1,10 +1,10 @@
 .memory-ledger {
-  --memory-asphalt: #18231f;
-  --memory-survey: #124e4a;
-  --memory-safety: #f2c800;
-  --memory-concrete: #f4f6f4;
-  --memory-chalk: #ffffff;
-  --memory-alert: #9a3434;
+  --memory-asphalt: var(--color-ink);
+  --memory-survey: var(--color-brand-teal);
+  --memory-safety: var(--color-brand-yellow);
+  --memory-concrete: var(--color-surface);
+  --memory-chalk: var(--color-surface);
+  --memory-alert: var(--color-danger);
   display: grid;
   gap: 12px;
   width: 100%;
@@ -62,7 +62,7 @@
   border-radius: var(--radius-sm);
   padding: 0 14px;
   background: var(--memory-survey);
-  color: #fff;
+  color: var(--color-surface);
   font-size: 0.76rem;
   font-weight: 600;
 }
@@ -75,7 +75,7 @@
 }
 
 .memory-ledger__export {
-  background: #fff;
+  background: var(--color-surface);
   color: var(--memory-survey);
 }
 
@@ -144,6 +144,7 @@
 .memory-query {
   display: grid;
   grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  align-items: start;
   gap: 12px;
   width: 100%;
   min-width: 0;
@@ -159,10 +160,10 @@
 
 .memory-query__view button {
   min-height: 34px;
-  border: 1px solid #cfd8d2;
+  border: 1px solid var(--color-border-strong);
   border-radius: 999px;
   padding: 0 12px;
-  background: #fff;
+  background: var(--color-surface);
   color: var(--memory-survey);
   font-size: 0.72rem;
   font-weight: 600;
@@ -171,7 +172,7 @@
 .memory-query__view button[aria-pressed="true"] {
   border-color: var(--memory-survey);
   background: var(--memory-survey);
-  color: #fff;
+  color: var(--color-surface);
 }
 
 .memory-query__view button:disabled {
@@ -198,18 +199,18 @@
 .memory-query select {
   width: 100%;
   min-height: 38px;
-  border: 1px solid #cfd8d2;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   padding: 0 10px;
-  background: #fff;
+  background: var(--color-surface);
   color: var(--memory-asphalt);
   font-size: 0.78rem;
 }
 
 .memory-query__search input {
-  min-height: 44px;
-  border-left: 4px solid var(--memory-safety);
-  font-size: 0.84rem;
+  height: 38px;
+  border-left: 3px solid var(--memory-safety);
+  font-size: 0.8rem;
 }
 
 .memory-query__filters {
@@ -220,9 +221,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 44px;
+  min-height: 38px;
   padding: 0 12px;
-  border: 1px solid #cfd8d2;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   color: var(--memory-survey);
   font-size: 0.78rem;
@@ -247,7 +248,7 @@
 
 .memory-query__filters > button {
   min-height: 34px;
-  background: #fff;
+  background: var(--color-surface);
   color: var(--memory-survey);
 }
 
@@ -261,7 +262,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 12px 16px;
-  border-bottom: 1px solid #ecd0d0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-danger) 22%, var(--color-surface));
 }
 
 .memory-review > header span {
@@ -286,8 +287,8 @@
 
 .memory-review__item {
   padding: 12px;
-  border: 1px solid #e5c9c9;
-  background: #fffafa;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 26%, var(--color-surface));
+  background: color-mix(in srgb, var(--color-danger) 4%, var(--color-surface));
 }
 
 .memory-review__item > div,
@@ -328,16 +329,59 @@
   font-size: 0.7rem;
 }
 
+.memory-review__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .memory-review__item button {
   min-height: 34px;
-  margin-top: 10px;
   border: 1px solid var(--memory-survey);
   border-radius: var(--radius-sm);
   padding: 0 12px;
   background: var(--memory-survey);
-  color: #fff;
+  color: var(--color-surface);
   font-size: 0.72rem;
   font-weight: 600;
+}
+
+/*
+ * Descartar é irreversível para a edição local, mas não é a ação destrutiva
+ * de um registro: o que se perde é a intenção de escrita, e o rastro dela
+ * fica. Por isso o botão fica em segundo plano, marcado, sem a solidez de um
+ * comando principal nem o alarme de uma exclusão.
+ */
+.memory-review__descartar {
+  border-color: var(--color-border-strong) !important;
+  background: transparent !important;
+  color: var(--color-danger) !important;
+}
+
+.memory-review__item button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* O atalho de pendências abre a Memória já no que precisa de decisão. */
+.memory-query__pendencias {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 32px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 0 12px;
+  color: var(--color-danger);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.memory-query__pendencias[aria-pressed="true"] {
+  border-style: solid;
+  border-color: var(--color-danger);
 }
 
 .memory-register {
@@ -375,7 +419,7 @@
   display: grid;
   grid-template-columns: 18px 142px minmax(0, 1fr);
   min-width: 0;
-  border-bottom: 1px solid #e4e9e6;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .memory-entry__rail {
@@ -390,7 +434,7 @@
   bottom: 0;
   left: 8px;
   width: 1px;
-  background: #b8c5be;
+  background: var(--color-border-strong);
 }
 
 .memory-entry__rail span {
@@ -399,7 +443,7 @@
   left: 5px;
   width: 7px;
   height: 7px;
-  border: 2px solid #fff;
+  border: 2px solid var(--color-surface);
   border-radius: 50%;
   background: var(--memory-survey);
   box-shadow: 0 0 0 1px var(--memory-survey);
@@ -408,7 +452,7 @@
 .memory-entry[data-status="LOCAL_PENDING"] .memory-entry__rail span,
 .memory-entry[data-status="SYNCING"] .memory-entry__rail span {
   background: var(--memory-safety);
-  box-shadow: 0 0 0 1px #9a7a00;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-brand-yellow) 60%, var(--color-ink));
 }
 
 .memory-entry[data-status="CONFLICT"] .memory-entry__rail span,
@@ -419,7 +463,7 @@
 
 .memory-entry__commit {
   padding: 15px 14px;
-  border-right: 1px solid #e4e9e6;
+  border-right: 1px solid var(--color-border);
   font-variant-numeric: tabular-nums;
 }
 
@@ -461,7 +505,7 @@
 
 .memory-entry__title > span {
   flex: 0 0 auto;
-  border: 1px solid #cdd8d2;
+  border: 1px solid var(--color-border-strong);
   border-radius: 999px;
   padding: 4px 10px;
   color: var(--memory-survey);
@@ -472,7 +516,7 @@
 
 .memory-entry[data-status="CONFLICT"] .memory-entry__title > span,
 .memory-entry[data-status="REJECTED"] .memory-entry__title > span {
-  border-color: #e3bcbc;
+  border-color: color-mix(in srgb, var(--color-danger) 30%, var(--color-surface));
   color: var(--memory-alert);
 }
 
@@ -515,7 +559,7 @@
 }
 
 .memory-entry__evidence dd {
-  color: #33443c;
+  color: var(--color-graphite);
   min-width: 0;
   word-break: break-word;
 }
@@ -534,14 +578,14 @@
   gap: 4px;
   margin: 12px;
   padding: 16px;
-  border: 1px solid #d7dfda;
+  border: 1px solid var(--color-border);
   background: var(--memory-concrete);
   color: var(--color-muted);
   font-size: 0.76rem;
 }
 
 .memory-notice--error {
-  border-color: #e4bcbc;
+  border-color: color-mix(in srgb, var(--color-danger) 30%, var(--color-surface));
   color: var(--memory-alert);
 }
 
