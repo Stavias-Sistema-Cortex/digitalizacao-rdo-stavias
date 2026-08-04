@@ -109,6 +109,21 @@
   --execucao-executado: var(--color-brand-yellow);
   --execucao-validado: var(--color-focus);
   --execucao-rejeitado: var(--color-danger);
+
+  /*
+   * Distinção entre serviços num mesmo trecho. Não são cores com significado
+   * próprio — o servidor não classifica serviço, e inventar uma taxonomia aqui
+   * seria dar sentido a algo que o dado não afirma. São apenas seis timbres
+   * separáveis sobre o leito escuro, atribuídos na ordem em que cada serviço
+   * aparece e sempre lidos junto da legenda. Quem os escolheu foi a leitura,
+   * não a ontologia.
+   */
+  --trecho-servico-1: #f2c300;
+  --trecho-servico-2: #5ec3b4;
+  --trecho-servico-3: #e08a3c;
+  --trecho-servico-4: #9d8df1;
+  --trecho-servico-5: #6fb1e8;
+  --trecho-servico-6: #d96a86;
 }
 
 * {

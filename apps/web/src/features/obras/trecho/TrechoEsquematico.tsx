@@ -18,6 +18,11 @@ import {
   type PistaEsquematica,
   type ProjecaoTrecho,
 } from "./trechoGeometry";
+import {
+  servicosDistintos,
+  timbreDoSegmento,
+  timbresDeServico,
+} from "./servicosDoTrecho";
 import "./TrechoEsquematico.css";
 
 interface TrechoEsquematicoProps {
@@ -38,7 +43,13 @@ const ESTADO_LABEL: Record<string, string> = {
   DECLARADO: "Declarado no mapa",
 };
 
-function Bloco({ bloco }: { bloco: BlocoSegmento }) {
+function Bloco({
+  bloco,
+  timbre,
+}: {
+  bloco: BlocoSegmento;
+  timbre: number | null;
+}) {
   const estado = estadoDoSegmento(bloco.segmento);
   const detalhe = [
     bloco.segmento.numeroRdo ? `RDO ${bloco.segmento.numeroRdo}` : null,
@@ -65,6 +76,13 @@ function Bloco({ bloco }: { bloco: BlocoSegmento }) {
       aria-label={`${rotuloDoSegmento(bloco.segmento)} — ${detalhe}`}
     >
       <span className="trecho-bloco-rotulo">
+        {timbre ? (
+          <i
+            className="trecho-servico-timbre"
+            data-timbre={timbre}
+            aria-hidden="true"
+          />
+        ) : null}
         <span>{rotuloDoSegmento(bloco.segmento)}</span>
         {bloco.segmento.data ? (
           <em>{formatarData(bloco.segmento.data).slice(0, 5)}</em>
@@ -74,7 +92,13 @@ function Bloco({ bloco }: { bloco: BlocoSegmento }) {
   );
 }
 
-function Pista({ pista }: { pista: PistaEsquematica }) {
+function Pista({
+  pista,
+  timbres,
+}: {
+  pista: PistaEsquematica;
+  timbres: ReadonlyMap<string, number>;
+}) {
   return (
     <div className="trecho-pista">
       <span className="trecho-pista-nome">
@@ -82,7 +106,11 @@ function Pista({ pista }: { pista: PistaEsquematica }) {
       </span>
       <div className="trecho-pista-rolagem">
         {pista.blocos.map((bloco) => (
-          <Bloco key={bloco.segmento.id} bloco={bloco} />
+          <Bloco
+            key={bloco.segmento.id}
+            bloco={bloco}
+            timbre={timbreDoSegmento(bloco.segmento, timbres)}
+          />
         ))}
       </div>
     </div>
@@ -161,6 +189,19 @@ export function TrechoEsquematico({
   const temFiltroDePeriodo = Boolean(
     projecao.periodoAplicado.de || projecao.periodoAplicado.ate,
   );
+  // O canal do serviço só nasce quando há mais de um serviço para separar.
+  const timbres = useMemo(
+    () => timbresDeServico(segmentosPosicionaveis(projecao.segmentos)),
+    [projecao.segmentos],
+  );
+  const servicosDaLegenda = useMemo(
+    () =>
+      timbres.size > 0
+        ? servicosDistintos(segmentosPosicionaveis(projecao.segmentos))
+        : [],
+    [timbres, projecao.segmentos],
+  );
+
   // A legenda lista só os estados que a obra realmente tem no período.
   const estadosPresentes = useMemo(
     () =>
@@ -223,13 +264,13 @@ export function TrechoEsquematico({
                 <span>Acostamento</span>
               </div>
               {lados.superior.map((pista) => (
-                <Pista key={pista.id} pista={pista} />
+                <Pista key={pista.id} pista={pista} timbres={timbres} />
               ))}
               {lados.temCanteiro ? (
                 <div className="trecho-canteiro">Canteiro central divisor</div>
               ) : null}
               {lados.inferior.map((pista) => (
-                <Pista key={pista.id} pista={pista} />
+                <Pista key={pista.id} pista={pista} timbres={timbres} />
               ))}
               {lados.indefinidas.length > 0 ? (
                 <>
@@ -237,7 +278,7 @@ export function TrechoEsquematico({
                     Sem pista declarada no lançamento
                   </div>
                   {lados.indefinidas.map((pista) => (
-                    <Pista key={pista.id} pista={pista} />
+                    <Pista key={pista.id} pista={pista} timbres={timbres} />
                   ))}
                 </>
               ) : null}
@@ -271,6 +312,21 @@ export function TrechoEsquematico({
                 aria-hidden="true"
               />
               {ESTADO_LABEL[estado]}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {servicosDaLegenda.length > 0 ? (
+        <ul className="trecho-legenda trecho-legenda--servicos" aria-label="Serviços do trecho">
+          {servicosDaLegenda.map((servico) => (
+            <li key={servico}>
+              <span
+                className="trecho-servico-timbre"
+                data-timbre={timbres.get(servico)}
+                aria-hidden="true"
+              />
+              {servico}
             </li>
           ))}
         </ul>

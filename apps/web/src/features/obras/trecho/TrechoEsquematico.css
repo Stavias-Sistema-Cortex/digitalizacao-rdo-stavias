@@ -1115,3 +1115,35 @@
 .trecho-evolucao-dia--ativo strong {
   font-weight: 600;
 }
+
+/* ------------------------------------------------------------------ *
+ * Timbre do serviço                                                    *
+ *
+ * O estado já é dono do preenchimento e da textura do bloco. O serviço
+ * precisava de um canal que não disputasse esse — daí um marcador sólido,
+ * pequeno, encostado no rótulo: some no meio do bloco quando não há o que
+ * distinguir, e salta quando há. A cor não afirma nada sobre o serviço; ela só
+ * o separa dos vizinhos, e a legenda logo abaixo diz qual é qual.
+ * ------------------------------------------------------------------ */
+.trecho-servico-timbre {
+  flex: none;
+  /* O rótulo alinha por baseline; um quadrado não tem baseline útil. */
+  align-self: center;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  /* Sobre o leito escuro e sobre a legenda clara, o mesmo contorno mantém a
+     forma legível nos dois fundos. */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink) 45%, transparent);
+}
+
+.trecho-servico-timbre[data-timbre="1"] { background: var(--trecho-servico-1); }
+.trecho-servico-timbre[data-timbre="2"] { background: var(--trecho-servico-2); }
+.trecho-servico-timbre[data-timbre="3"] { background: var(--trecho-servico-3); }
+.trecho-servico-timbre[data-timbre="4"] { background: var(--trecho-servico-4); }
+.trecho-servico-timbre[data-timbre="5"] { background: var(--trecho-servico-5); }
+.trecho-servico-timbre[data-timbre="6"] { background: var(--trecho-servico-6); }
+
+.trecho-legenda--servicos {
+  margin-top: 6px;
+}
