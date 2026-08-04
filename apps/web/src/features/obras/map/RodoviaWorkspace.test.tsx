@@ -14,6 +14,7 @@ import type { LeituraMapaObra } from "./obraMapApi";
 
 const carregarMapaObra = vi.hoisted(() => vi.fn());
 const registrarTrechoDesenhado = vi.hoisted(() => vi.fn());
+const encerrarGeometria = vi.hoisted(() => vi.fn());
 const resolverRdoDoTrecho = vi.hoisted(() => vi.fn());
 const createAndPersistLocalPendingRdoDraft = vi.hoisted(() => vi.fn());
 const leaflet = vi.hoisted(() => ({
@@ -30,7 +31,10 @@ const leaflet = vi.hoisted(() => ({
 }));
 
 vi.mock("./obraMapApi", () => ({ carregarMapaObra }));
-vi.mock("./obraGeometriaMutations", () => ({ registrarTrechoDesenhado }));
+vi.mock("./obraGeometriaMutations", () => ({
+  encerrarGeometria,
+  registrarTrechoDesenhado,
+}));
 vi.mock("./rdoDoTrechoDesenhado", () => ({ resolverRdoDoTrecho }));
 vi.mock("../../rdos/rdoDraftCreation", () => ({
   createAndPersistLocalPendingRdoDraft,
@@ -103,6 +107,8 @@ function leitura(overrides: Partial<LeituraMapaObra> = {}): LeituraMapaObra {
 beforeEach(() => {
   carregarMapaObra.mockReset();
   registrarTrechoDesenhado.mockReset();
+  encerrarGeometria.mockReset();
+  encerrarGeometria.mockResolvedValue({ id: "ponto-1" });
   carregarMapaObra.mockResolvedValue(leitura());
   registrarTrechoDesenhado.mockResolvedValue({ id: "geo-1" });
   resolverRdoDoTrecho.mockReset();
@@ -118,7 +124,64 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+function pontoOperacional(id: string) {
+  return {
+    id,
+    categoria: "PONTO_OPERACIONAL",
+    objetoTipo: "OBRA",
+    objetoId: "obra-1",
+    geometry: { type: "Point" as const, coordinates: [-47.4, -22.5] },
+    properties: { observadoEm: "2026-08-04T12:00:00.000Z" },
+    fonte: "CAPTURA_CAMPO",
+    versao: 1,
+    validoDesde: "2026-08-04T12:00:00.000Z",
+    validoAte: null,
+  };
+}
+
 describe("RodoviaWorkspace", () => {
+  /**
+   * encerrarGeometria já existia inteiro e não tinha por onde ser chamado.
+   * Uma marcação feita no lugar errado ficava no mapa para sempre — e o mapa é
+   * lido como evidência, então ponto que ninguém tira vira afirmação que
+   * ninguém desmente.
+   */
+  it("encerra o ponto operacional com o motivo declarado", async () => {
+    const user = userEvent.setup();
+    carregarMapaObra.mockResolvedValue(
+      leitura({ dados: { obra, features: [pontoOperacional("ponto-1")] } }),
+    );
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+
+    await user.click(await screen.findByRole("button", { name: "Remover" }));
+    await user.type(
+      screen.getByLabelText("Motivo do encerramento"),
+      "Marcação no lugar errado",
+    );
+    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+
+    await waitFor(() =>
+      expect(encerrarGeometria).toHaveBeenCalledWith(
+        "ponto-1",
+        "Marcação no lugar errado",
+      ),
+    );
+  });
+
+  /** Encerrar é registro, e registro sem porquê não explica nada depois. */
+  it("não deixa encerrar sem motivo", async () => {
+    const user = userEvent.setup();
+    carregarMapaObra.mockResolvedValue(
+      leitura({ dados: { obra, features: [pontoOperacional("ponto-1")] } }),
+    );
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+
+    await user.click(await screen.findByRole("button", { name: "Remover" }));
+
+    expect(screen.getByRole("button", { name: "Confirmar" })).toBeDisabled();
+    expect(encerrarGeometria).not.toHaveBeenCalled();
+  });
+
   it("mostra os dois painéis lado a lado quando há coordenada", async () => {
     render(<RodoviaWorkspace obra={obra} podeDesenhar={false} />);
 

@@ -470,3 +470,63 @@
   justify-content: flex-end;
   margin-bottom: 8px;
 }
+
+/*
+ * Pontos operacionais registrados.
+ *
+ * A lista existe porque encerrar um ponto precisava de um lugar de onde ser
+ * pedido: a capacidade já estava escrita e sem porta. Cada linha mostra o que
+ * o ponto afirma e quando, que é o mínimo para alguém decidir se aquilo deve
+ * sair do mapa.
+ */
+.rodovia-pontos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+}
+
+.rodovia-pontos h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.rodovia-pontos-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rodovia-pontos-lista > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rodovia-ponto-rotulo {
+  font-weight: 600;
+}
+
+/*
+ * O pedido de motivo ocupa a linha inteira e empurra o resto para baixo, em
+ * vez de disputar espaço com o rótulo: quem está justificando um encerramento
+ * está escrevendo, não navegando.
+ */
+.rodovia-ponto-remocao {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  flex-basis: 100%;
+}
+
+.rodovia-ponto-remocao label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1 1 16rem;
+}
