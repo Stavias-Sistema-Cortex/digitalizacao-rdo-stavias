@@ -63,33 +63,76 @@ export function popupHtml(properties: Record<string, unknown>): string {
 }
 
 /**
- * Conteúdo do balão, com a lixeira quando o ponto pode sair do mapa.
+ * O id da geometria de que este balão fala.
+ *
+ * <p>Vem das propriedades, e não do `id` da feature, porque o mapa vetorial
+ * descarta identificador de texto e só entrega as propriedades no evento de
+ * clique. Ler do mesmo lugar nos dois mapas é o que permite a lixeira existir
+ * nos dois.
+ */
+export function geometriaDoBalao(
+  properties: Record<string, unknown>,
+): string | null {
+  const id = properties.geometriaId;
+  return typeof id === "string" && id ? id : null;
+}
+
+/**
+ * Só o ponto operacional sai do mapa por aqui.
+ *
+ * <p>Um trecho desenhado pertence ao RDO do dia e sai junto com ele; oferecer
+ * a lixeira na linha do trecho abriria um segundo jeito de apagar o mesmo
+ * trabalho, por fora do apontamento. A localização da obra não é geometria
+ * removível: é o cadastro dela.
+ */
+export function pontoPodeSairDoMapa(
+  properties: Record<string, unknown>,
+): boolean {
+  return (
+    properties.categoria === "PONTO_OPERACIONAL" &&
+    geometriaDoBalao(properties) !== null
+  );
+}
+
+/**
+ * A lixeira do balão, quando aquele ponto pode sair do mapa.
  *
  * <p>Elemento e não texto: o botão precisa de um ouvinte de verdade, e uma
- * string de HTML no balão do Leaflet não tem como carregar um.
- *
- * <p>Só o ponto operacional ganha lixeira. Um trecho desenhado pertence ao RDO
- * do dia e sai junto com ele; oferecer a lixeira na linha do trecho abriria um
- * segundo jeito de apagar o mesmo trabalho, por fora do apontamento.
+ * string de HTML no balão não tem como carregar um. Devolve nulo quando não há
+ * o que remover, para quem monta o balão não precisar repetir a regra.
  */
-export function popupElement(
+export function lixeiraDoBalao(
   properties: Record<string, unknown>,
-  id: string | null,
   aoRemover: ((id: string) => void) | null,
-): HTMLElement {
-  const raiz = document.createElement("div");
-  raiz.className = "leaflet-trecho-popup";
-  raiz.innerHTML = popupHtml(properties);
-  if (!id || !aoRemover || properties.categoria !== "PONTO_OPERACIONAL") {
-    return raiz;
+): HTMLButtonElement | null {
+  const id = geometriaDoBalao(properties);
+  if (!id || !aoRemover || !pontoPodeSairDoMapa(properties)) {
+    return null;
   }
   const botao = document.createElement("button");
   botao.type = "button";
-  botao.className = "leaflet-trecho-remover";
+  botao.className = "mapa-balao-remover";
   botao.title = "Remover ponto operacional";
   botao.setAttribute("aria-label", "Remover ponto operacional");
   botao.innerHTML = LIXEIRA_SVG;
-  botao.addEventListener("click", () => aoRemover(id));
-  raiz.appendChild(botao);
+  botao.addEventListener("click", (evento) => {
+    // O clique é do botão, não do mapa: sem isto o painel vetorial reabre o
+    // balão por baixo da confirmação que acabou de ser pedida.
+    evento.stopPropagation();
+    aoRemover(id);
+  });
+  return botao;
+}
+
+/** Conteúdo do balão do painel Leaflet. */
+export function popupElement(
+  properties: Record<string, unknown>,
+  aoRemover: ((id: string) => void) | null,
+): HTMLElement {
+  const raiz = document.createElement("div");
+  raiz.className = "mapa-balao";
+  raiz.innerHTML = popupHtml(properties);
+  const lixeira = lixeiraDoBalao(properties, aoRemover);
+  if (lixeira) raiz.appendChild(lixeira);
   return raiz;
 }

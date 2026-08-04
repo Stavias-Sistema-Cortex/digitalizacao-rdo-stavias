@@ -15,6 +15,7 @@ import {
   type RascunhoDoTrecho,
 } from "./rascunhoDoTrecho";
 import "./LeafletTrechoMap.css";
+import "./balaoDoMapa.css";
 
 export type {
   ExtremoDoTrecho,
@@ -394,7 +395,6 @@ export function LeafletTrechoMap({
         layer.bindPopup(
           popupElement(
             (feature.properties ?? {}) as Record<string, unknown>,
-            typeof feature.id === "string" ? feature.id : null,
             aoRemoverRef.current ?? null,
           ),
           { closeButton: false },

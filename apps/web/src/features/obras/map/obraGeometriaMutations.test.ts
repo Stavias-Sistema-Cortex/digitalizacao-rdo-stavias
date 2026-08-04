@@ -257,7 +257,12 @@ describe("encerrarGeometria", () => {
     expect(registro.validoAte).not.toBeNull();
   });
 
-  it("não encerra uma geometria que o servidor ainda não confirmou", async () => {
+  /**
+   * Um desenho que nunca subiu não tem o que encerrar no servidor. É a única
+   * recusa que sobrou, e ela é sobre o servidor conhecer a geometria — não
+   * sobre a fila do dispositivo estar em dia.
+   */
+  it("não encerra um desenho que nunca chegou ao servidor", async () => {
     geometriaLocal.registro = {
       id: "geo-2",
       ownerId: "10000000-0000-4000-8000-000000000001",
@@ -278,8 +283,119 @@ describe("encerrarGeometria", () => {
     };
 
     await expect(encerrarGeometria("geo-2", "Trecho concluído")).rejects.toThrow(
-      /ainda não foi confirmada/,
+      /ainda não subiu/,
     );
+    expect(commitLocalMutation).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Um envio que falhou uma vez deixa o registro fora de `SYNCED`, e a
+   * reconciliação com o servidor nunca devolve esse estado — ela pula tudo que
+   * não está sincronizado, justamente para não atropelar trabalho local. A
+   * exigência antiga de `SYNCED` transformava isso num beco: a tela mandava
+   * aguardar uma sincronização que jamais chegaria, e o ponto ficava no mapa
+   * para sempre.
+   */
+  it("encerra mesmo quando o envio anterior falhou", async () => {
+    geometriaLocal.registro = {
+      id: "geo-4",
+      ownerId: "10000000-0000-4000-8000-000000000001",
+      obraId: "obra-1",
+      categoria: "PONTO_OPERACIONAL",
+      objetoTipo: "OBRA",
+      objetoId: "obra-1",
+      geometry: { type: "Point", coordinates: [-47.5, -22.4] },
+      properties: {},
+      fonte: "CAPTURA_CAMPO",
+      status: "ATIVA",
+      validoDesde: "2026-03-01T00:00:00.000Z",
+      validoAte: null,
+      versao: 2,
+      syncStatus: "ERROR",
+      fetchedAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-01T00:00:00.000Z",
+    };
+
+    const registro = await encerrarGeometria("geo-4", "Marcação errada");
+
+    expect(registro.status).toBe("ENCERRADA");
+    expect(ultimaMutacao().baseVersion).toBe(2);
+  });
+
+  /**
+   * O mapa desenha o que veio do servidor mesmo quando a gravação local não
+   * aconteceu — a reconciliação é tolerante a falha de propósito, para o mapa
+   * não sumir por causa dela. O efeito era cruel: a geometria estava visível
+   * na tela e o pedido morria em "não encontrada neste dispositivo".
+   */
+  it("encerra a geometria que só existe na tela", async () => {
+    geometriaLocal.registro = null;
+
+    const registro = await encerrarGeometria("geo-5", "Marcação errada", {
+      id: "geo-5",
+      obraId: "obra-1",
+      categoria: "PONTO_OPERACIONAL",
+      objetoTipo: "OBRA",
+      objetoId: "obra-1",
+      geometry: { type: "Point", coordinates: [-47.5, -22.4] },
+      properties: {},
+      fonte: "CAPTURA_CAMPO",
+      versao: 7,
+      validoDesde: "2026-03-01T00:00:00.000Z",
+    });
+
+    const mutacao = ultimaMutacao();
+    expect(registro.status).toBe("ENCERRADA");
+    expect(mutacao.baseVersion).toBe(7);
+    // Nulo declara a ausência: a pré-condição é que o dispositivo não tinha o
+    // registro, e mandar o reconstruído aqui a faria falhar contra o vazio.
+    expect(mutacao.expectedPrincipalSnapshot).toBeNull();
+  });
+
+  /** A geometria da tela precisa ser a que foi pedida, não outra qualquer. */
+  it("não aceita uma geometria da tela com outro id", async () => {
+    geometriaLocal.registro = null;
+
+    await expect(
+      encerrarGeometria("geo-6", "Marcação errada", {
+        id: "outro",
+        obraId: "obra-1",
+        categoria: "PONTO_OPERACIONAL",
+        objetoTipo: "OBRA",
+        objetoId: "obra-1",
+        geometry: { type: "Point", coordinates: [-47.5, -22.4] },
+        properties: {},
+        fonte: "CAPTURA_CAMPO",
+        versao: 7,
+        validoDesde: "2026-03-01T00:00:00.000Z",
+      }),
+    ).rejects.toThrow(/não encontrada/);
+    expect(commitLocalMutation).not.toHaveBeenCalled();
+  });
+
+  /** Repetir o pedido criaria uma segunda mutação que o servidor recusaria. */
+  it("não repete o encerramento de quem já saiu do mapa", async () => {
+    geometriaLocal.registro = {
+      id: "geo-7",
+      ownerId: "10000000-0000-4000-8000-000000000001",
+      obraId: "obra-1",
+      categoria: "PONTO_OPERACIONAL",
+      objetoTipo: "OBRA",
+      objetoId: "obra-1",
+      geometry: { type: "Point", coordinates: [-47.5, -22.4] },
+      properties: {},
+      fonte: "CAPTURA_CAMPO",
+      status: "ENCERRADA",
+      validoDesde: "2026-03-01T00:00:00.000Z",
+      validoAte: "2026-03-02T00:00:00.000Z",
+      versao: 2,
+      syncStatus: "PENDING_SYNC",
+      fetchedAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-02T00:00:00.000Z",
+    };
+
+    await encerrarGeometria("geo-7", "Marcação errada");
+
     expect(commitLocalMutation).not.toHaveBeenCalled();
   });
 

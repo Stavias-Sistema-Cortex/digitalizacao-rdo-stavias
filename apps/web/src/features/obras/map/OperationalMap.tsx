@@ -35,6 +35,7 @@ import {
   fasesPresentes,
 } from "./execucaoDoTrecho";
 import "./OperationalMap.css";
+import "./balaoDoMapa.css";
 
 interface OperationalMapProps {
   obra: WorksiteMapPoint;
@@ -60,6 +61,14 @@ interface OperationalMapProps {
    * metade Leaflet nunca mostrem obras diferentes lado a lado.
    */
   filtro?: FiltroDoMapa;
+  /**
+   * Pedido de remoção do ponto operacional aberto no balão deste painel.
+   *
+   * <p>Os dois mapas leem a mesma geometria, então apagar num apaga no outro:
+   * é a mesma feição, e quem está com o mapa vetorial aberto não deveria
+   * precisar trocar de painel para tirar uma marcação errada da tela.
+   */
+  onRemoverPonto?: ((id: string) => void) | null;
 }
 
 function firstCoordinate(
@@ -98,6 +107,7 @@ function MapCanvas({
   centerRequest,
   camera,
   onCamera,
+  onRemoverPonto,
 }: {
   provider: MapProvider;
   features: OperationalFeatureCollection;
@@ -106,6 +116,7 @@ function MapCanvas({
   centerRequest: number;
   camera: CameraDaObra | null;
   onCamera: ((camera: CameraDaObra) => void) | null;
+  onRemoverPonto: ((id: string) => void) | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<OperationalMapController | null>(null);
@@ -183,10 +194,12 @@ function MapCanvas({
   const featuresRef = useRef(features);
   const centerRef = useRef(center);
   const modeRef = useRef(mode);
+  const aoRemoverRef = useRef(onRemoverPonto);
   useEffect(() => {
     featuresRef.current = features;
     centerRef.current = center;
     modeRef.current = mode;
+    aoRemoverRef.current = onRemoverPonto;
   });
 
   /**
@@ -228,6 +241,9 @@ function MapCanvas({
       features: featuresRef.current,
       center: centerRef.current,
       mode: modeRef.current,
+      // O mapa é montado uma vez; o balão precisa chamar o destino corrente,
+      // e não o que valia na montagem.
+      onRemoverPonto: (id) => aoRemoverRef.current?.(id),
       onRuntimeError: (message) => {
         if (!cancelled && !trocando) setError(message);
       },
@@ -386,6 +402,7 @@ export function OperationalMap({
   camera = null,
   onCamera = null,
   filtro = FILTRO_VAZIO,
+  onRemoverPonto = null,
 }: OperationalMapProps) {
   const defaultProvider = useMemo(() => resolveMapProvider(), []);
   const providers = useMemo(() => availableMapProviders(), []);
@@ -523,6 +540,7 @@ export function OperationalMap({
           centerRequest={centerRequest}
           camera={camera}
           onCamera={onCamera}
+          onRemoverPonto={onRemoverPonto}
         />
       )}
 

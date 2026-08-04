@@ -175,7 +175,7 @@ describe("RodoviaWorkspace", () => {
    * lido como evidência, então ponto que ninguém tira vira afirmação que
    * ninguém desmente.
    */
-  it("encerra o ponto escolhido no mapa com o motivo declarado", async () => {
+  it("encerra o ponto escolhido no mapa depois de confirmar", async () => {
     const user = userEvent.setup();
     carregarMapaObra.mockResolvedValue(
       leitura({
@@ -189,18 +189,71 @@ describe("RodoviaWorkspace", () => {
     await screen.findByTestId("mapa-leaflet");
 
     clicarNaLixeira("ponto-2");
-    await user.type(
-      await screen.findByLabelText("Motivo do encerramento"),
-      "Marcação no lugar errado",
+    await user.click(
+      await screen.findByRole("button", { name: "Remover" }),
     );
-    await user.click(screen.getByRole("button", { name: "Encerrar ponto" }));
 
     await waitFor(() =>
       expect(encerrarGeometria).toHaveBeenCalledWith(
         "ponto-2",
-        "Marcação no lugar errado",
+        expect.any(String),
+        expect.objectContaining({ id: "ponto-2", obraId: "obra-1" }),
       ),
     );
+  });
+
+  /**
+   * O encerramento é gravado no dispositivo e sobe depois; até subir, o
+   * servidor continua respondendo o ponto como ativo. Deixar a marcação
+   * desenhada até a fila andar é o que fazia a remoção parecer que não tinha
+   * funcionado — e os dois painéis leem a mesma leitura, então precisam
+   * perdê-la juntos.
+   */
+  it("tira o ponto dos dois mapas na hora, sem esperar a fila subir", async () => {
+    const user = userEvent.setup();
+    carregarMapaObra.mockResolvedValue(
+      leitura({
+        dados: {
+          obra,
+          features: [pontoOperacional("ponto-1"), pontoOperacional("ponto-2")],
+        },
+      }),
+    );
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    clicarNaLixeira("ponto-2");
+    await user.click(await screen.findByRole("button", { name: "Remover" }));
+
+    await waitFor(() =>
+      expect(
+        leaflet.ultimasFeatures.features.map((feature) => feature.id),
+      ).not.toContain("ponto-2"),
+    );
+    const vetorial = satelite.ultimaLeitura as {
+      dados: { features: { id: string }[] };
+    };
+    expect(vetorial.dados.features.map((feature) => feature.id)).toEqual([
+      "ponto-1",
+    ]);
+  });
+
+  /** Desistir tem que ser tão fácil quanto pedir. */
+  it("não remove nada quando a confirmação é cancelada", async () => {
+    const user = userEvent.setup();
+    carregarMapaObra.mockResolvedValue(
+      leitura({ dados: { obra, features: [pontoOperacional("ponto-1")] } }),
+    );
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    clicarNaLixeira("ponto-1");
+    await user.click(await screen.findByRole("button", { name: "Cancelar" }));
+
+    expect(encerrarGeometria).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Remover" }),
+    ).not.toBeInTheDocument();
   });
 
   /**
@@ -227,8 +280,14 @@ describe("RodoviaWorkspace", () => {
     ).not.toBeInTheDocument();
   });
 
-  /** Encerrar é registro, e registro sem porquê não explica nada depois. */
-  it("não deixa encerrar sem motivo", async () => {
+  /**
+   * Encerrar continua sendo registro, e registro sem porquê não explica nada
+   * a quem ler depois. O que saiu foi a exigência de digitar o motivo: o
+   * porquê é sempre o mesmo — alguém revisou o mapa e tirou dali uma marcação
+   * — e cobrá-lo por escrito era atrito onde não ajudava ninguém.
+   */
+  it("grava um motivo mesmo sem pedir que alguém o digite", async () => {
+    const user = userEvent.setup();
     carregarMapaObra.mockResolvedValue(
       leitura({ dados: { obra, features: [pontoOperacional("ponto-1")] } }),
     );
@@ -236,11 +295,14 @@ describe("RodoviaWorkspace", () => {
     await screen.findByTestId("mapa-leaflet");
 
     clicarNaLixeira("ponto-1");
-
     expect(
-      await screen.findByRole("button", { name: "Encerrar ponto" }),
-    ).toBeDisabled();
-    expect(encerrarGeometria).not.toHaveBeenCalled();
+      screen.queryByLabelText("Motivo do encerramento"),
+    ).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Remover" }));
+
+    await waitFor(() => expect(encerrarGeometria).toHaveBeenCalled());
+    const motivo = encerrarGeometria.mock.calls.at(-1)?.[1] as string;
+    expect(motivo.trim().length).toBeGreaterThan(0);
   });
 
   it("mostra os dois painéis lado a lado quando há coordenada", async () => {

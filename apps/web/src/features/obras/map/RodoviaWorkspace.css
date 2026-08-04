@@ -453,48 +453,106 @@
 }
 
 /*
- * Encerramento do ponto operacional.
+ * "Remover este ponto do mapa?"
  *
- * Aparece só depois da lixeira no balão do ponto, e por isso não precisa
- * nomear qual marcação é: quem chegou aqui acabou de apontar para ela no
- * mapa. O cabeçalho repete a data como conferência, não como identificação.
+ * Uma pergunta e duas saídas. Já foi uma lista de todos os pontos — inútil,
+ * porque todo ponto operacional se chama "Ponto operacional" — e depois um
+ * painel vermelho pedindo justificativa por escrito. Nenhum dos dois ajudava
+ * quem só queria tirar do mapa uma marcação feita no lugar errado.
  *
- * Antes disto havia uma lista de todos os pontos, e ela não servia: todo
- * ponto operacional se chama "Ponto operacional", então a tela repetia o
- * mesmo rótulo dezenas de vezes e não dava para saber qual apagar.
+ * O bloco escuro é o mesmo da identidade do Córtex, e o amarelo fica onde
+ * sempre fica: na ação que a pessoa veio fazer.
  */
-.rodovia-ponto-remocao {
+.rodovia-confirma {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(24 33 31 / 38%);
+  backdrop-filter: blur(2px);
+  animation: rodovia-confirma-fundo 140ms ease-out;
+}
+
+.rodovia-confirma__caixa {
+  width: min(22rem, 100%);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border: 1px solid var(--color-danger);
-  border-left-width: 4px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--color-danger) 5%, transparent);
+  gap: 0.35rem;
+  padding: 1.25rem;
+  border-radius: var(--radius-container);
+  background: var(--color-ink);
+  color: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+  animation: rodovia-confirma-caixa 160ms cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
-.rodovia-ponto-remocao__cabecalho {
+.rodovia-confirma__caixa p {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.rodovia-confirma__caixa small {
+  color: color-mix(in srgb, var(--color-surface) 62%, transparent);
+}
+
+.rodovia-confirma__acoes {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+  justify-content: flex-end;
   gap: 0.5rem;
+  margin-top: 0.9rem;
 }
 
-.rodovia-ponto-remocao__cabecalho time {
-  font-size: 0.8125rem;
-  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+.rodovia-confirma__acoes button {
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-control);
+  font-weight: 600;
+  cursor: pointer;
 }
 
-/* Quem está justificando um encerramento está escrevendo, não navegando. */
-.rodovia-ponto-remocao label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+.rodovia-confirma__cancelar {
+  border: 1px solid color-mix(in srgb, var(--color-surface) 28%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, var(--color-surface) 82%, transparent);
 }
 
-.rodovia-ponto-remocao__acoes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+.rodovia-confirma__cancelar:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-surface) 52%, transparent);
+  color: var(--color-surface);
+}
+
+/* A ação que a pessoa veio fazer, na cor da marca. */
+.rodovia-confirma__remover {
+  border: 1px solid var(--color-brand-yellow);
+  background: var(--color-brand-yellow);
+  color: var(--color-ink);
+}
+
+.rodovia-confirma__remover:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.rodovia-confirma__acoes button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+@keyframes rodovia-confirma-fundo {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes rodovia-confirma-caixa {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rodovia-confirma,
+  .rodovia-confirma__caixa {
+    animation: none;
+  }
 }

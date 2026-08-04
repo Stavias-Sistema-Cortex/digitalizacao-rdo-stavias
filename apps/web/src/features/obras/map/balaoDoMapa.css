@@ -1,0 +1,44 @@
+/*
+ * O balão do mapa, igual nos dois painéis.
+ *
+ * A lixeira fica no canto do balão, encostada no título do ponto: é ali que se
+ * sabe qual marcação está sendo apagada — e os dois mapas mostram a mesma
+ * geometria, então a ação precisa parecer a mesma nos dois. Discreta em
+ * repouso e vermelha ao toque: apagar não é o que o balão convida a fazer, é o
+ * que ele permite quando alguém já decidiu.
+ */
+.mapa-balao {
+  position: relative;
+}
+
+.mapa-balao:has(.mapa-balao-remover) {
+  padding-right: 26px;
+}
+
+.mapa-balao-remover {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.mapa-balao-remover svg {
+  width: 15px;
+  height: 15px;
+}
+
+.mapa-balao-remover:hover,
+.mapa-balao-remover:focus-visible {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}

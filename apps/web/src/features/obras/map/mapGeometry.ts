@@ -197,6 +197,11 @@ export function buildOperationalFeatureCollection(
       geometry: feature.geometry,
       properties: {
         ...feature.properties,
+        // O id viaja também nas propriedades porque o mapa vetorial não
+        // entrega o `id` da feature no evento de clique — ele descarta
+        // identificador de texto. Sem isto, só o painel Leaflet saberia de
+        // qual geometria o balão fala, e a lixeira existiria num mapa só.
+        geometriaId: feature.id,
         categoria: feature.categoria,
         objetoTipo: feature.objetoTipo,
         objetoId: feature.objetoId,

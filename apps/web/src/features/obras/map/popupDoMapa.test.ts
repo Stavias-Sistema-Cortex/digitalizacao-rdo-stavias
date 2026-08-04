@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { popupElement } from "./popupDoMapa";
 
 function lixeira(elemento: HTMLElement): HTMLButtonElement | null {
-  return elemento.querySelector("button.leaflet-trecho-remover");
+  return elemento.querySelector("button.mapa-balao-remover");
 }
 
 /**
@@ -22,8 +22,7 @@ describe("lixeira no balão do ponto", () => {
   it("chama de volta com o ponto que foi aberto", () => {
     const aoRemover = vi.fn();
     const balao = popupElement(
-      { categoria: "PONTO_OPERACIONAL" },
-      "ponto-7",
+      { categoria: "PONTO_OPERACIONAL", geometriaId: "ponto-7" },
       aoRemover,
     );
 
@@ -41,11 +40,19 @@ describe("lixeira no balão do ponto", () => {
     const aoRemover = vi.fn();
 
     expect(
-      lixeira(popupElement({ categoria: "TRECHO" }, "geo-1", aoRemover)),
+      lixeira(
+        popupElement(
+          { categoria: "TRECHO", geometriaId: "geo-1" },
+          aoRemover,
+        ),
+      ),
     ).toBeNull();
     expect(
       lixeira(
-        popupElement({ categoria: "LOCALIZACAO_OBRA" }, "obra-1", aoRemover),
+        popupElement(
+          { categoria: "LOCALIZACAO_OBRA", geometriaId: "obra-1" },
+          aoRemover,
+        ),
       ),
     ).toBeNull();
   });
@@ -53,7 +60,12 @@ describe("lixeira no balão do ponto", () => {
   /** Sem quem atenda, a lixeira seria um botão que não faz nada. */
   it("não desenha lixeira quando ninguém pode encerrar", () => {
     expect(
-      lixeira(popupElement({ categoria: "PONTO_OPERACIONAL" }, "p1", null)),
+      lixeira(
+        popupElement(
+          { categoria: "PONTO_OPERACIONAL", geometriaId: "p1" },
+          null,
+        ),
+      ),
     ).toBeNull();
   });
 
@@ -61,18 +73,15 @@ describe("lixeira no balão do ponto", () => {
    * Sem identidade não há o que encerrar: o pedido chegaria ao servidor sem
    * dizer qual geometria sai do mapa.
    */
-  it("não desenha lixeira em feature sem id", () => {
+  it("não desenha lixeira sem o id da geometria nas propriedades", () => {
     expect(
-      lixeira(
-        popupElement({ categoria: "PONTO_OPERACIONAL" }, null, vi.fn()),
-      ),
+      lixeira(popupElement({ categoria: "PONTO_OPERACIONAL" }, vi.fn())),
     ).toBeNull();
   });
 
   it("mantém o que o balão já dizia sobre o ponto", () => {
     const balao = popupElement(
-      { categoria: "PONTO_OPERACIONAL", nome: "Frente 3" },
-      "p1",
+      { categoria: "PONTO_OPERACIONAL", geometriaId: "p1", nome: "Frente 3" },
       vi.fn(),
     );
 

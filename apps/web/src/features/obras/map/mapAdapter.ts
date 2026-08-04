@@ -16,6 +16,7 @@ import {
   TOKEN_POR_FASE,
 } from "./execucaoDoTrecho";
 import { mapboxAccessToken, type MapProvider } from "./mapProvider";
+import { lixeiraDoBalao } from "./popupDoMapa";
 
 import type { CameraDaObra } from "./cameraDaObra";
 
@@ -54,6 +55,8 @@ interface MountOptions {
    * retângulo vazio.
    */
   onFalhaDeBasemap?: () => void;
+  /** Pedido de remoção do ponto operacional aberto no balão. */
+  onRemoverPonto?: ((id: string) => void) | null;
 }
 
 const SOURCE_ID = "cortex-operational";
@@ -300,9 +303,12 @@ function enquadrar(
  * qualquer metadado técnico, e omite silenciosamente o que a geometria não
  * registrou em vez de imprimir rótulos vazios.
  */
-function popupContent(properties: Record<string, unknown>): HTMLDivElement {
+function popupContent(
+  properties: Record<string, unknown>,
+  aoRemoverPonto: ((id: string) => void) | null,
+): HTMLDivElement {
   const container = document.createElement("div");
-  container.className = "operational-map-popup";
+  container.className = "operational-map-popup mapa-balao";
 
   const title = document.createElement("strong");
   title.textContent = String(
@@ -331,6 +337,10 @@ function popupContent(properties: Record<string, unknown>): HTMLDivElement {
     origem.textContent = `Origem: ${rotuloDaFonte(properties.fonte)}`;
     container.append(origem);
   }
+  // A mesma lixeira do painel Leaflet, pela mesma regra: apagar o ponto num
+  // mapa apaga nos dois, porque os dois leem a mesma geometria.
+  const lixeira = lixeiraDoBalao(properties, aoRemoverPonto);
+  if (lixeira) container.append(lixeira);
   return container;
 }
 
@@ -396,6 +406,7 @@ function addOperationalLayers(
   map: GlMapaOperacional,
   features: OperationalFeatureCollection,
   criarPopup: () => GlPopupCompativel,
+  aoRemoverPonto: ((id: string) => void) | null,
 ): void {
   map.addSource(SOURCE_ID, {
     type: "geojson",
@@ -533,7 +544,7 @@ function addOperationalLayers(
       const properties = event.features?.[0]?.properties ?? {};
       criarPopup()
         .setLngLat(event.lngLat)
-        .setDOMContent(popupContent(properties))
+        .setDOMContent(popupContent(properties, aoRemoverPonto))
         .addTo(map as never);
     });
     map.on("mouseenter", layerId, () => {
@@ -690,7 +701,12 @@ function prepararMapa(
       } catch {
         volume = false;
       }
-      addOperationalLayers(map, options.features, extensao.criarPopup);
+      addOperationalLayers(
+        map,
+        options.features,
+        extensao.criarPopup,
+        options.onRemoverPonto ?? null,
+      );
       enquadrado = enquadrar(map, options.features);
       if (options.mode === "3d" && volume) {
         extensao.alternarVolume(true);

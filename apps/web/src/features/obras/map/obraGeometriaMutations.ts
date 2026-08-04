@@ -227,26 +227,100 @@ export async function registrarPontoDeCampo(input: {
   );
 }
 
-/** Encerra a vigência de uma geometria, preservando o histórico. */
+/**
+ * Geometria que a tela já tem em mãos, para o caso de o dispositivo não a ter.
+ *
+ * <p>O mapa desenha o que veio do servidor mesmo quando a gravação local não
+ * aconteceu — a reconciliação com o IndexedDB é tolerante a falha de
+ * propósito, para o mapa não sumir por causa dela. O efeito colateral era
+ * cruel: a geometria aparecia na tela, alguém mandava encerrá-la, e o pedido
+ * morria em "não encontrada neste dispositivo" contra um ponto que estava
+ * visível ali. Quem clica na lixeira já provou que a geometria existe.
+ */
+export interface GeometriaVisivelNoMapa {
+  id: string;
+  obraId: string;
+  categoria: string;
+  objetoTipo: string | null;
+  objetoId: string | null;
+  geometry: unknown;
+  properties: Record<string, unknown>;
+  fonte: string;
+  versao: number;
+  validoDesde: string;
+}
+
+function registroApartirDoMapa(
+  visivel: GeometriaVisivelNoMapa,
+  ownerId: string,
+  agora: string,
+): ObraGeometriaLocalRecord {
+  return {
+    id: visivel.id,
+    ownerId,
+    obraId: visivel.obraId,
+    categoria: visivel.categoria,
+    objetoTipo: visivel.objetoTipo,
+    objetoId: visivel.objetoId,
+    geometry: visivel.geometry,
+    properties: visivel.properties,
+    fonte: visivel.fonte,
+    status: "ATIVA",
+    validoDesde: visivel.validoDesde,
+    validoAte: null,
+    versao: visivel.versao,
+    syncStatus: "SYNCED",
+    fetchedAt: agora,
+    updatedAt: agora,
+  } as ObraGeometriaLocalRecord;
+}
+
+/**
+ * Encerra a vigência de uma geometria, preservando o histórico.
+ *
+ * <p>Aceita a geometria que a tela está mostrando como segunda fonte. Antes
+ * exigia que o registro estivesse no dispositivo e com a sincronização em dia,
+ * e as duas exigências transformavam estados normais em becos sem saída: uma
+ * gravação local que não aconteceu tornava o ponto impossível de remover, e um
+ * envio que falhou uma vez deixava o registro fora de `SYNCED` para sempre —
+ * a reconciliação com o servidor nunca devolve esse estado. A mensagem mandava
+ * aguardar uma sincronização que jamais chegaria, e o ponto ficava no mapa.
+ *
+ * <p>A única condição que sobra é a que importa de verdade: o servidor precisa
+ * conhecer a geometria. Um desenho que nunca subiu não tem o que encerrar lá.
+ */
 export async function encerrarGeometria(
   featureId: string,
   motivo: string,
+  visivelNoMapa?: GeometriaVisivelNoMapa,
 ): Promise<ObraGeometriaLocalRecord> {
-  const existing = await lerGeometriaLocal(featureId);
-  if (!existing) {
-    throw new Error("Geometria não encontrada neste dispositivo.");
-  }
-  if (existing.syncStatus !== "SYNCED") {
-    throw new Error(
-      "A geometria ainda não foi confirmada pelo servidor. Aguarde a sincronização antes de encerrá-la.",
-    );
-  }
   const razao = motivo.trim();
   if (!razao) {
     throw new Error("Motivo do encerramento obrigatório.");
   }
 
   const identity = await geometriaMutationIdentity();
+  const local = await lerGeometriaLocal(featureId);
+  const agoraParaFallback = new Date().toISOString();
+  const existing =
+    local ??
+    (visivelNoMapa && visivelNoMapa.id === featureId
+      ? registroApartirDoMapa(visivelNoMapa, identity.userId, agoraParaFallback)
+      : null);
+  if (!existing) {
+    throw new Error("Geometria não encontrada neste dispositivo.");
+  }
+  if (existing.status === "ENCERRADA") {
+    // Já saiu do mapa: repetir o pedido criaria uma segunda mutação que o
+    // servidor recusaria, e a recusa ficaria travando a fila.
+    return existing;
+  }
+  if (existing.versao <= 0) {
+    throw new Error(
+      "Este desenho ainda não subiu para o servidor. Sincronize antes de encerrá-lo.",
+    );
+  }
+
   const agora = new Date().toISOString();
   const next: ObraGeometriaLocalRecord = {
     ...existing,
@@ -269,7 +343,11 @@ export async function encerrarGeometria(
     previousSnapshot: transportSnapshot(existing),
     nextSnapshot: { ...transportSnapshot(next), motivo: razao },
     principalSnapshot: { ...next },
-    expectedPrincipalSnapshot: { ...existing },
+    // Nulo declara a ausência: quando a geometria só existia na tela, a
+    // pré-condição é justamente que o dispositivo não a tinha. Mandar o
+    // registro reconstruído aqui faria a pré-condição falhar contra um store
+    // vazio e o encerramento morreria com "a entidade local mudou".
+    expectedPrincipalSnapshot: local ? { ...local } : null,
     eventType: "GEOMETRIA_ENCERRADA",
     colaboradorId: identity.userId,
     relatedEntities: [{ tipo: "OBRA", id: existing.obraId }],
