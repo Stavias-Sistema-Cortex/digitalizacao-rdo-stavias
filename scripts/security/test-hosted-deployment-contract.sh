@@ -85,6 +85,12 @@ expected_env = {
   "CORTEX_CORS_ALLOWED_ORIGINS" => { "sync" => false },
   "CORTEX_AUTH_COOKIE_SECURE" => { "value" => "true" },
   "CORTEX_AUTH_COOKIE_SAME_SITE" => { "value" => "Lax" },
+  # Vazio é o padrão e é seguro: sem faixa confiável, X-Forwarded-For é
+  # ignorado e vale o endereço de quem conectou. O que muda ao preencher é a
+  # precisão do balde por origem do login — atrás do proxy, sem isto, todas as
+  # tentativas chegam com o mesmo IP e quem segura é só o piso global. Fica
+  # como sync:false porque a faixa é da hospedagem, não do repositório.
+  "CORTEX_AUTH_TRUSTED_PROXY_CIDRS" => { "sync" => false },
   "CORTEX_AUTH_WEBAUTHN_RP_ID" => { "sync" => false },
   "CORTEX_AUTH_WEBAUTHN_RP_NAME" => { "value" => "Córtex" },
   "CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS" => { "sync" => false },
