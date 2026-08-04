@@ -14,6 +14,8 @@ import type { LeituraMapaObra } from "./obraMapApi";
 
 const carregarMapaObra = vi.hoisted(() => vi.fn());
 const registrarTrechoDesenhado = vi.hoisted(() => vi.fn());
+const resolverRdoDoTrecho = vi.hoisted(() => vi.fn());
+const createAndPersistLocalPendingRdoDraft = vi.hoisted(() => vi.fn());
 const leaflet = vi.hoisted(() => ({
   marcando: null as string | null,
   ultimoRascunho: null as {
@@ -29,6 +31,10 @@ const leaflet = vi.hoisted(() => ({
 
 vi.mock("./obraMapApi", () => ({ carregarMapaObra }));
 vi.mock("./obraGeometriaMutations", () => ({ registrarTrechoDesenhado }));
+vi.mock("./rdoDoTrechoDesenhado", () => ({ resolverRdoDoTrecho }));
+vi.mock("../../rdos/rdoDraftCreation", () => ({
+  createAndPersistLocalPendingRdoDraft,
+}));
 const satelite = vi.hoisted(() => ({
   ultimaLeitura: undefined as unknown,
   ultimoFiltro: undefined as unknown,
@@ -99,6 +105,10 @@ beforeEach(() => {
   registrarTrechoDesenhado.mockReset();
   carregarMapaObra.mockResolvedValue(leitura());
   registrarTrechoDesenhado.mockResolvedValue({ id: "geo-1" });
+  resolverRdoDoTrecho.mockReset();
+  resolverRdoDoTrecho.mockResolvedValue({ rdoId: "rdo-1", criaRdo: false });
+  createAndPersistLocalPendingRdoDraft.mockReset();
+  createAndPersistLocalPendingRdoDraft.mockResolvedValue({});
   leaflet.marcando = null;
   leaflet.ultimoRascunho = null;
   leaflet.marcar = null;

@@ -148,19 +148,28 @@ async function enfileirarNovaGeometria(
  */
 export async function registrarTrechoDesenhado(input: {
   obraId: string;
-  objetoId: string;
+  /** RDO do dia que este desenho representa. */
+  rdoId: string;
   pontos: readonly PontoGeografico[];
   propriedades?: Record<string, unknown>;
 }): Promise<ObraGeometriaLocalRecord> {
   if (input.pontos.length < 2) {
     throw new Error("Um trecho exige ao menos o ponto inicial e o final.");
   }
+  if (!input.rdoId.trim()) {
+    throw new Error("Um trecho desenhado pertence ao RDO do dia.");
+  }
   return enfileirarNovaGeometria(
     {
       obraId: input.obraId,
       categoria: "TRECHO",
-      objetoTipo: "TRECHO",
-      objetoId: input.objetoId,
+      // Era "TRECHO" apontando para a própria obra: uma auto-referência, sem
+      // entidade do outro lado. O desenho não sabia de que dia nem de que
+      // apontamento falava, então sobrevivia ao RDO que representava e podia
+      // declarar uma rodovia que ninguém conferia. Desenhar e apontar são duas
+      // portas para o mesmo registro.
+      objetoTipo: "RDO",
+      objetoId: input.rdoId,
       geometry: {
         type: "LineString",
         coordinates: input.pontos.map((ponto) => [ponto.lng, ponto.lat]),

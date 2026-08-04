@@ -61,7 +61,7 @@ describe("registrarTrechoDesenhado", () => {
   it("enfileira o trecho pelo outbox canônico com a linha realmente marcada", async () => {
     const registro = await registrarTrechoDesenhado({
       obraId: "obra-1",
-      objetoId: "obra-1",
+      rdoId: "rdo-do-dia",
       pontos: [
         { lat: -22.439459, lng: -47.567267 },
         { lat: -22.449263, lng: -47.558866 },
@@ -93,7 +93,7 @@ describe("registrarTrechoDesenhado", () => {
   it("grava o registro principal no store de geometrias", async () => {
     await registrarTrechoDesenhado({
       obraId: "obra-1",
-      objetoId: "obra-1",
+      rdoId: "rdo-do-dia",
       pontos: [
         { lat: -22.43, lng: -47.56 },
         { lat: -22.44, lng: -47.55 },
@@ -110,25 +110,27 @@ describe("registrarTrechoDesenhado", () => {
     expect(plano[0].principal).toBe(true);
   });
 
-  it("relaciona a geometria à obra e mantém o assunto do desenho no payload", async () => {
+  it("relaciona o desenho ao RDO do dia, além da obra", async () => {
     await registrarTrechoDesenhado({
       obraId: "obra-1",
-      objetoId: "obra-1",
+      rdoId: "rdo-do-dia",
       pontos: [
         { lat: -22.43, lng: -47.56 },
         { lat: -22.44, lng: -47.55 },
       ],
     });
 
-    // "TRECHO" é uma categoria de desenho: não tem tabela nem obra própria, e
-    // o servidor recusa o push inteiro ao recebê-la como entidade relacionada.
-    // O assunto continua descrito no payload, que é de onde a ontologia lê.
+    // O assunto do desenho era "TRECHO" apontando para a própria obra: uma
+    // auto-referência, sem entidade do outro lado. O desenho não sabia de que
+    // dia falava, então sobrevivia ao apontamento que representava. Agora ele
+    // aponta para o RDO, e a ontologia ganha a relação junto.
     expect(ultimaMutacao().relatedEntities).toEqual([
       { tipo: "OBRA", id: "obra-1" },
+      { tipo: "RDO", id: "rdo-do-dia" },
     ]);
     expect(ultimaMutacao().nextSnapshot).toMatchObject({
-      objetoTipo: "TRECHO",
-      objetoId: "obra-1",
+      objetoTipo: "RDO",
+      objetoId: "rdo-do-dia",
     });
   });
 
@@ -151,7 +153,7 @@ describe("registrarTrechoDesenhado", () => {
     await expect(
       registrarTrechoDesenhado({
         obraId: "obra-1",
-        objetoId: "obra-1",
+        rdoId: "rdo-do-dia",
         pontos: [{ lat: -22.43, lng: -47.56 }],
       }),
     ).rejects.toThrow(/ponto inicial e o final/);
@@ -164,7 +166,7 @@ describe("registrarTrechoDesenhado", () => {
     await expect(
       registrarTrechoDesenhado({
         obraId: "obra-1",
-        objetoId: "obra-1",
+        rdoId: "rdo-do-dia",
         pontos: [
           { lat: -22.43, lng: -47.56 },
           { lat: -22.44, lng: -47.55 },

@@ -411,7 +411,9 @@ async function jornadaSemSinal(): Promise<{
 
   const trecho = await registrarTrechoDesenhado({
     obraId: OBRA_ID,
-    objetoId: crypto.randomUUID(),
+    // O desenho pertence ao apontamento do dia: é o que faz o trecho sumir
+    // quando o RDO é apagado.
+    rdoId: RDO_ID,
     pontos: [
       { lat: -23.55, lng: -46.63 },
       { lat: -23.56, lng: -46.64 },

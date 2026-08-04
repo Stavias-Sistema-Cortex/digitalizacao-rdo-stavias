@@ -43,6 +43,9 @@ import {
   registrarPontoDeCampo,
   registrarTrechoDesenhado,
 } from "./obraGeometriaMutations";
+import { hojeIso } from "./execucaoDoTrecho";
+import { resolverRdoDoTrecho } from "./rdoDoTrechoDesenhado";
+import { createAndPersistLocalPendingRdoDraft } from "../../rdos/rdoDraftCreation";
 import {
   CapturaDeCampoError,
   lerPosicaoDeCampo,
@@ -393,9 +396,46 @@ export function RodoviaWorkspace({
     }
     setSalvandoCadastro(true);
     try {
+      // Desenhar e apontar são duas portas para o mesmo registro. O trecho
+      // pertence ao RDO do dia: é o que faz o desenho sumir quando o
+      // apontamento é apagado, e o que impede uma rodovia declarada aqui de
+      // divergir da obra sem nada reconciliar.
+      const data = hojeIso();
+      const { rdoId, criaRdo } = await resolverRdoDoTrecho({
+        obraId: obra.id,
+        data,
+      });
+      if (criaRdo) {
+        // Sem apontamento do dia, o desenho abre um. Nasce pendente de
+        // contexto, como qualquer RDO criado sem o recibo da obra em mãos:
+        // sobe quando o contexto chegar, e até lá o trecho já aparece neste
+        // aparelho como trabalho do dia.
+        await createAndPersistLocalPendingRdoDraft(
+          {
+            obra: {
+              id: obra.id,
+              codigoContrato: null,
+              codigoCw: null,
+              nome: obra.nome,
+              cliente: null,
+              cidade: null,
+              uf: null,
+              rodovia: null,
+              status: null,
+            },
+            data,
+            previousRdo: null,
+            previousWorkforce: [],
+            programacoes: [],
+            colaboradores: [],
+            equipamentos: [],
+          },
+          { draftId: rdoId },
+        );
+      }
       await registrarTrechoDesenhado({
         obraId: obra.id,
-        objetoId: obra.id,
+        rdoId,
         pontos: [inicio, fim],
         propriedades: propriedadesDoCadastro(cadastro, extensaoDaLinha),
       });
@@ -417,7 +457,7 @@ export function RodoviaWorkspace({
     } finally {
       setSalvandoCadastro(false);
     }
-  }, [cadastro, extensaoDaLinha, obra.id, rascunho, recarregar]);
+  }, [cadastro, extensaoDaLinha, obra.id, obra.nome, rascunho, recarregar]);
 
   /**
    * Registra onde a equipe está agora.
