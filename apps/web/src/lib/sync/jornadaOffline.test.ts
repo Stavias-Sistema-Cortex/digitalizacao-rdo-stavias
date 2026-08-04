@@ -226,6 +226,8 @@ import { queueMessage } from "../../features/mensagens/mensagensRepository";
 import { createAndPersistRdoDraft } from "../../features/rdos/rdoDraftCreation";
 import { putRdoCreationContext } from "../../features/rdos/rdoCreationContextRepository";
 import type { RdoCreationContextLookup } from "../../features/rdos/rdoLookupApi";
+import type { ServicoExecutadoDraft } from "../../features/rdos/rdo.types";
+import { carregarTrechoDaObra } from "../../features/obras/trecho/obraTrechoApi";
 import {
   rdoDraftFromLocalRecord,
   saveRdoDraftAtomically,
@@ -345,6 +347,28 @@ afterEach(async () => {
   clearSession();
 });
 
+function servicoExecutado(): ServicoExecutadoDraft {
+  return {
+    localId: "servico-1",
+    serviceId: "",
+    priceVersionId: "",
+    servicoNome: "Compactação do aterro",
+    itemContratualId: "",
+    quantidadeExecutada: "120",
+    unidade: "m3",
+    trechoInicial: "12+000",
+    trechoFinal: "12+800",
+    pista: "SIMPLES",
+    faixa: "1",
+    localizacao: "Lado direito",
+    turno: "",
+    statusValidacao: "REGISTRADA",
+    retrabalho: false,
+    producaoRejeitada: false,
+    observacoes: "",
+  };
+}
+
 /** Um dia inteiro de campo sem sinal, seguido do retorno da conexão. */
 async function jornadaSemSinal(): Promise<{
   equipeId: string;
@@ -371,6 +395,8 @@ async function jornadaSemSinal(): Promise<{
     await saveRdoDraftAtomically({
       ...rdoDraftFromLocalRecord(atual!),
       observacoes: observacao,
+      // O serviço apontado é o que o trecho tem de desenhar hoje.
+      servicosExecutados: [servicoExecutado()],
     });
   }
 
@@ -701,6 +727,35 @@ describe("jornada offline do Córtex", () => {
       expect(execucoes).toContain("LOCAL_WRITE");
     });
     agendador.dispose();
+  });
+
+  /**
+   * O trecho precisa desenhar o trabalho de hoje, não o de ontem.
+   *
+   * A projeção autoritativa vem do servidor, e sem rede não vem nada. Se a
+   * leitura parasse aí, quem está em campo abriria o trecho e veria a obra
+   * como ela estava na última sincronização — sem o que acabou de apontar.
+   */
+  it("desenha o trecho com o que foi apontado neste aparelho", async () => {
+    desligarRede();
+    await jornadaSemSinal();
+
+    const leitura = await carregarTrechoDaObra({
+      id: OBRA_ID,
+      nome: "Duplicação BR-101",
+      operavel: true,
+    });
+
+    expect(leitura.origem).toBe("DISPOSITIVO");
+    const segmentos = leitura.projecao.segmentos ?? [];
+    expect(segmentos).toContainEqual(
+      expect.objectContaining({
+        servicoNome: "Compactação do aterro",
+        kmInicial: 12,
+        kmFinal: 12.8,
+        procedencia: "DISPOSITIVO",
+      }),
+    );
   });
 
   it("o retorno da conexão dispara a sincronização sem ninguém apertar nada", async () => {
