@@ -11,8 +11,19 @@ import {
 } from "./useMemoryLedger";
 import "./MemoryLedger.css";
 
-export function MemoryLedger({ obras }: { obras: ObraLocalRecord[] }) {
-  return <MemoryLedgerView ledger={useMemoryLedger()} obras={obras} />;
+export function MemoryLedger({
+  obras,
+  somenteRevisaoInicial = false,
+}: {
+  obras: ObraLocalRecord[];
+  somenteRevisaoInicial?: boolean;
+}) {
+  return (
+    <MemoryLedgerView
+      ledger={useMemoryLedger({ somenteRevisaoInicial })}
+      obras={obras}
+    />
+  );
 }
 
 export function MemoryLedgerView({
@@ -108,6 +119,28 @@ export function MemoryLedgerView({
             <span>Dispositivo local ainda não registrado.</span>
           ) : null}
         </div>
+        {/*
+          O atalho só existe havendo o que resolver. Quem chega da tarja de
+          sincronização vem atrás de registros específicos presos em conflito,
+          e varrer o histórico inteiro atrás deles é o que tornava o aviso um
+          beco sem saída.
+        */}
+        {ledger.totalEmRevisao > 0 || ledger.somenteRevisao ? (
+          <button
+            type="button"
+            className="memory-query__pendencias"
+            aria-pressed={ledger.somenteRevisao}
+            onClick={() => ledger.setSomenteRevisao(!ledger.somenteRevisao)}
+          >
+            {ledger.somenteRevisao
+              ? "Mostrar toda a Memória"
+              : `Ver ${ledger.totalEmRevisao} ${
+                  ledger.totalEmRevisao === 1
+                    ? "registro pendente"
+                    : "registros pendentes"
+                }`}
+          </button>
+        ) : null}
         <label className="memory-query__search">
           <span>Pesquisa integral</span>
           <input

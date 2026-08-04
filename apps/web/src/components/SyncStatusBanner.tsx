@@ -5,6 +5,8 @@ import {
   useState,
 } from "react";
 
+import { Link } from "react-router";
+
 import {
   useSyncStatus,
   type SyncUiStatus,
@@ -103,18 +105,24 @@ function getStatusContent(
         )}. Os dados continuam salvos neste dispositivo.`,
       };
 
+    /*
+     * O texto dizia "temporariamente bloqueado", e não era verdade: quando os
+     * dois lados mexem no mesmo campo, nenhuma retentativa desfaz o impasse —
+     * ele fica até alguém decidir qual versão vale. Prometer que passa sozinho
+     * é o que fazia a pessoa apertar "Sincronizar agora" indefinidamente.
+     */
     case "CONFLICT":
       return {
         title: "Conflito de versão",
         description: `${pluralize(
           conflictCount,
-          "RDO possui",
-          "RDOs possuem",
-        )} uma versão mais recente no servidor. ${
+          "RDO foi alterado",
+          "RDOs foram alterados",
+        )} no servidor depois da sua edição. ${
           conflictCount === 1
-            ? "Esse registro está temporariamente bloqueado"
-            : "Esses registros estão temporariamente bloqueados"
-        } para edição.`,
+            ? "Nada se perdeu: a sua versão está guardada e precisa"
+            : "Nada se perdeu: as suas versões estão guardadas e precisam"
+        } de uma decisão sua sobre qual vale.`,
       };
 
     case "REVIEW":
@@ -399,6 +407,25 @@ export function SyncStatusBanner() {
               ? "Sincronizando..."
               : "Sincronizar agora"}
           </button>
+
+          {/*
+            Conflito não se resolve insistindo: a saída é a tela onde a versão
+            do servidor e a local aparecem lado a lado, com o motivo de cada
+            impasse. Sem este caminho, o aviso era um beco — badge vermelho
+            permanente e nenhuma ação capaz de apagá-lo.
+          */}
+          {snapshot.conflictCount > 0 ? (
+            <Link
+              className="sync-chip__action sync-chip__action--secondary"
+              to="/home?tab=memory&pendencias=1"
+            >
+              {`Resolver ${pluralize(
+                snapshot.conflictCount,
+                "registro em conflito",
+                "registros em conflito",
+              )}`}
+            </Link>
+          ) : null}
 
           {snapshot.reviewCount > 0 ? (
             <>

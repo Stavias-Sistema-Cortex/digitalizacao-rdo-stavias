@@ -238,10 +238,24 @@ export interface MemoryLedgerViewModel {
   setViewMode: (mode: "CONSOLIDATED" | "THIS_DEVICE") => void;
   exportLedger: () => void;
   reconcileReview: (item: MemorySearchDocument) => void;
+  /** Restringe a lista ao que está preso em conflito ou recusa. */
+  somenteRevisao: boolean;
+  setSomenteRevisao: (ativo: boolean) => void;
+  totalEmRevisao: number;
 }
 
-export function useMemoryLedger(): MemoryLedgerViewModel {
+export interface UseMemoryLedgerOptions {
+  /** Abre já filtrado nas pendências — é como a tarja de sync chega aqui. */
+  somenteRevisaoInicial?: boolean;
+}
+
+export function useMemoryLedger(
+  options: UseMemoryLedgerOptions = {},
+): MemoryLedgerViewModel {
   const [filters, setFilterState] = useState<MemoryFilters>({});
+  const [somenteRevisao, setSomenteRevisao] = useState(
+    options.somenteRevisaoInicial ?? false,
+  );
   const [items, setItems] = useState<MemorySearchDocument[]>([]);
   const [totalMatches, setTotalMatches] = useState(0);
   const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
@@ -487,10 +501,22 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
     };
   }, [readLedger, synchronizeCache]);
 
+  /*
+   * O registro presa em conflito é agulha em palheiro: a Memória lista o
+   * histórico inteiro da obra, e quem chega da tarja de sincronização vem
+   * atrás de dois RDOs específicos. O recorte é sobre o que já está carregado
+   * — nenhuma consulta a mais — e some quando não há pendência.
+   */
+  const itensEmRevisao = items.filter((item) => item.review);
+  const visiveis = somenteRevisao ? itensEmRevisao : items;
+
   return {
-    items,
-    totalMatches,
-    hasMoreLocal: items.length < totalMatches,
+    items: visiveis,
+    totalMatches: somenteRevisao ? itensEmRevisao.length : totalMatches,
+    hasMoreLocal: !somenteRevisao && items.length < totalMatches,
+    somenteRevisao,
+    setSomenteRevisao,
+    totalEmRevisao: itensEmRevisao.length,
     filters,
     coverage,
     metadata,

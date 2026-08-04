@@ -186,6 +186,20 @@
   border-style: dashed;
 }
 
+/*
+ * A saída para conflito é navegação, não ação: precisa ser um link de verdade
+ * para abrir em nova aba e anunciar-se como link a quem usa leitor de tela. A
+ * regra base foi escrita para <button>, que já centraliza o rótulo sozinho.
+ */
+a.sync-chip__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  text-align: center;
+  text-decoration: none;
+}
+
 .sync-chip__hint {
   margin: 8px 0 0;
   color: #5b6b64;

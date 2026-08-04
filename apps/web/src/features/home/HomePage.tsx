@@ -44,7 +44,12 @@ export function HomePage() {
           aria-labelledby={`home-tab-${activeTab}`}
         >
           {activeTab === "memory"
-            ? <MemoryLedger obras={data.obras} />
+            ? (
+              <MemoryLedger
+                obras={data.obras}
+                somenteRevisaoInicial={search.get("pendencias") === "1"}
+              />
+            )
             : (
               <HomeOverview
                 data={data}
