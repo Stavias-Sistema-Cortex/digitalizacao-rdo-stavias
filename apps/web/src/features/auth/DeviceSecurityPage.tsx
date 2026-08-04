@@ -20,6 +20,20 @@ type RegistrationState =
   | { kind: "unsupported" }
   | { kind: "error"; message: string };
 
+/**
+ * A pessoa fechou o pedido do dispositivo, ou ele expirou sem resposta.
+ *
+ * <p>O navegador usa o mesmo `NotAllowedError` para os dois, de propósito:
+ * distinguir "recusou" de "não respondeu" contaria a um site quem estava na
+ * frente do aparelho. Nenhum dos dois é defeito do Córtex.
+ */
+function desistencia(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === "NotAllowedError" || error.name === "AbortError")
+  );
+}
+
 export function DeviceSecurityPage() {
   const [vault, setVault] = useState<OfflineVaultMetadata | null>(null);
   const [vaultChecked, setVaultChecked] = useState(false);
@@ -74,6 +88,13 @@ export function DeviceSecurityPage() {
           : null);
       }
     } catch (error: unknown) {
+      if (desistencia(error)) {
+        // Desistir não é falha. O aviso vermelho com o link da especificação
+        // do WebAuthn tratava como defeito quem apenas fechou o pedido do
+        // dispositivo, e não havia nada a corrigir nem a ler ali.
+        setState({ kind: "idle" });
+        return;
+      }
       setState({
         kind: "error",
         message: error instanceof Error

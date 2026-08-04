@@ -31,6 +31,8 @@ import static org.mockito.Mockito.when;
 class PostgresqlInitialAlfaBootstrapRepositoryIT {
 
     private static final String SYNTHETIC_CPF = "11144477735";
+    /** Identificador do usuário no sistema legado, que não pode vazar. */
+    private static final String LEGACY_SOURCE_USER_ID = "901";
     private static final String HMAC_SECRET =
             "test-only-bootstrap-hmac-secret-material-0001";
 
@@ -103,8 +105,12 @@ class PostgresqlInitialAlfaBootstrapRepositoryIT {
                     .containsEntry("schema_version", 1);
             assertThat(payload)
                     .contains("INITIAL_ALFA_BOOTSTRAP", "ADMINISTRAR_PAPEIS")
-                    .doesNotContain(SYNTHETIC_CPF, "synthetic.owner@example.invalid", "901")
                     .doesNotContain("hmac", "digest", "sourceUserId");
+            assertThat(semRecibo(payload))
+                    .doesNotContain(
+                            SYNTHETIC_CPF, "synthetic.owner@example.invalid",
+                            LEGACY_SOURCE_USER_ID
+                    );
             Long eventSequence = ((Number) event.get("sequencia")).longValue();
             Long commitSequence = ((Number) event.get("commit_seq")).longValue();
             assertThat(eventSequence).isNotEqualTo(commitSequence);
@@ -235,6 +241,21 @@ class PostgresqlInitialAlfaBootstrapRepositoryIT {
         AcademyBootstrapLookup academy = mock(AcademyBootstrapLookup.class);
         when(academy.lookupSingleActive(anyString())).thenReturn(user);
         return academy;
+    }
+
+    /**
+     * O recibo sem o próprio identificador do recibo.
+     *
+     * <p>O que se procura no payload é dado vindo do sistema legado. O
+     * {@code receiptId} é UUID cunhado aqui pelo Córtex, e um UUID qualquer
+     * contém "901" com frequência — a busca por substring acusava vazamento
+     * onde só havia coincidência, e derrubava a CI de tempos em tempos sem
+     * nada ter mudado. Fora ele, a busca literal continua valendo inteira.
+     */
+    private static String semRecibo(String payload) {
+        return payload.replaceAll(
+                "\"receiptId\"\\s*:\\s*\"[0-9a-fA-F-]{36}\"", "\"receiptId\":\"\""
+        );
     }
 
     private static AcademyBootstrapUser user(int sourceId) {
