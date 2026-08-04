@@ -41,7 +41,17 @@ export function CreateConversationDialog(props: {
   const [obraId, setObraId] = useState("");
   const [query, setQuery] = useState("");
   const [people, setPeople] = useState<DirectoryPerson[]>([]);
-  const [selectedPeople, setSelectedPeople] = useState<string[]>([]);
+  /*
+   * A escolha guarda o nome junto, e não só o id.
+   *
+   * O diretório é refeito a cada busca: quem foi escolhido numa consulta some
+   * da lista na consulta seguinte, e procurar o nome ali na hora de gravar
+   * devolvia vazio. A conversa nascia com participante sem nome até o servidor
+   * confirmá-la.
+   */
+  const [selectedPeople, setSelectedPeople] = useState<
+    { colaboradorId: string; nome: string }[]
+  >([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -88,10 +98,7 @@ export function CreateConversationDialog(props: {
         titulo: type === "DIRETA" ? null : title,
         obraId: type === "OBRA" ? obraId : null,
         equipeId: null,
-        participantes: selectedPeople.map((id) => ({
-          colaboradorId: id,
-          nome: people.find((pessoa) => pessoa.id === id)?.nome ?? "",
-        })),
+        participantes: selectedPeople,
       });
       await props.onCreated(created);
     } catch (cause: unknown) {
@@ -168,15 +175,24 @@ export function CreateConversationDialog(props: {
                   <input
                     type={type === "DIRETA" ? "radio" : "checkbox"}
                     name="participantes"
-                    checked={selectedPeople.includes(person.id)}
+                    checked={selectedPeople.some(
+                      (escolhida) => escolhida.colaboradorId === person.id,
+                    )}
                     onChange={() =>
-                      setSelectedPeople((current) =>
-                        type === "DIRETA"
-                          ? [person.id]
-                          : current.includes(person.id)
-                            ? current.filter((id) => id !== person.id)
-                            : [...current, person.id],
-                      )
+                      setSelectedPeople((current) => {
+                        const escolhida = {
+                          colaboradorId: person.id,
+                          nome: person.nome,
+                        };
+                        if (type === "DIRETA") return [escolhida];
+                        return current.some(
+                          (item) => item.colaboradorId === person.id,
+                        )
+                          ? current.filter(
+                            (item) => item.colaboradorId !== person.id,
+                          )
+                          : [...current, escolhida];
+                      })
                     }
                   />
                   <span><strong>{person.nome}</strong><small>{person.detalhe}</small></span>

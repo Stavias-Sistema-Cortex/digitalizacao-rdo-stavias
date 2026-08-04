@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./features/auth/authSession", () => ({
   AUTH_SESSION_CHANGED_EVENT: "cortex-auth-session-changed",
   getSession: mocks.getSession,
+  // A sessão deste cenário é online: nada a retomar.
+  hasOfflineSession: () => false,
   isAlfa: () => false,
 }));
 

@@ -610,8 +610,8 @@ export function EquipesPage() {
       // equipe que já foi aberta antes está aqui. Só se não houver nenhuma é
       // que uma nova é criada — e ela também nasce local.
       const conversationId = temRede()
-        ? await conversaDaEquipeComRede()
-        : await conversaDaEquipeLocal();
+        ? await conversaDaEquipeComRede(selectedTeam)
+        : await conversaDaEquipeLocal(selectedTeam);
       navigate(`/mensagens?conversa=${encodeURIComponent(conversationId)}`);
     } catch (conversationError: unknown) {
       setActionError(conversationError instanceof Error ? conversationError.message : "Não foi possível abrir a conversa.");
@@ -622,31 +622,35 @@ export function EquipesPage() {
     return navigator.onLine && hasAuthenticatedConnection;
   }
 
-  async function conversaDaEquipeComRede(): Promise<string> {
+  async function conversaDaEquipeComRede(
+    equipe: NonNullable<typeof selectedTeam>,
+  ): Promise<string> {
     const conversations = await listConversationsApi();
     const existing = conversations.find(
-      (conversation) => conversation.equipeId === selectedTeam!.id,
+      (conversation) => conversation.equipeId === equipe.id,
     );
     if (existing) {
       await storeServerConversations([existing]);
       return existing.id;
     }
-    return conversaDaEquipeLocal();
+    return conversaDaEquipeLocal(equipe);
   }
 
-  async function conversaDaEquipeLocal(): Promise<string> {
+  async function conversaDaEquipeLocal(
+    equipe: NonNullable<typeof selectedTeam>,
+  ): Promise<string> {
     const locais = await listLocalConversations();
     const existente = locais.find(
-      (conversation) => conversation.equipeId === selectedTeam!.id,
+      (conversation) => conversation.equipeId === equipe.id,
     );
     if (existente) {
       return existente.id;
     }
     const criada = await queueConversation({
       tipo: "EQUIPE",
-      titulo: selectedTeam!.nome,
-      obraId: selectedTeam!.obraPrincipalId,
-      equipeId: selectedTeam!.id,
+      titulo: equipe.nome,
+      obraId: equipe.obraPrincipalId,
+      equipeId: equipe.id,
       participantes: [],
     });
     return criada.id;

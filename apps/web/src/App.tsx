@@ -11,6 +11,7 @@ import {
   AUTH_SESSION_CHANGED_EVENT,
   clearSessionForCurrentDocument,
   getSession,
+  hasOfflineSession,
   isAlfa,
 } from "./features/auth/authSession";
 import {
@@ -230,16 +231,28 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     }
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-    // Abrir o app já com rede é o mesmo caso: quem ficou offline ontem chega
-    // aqui hoje com a sessão isolada e nada que a solte.
-    if (navigator.onLine) {
-      void retomarSessaoOnline().catch(() => undefined);
-    }
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
+
+  /*
+   * A retomada também tenta assim que existe uma sessão offline.
+   *
+   * O evento de rede não cobre o caso mais comum de todos: quem abriu o app
+   * com o servidor fora do ar destravou os dados pelo CPF sem nunca ter
+   * perdido a conexão. Aí o navegador nunca dispara "online" — ele sempre
+   * esteve online — e a sessão ficaria isolada até alguém recarregar a
+   * página. Depender só do evento deixava exatamente essa pessoa presa.
+   */
+  const sessaoOffline = session !== null && hasOfflineSession();
+  useEffect(() => {
+    if (!sessaoOffline || !online) {
+      return;
+    }
+    void retomarSessaoOnline().catch(() => undefined);
+  }, [sessaoOffline, online]);
 
   /*
    * O grant offline é reemitido enquanto há rede.
