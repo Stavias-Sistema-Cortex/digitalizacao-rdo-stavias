@@ -85,6 +85,21 @@ export async function hasCollaborativeOfflineGrantMetadata(): Promise<boolean> {
   return (await database.count("cpf_grants")) > 0;
 }
 
+/**
+ * Os grants por CPF já guardados para esta pessoa.
+ *
+ * <p>O CPF em claro não é armazenado — a chave é o resumo dele —, então a
+ * renovação não tem como recalculá-lo. Ela reaproveita as chaves que já
+ * existem aqui, que é o suficiente: o que precisa ser trocado é o grant
+ * assinado, não a identidade que abre o registro.
+ */
+export async function listCollaborativeOfflineGrantsForOwner(
+  ownerId: string,
+): Promise<OfflineCpfGrantMetadata[]> {
+  const database = await getVaultDatabase();
+  return database.getAllFromIndex("cpf_grants", "by-owner", ownerId);
+}
+
 function getVaultDatabase(): Promise<IDBPDatabase<OfflineVaultDbSchema>> {
   databasePromise ??= openVaultDatabase();
   return databasePromise;

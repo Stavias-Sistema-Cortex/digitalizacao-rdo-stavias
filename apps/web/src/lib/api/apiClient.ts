@@ -174,6 +174,23 @@ export async function revokeRemoteSessionCookie(): Promise<Response> {
   return rawFetch("/auth/logout", { method: "POST" });
 }
 
+/**
+ * Pergunta ao servidor de quem é o cookie, sem passar pelo isolamento.
+ *
+ * <p>O isolamento existe porque, depois de os dados serem abertos pelo modo
+ * offline, um cookie HttpOnly deixa de provar que pertence a quem está neste
+ * aparelho — pode ter sobrado de outra pessoa. Esta é a única pergunta que
+ * responde exatamente isso, e ela não gasta a sessão: só lê a identidade que
+ * o servidor associa ao cookie, para quem chama comparar com o dono do grant
+ * que foi aberto aqui.
+ *
+ * <p>Nada é liberado por esta função. Ela devolve a resposta crua; soltar o
+ * isolamento continua sendo decisão de quem faz a comparação.
+ */
+export async function fetchIsolatedSessionOwner(): Promise<Response> {
+  return rawFetch("/auth/session", { method: "GET" });
+}
+
 function isPublicAuthenticationPath(path: string): boolean {
   const pathname = path.split(/[?#]/, 1)[0];
   return pathname === "/auth/email/challenges" ||

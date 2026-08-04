@@ -20,6 +20,8 @@ import {
 import { LoginPage } from "./features/auth/LoginPage";
 import { DeviceSecurityPage } from "./features/auth/DeviceSecurityPage";
 import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
+import { retomarSessaoOnline } from "./features/auth/retomadaDaSessao";
+import { renovarGrantOfflineSePreciso } from "./features/auth/renovacaoDoGrantOffline";
 import {
   hasCollaborativeOfflineGrantMetadata,
   loadOfflineVaultMetadata,
@@ -28,6 +30,7 @@ import type { OfflineVaultMetadata } from "./features/auth/offlineVault.types";
 import { CortexShell } from "./components/shell/CortexShell";
 import { useAppAutomaticSync } from "./appAutomaticSync";
 import { initializeCortexDb } from "./lib/db/cortexDb";
+import { SYNC_COMPLETED_EVENT } from "./lib/sync/syncEvents";
 
 const HomePage = lazy(() =>
   import("./features/home/HomePage").then((module) => ({
@@ -216,17 +219,50 @@ function App({ initialAuthUnavailable = false }: AppProps) {
   useEffect(() => {
     function handleOnline() {
       setOnline(true);
+      // A rede voltou: se este aparelho está aberto pelo modo offline e o
+      // cookie ainda for da mesma pessoa, a sessão volta sozinha. Pedir o CPF
+      // de novo não acrescentava segurança e só atrasava a subida do que foi
+      // apontado em campo.
+      void retomarSessaoOnline().catch(() => undefined);
     }
     function handleOffline() {
       setOnline(false);
     }
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    // Abrir o app já com rede é o mesmo caso: quem ficou offline ontem chega
+    // aqui hoje com a sessão isolada e nada que a solte.
+    if (navigator.onLine) {
+      void retomarSessaoOnline().catch(() => undefined);
+    }
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
+
+  /*
+   * O grant offline é reemitido enquanto há rede.
+   *
+   * Ele nascia no login e vencia em 24 horas sem nunca ser renovado, e depois
+   * disso o aparelho parava de abrir até os dados que já tinha — numa tela
+   * feita para funcionar sem servidor a quem pedir outro. Cada sincronização
+   * concluída é a prova de que existe sessão e rede agora, que é o único
+   * momento em que dá para pedir.
+   */
+  useEffect(() => {
+    if (!localDataReady) {
+      return;
+    }
+    function renovar() {
+      void renovarGrantOfflineSePreciso().catch(() => undefined);
+    }
+    renovar();
+    window.addEventListener(SYNC_COMPLETED_EVENT, renovar);
+    return () => {
+      window.removeEventListener(SYNC_COMPLETED_EVENT, renovar);
+    };
+  }, [localDataReady]);
 
   // Sem sessão online, somente um grant assinado validado libera o cache.
   if (!session) {
