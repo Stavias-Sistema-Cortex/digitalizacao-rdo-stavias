@@ -18,6 +18,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -33,7 +35,12 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 public class AuthController {
 
+    private static final Logger log =
+            LoggerFactory.getLogger(AuthController.class);
+
     static final String LOGIN_REJECTED_MESSAGE = "CPF ou acesso inválido.";
+    static final String LOGIN_THROTTLED_MESSAGE =
+            "Muitas tentativas de autenticação. Tente novamente mais tarde.";
     static final String CPF_FILTER_DISABLED_MESSAGE =
             "Filtro de CPF desativado.";
 
@@ -45,6 +52,7 @@ public class AuthController {
     private final AuthSessionProfileResolver sessionProfiles;
     private final DirectCpfLoginPolicy directCpfLoginPolicy;
     private final EmailOtpAuthenticationPolicy emailOtpAuthenticationPolicy;
+    private final AuthLoginRateLimiter loginRateLimiter;
 
     @Autowired
     public AuthController(
@@ -55,7 +63,8 @@ public class AuthController {
             AuthCookieService cookies,
             AuthSessionProfileResolver sessionProfiles,
             DirectCpfLoginPolicy directCpfLoginPolicy,
-            EmailOtpAuthenticationPolicy emailOtpAuthenticationPolicy
+            EmailOtpAuthenticationPolicy emailOtpAuthenticationPolicy,
+            AuthLoginRateLimiter loginRateLimiter
     ) {
         this.otpChallenges = otpChallenges;
         this.authService = authService;
@@ -65,6 +74,7 @@ public class AuthController {
         this.sessionProfiles = sessionProfiles;
         this.directCpfLoginPolicy = directCpfLoginPolicy;
         this.emailOtpAuthenticationPolicy = emailOtpAuthenticationPolicy;
+        this.loginRateLimiter = loginRateLimiter;
     }
 
     @PostMapping("/api/auth/email/challenges")
@@ -154,6 +164,17 @@ public class AuthController {
             HttpServletResponse response
     ) {
         response.setHeader("Cache-Control", "no-store");
+        String clientIp = clientAddresses.resolve(servletRequest);
+        // Antes de qualquer outra coisa: gastar o balde é o único trabalho que
+        // vale a pena fazer por uma requisição que talvez seja a milésima do
+        // mesmo robô.
+        if (!loginRateLimiter.allow(clientIp)) {
+            log.warn("login_throttled remote={}", clientIp);
+            throw new ResponseStatusException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    LOGIN_THROTTLED_MESSAGE
+            );
+        }
         directCpfLoginPolicy.requireEnabled();
         ClientInstanceProof clientInstance = ClientInstanceProof.require(
                 servletRequest
@@ -165,10 +186,15 @@ public class AuthController {
                         "Autenticação indisponível."
                 )
         ).autenticarPorCpf(cpf)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.UNAUTHORIZED,
-                        LOGIN_REJECTED_MESSAGE
-                ));
+                .orElseThrow(() -> {
+                    // O CPF não entra na linha: é dado pessoal, e o que a
+                    // investigação precisa é de onde veio e quando.
+                    log.warn("login_rejected remote={}", clientIp);
+                    return new ResponseStatusException(
+                            HttpStatus.UNAUTHORIZED,
+                            LOGIN_REJECTED_MESSAGE
+                    );
+                });
         sessionProfiles.requireEligibleForSessionIssue(identity);
         IssuedAuthSession issued = sessions.issue(identity, clientInstance);
         cookies.write(response, issued);

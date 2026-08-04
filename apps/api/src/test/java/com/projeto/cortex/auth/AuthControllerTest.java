@@ -10,7 +10,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -31,7 +30,6 @@ import com.projeto.cortex.auth.session.ResolvedAuthSession;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,11 +58,14 @@ class AuthControllerTest {
     private final AuthSessionService sessions = mock(AuthSessionService.class);
     private final AuthCookieService cookies = mock(AuthCookieService.class);
     private final CurrentUserService currentUsers = mock(CurrentUserService.class);
+    private final AuthLoginRateLimiter loginRateLimiter =
+            mock(AuthLoginRateLimiter.class);
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         when(addresses.resolve(any())).thenReturn("203.0.113.10");
+        when(loginRateLimiter.allow(anyString())).thenReturn(true);
         mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(
                 Optional.of(otp),
                 Optional.of(authService),
@@ -73,7 +74,8 @@ class AuthControllerTest {
                 cookies,
                 currentUsers,
                 new DirectCpfLoginPolicy(true),
-                new EmailOtpAuthenticationPolicy(false, true)
+                new EmailOtpAuthenticationPolicy(false, true),
+                loginRateLimiter
         )).build();
         when(currentUsers.profileForIssuedSession(any(), any())).thenAnswer(
                 invocation -> profileFor(
@@ -86,15 +88,44 @@ class AuthControllerTest {
         );
     }
 
+    /**
+     * O login por CPF tinha um teste que travava a ausência de freio. Ele
+     * descrevia o estado do código, não uma decisão defensável: o CPF é a
+     * credencial inteira desta porta, e sem teto qualquer pessoa podia testar
+     * CPFs em sequência de fora até achar um cadastrado. Este teste guarda o
+     * contrário — o balde é consultado, e uma recusa dele encerra a requisição
+     * antes de o CPF chegar a virar consulta ao banco.
+     */
     @Test
-    void directCpfControllerDoesNotDependOnAnApplicationRateLimiter() {
-        assertFalse(Arrays.stream(AuthController.class.getConstructors())
-                .flatMap(constructor -> Arrays.stream(
-                        constructor.getParameterTypes()
-                ))
-                .anyMatch(type -> type.getSimpleName().equals(
-                        "AuthLoginRateLimiter"
-                )));
+    void directCpfLoginStopsAtTheThrottleBeforeTouchingTheIdentityLookup()
+            throws Exception {
+        when(loginRateLimiter.allow("203.0.113.10")).thenReturn(false);
+
+        mockMvc.perform(post("/api/auth/login")
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                .andExpect(status().isTooManyRequests());
+
+        verifyNoInteractions(authService);
+        verify(sessions, never()).issue(any(), any());
+        verify(cookies, never()).write(any(), any());
+    }
+
+    /** Passar pelo freio não pode custar mais que uma consulta ao balde. */
+    @Test
+    void directCpfLoginConsumesTheThrottleExactlyOncePerAttempt()
+            throws Exception {
+        when(authService.autenticarPorCpf("11144477735"))
+                .thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                .andExpect(status().isUnauthorized());
+
+        verify(loginRateLimiter).allow("203.0.113.10");
     }
 
     @Test
@@ -223,7 +254,8 @@ class AuthControllerTest {
                         cookies,
                         currentUsers,
                         new DirectCpfLoginPolicy(true),
-                        new EmailOtpAuthenticationPolicy(true, false)
+                        new EmailOtpAuthenticationPolicy(true, false),
+                        loginRateLimiter
                 )
         ).build();
 
@@ -291,7 +323,8 @@ class AuthControllerTest {
                         cookies,
                         currentUsers,
                         new DirectCpfLoginPolicy(true),
-                        new EmailOtpAuthenticationPolicy(true, false)
+                        new EmailOtpAuthenticationPolicy(true, false),
+                        loginRateLimiter
                 )
         ).build();
         postgresqlMvc.perform(post("/api/auth/email/challenges")
@@ -390,7 +423,8 @@ class AuthControllerTest {
                         cookies,
                         new PostgresqlActivationSessionProfileResolver(),
                         new DirectCpfLoginPolicy(false),
-                        new EmailOtpAuthenticationPolicy(true, true)
+                        new EmailOtpAuthenticationPolicy(true, true),
+                        loginRateLimiter
                 )
         ).build();
 

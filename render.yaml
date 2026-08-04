@@ -28,6 +28,14 @@ services:
         value: "true"
       - key: CORTEX_AUTH_COOKIE_SAME_SITE
         value: Lax
+      # Sem isto, ClientAddressResolver ignora X-Forwarded-For e usa o endereço
+      # de quem conectou — que atrás do proxy é o próprio proxy, igual para
+      # todo mundo. O teto por origem do login vira então um segundo teto
+      # global. Preencha com a faixa de saída do proxy da hospedagem para o
+      # balde por origem passar a distinguir de fato; enquanto estiver vazio,
+      # quem segura é o piso global, que é justamente por isso que ele existe.
+      - key: CORTEX_AUTH_TRUSTED_PROXY_CIDRS
+        sync: false
       - key: CORTEX_AUTH_WEBAUTHN_RP_ID
         sync: false
       - key: CORTEX_AUTH_WEBAUTHN_RP_NAME

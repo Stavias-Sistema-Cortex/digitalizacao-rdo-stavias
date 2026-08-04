@@ -76,6 +76,17 @@ cortex:
       previous-key-id: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY_ID:}
       previous-key-file: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY_FILE:}
       previous-key-inline: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY:}
+    # Teto do login direto por CPF. O da passkey (acima) é mais frouxo de
+    # propósito: lá cada tentativa exige assinatura do aparelho certo, então
+    # repetir não aproxima ninguém de entrar. Aqui repetir É o ataque, porque o
+    # CPF é a credencial inteira. O piso global existe separado do teto por
+    # origem porque, atrás de proxy sem trusted-proxy-cidrs configurado, todas
+    # as tentativas chegam com o mesmo endereço — e aí ele é o único que segura.
+    login:
+      rate-limit:
+        max-requests: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS:15}
+        global-max-requests: ${CORTEX_AUTH_LOGIN_GLOBAL_RATE_LIMIT_MAX_REQUESTS:400}
+        window-seconds: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS:900}
     dev-admin:
       enabled: ${CORTEX_AUTH_DEV_ADMIN_ENABLED:false}
     trusted-proxy-cidrs: ${CORTEX_AUTH_TRUSTED_PROXY_CIDRS:}

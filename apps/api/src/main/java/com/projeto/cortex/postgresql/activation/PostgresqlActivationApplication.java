@@ -1,6 +1,7 @@
 package com.projeto.cortex.postgresql.activation;
 
 import com.projeto.cortex.auth.AuthController;
+import com.projeto.cortex.auth.AuthLoginRateLimiter;
 import com.projeto.cortex.auth.DirectCpfLoginPolicy;
 import com.projeto.cortex.auth.EmailOtpAuthenticationPolicy;
 import com.projeto.cortex.auth.activation.PostgresqlActivationSessionProfileResolver;
@@ -58,6 +59,11 @@ import org.springframework.context.annotation.Import;
         HealthController.class,
         RuntimeRevision.class,
         AuthController.class,
+        // O login direto por CPF está desligado neste modo (DirectCpfLoginPolicy
+        // responde GONE), mas o controller continua exigindo o disjuntor para
+        // ser construído — e tê-lo aqui é o que garante que ligar o modo
+        // normal não encontre a porta sem freio.
+        AuthLoginRateLimiter.class,
         EmailOtpAuthenticationPolicy.class,
         DirectCpfLoginPolicy.class,
         PostgresqlActivationSessionProfileResolver.class,

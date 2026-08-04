@@ -8,10 +8,22 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /** Requires a cookie/header/stored-hash triple for every unsafe API request. */
 public class CsrfRequestFilter extends OncePerRequestFilter {
+
+    /**
+     * A recusa de CSRF é o sinal mais barato que existe de tentativa vinda de
+     * fora: o navegador de quem é de casa manda a trinca completa sozinho, e
+     * quem falha aqui ou está atacando ou está com a sessão em estado que vale
+     * a pena enxergar. Registrar custa uma linha e é a diferença entre saber e
+     * supor.
+     */
+    private static final Logger log =
+            LoggerFactory.getLogger(CsrfRequestFilter.class);
 
     public static final String CSRF_HEADER = "X-CSRF-Token";
 
@@ -57,7 +69,7 @@ public class CsrfRequestFilter extends OncePerRequestFilter {
         Optional<String> header = readUniqueHeader(request);
         if (!(context instanceof ResolvedAuthSession session)
                 || header.isEmpty()) {
-            reject(response);
+            reject(request, response, "cabecalho_ausente");
             return;
         }
         Optional<String> cookie = cookies.readCsrfToken(request);
@@ -65,7 +77,7 @@ public class CsrfRequestFilter extends OncePerRequestFilter {
         if (cookie.isEmpty()
                 || !sameRawToken(headerToken, cookie.orElseThrow())
                 || !sessions.matchesCsrf(session, headerToken)) {
-            reject(response);
+            reject(request, response, "trinca_divergente");
             return;
         }
         filterChain.doFilter(request, response);
@@ -92,7 +104,18 @@ public class CsrfRequestFilter extends OncePerRequestFilter {
         );
     }
 
-    private void reject(HttpServletResponse response) throws IOException {
+    private void reject(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            String motivo
+    ) throws IOException {
+        log.warn(
+                "csrf_denied motivo={} method={} path={} remote={}",
+                motivo,
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getRemoteAddr()
+        );
         byte[] body = "{\"message\":\"Token CSRF inválido.\"}"
                 .getBytes(StandardCharsets.UTF_8);
         response.resetBuffer();
