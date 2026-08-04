@@ -352,10 +352,21 @@ export function EquipesPage() {
       setActionError("Informe nome, obra e início da vigência.");
       return;
     }
+    // A edição precisa da equipe carregada para preservar o fim de vigência e
+    // a versão base. Uma recarga concluída com o modal aberto pode zerá-la, e
+    // aí o salvamento estourava com erro de plataforma na cara de quem estava
+    // digitando — em vez de dizer o que houve.
+    const equipeEmEdicao = selectedTeam;
+    if (teamModalMode === "EDIT" && !equipeEmEdicao) {
+      setActionError(
+        "A equipe deixou de estar carregada. Feche e abra novamente para editar.",
+      );
+      return;
+    }
     setIsSaving(true);
     setActionError(null);
     try {
-      const saved = teamModalMode === "CREATE"
+      const saved = teamModalMode === "CREATE" || !equipeEmEdicao
         ? await queueCreateTeam({
             id: crypto.randomUUID(),
             obraId: teamForm.obraId,
@@ -365,11 +376,11 @@ export function EquipesPage() {
             descricao: teamForm.descricao.trim() || null,
             inicioValidadeEm: localDateTime(teamForm.inicio),
           })
-        : await queueUpdateTeam(selectedTeam!, {
+        : await queueUpdateTeam(equipeEmEdicao, {
             nome: teamForm.nome,
             descricao: teamForm.descricao.trim() || null,
             inicioValidadeEm: localDateTime(teamForm.inicio),
-            fimValidadeEm: selectedTeam!.fimValidadeEm,
+            fimValidadeEm: equipeEmEdicao.fimValidadeEm,
             motivo: teamForm.motivo,
           });
       setTeams((current) => [

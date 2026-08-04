@@ -17,8 +17,19 @@ function periodo(projecao: ProjecaoTrecho): string {
   if (!primeiraExecucao || !ultimaExecucao) {
     return "—";
   }
-  const formatar = (data: string) =>
-    new Date(`${data}T00:00:00`).toLocaleDateString("pt-BR");
+  /*
+   * A data chega como dia puro, mas basta um registro carimbado com hora para
+   * a concatenação virar "2026-08-04T10:00:00T00:00:00" e a tela exibir
+   * "Invalid Date" no lugar do período da obra. Corta no dia e confere o
+   * resultado: sem leitura confiável, o traço é mais honesto que uma data
+   * inventada.
+   */
+  const formatar = (data: string) => {
+    const dia = new Date(`${data.slice(0, 10)}T00:00:00`);
+    return Number.isNaN(dia.getTime())
+      ? "—"
+      : dia.toLocaleDateString("pt-BR");
+  };
   return primeiraExecucao === ultimaExecucao
     ? formatar(primeiraExecucao)
     : `${formatar(primeiraExecucao)} – ${formatar(ultimaExecucao)}`;

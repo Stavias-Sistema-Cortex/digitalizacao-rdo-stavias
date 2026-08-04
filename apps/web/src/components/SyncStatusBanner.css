@@ -6,7 +6,7 @@
  */
 
 .sync-chip {
-  --sync-color: #64748b;
+  --sync-color: var(--color-muted);
 
   position: relative;
 }
@@ -79,11 +79,11 @@
 }
 
 .sync-chip--syncing {
-  --sync-color: #2563eb;
+  --sync-color: var(--color-focus);
 }
 
 .sync-chip--offline {
-  --sync-color: #64748b;
+  --sync-color: var(--color-muted);
 }
 
 .sync-chip--error,

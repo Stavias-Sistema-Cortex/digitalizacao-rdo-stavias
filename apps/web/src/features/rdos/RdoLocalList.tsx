@@ -1245,7 +1245,7 @@ function ProfileDrawer({
   );
 
   return (
-    <aside className="profile-drawer" aria-label="Perfil ontológico">
+    <aside className="profile-drawer" aria-label="Perfil do colaborador">
       <div className="profile-drawer-header">
         <div>
           <span>{profile.type}</span>

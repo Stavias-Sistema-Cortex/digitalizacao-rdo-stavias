@@ -198,7 +198,7 @@
 
 .programacao-match--missing {
   background: rgba(220, 38, 38, 0.1);
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 @media (max-width: 900px) {

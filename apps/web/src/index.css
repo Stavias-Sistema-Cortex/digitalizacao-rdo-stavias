@@ -1425,7 +1425,7 @@ textarea:focus {
   border: none;
   background: none;
   font-size: 0.72rem;
-  color: #374151;
+  color: var(--color-graphite);
   cursor: pointer;
   padding: 2px 4px;
 }
@@ -1718,7 +1718,7 @@ textarea:focus {
 }
 
 .home-obra-card--empty {
-  color: #6b7280;
+  color: var(--color-muted);
   text-align: center;
   padding: 48px 20px;
 }
@@ -1782,7 +1782,7 @@ textarea:focus {
   flex-direction: column;
   gap: 10px;
   font-size: 0.78rem;
-  color: #334155;
+  color: var(--color-graphite);
 }
 
 .home-obra-infos .info-label {
@@ -1793,7 +1793,7 @@ textarea:focus {
 
 .info-coords {
   display: block;
-  color: #6b7280;
+  color: var(--color-muted);
   font-size: 0.72rem;
 }
 

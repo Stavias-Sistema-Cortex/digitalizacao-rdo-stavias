@@ -1233,7 +1233,7 @@
   font: inherit;
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--color-brand-teal, var(--color-focus));
+  color: var(--color-brand-teal, #2f6f68);
   text-decoration: underline;
   cursor: pointer;
 }

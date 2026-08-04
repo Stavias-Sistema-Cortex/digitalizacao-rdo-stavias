@@ -776,8 +776,14 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(rule(gestaoObrasCss, ".gestao-obras-aviso")).toContain(
       "color: #065f46;",
     );
+    /*
+      * O vermelho vinha da paleta padrão de framework, sem parentesco com a
+      * identidade; o papel — recusa destrutiva — é o mesmo, e o token passa a
+      * nomeá-lo. O verde ao lado fica: é estado de concessão ativa, com matiz
+      * próprio que os tokens não cobrem.
+      */
     expect(rule(gestaoObrasCss, ".gestao-obras-revogar")).toContain(
-      "color: #991b1b;",
+      "color: var(--color-danger);",
     );
   });
 
@@ -809,7 +815,7 @@ describe("polimento visual da plataforma autenticada", () => {
       "color: #166534;",
     );
     expect(rule(programacaoCss, ".programacao-match--missing")).toContain(
-      "color: #b91c1c;",
+      "color: var(--color-danger);",
     );
   });
 });

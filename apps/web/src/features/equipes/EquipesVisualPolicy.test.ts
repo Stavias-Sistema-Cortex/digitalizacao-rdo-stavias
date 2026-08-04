@@ -27,7 +27,13 @@ const CORES_DE_AVATAR = new Set([
 ]);
 
 function coresLivres(css: string): string[] {
-  return [...css.matchAll(/#[0-9a-fA-F]{3,8}\b/g)]
+  /*
+   * O literal dentro de `var(--token, #hex)` não é paleta paralela: é a cor de
+   * emergência para quando o token não estiver definido, e trocá-la pelo
+   * próprio token anularia a defesa. Ela sai da contagem.
+   */
+  const semFallbacks = css.replace(/var\(\s*--[a-z-]+\s*,\s*#[0-9a-fA-F]{3,8}\s*\)/g, "");
+  return [...semFallbacks.matchAll(/#[0-9a-fA-F]{3,8}\b/g)]
     .map((match) => match[0].toLowerCase())
     .filter((cor) => !CORES_DE_AVATAR.has(cor));
 }
