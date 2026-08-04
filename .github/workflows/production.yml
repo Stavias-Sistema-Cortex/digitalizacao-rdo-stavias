@@ -190,11 +190,33 @@ jobs:
           cache-from: type=gha,scope=cortex-api
           cache-to: type=gha,mode=max,scope=cortex-api
       - name: Attest API provenance
+        id: api_attestation
+        continue-on-error: true
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ steps.release.outputs.api_image }}
           subject-digest: ${{ steps.api.outputs.digest }}
           push-to-registry: true
+      # Uma release que não mexe na API produz uma imagem byte a byte idêntica
+      # à anterior, com o mesmo digest — e o ghcr recusa com 403 a segunda
+      # publicação da mesma atestação. O passo derrubava a release inteira por
+      # uma garantia que já estava satisfeita, e o que se perdia era o deploy do
+      # que de fato mudou: uma entrega só de cliente não conseguia subir.
+      #
+      # Tolerar a recusa não é abrir mão da procedência. Se a atestação não
+      # existir para este digest, a verificação abaixo falha e a release para
+      # aqui, que é exatamente onde ela deve parar.
+      - name: Require an attestation for the published API image
+        if: steps.api_attestation.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.release.outputs.api_image }}
+          DIGEST: ${{ steps.api.outputs.digest }}
+        run: |
+          set -euo pipefail
+          echo "::warning::Publicação da atestação recusada; conferindo se o digest já está atestado."
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "${GITHUB_REPOSITORY}"
       - name: Verify Render secret-file access
         shell: bash
         env:
@@ -224,11 +246,33 @@ jobs:
           cache-from: type=gha,scope=cortex-web
           cache-to: type=gha,mode=max,scope=cortex-web
       - name: Attest PWA provenance
+        id: web_attestation
+        continue-on-error: true
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ steps.release.outputs.web_image }}
           subject-digest: ${{ steps.web.outputs.digest }}
           push-to-registry: true
+      # Uma release que não mexe na PWA produz uma imagem byte a byte idêntica
+      # à anterior, com o mesmo digest — e o ghcr recusa com 403 a segunda
+      # publicação da mesma atestação. O passo derrubava a release inteira por
+      # uma garantia que já estava satisfeita, e o que se perdia era o deploy do
+      # que de fato mudou: uma entrega só de cliente não conseguia subir.
+      #
+      # Tolerar a recusa não é abrir mão da procedência. Se a atestação não
+      # existir para este digest, a verificação abaixo falha e a release para
+      # aqui, que é exatamente onde ela deve parar.
+      - name: Require an attestation for the published PWA image
+        if: steps.web_attestation.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.release.outputs.web_image }}
+          DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          set -euo pipefail
+          echo "::warning::Publicação da atestação recusada; conferindo se o digest já está atestado."
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "${GITHUB_REPOSITORY}"
       - name: Migrate Neon with the immutable API image
         shell: bash
         env:
