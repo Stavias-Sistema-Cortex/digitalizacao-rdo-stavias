@@ -24,10 +24,14 @@ import {
 } from "../auth/authSession";
 import { hydrateObrasRelacionadas } from "../home/homeHydration";
 import {
-  createConversationApi,
+
   listConversationsApi,
 } from "../mensagens/mensagensApi";
-import { storeServerConversations } from "../mensagens/mensagensRepository";
+import {
+  listLocalConversations,
+  queueConversation,
+  storeServerConversations,
+} from "../mensagens/mensagensRepository";
 import {
   hidratarColaboradoresAcademy,
   listarColaboradoresConhecidos,
@@ -597,34 +601,55 @@ export function EquipesPage() {
   }
 
   async function openTeamConversation() {
-    if (!selectedTeam || !navigator.onLine || !hasAuthenticatedConnection) {
-      setActionError("Conecte-se para abrir ou criar a conversa da equipe.");
+    if (!selectedTeam) {
       return;
     }
     setActionError(null);
     try {
-      const conversations = await listConversationsApi();
-      const existing = conversations.find(
-        (conversation) => conversation.equipeId === selectedTeam.id,
-      );
-      let conversationId = existing?.id;
-      if (!conversationId) {
-        const created = await createConversationApi({
-          tipo: "EQUIPE",
-          titulo: selectedTeam.nome,
-          obraId: selectedTeam.obraPrincipalId,
-          equipeId: selectedTeam.id,
-          participanteIds: [],
-        });
-        await storeServerConversations([created]);
-        conversationId = created.id;
-      } else if (existing) {
-        await storeServerConversations([existing]);
-      }
+      // Sem rede, o que o dispositivo já tem é a resposta: uma conversa de
+      // equipe que já foi aberta antes está aqui. Só se não houver nenhuma é
+      // que uma nova é criada — e ela também nasce local.
+      const conversationId = temRede()
+        ? await conversaDaEquipeComRede()
+        : await conversaDaEquipeLocal();
       navigate(`/mensagens?conversa=${encodeURIComponent(conversationId)}`);
     } catch (conversationError: unknown) {
       setActionError(conversationError instanceof Error ? conversationError.message : "Não foi possível abrir a conversa.");
     }
+  }
+
+  function temRede() {
+    return navigator.onLine && hasAuthenticatedConnection;
+  }
+
+  async function conversaDaEquipeComRede(): Promise<string> {
+    const conversations = await listConversationsApi();
+    const existing = conversations.find(
+      (conversation) => conversation.equipeId === selectedTeam!.id,
+    );
+    if (existing) {
+      await storeServerConversations([existing]);
+      return existing.id;
+    }
+    return conversaDaEquipeLocal();
+  }
+
+  async function conversaDaEquipeLocal(): Promise<string> {
+    const locais = await listLocalConversations();
+    const existente = locais.find(
+      (conversation) => conversation.equipeId === selectedTeam!.id,
+    );
+    if (existente) {
+      return existente.id;
+    }
+    const criada = await queueConversation({
+      tipo: "EQUIPE",
+      titulo: selectedTeam!.nome,
+      obraId: selectedTeam!.obraPrincipalId,
+      equipeId: selectedTeam!.id,
+      participantes: [],
+    });
+    return criada.id;
   }
 
   return (

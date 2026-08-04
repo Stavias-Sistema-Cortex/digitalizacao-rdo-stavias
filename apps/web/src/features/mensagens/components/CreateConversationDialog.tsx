@@ -1,6 +1,10 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 
-import type { ConversaTipo, ObraLocalRecord } from "../../../lib/db/db.types";
+import type {
+  ConversaLocalRecord,
+  ConversaTipo,
+  ObraLocalRecord,
+} from "../../../lib/db/db.types";
 import { filterOperationalObras } from "../../../lib/db/obraSelectors";
 import {
   buscarColaboradoresDaObra,
@@ -8,9 +12,9 @@ import {
 } from "../../rdos/rdoLookupApi";
 import {
   buscarDiretorioDeMensagens,
-  createConversationApi,
   type DiretorioPessoa,
 } from "../mensagensApi";
+import { queueConversation } from "../mensagensRepository";
 import { messageFrom } from "../mensagensFormat";
 
 type DirectoryPerson = {
@@ -29,7 +33,7 @@ export function CreateConversationDialog(props: {
   obrasPromise: Promise<ObraLocalRecord[]>;
   alfa: boolean;
   onClose: () => void;
-  onCreated: (conversation: Awaited<ReturnType<typeof createConversationApi>>) => Promise<void>;
+  onCreated: (conversation: ConversaLocalRecord) => Promise<void>;
 }) {
   const [type, setType] = useState<ConversaTipo>("DIRETA");
   const [title, setTitle] = useState("");
@@ -77,20 +81,17 @@ export function CreateConversationDialog(props: {
     setBusy(true);
     setError("");
     try {
-      if (type === "DIRETA" && selectedPeople.length !== 1) {
-        throw new Error("Selecione uma pessoa para a conversa direta.");
-      }
-      if (type === "GRUPO" && (!title.trim() || selectedPeople.length < 1)) {
-        throw new Error("Informe o nome do grupo e selecione ao menos uma pessoa.");
-      }
-      if (type === "OBRA" && !obraId) {
-        throw new Error("Selecione a obra da conversa.");
-      }
-      const created = await createConversationApi({
+      // A conversa nasce no aparelho e sobe depois, com ou sem rede: as
+      // exigências de cada tipo são conferidas na própria montagem.
+      const created = await queueConversation({
         tipo: type,
         titulo: type === "DIRETA" ? null : title,
         obraId: type === "OBRA" ? obraId : null,
-        participanteIds: selectedPeople,
+        equipeId: null,
+        participantes: selectedPeople.map((id) => ({
+          colaboradorId: id,
+          nome: people.find((pessoa) => pessoa.id === id)?.nome ?? "",
+        })),
       });
       await props.onCreated(created);
     } catch (cause: unknown) {

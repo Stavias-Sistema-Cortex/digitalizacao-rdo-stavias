@@ -43,7 +43,6 @@ import {
   queueMessage,
   retryMessage,
   searchLocalMessages,
-  storeServerConversations,
   storeServerMessages,
   type MensagemComAnexos,
 } from "./mensagensRepository";
@@ -396,7 +395,6 @@ export function MensagensPage() {
               type="button"
               className="mensagens-primary"
               onClick={() => setShowCreate(true)}
-              disabled={!snapshot.isOnline || !hasOnlineSession()}
             >
               Nova conversa
             </button>
@@ -505,7 +503,9 @@ export function MensagensPage() {
             alfa={isAlfa(session)}
             onClose={() => setShowCreate(false)}
             onCreated={async (conversation) => {
-              await storeServerConversations([conversation]);
+              // Já está gravada no dispositivo: só relemos e abrimos. Guardá-la
+              // como resposta do servidor a marcaria como confirmada por quem
+              // ainda nem a viu.
               await loadLocal();
               setSelectedId(conversation.id);
               setShowCreate(false);

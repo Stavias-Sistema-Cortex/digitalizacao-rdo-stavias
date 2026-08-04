@@ -1,9 +1,129 @@
 import type {
+  ConversaLocalRecord,
+  ConversaParticipanteLocal,
+  ConversaTipo,
   MensagemAnexoLocalRecord,
   MensagemLocalRecord,
   MensagemSyncStatus,
   OutboxMutationRecord,
 } from "../../lib/db/db.types";
+
+export interface BuildQueuedConversationInput {
+  tipo: ConversaTipo;
+  titulo: string | null;
+  obraId: string | null;
+  equipeId: string | null;
+  /** Quem entra na conversa, além de quem a está criando. */
+  participantes: readonly { colaboradorId: string; nome: string }[];
+  autorId: string;
+  autorNome: string;
+  now?: string;
+  id?: string;
+}
+
+export interface QueuedConversationPlan {
+  conversation: ConversaLocalRecord;
+  mutation: OutboxMutationRecord;
+}
+
+/**
+ * A conversa nasce no aparelho, como todo o resto.
+ *
+ * <p>Criar conversa era a única escrita de Mensagens que falava direto com o
+ * servidor: sem rede, o botão ficava desabilitado e não havia como começar
+ * uma conversa em campo — justamente onde o Córtex precisa funcionar. O
+ * servidor já aceitava id cunhado pelo cliente nesta operação; o que faltava
+ * era o cliente usar essa porta.
+ *
+ * <p>O identificador é do dispositivo e não muda depois: é ele que amarra as
+ * mensagens escritas antes de a conversa subir.
+ */
+export function buildQueuedConversation(
+  input: BuildQueuedConversationInput,
+): QueuedConversationPlan {
+  const now = input.now ?? new Date().toISOString();
+  const conversationId = input.id ?? crypto.randomUUID();
+  const titulo = input.titulo?.trim() || null;
+
+  if (input.tipo === "DIRETA" && input.participantes.length !== 1) {
+    throw new Error("Selecione uma pessoa para a conversa direta.");
+  }
+  if (input.tipo === "GRUPO" && (!titulo || input.participantes.length < 1)) {
+    throw new Error(
+      "Informe o nome do grupo e selecione ao menos uma pessoa.",
+    );
+  }
+  if (input.tipo === "OBRA" && !input.obraId) {
+    throw new Error("Selecione a obra da conversa.");
+  }
+
+  // Quem cria participa, e como administrador: é o que o servidor faz ao
+  // aplicar a criação, e a tela precisa mostrar a mesma coisa antes disso.
+  const participantes: ConversaParticipanteLocal[] = [
+    {
+      colaboradorId: input.autorId,
+      nome: input.autorNome,
+      papel: "ADMIN",
+      status: "ATIVO",
+      adicionadoEm: now,
+    },
+    ...input.participantes
+      .filter((pessoa) => pessoa.colaboradorId !== input.autorId)
+      .map((pessoa) => ({
+        colaboradorId: pessoa.colaboradorId,
+        nome: pessoa.nome,
+        papel: "MEMBRO" as const,
+        status: "ATIVO" as const,
+        adicionadoEm: now,
+      })),
+  ];
+
+  const conversation: ConversaLocalRecord = {
+    id: conversationId,
+    tipo: input.tipo,
+    titulo,
+    obraId: input.obraId,
+    equipeId: input.equipeId,
+    status: "ATIVA",
+    participantes,
+    criadaEm: now,
+    atualizadaEm: now,
+    // Nula declara que o servidor ainda não viu esta conversa. É por este
+    // campo que a reconciliação sabe que não pode apagá-la.
+    versaoEntidade: null,
+  };
+
+  const mutation: OutboxMutationRecord = {
+    clientMutationId: conversationId,
+    entidadeTipo: "CONVERSA",
+    entidadeId: conversationId,
+    operacao: "CRIAR_CONVERSA",
+    baseVersao: null,
+    payload: {
+      id: conversationId,
+      tipo: input.tipo,
+      titulo,
+      obraId: input.obraId,
+      equipeId: input.equipeId,
+      participanteIds: participantes
+        .filter((pessoa) => pessoa.colaboradorId !== input.autorId)
+        .map((pessoa) => pessoa.colaboradorId),
+      criadaNoClienteEm: now,
+    },
+    status: "PENDING",
+    tentativas: 0,
+    ultimaTentativaEm: null,
+    ultimoErro: null,
+    conflito: null,
+    criadaNoClienteEm: now,
+    updatedAt: now,
+    transport: "SYNC_PUSH",
+    dependsOnMutationIds: [],
+    correlationId: conversationId,
+  };
+
+  return { conversation, mutation };
+}
 
 export interface BuildQueuedMessageInput {
   conversaId: string;

@@ -10,7 +10,9 @@ import type {
   MessageApi,
 } from "./mensagensApi";
 import {
+  buildQueuedConversation,
   buildQueuedMessage,
+  type BuildQueuedConversationInput,
   type QueuedMessagePlan,
 } from "./mensagensQueue";
 import {
@@ -73,6 +75,40 @@ export function validateMessageFiles(files: File[]): void {
   }
 }
 
+/**
+ * Cria a conversa no dispositivo e a coloca na fila de subida.
+ *
+ * <p>Era a única escrita de Mensagens que falava direto com o servidor, e por
+ * isso a única que o campo não podia fazer: sem rede, o botão de nova conversa
+ * ficava desabilitado. Agora ela segue o mesmo caminho de todo o resto —
+ * escreve local, sobe depois — e a tela deixa de ter dois comportamentos
+ * conforme o sinal.
+ */
+export async function queueConversation(
+  input: Omit<BuildQueuedConversationInput, "autorId" | "autorNome">,
+): Promise<ConversaLocalRecord> {
+  const session = getSession();
+  if (!session) {
+    throw new Error("Abra a sessão protegida antes de criar conversas.");
+  }
+  const plan = buildQueuedConversation({
+    ...input,
+    autorId: session.colaboradorId,
+    autorNome: session.nome,
+  });
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    ["mensagem_conversas", "outbox_mutations"],
+    "readwrite",
+  );
+  await transaction.objectStore("mensagem_conversas").add(plan.conversation);
+  await transaction.objectStore("outbox_mutations").add(plan.mutation);
+  await transaction.done;
+  emitMessagesChanged();
+  anunciarEscritaLocal();
+  return plan.conversation;
+}
+
 export async function queueMessage(input: {
   conversaId: string;
   corpo: string;
@@ -99,9 +135,30 @@ export async function queueMessage(input: {
   for (const attachment of hashedPlan.attachments) {
     await transaction.objectStore("mensagem_anexos").add(attachment);
   }
+  /*
+   * Uma mensagem escrita numa conversa que ainda não subiu precisa esperar
+   * por ela. Sem isso o servidor receberia a mensagem antes da conversa e a
+   * recusaria por conversa inexistente — e a recusa travaria a fila inteira
+   * atrás dela, que é o pior desfecho possível para quem apontou em campo.
+   */
+  const criacaoDaConversa = await transaction
+    .objectStore("outbox_mutations")
+    .get(input.conversaId);
+  const dependeDaConversa =
+    criacaoDaConversa?.entidadeTipo === "CONVERSA" &&
+    criacaoDaConversa.operacao === "CRIAR_CONVERSA";
+  const messageMutation = dependeDaConversa
+    ? {
+      ...hashedPlan.messageMutation,
+      dependsOnMutationIds: [
+        ...(hashedPlan.messageMutation.dependsOnMutationIds ?? []),
+        criacaoDaConversa.clientMutationId,
+      ],
+    }
+    : hashedPlan.messageMutation;
   for (const mutation of [
     ...hashedPlan.uploadMutations,
-    hashedPlan.messageMutation,
+    messageMutation,
   ]) {
     await transaction.objectStore("outbox_mutations").add(mutation);
   }
@@ -231,8 +288,24 @@ export async function storeServerConversations(
     const authorizedIds = new Set(
       conversations.map((conversation) => conversation.id),
     );
+    /*
+     * A conversa criada aqui e ainda não subida não está na resposta do
+     * servidor — ele não a conhece. Apagá-la por isso destruiria a conversa,
+     * as mensagens escritas nela e a própria fila que as levaria para cima,
+     * tudo em silêncio, na primeira releitura. É a mesma regra da geometria:
+     * resposta do servidor não apaga trabalho local que ainda não subiu.
+     */
+    const aguardandoSubida = new Set(
+      (await transaction.objectStore("outbox_mutations").getAll())
+        .filter(
+          (mutation) =>
+            mutation.entidadeTipo === "CONVERSA" &&
+            mutation.operacao === "CRIAR_CONVERSA",
+        )
+        .map((mutation) => mutation.entidadeId),
+    );
     for (const local of await conversationStore.getAll()) {
-      if (authorizedIds.has(local.id)) {
+      if (authorizedIds.has(local.id) || aguardandoSubida.has(local.id)) {
         continue;
       }
       const messages = await transaction
