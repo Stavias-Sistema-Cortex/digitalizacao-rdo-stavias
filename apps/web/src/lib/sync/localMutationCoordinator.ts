@@ -384,10 +384,18 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
             "A mutação canônica original não possui evento local único.",
           );
         }
+        /*
+         * O envelope saiu da fila, mas ninguém o recusou: quem escreveu por
+         * cima foi a própria pessoa, no aparelho, geralmente sem rede. O
+         * evento dizia `REJECTED`/`SYNC_FAILED`, e com isso um dia normal de
+         * apontamento — em que o RDO é salvo a cada campo preenchido — enchia
+         * a Memória de falhas que nunca existiram e pedia revisão do que não
+         * tem o que revisar.
+         */
         await eventStore.put({
           ...originalEvents[0],
-          result: "REJECTED",
-          syncStatus: "SYNC_FAILED",
+          result: "SUPERSEDED",
+          syncStatus: "LOCAL_ONLY",
           errorCategory: "SUPERSEDED_BY_LOCAL_EDIT",
         });
       }

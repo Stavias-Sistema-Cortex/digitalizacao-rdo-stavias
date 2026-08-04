@@ -95,6 +95,14 @@ export type CanonicalMutationResult =
    * permanece na Memória em vez de sumir junto com a mutação.
    */
   | "DISCARDED"
+  /*
+   * A intenção desta escrita foi absorvida por um envelope posterior da mesma
+   * entidade — o caso comum é o salvamento automático do RDO, que reescreve o
+   * apontamento a cada campo preenchido. Nada falhou e o servidor pode nunca
+   * ter visto a original: chamar isso de recusa é acusar de erro o
+   * funcionamento normal do app em campo.
+   */
+  | "SUPERSEDED"
   | "REJECTED";
 
 export interface CanonicalMutationEnvelopeV13 {
@@ -754,6 +762,7 @@ export interface MemorySearchDocumentRecord {
     | "SYNCING"
     | "CONFLICT"
     | "DISCARDED"
+    | "SUPERSEDED"
     | "REJECTED";
   sourceKind: "SERVER" | "LOCAL";
   occurredAt: string;

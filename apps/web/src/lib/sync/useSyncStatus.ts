@@ -148,6 +148,51 @@ function foiSubstituida(
   );
 }
 
+export interface ContagemDaFila {
+  pendingCount: number;
+  syncingCount: number;
+  errorCount: number;
+  conflictCount: number;
+  reviewCount: number;
+}
+
+/**
+ * Quantas linhas da fila ainda pedem alguma coisa de alguém.
+ *
+ * Vivia embutida no `refresh` do hook, e por isso só a tarja conseguia
+ * respondê-la: qualquer outra tela — ou teste — que quisesse a mesma verdade
+ * precisava reconstruir a regra de superação por conta própria, e uma cópia
+ * que envelhecesse diferente faria dois lugares do app discordarem sobre o
+ * mesmo aparelho.
+ */
+export function contarPendenciasDaFila(
+  mutations: OutboxMutationRecord[],
+): ContagemDaFila {
+  const com = (status: OutboxMutationRecord["status"]) =>
+    mutations.filter((mutation) => mutation.status === status).length;
+
+  /*
+   * A superação só desconta de conflito e revisão. Uma linha ainda PENDING ou
+   * SYNCING continua na fila e continua sendo enviada, mesmo que alguém já a
+   * tenha sucedido: descontá-la aqui faria a tela dizer que não há trabalho
+   * enquanto o motor ainda o tem em mãos.
+   */
+  const semSucessora = (status: OutboxMutationRecord["status"]) =>
+    mutations.filter(
+      (mutation) =>
+        mutation.status === status &&
+        !foiSubstituida(mutation, mutations),
+    ).length;
+
+  return {
+    pendingCount: com("PENDING"),
+    syncingCount: com("SYNCING"),
+    errorCount: com("ERROR"),
+    conflictCount: semSucessora("CONFLICT"),
+    reviewCount: semSucessora("REJECTED"),
+  };
+}
+
 function firstMutationReviewReason(
   mutations: OutboxMutationRecord[],
 ): string | null {
@@ -185,37 +230,13 @@ export function useSyncStatus(): {
           listOutboxMutations(),
         ]);
 
-      const pendingCount =
-        mutations.filter(
-          (mutation) =>
-            mutation.status === "PENDING",
-        ).length;
-
-      const syncingCount =
-        mutations.filter(
-          (mutation) =>
-            mutation.status === "SYNCING",
-        ).length;
-
-      const errorCount =
-        mutations.filter(
-          (mutation) =>
-            mutation.status === "ERROR",
-        ).length;
-
-      const conflictCount =
-        mutations.filter(
-          (mutation) =>
-            mutation.status === "CONFLICT" &&
-            !foiSubstituida(mutation, mutations),
-        ).length;
-
-      const reviewCount =
-        mutations.filter(
-          (mutation) =>
-            mutation.status === "REJECTED" &&
-            !foiSubstituida(mutation, mutations),
-        ).length;
+      const {
+        pendingCount,
+        syncingCount,
+        errorCount,
+        conflictCount,
+        reviewCount,
+      } = contarPendenciasDaFila(mutations);
 
       const isOnline = navigator.onLine;
       const localSyncProblem =

@@ -3903,10 +3903,13 @@ export async function reconcileCanonicalConflict(
       "Conflito substituído por envelope canônico reconciliado.",
     updatedAt: occurredAt,
   });
+  // Coerente com o parágrafo acima: a original não falhou, foi sucedida. O
+  // evento afirmava o contrário e deixava o conflito resolvido parecendo
+  // recusa aberta na Memória.
   await transaction.objectStore("operational_events").put({
     ...originalEvent,
-    result: "REJECTED",
-    syncStatus: "SYNC_FAILED",
+    result: "SUPERSEDED",
+    syncStatus: "LOCAL_ONLY",
     errorCategory: "SUPERSEDED_BY_CONFLICT_REPLACEMENT",
   });
   await transaction.objectStore("outbox_mutations").add(built.mutation);
@@ -4142,8 +4145,8 @@ export async function resolveCanonicalUploadReplacements(
       });
       await transaction.objectStore("operational_events").put({
         ...originalEvent,
-        result: "REJECTED",
-        syncStatus: "SYNC_FAILED",
+        result: "SUPERSEDED",
+        syncStatus: "LOCAL_ONLY",
         errorCategory: "SUPERSEDED_BY_REPLACEMENT",
       });
       await transaction

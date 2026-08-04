@@ -26,6 +26,8 @@ export type MemoryDocumentStatus =
   | "CONFLICT"
   /* Edição abandonada por decisão de quem a fez; o rastro fica, a fila não. */
   | "DISCARDED"
+  /* Escrita absorvida por uma posterior da mesma entidade. Não é recusa. */
+  | "SUPERSEDED"
   | "REJECTED";
 
 export interface MemoryStructuralKeys {
@@ -126,6 +128,7 @@ export interface MemoryCoverageView {
     | "Sincronizando"
     | "Conflito"
     | "Descartado"
+    | "Substituído"
     | "Rejeitado";
   detail: string;
 }
@@ -344,12 +347,31 @@ export function memoryStatusLabel(
     SYNCING: "Sincronizando",
     CONFLICT: "Conflito",
     DISCARDED: "Descartado",
+    SUPERSEDED: "Substituído",
     REJECTED: "Rejeitado",
   };
   return labels[status];
 }
 
+/**
+ * Marcas de supersessão gravadas antes de existir um resultado próprio.
+ *
+ * Os aparelhos em campo já têm eventos escritos como `REJECTED`/`SYNC_FAILED`
+ * carregando uma destas categorias. Reler a categoria os cura na leitura, sem
+ * exigir migração de banco — e sem deixar quem já apontou offline convivendo
+ * com falhas que nunca aconteceram.
+ */
+const SUPERSESSAO: ReadonlySet<string> = new Set([
+  "SUPERSEDED_BY_LOCAL_EDIT",
+  "SUPERSEDED_BY_CONFLICT_REPLACEMENT",
+  "SUPERSEDED_BY_REPLACEMENT",
+]);
+
 function localStatus(event: OperationalEventRecord): MemoryDocumentStatus {
+  if (event.result === "SUPERSEDED") return "SUPERSEDED";
+  if (event.errorCategory && SUPERSESSAO.has(event.errorCategory)) {
+    return "SUPERSEDED";
+  }
   if (event.result === "CONFLICT") return "CONFLICT";
   if (event.result === "DISCARDED") return "DISCARDED";
   if (event.result === "REJECTED") return "REJECTED";
