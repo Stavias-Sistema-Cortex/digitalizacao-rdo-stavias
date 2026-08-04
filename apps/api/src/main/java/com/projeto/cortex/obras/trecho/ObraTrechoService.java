@@ -78,15 +78,27 @@ public class ObraTrechoService {
             """;
 
     /**
-     * Trecho declarado à mão sobre o mapa.
+     * Trecho desenhado sobre o mapa, que é o RDO visto por outro ângulo.
      *
-     * As chaves lidas são as mesmas que a política de payload da ontologia já
-     * autoriza para geometria. Só entra o que está vigente: uma geometria
+     * <p>As chaves lidas são as mesmas que a política de payload da ontologia
+     * já autoriza para geometria. Só entra o que está vigente: uma geometria
      * encerrada descreve um acordo que deixou de valer.
+     *
+     * <p>O {@code JOIN} com o RDO é o que faltava, e a ausência dele era
+     * visível na tela. As outras três fontes deste serviço descendem do
+     * apontamento e somem quando ele é apagado; esta filtrava obra, categoria e
+     * status e nada mais, então o desenho sobrevivia ao RDO que ele
+     * representava — e, sem amarração, a rodovia digitada à mão podia ser outra
+     * que ninguém conferia. Desenhar e apontar são duas portas para o mesmo
+     * registro, e agora as duas fecham juntas.
      */
     private static final String SEGMENTOS_TRECHO_CADASTRADO = """
             SELECT g.id,
                    g.valido_desde,
+                   g.objeto_id AS rdo_id,
+                   r.numero_rdo,
+                   r.data_rdo,
+                   r.status AS rdo_status,
                    g.propriedades_json ->> 'nome' AS nome,
                    g.propriedades_json ->> 'rodovia' AS rodovia,
                    g.propriedades_json ->> 'sentido' AS sentido,
@@ -96,9 +108,14 @@ public class ObraTrechoService {
                    g.propriedades_json ->> 'kmFinal' AS km_final,
                    g.propriedades_json ->> 'extensaoM' AS extensao_m
               FROM obra_geometria g
+              JOIN rdo r
+                ON r.id = g.objeto_id
+               AND r.obra_id = g.obra_id
              WHERE g.obra_id = ?
                AND g.categoria = 'TRECHO'
                AND g.status = 'ATIVA'
+               AND g.objeto_tipo = 'RDO'
+               AND r.cancelado_em IS NULL
              ORDER BY g.valido_desde ASC, g.id ASC
             """;
 
@@ -461,7 +478,14 @@ public class ObraTrechoService {
                 SEGMENTOS_TRECHO_CADASTRADO,
                 (rs, rowNum) -> new TrechoDeclarado(
                         rs.getString("id"),
-                        localDate(rs, "valido_desde"),
+                        rs.getString("rdo_id"),
+                        texto(rs.getString("numero_rdo")),
+                        texto(rs.getString("rdo_status")),
+                        // A data do bloco é a do apontamento, não a do
+                        // desenho: o trecho conta o dia do trabalho.
+                        localDate(rs, "data_rdo") != null
+                                ? localDate(rs, "data_rdo")
+                                : localDate(rs, "valido_desde"),
                         texto(rs.getString("nome")),
                         texto(rs.getString("sentido")),
                         texto(rs.getString("faixa")),
@@ -490,8 +514,8 @@ public class ObraTrechoService {
                                 ? declarado.id() + ":" + faixa
                                 : declarado.id(),
                         Origem.CADASTRO_MAPA,
-                        null,
-                        null,
+                        declarado.rdoId(),
+                        declarado.numeroRdo(),
                         declarado.data(),
                         declarado.nome(),
                         null,
@@ -507,7 +531,7 @@ public class ObraTrechoService {
                         null,
                         null,
                         declarado.status(),
-                        null,
+                        declarado.rdoStatus(),
                         false
                 ));
             }
@@ -518,6 +542,9 @@ public class ObraTrechoService {
     /** Leitura crua de um trecho declarado, antes de virar segmento. */
     private record TrechoDeclarado(
             String id,
+            String rdoId,
+            String numeroRdo,
+            String rdoStatus,
             LocalDate data,
             String nome,
             String sentido,

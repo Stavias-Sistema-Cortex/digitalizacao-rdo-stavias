@@ -39,8 +39,8 @@ import static org.mockito.Mockito.when;
 class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
-    void configuredRuntimeRequiresTheCompleteV66Chain() throws Exception {
-        assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("66");
+    void configuredRuntimeRequiresTheCompleteV67Chain() throws Exception {
+        assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("67");
     }
 
     @Test
@@ -139,14 +139,14 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void refusesWhenTheExplicitV66RowIsAbsent() {
+    void refusesWhenTheExplicitV67RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V66");
-        verify(jdbcTemplate).queryForObject(contains("version = '66'"), eq(Integer.class));
+                .hasMessageContaining("cadeia de migrações até V67");
+        verify(jdbcTemplate).queryForObject(contains("version = '67'"), eq(Integer.class));
     }
 
     @Test
@@ -161,7 +161,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void acceptsOnlyV66AcademyIdentityOwnerFlagAndReleasedSurfaceTogether() {
+    void acceptsOnlyV67AcademyIdentityOwnerFlagAndReleasedSurfaceTogether() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
 
@@ -392,7 +392,7 @@ class PostgresqlRuntimeReadinessGuardTest {
         PostgresqlRuntimeReadinessGuard readinessGuard =
                 new PostgresqlRuntimeReadinessGuard(
                         jdbcTemplate,
-                        "66",
+                        "67",
                         true,
                         released(),
                         false,
@@ -450,7 +450,7 @@ class PostgresqlRuntimeReadinessGuardTest {
         PostgresqlRuntimeReadinessGuard readinessGuard =
                 new PostgresqlRuntimeReadinessGuard(
                         jdbcTemplate,
-                        "66",
+                        "67",
                         true,
                         released(),
                         false,
@@ -811,7 +811,7 @@ class PostgresqlRuntimeReadinessGuardTest {
             PostgresqlRuntimeSurfaceRegistry registry
     ) {
         return new PostgresqlRuntimeReadinessGuard(
-                jdbcTemplate, "66", runtimeReady, registry
+                jdbcTemplate, "67", runtimeReady, registry
         );
     }
 
@@ -822,7 +822,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     ) {
         return new PostgresqlRuntimeReadinessGuard(
                 jdbcTemplate,
-                "66",
+                "67",
                 true,
                 released(),
                 academySyncEnabled,

@@ -130,6 +130,8 @@ public class RdoWorkflowService {
             return queryService.buscarPorId(rdoId);
         }
 
+        encerrarTrechoDesenhado(rdoId);
+
         RdoResponse response = queryService.buscarPorId(rdoId);
 
         memoryPublisher.registrarRdoCancelado(
@@ -181,6 +183,8 @@ public class RdoWorkflowService {
         if (updated == 0) {
             return queryService.buscarPorId(rdoId);
         }
+
+        reabrirTrechoDesenhado(rdoId);
 
         RdoResponse response = queryService.buscarPorId(rdoId);
 
@@ -242,4 +246,62 @@ public class RdoWorkflowService {
             );
         }
     }
+
+    /**
+     * Apagar o apontamento apaga o desenho dele no mapa.
+     *
+     * <p>O trecho é montado de quatro fontes e três delas descendem do RDO,
+     * sumindo junto quando ele é cancelado. A geometria não sumia: filtrava
+     * obra e categoria e mais nada, então o desenho continuava na tela
+     * descrevendo um serviço que deixou de existir — foi assim que um trecho de
+     * rodovia errada sobreviveu a quem o apagou.
+     *
+     * <p>Encerrar em vez de remover é o mesmo critério que o cancelamento do
+     * RDO já usa: a linha sai de tudo que lê o vigente e continua auditável, e
+     * restaurar o RDO devolve o desenho junto.
+     */
+    private void encerrarTrechoDesenhado(String rdoId) {
+        jdbcTemplate.update(
+                """
+                UPDATE obra_geometria
+                SET status = 'ENCERRADA',
+                    valido_ate = CURRENT_TIMESTAMP(6),
+                    motivo_encerramento = 'RDO cancelado.',
+                    versao_linha = versao_linha + 1,
+                    atualizado_em = CURRENT_TIMESTAMP(6)
+                WHERE categoria = 'TRECHO'
+                  AND objeto_tipo = 'RDO'
+                  AND objeto_id = ?
+                  AND status = 'ATIVA'
+                """,
+                rdoId
+        );
+    }
+
+    /**
+     * Restaurar o RDO devolve o desenho que o cancelamento tinha fechado.
+     *
+     * <p>Só volta o que este caminho encerrou: um trecho fechado à mão, ou pela
+     * migração que desligou os desenhos sem vínculo, descreve outra decisão e
+     * não deve ser reaberto de carona.
+     */
+    private void reabrirTrechoDesenhado(String rdoId) {
+        jdbcTemplate.update(
+                """
+                UPDATE obra_geometria
+                SET status = 'ATIVA',
+                    valido_ate = NULL,
+                    motivo_encerramento = NULL,
+                    versao_linha = versao_linha + 1,
+                    atualizado_em = CURRENT_TIMESTAMP(6)
+                WHERE categoria = 'TRECHO'
+                  AND objeto_tipo = 'RDO'
+                  AND objeto_id = ?
+                  AND status = 'ENCERRADA'
+                  AND motivo_encerramento = 'RDO cancelado.'
+                """,
+                rdoId
+        );
+    }
+
 }

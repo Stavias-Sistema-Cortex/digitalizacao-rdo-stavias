@@ -186,7 +186,7 @@ class PostgresqlReleaseMarkerIT {
             assertThat(ownerJdbc.queryForObject(
                     "SELECT MAX(version) FROM public.flyway_schema_history WHERE success",
                     String.class
-            )).isEqualTo("66");
+            )).isEqualTo("67");
             assertThat(ownerJdbc.queryForObject(
                     """
                     SELECT marker
