@@ -73,7 +73,8 @@ class DeploymentRevisionEndpointsTest {
                                 "render-instance-contract"
                         ),
                         fingerprint,
-                        objectStorage
+                        objectStorage,
+                        0L
                 )
                         .readiness();
 

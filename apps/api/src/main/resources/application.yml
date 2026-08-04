@@ -43,6 +43,29 @@ server:
   forward-headers-strategy: none
 
 cortex:
+  api:
+    # Teto de corpo para tudo que a API recebe fora de multipart. O buraco que
+    # ele fecha era concreto: /api/sync/push limita a QUANTIDADE de mutações a
+    # 100 e nada limitava o tamanho de cada uma, então um lote gordo virava
+    # gigabytes lidos para dentro da memória desta instância.
+    #
+    # O número é generoso de propósito, e a razão está no cliente: um 413 é
+    # terminal em classifyAutomaticRequestFailure, não retentável. Um teto
+    # apertado não devolveria a mutação para a fila — deixaria o dado de campo
+    # preso esperando uma revisão que ninguém sabe fazer. 32 MB dá cerca de
+    # 320 KB por mutação num lote cheio, muito acima de qualquer RDO ou traçado
+    # real, e ainda assim é um limite onde antes não havia nenhum.
+    max-request-body-bytes: ${CORTEX_API_MAX_REQUEST_BODY_BYTES:33554432}
+
+  readiness:
+    # /api/readiness é anônimo por necessidade — o health check da hospedagem
+    # não manda cabeçalho — e a sonda que ele dispara grava, lê e apaga um
+    # objeto de verdade no armazenamento pago. Sem intervalo, qualquer pessoa
+    # fazia o Córtex gastar armazenamento num laço de curl. O health check bate
+    # espaçado e continua vendo a prova; a enxurrada anônima passa a custar uma
+    # leitura em memória. Zero volta ao comportamento antigo.
+    object-storage-probe-interval-ms: ${CORTEX_READINESS_PROBE_INTERVAL_MS:30000}
+
   postgresql:
     schema-readiness:
       enabled: false

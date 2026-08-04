@@ -117,7 +117,13 @@ class PostgresqlProfileModesContractTest {
         Profile mysqlOnly = AuthReadinessIndicator.class.getAnnotation(Profile.class);
 
         assertThat(mysqlOnly.value()).containsExactly("!postgresql-common");
-        assertThat(ReadinessController.class.getDeclaredConstructors())
+        // O que este contrato guarda é a lista de colaboradores que o
+        // container injeta: nenhum deles pode ser específico de um perfil, ou o
+        // readiness passaria a responder coisas diferentes conforme o modo. O
+        // intervalo da sonda entra aqui porque é ajuste do próprio endpoint, e
+        // não uma dependência nova. O construtor de pacote que os testes usam
+        // fica de fora de propósito — getConstructors() só enxerga o público.
+        assertThat(ReadinessController.class.getConstructors())
                 .singleElement()
                 .satisfies(constructor -> assertThat(constructor.getParameterTypes())
                         .containsExactly(
@@ -125,7 +131,8 @@ class PostgresqlProfileModesContractTest {
                                 RuntimeRevision.class,
                                 RuntimeInstanceFingerprint.class,
                                 OfflineGrantPublicKeyFingerprint.class,
-                                ObjectStorageReadiness.class
+                                ObjectStorageReadiness.class,
+                                long.class
                         ));
     }
 
