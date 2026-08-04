@@ -178,6 +178,23 @@ public class Obra {
         tocar();
     }
 
+    /**
+     * O caminho de volta de {@link #desativar()}.
+     *
+     * <p>Desativar era porta de mão única: o status ia para INATIVA e nada o
+     * trazia de volta. Restaurar não servia — ela desfaz o arquivamento e não
+     * toca no status, então uma obra arquivada enquanto inativa voltava
+     * inativa. Quem desativasse por engano ficava sem saída pelo produto.
+     *
+     * <p>Arquivada continua recusando: obra no arquivo aceita só restauração, e
+     * essa é a mesma regra que desativar já obedecia.
+     */
+    public void ativar() {
+        exigirNaoArquivada();
+        this.status = "ATIVA";
+        tocar();
+    }
+
     public void arquivar() {
         exigirNaoArquivada();
         LocalDateTime agora = LocalDateTime.now();

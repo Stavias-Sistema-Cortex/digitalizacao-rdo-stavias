@@ -13,6 +13,7 @@ final class ObraSyncEvento {
     static final String TIPO_ENTIDADE = "OBRA";
     static final String TIPO_EVENTO = "OBRA_ATUALIZADA";
     static final String EVENTO_DESATIVADA = "OBRA_DESATIVADA";
+    static final String EVENTO_ATIVADA = "OBRA_ATIVADA";
     static final String EVENTO_ARQUIVADA = "OBRA_ARQUIVADA";
     static final String EVENTO_RESTAURADA = "OBRA_RESTAURADA";
 

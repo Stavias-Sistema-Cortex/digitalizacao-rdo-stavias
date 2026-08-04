@@ -217,11 +217,13 @@ async function queueObraMutation(
     transportOperation:
       | "ATUALIZAR_OBRA"
       | "DESATIVAR_OBRA"
+      | "ATIVAR_OBRA"
       | "ARQUIVAR_OBRA"
       | "RESTAURAR_OBRA";
     eventType:
       | "OBRA_ATUALIZADA"
       | "OBRA_DESATIVADA"
+      | "OBRA_ATIVADA"
       | "OBRA_ARQUIVADA"
       | "OBRA_RESTAURADA";
   },
@@ -326,6 +328,32 @@ export async function queueDeactivateObra(
     operation: "TRANSITION",
     transportOperation: "DESATIVAR_OBRA",
     eventType: "OBRA_DESATIVADA",
+  });
+}
+
+/**
+ * O caminho de volta de {@link queueDeactivateObra}.
+ *
+ * Desativar era porta de mão única: o status ia para INATIVA e nada o trazia de
+ * volta. Restaurar não servia, porque ela desfaz o arquivamento e não toca no
+ * status — uma obra arquivada enquanto inativa voltava inativa. Quem desativou
+ * por engano não tinha saída pelo produto.
+ */
+export async function queueActivateObra(
+  existing: ObraLocalRecord,
+): Promise<ObraLocalRecord> {
+  assertNotArchived(existing);
+  const next: ObraLocalRecord = {
+    ...existing,
+    status: "ATIVA",
+    syncStatus: "PENDING_SYNC",
+    ultimoErro: null,
+    updatedAt: new Date().toISOString(),
+  };
+  return queueObraMutation(existing, next, {
+    operation: "TRANSITION",
+    transportOperation: "ATIVAR_OBRA",
+    eventType: "OBRA_ATIVADA",
   });
 }
 

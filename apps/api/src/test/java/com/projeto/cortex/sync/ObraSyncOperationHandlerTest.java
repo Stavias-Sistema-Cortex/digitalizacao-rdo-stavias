@@ -210,7 +210,7 @@ class ObraSyncOperationHandlerTest {
     }
 
     @Test
-    void exposesExactlyTheFourCanonicalWorksiteOperations() {
+    void exposesExactlyTheFiveCanonicalWorksiteOperations() {
         ObraSyncOperationHandler handler = new ObraSyncOperationHandler(
                 mock(ObraService.class),
                 mock(CurrentUserService.class),
@@ -222,6 +222,9 @@ class ObraSyncOperationHandlerTest {
                 Set.of(
                         "ATUALIZAR_OBRA",
                         "DESATIVAR_OBRA",
+                        // Desativar era porta de mão única: nada devolvia o
+                        // status, e restaurar só desfaz o arquivamento.
+                        "ATIVAR_OBRA",
                         "ARQUIVAR_OBRA",
                         "RESTAURAR_OBRA"
                 )

@@ -175,6 +175,28 @@ public class ObraService {
     }
 
     @Transactional
+    public ObraResponse ativarObra(
+            String obraId,
+            ObraVersionRequest request,
+            String actorId
+    ) {
+        String ator = normalizarObrigatorio(actorId, "actorId");
+        Obra obra = requireObraParaMutacao(obraId);
+        requireMatchingVersion(
+                obra,
+                request == null ? null : request.baseVersion()
+        );
+        Map<String, Object> estadoAnterior = ObraSyncEvento.payload(obra);
+        executarTransicao(obra::ativar);
+        return persistirMutacao(
+                obra,
+                ator,
+                ObraSyncEvento.EVENTO_ATIVADA,
+                estadoAnterior
+        );
+    }
+
+    @Transactional
     public ObraResponse arquivarObra(
             String obraId,
             ObraVersionRequest request,

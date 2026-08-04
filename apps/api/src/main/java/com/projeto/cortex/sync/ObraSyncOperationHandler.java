@@ -21,6 +21,7 @@ public class ObraSyncOperationHandler implements SyncOperationHandler {
     private static final Set<String> OPERATIONS = Set.of(
             "ATUALIZAR_OBRA",
             "DESATIVAR_OBRA",
+            "ATIVAR_OBRA",
             "ARQUIVAR_OBRA",
             "RESTAURAR_OBRA"
     );
@@ -85,6 +86,14 @@ public class ObraSyncOperationHandler implements SyncOperationHandler {
                         context.actorId()
                 );
                 eventType = "OBRA_DESATIVADA";
+            }
+            case "ATIVAR_OBRA" -> {
+                response = service.ativarObra(
+                        obraId,
+                        new ObraVersionRequest(baseVersion),
+                        context.actorId()
+                );
+                eventType = "OBRA_ATIVADA";
             }
             case "ARQUIVAR_OBRA" -> {
                 response = service.arquivarObra(

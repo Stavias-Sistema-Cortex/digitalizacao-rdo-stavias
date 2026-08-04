@@ -77,6 +77,7 @@ class CanonicalOperationsCoverageTest {
                 "SOLICITAR_INTEGRACAO",
                 "ATUALIZAR_OBRA",
                 "DESATIVAR_OBRA",
+                "ATIVAR_OBRA",
                 "ARQUIVAR_OBRA",
                 "RESTAURAR_OBRA"
         );

@@ -21,6 +21,7 @@ import {
 } from "../../lib/sync/syncStorage";
 import {
   queueArchiveObra,
+  queueActivateObra,
   queueDeactivateObra,
   queueRestoreObra,
   queueUpdateObra,
@@ -89,6 +90,48 @@ afterEach(async () => {
 });
 
 describe("obra lifecycle queue", () => {
+  /**
+   * Desativar era porta de mão única.
+   *
+   * O teste vizinho já registrava o sintoma sem nomeá-lo: restaurar devolve a
+   * obra com status INATIVA, porque ela desfaz o arquivamento e não toca no
+   * status. Não havia operação que reativasse — quem desativou por engano não
+   * tinha saída pelo produto, nem passando pela Lixeira.
+   */
+  it("reativa a obra desativada e enfileira a operação canônica", async () => {
+    const database = await getCortexDb();
+    await database.put("obras", obra());
+
+    const desativada = await queueDeactivateObra(obra());
+    expect(desativada.status).toBe("INATIVA");
+
+    const reativada = await queueActivateObra(desativada);
+
+    expect(reativada).toMatchObject({
+      status: "ATIVA",
+      arquivadoEm: null,
+      syncStatus: "PENDING_SYNC",
+      ultimoErro: null,
+    });
+    expect(await database.get("obras", OBRA_ID)).toEqual(reativada);
+
+    const enfileiradas = (await database.getAll("outbox_mutations"))
+      .sort((esquerda, direita) => esquerda.baseVersao! - direita.baseVersao!);
+    expect(enfileiradas.map((mutacao) => mutacao.operacao)).toEqual([
+      "DESATIVAR_OBRA",
+      "ATIVAR_OBRA",
+    ]);
+  });
+
+  /** Obra no arquivo aceita só restauração, nos dois sentidos. */
+  it("recusa reativar uma obra arquivada", async () => {
+    const database = await getCortexDb();
+    await database.put("obras", obra());
+    const arquivada = await queueArchiveObra(obra());
+
+    await expect(queueActivateObra(arquivada)).rejects.toThrow();
+  });
+
   it("aplica as quatro projeções e encadeia baseVersion pela cauda pendente", async () => {
     const database = await getCortexDb();
     await database.put("obras", obra());

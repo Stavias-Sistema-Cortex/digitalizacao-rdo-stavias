@@ -65,6 +65,19 @@ public class ObraController {
         );
     }
 
+    @PostMapping("/api/obras/{obraId}/ativar")
+    public ObraResponse ativarObra(
+            @PathVariable String obraId,
+            @RequestBody ObraVersionRequest request
+    ) {
+        currentUserService.requireAlfa();
+        return obraService.ativarObra(
+                obraId,
+                request,
+                currentUserService.requireUserId()
+        );
+    }
+
     @PostMapping("/api/obras/{obraId}/arquivar")
     public ObraResponse arquivarObra(
             @PathVariable String obraId,

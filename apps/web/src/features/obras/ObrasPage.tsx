@@ -31,6 +31,7 @@ import {
 import { NovaObraForm } from "./gestao/NovaObraForm";
 import {
   queueArchiveObra,
+  queueActivateObra,
   queueDeactivateObra,
   queueRestoreObra,
   queueUpdateObra,
@@ -612,6 +613,16 @@ export function ObrasPage() {
     );
   }
 
+  // O caminho de volta. Antes o botão só desativava e ficava desabilitado
+  // depois disso — quem desativou por engano não tinha saída pelo produto, nem
+  // pela Lixeira: restaurar desfaz o arquivamento e não toca no status.
+  async function activate(obra: ObraLocalRecord) {
+    await applyLifecycleMutation(
+      () => queueActivateObra(obra),
+      "ATIVAS",
+    );
+  }
+
   async function confirmArchive() {
     if (!archiveCandidate) return;
     const completed = await applyLifecycleMutation(
@@ -875,16 +886,23 @@ export function ObrasPage() {
                       >
                         Editar
                       </button>
-                      <button
-                        type="button"
-                        disabled={
-                          isMutating ||
-                          focusedObra.status === "INATIVA"
-                        }
-                        onClick={() => void deactivate(focusedObra)}
-                      >
-                        Desativar
-                      </button>
+                      {focusedObra.status === "INATIVA" ? (
+                        <button
+                          type="button"
+                          disabled={isMutating}
+                          onClick={() => void activate(focusedObra)}
+                        >
+                          Ativar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isMutating}
+                          onClick={() => void deactivate(focusedObra)}
+                        >
+                          Desativar
+                        </button>
+                      )}
                       <button
                         ref={archiveTriggerRef}
                         type="button"

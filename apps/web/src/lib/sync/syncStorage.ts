@@ -4894,6 +4894,7 @@ export async function applyPulledEventsAtomically(
       [
         "OBRA_ATUALIZADA",
         "OBRA_DESATIVADA",
+        "OBRA_ATIVADA",
         "OBRA_ARQUIVADA",
         "OBRA_RESTAURADA",
       ].includes(event.tipoEvento) &&

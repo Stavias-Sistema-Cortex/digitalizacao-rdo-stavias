@@ -127,6 +127,52 @@ class ObraServiceTest {
         assertEquals(2L, obra.getVersaoLinha());
     }
 
+    /**
+     * Desativar era porta de mão única.
+     *
+     * <p>O status ia para INATIVA e nada o trazia de volta: restaurar desfaz o
+     * arquivamento e não toca no status, então arquivar e restaurar uma obra
+     * inativa a devolvia inativa. Quem desativasse por engano ficava sem saída
+     * pelo produto.
+     */
+    @Test
+    void ativacaoDevolveStatusAtivaEIncrementaVersao() {
+        Obra obra = novaObra("INATIVA");
+
+        obra.ativar();
+
+        assertEquals("ATIVA", obra.getStatus());
+        assertEquals(2L, obra.getVersaoLinha());
+    }
+
+    /** Ida e volta fecham o ciclo sem deixar resíduo. */
+    @Test
+    void desativarEAtivarDevolveAObraAoEstadoInicial() {
+        Obra obra = novaObra("ATIVA");
+
+        obra.desativar();
+        obra.ativar();
+
+        assertEquals("ATIVA", obra.getStatus());
+    }
+
+    /**
+     * Obra no arquivo aceita só restauração, e essa regra vale para os dois
+     * sentidos — desativar já a obedecia.
+     */
+    @Test
+    void obraArquivadaRejeitaAtivacao() {
+        Obra obra = novaObra("INATIVA");
+        obra.arquivar();
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                obra::ativar
+        );
+
+        assertTrue(error.getMessage().contains("arquivada"));
+    }
+
     @Test
     void obraArquivadaRejeitaDesativacao() {
         Obra obra = novaObra("ATIVA");
