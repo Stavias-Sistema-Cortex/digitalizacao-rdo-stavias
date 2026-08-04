@@ -241,12 +241,49 @@ export function limitesDaObra(
     : { inicio: menor, fim: maior };
 }
 
-/** Régua de quilômetros inteiros, sem rótulos de limite. */
+/**
+ * Quantos rótulos de quilômetro cabem na régua sem virar borrão.
+ *
+ * <p>Medido pela largura do painel: cada rótulo ocupa cerca de 46 px com o
+ * "km" na frente, e menos que isso os números encostam. Vinte é o teto para
+ * uma tela larga; o passo se ajusta para caber nele.
+ */
+const MAXIMO_DE_MARCOS = 20;
+
+/** Passos que uma pessoa lê como quilometragem, e não como sobra de divisão. */
+const PASSOS_LEGIVEIS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1_000];
+
+/**
+ * O passo da régua para este vão.
+ *
+ * <p>A régua emitia um rótulo por quilômetro, sempre. Num trecho curto isso é
+ * exatamente o certo; num filtro de "todo o período", que abre a escala de um
+ * extremo da obra ao outro, viravam dezenas de números impressos uns sobre os
+ * outros — um borrão que não diz nem onde começa nem onde termina. O vão é
+ * que decide: quanto mais largo, mais espaçado o marco.
+ */
+export function passoDaRegua(amplitudeKm: number): number {
+  if (!Number.isFinite(amplitudeKm) || amplitudeKm <= 0) {
+    return 1;
+  }
+  return (
+    PASSOS_LEGIVEIS.find(
+      (passo) => amplitudeKm / passo <= MAXIMO_DE_MARCOS,
+    ) ?? Math.ceil(amplitudeKm / MAXIMO_DE_MARCOS)
+  );
+}
+
+/** Régua de quilômetros, sem rótulos de limite. */
 export function marcosKm(escala: EscalaKm): MarcoKm[] {
   const primeiro = Math.ceil(escala.inicio);
   const ultimo = Math.floor(escala.fim);
+  const passo = passoDaRegua(escala.fim - escala.inicio);
   const marcos: MarcoKm[] = [];
-  for (let km = primeiro; km <= ultimo; km += 1) {
+  // O primeiro marco cai num múltiplo do passo, para a régua ficar em números
+  // redondos: uma escala que começa no km 101 com passo 5 marca 105, 110, 115
+  // — e não 101, 106, 111, que ninguém lê como quilometragem.
+  const inicioAlinhado = Math.ceil(primeiro / passo) * passo;
+  for (let km = inicioAlinhado; km <= ultimo; km += passo) {
     marcos.push({
       km,
       posicao: posicaoPercentual(km, escala),

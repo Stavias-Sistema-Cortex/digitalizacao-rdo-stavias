@@ -9,6 +9,7 @@ import {
   ladosDoCanteiro,
   marcosDeLimite,
   marcosKm,
+  passoDaRegua,
   pistasDoTrecho,
   mesclarLancamentosLocais,
   posicaoPercentual,
@@ -142,6 +143,48 @@ describe("marcosKm", () => {
     expect(marcosKm(escala).map((marco) => marco.km)).toEqual([
       308, 309, 310, 311,
     ]);
+  });
+
+  /**
+   * A régua emitia um rótulo por quilômetro, sempre. Num trecho curto isso é
+   * o certo; com o filtro em "todo o período", que abre a escala de um extremo
+   * da obra ao outro, viravam dezenas de números impressos uns sobre os
+   * outros — um borrão que não diz nem onde a obra começa nem onde termina.
+   */
+  it("espaça os marcos quando o vão é largo demais para um por quilômetro", () => {
+    const escala = { inicio: 100, fim: 172, decrescente: true };
+
+    const marcos = marcosKm(escala).map((marco) => marco.km);
+
+    expect(marcos.length).toBeLessThanOrEqual(20);
+    // Números redondos: quem lê a régua lê quilometragem, não sobra de
+    // divisão. Com passo 5, a escala que começa em 100 marca 100, 105, 110.
+    expect(marcos.every((km) => km % 5 === 0)).toBe(true);
+    expect(marcos[0]).toBe(170);
+    expect(marcos.at(-1)).toBe(100);
+  });
+
+  it("mantém um marco por quilômetro enquanto eles cabem", () => {
+    expect(
+      marcosKm({ inicio: 170, fim: 180, decrescente: false }).map(
+        (marco) => marco.km,
+      ),
+    ).toEqual([170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180]);
+  });
+});
+
+describe("passoDaRegua", () => {
+  it("cresce com o vão, em passos que se leem como quilometragem", () => {
+    expect(passoDaRegua(10)).toBe(1);
+    expect(passoDaRegua(72)).toBe(5);
+    expect(passoDaRegua(300)).toBe(20);
+  });
+
+  /** Vão inválido não pode gerar passo zero: o laço nunca terminaria. */
+  it("nunca devolve passo que trave a régua", () => {
+    expect(passoDaRegua(0)).toBe(1);
+    expect(passoDaRegua(Number.NaN)).toBe(1);
+    expect(passoDaRegua(-5)).toBe(1);
   });
 });
 
