@@ -62,4 +62,47 @@ describe("frontend security delivery policy", () => {
       "RUN sh ./validate-docker-build-args.sh"
     );
   });
+  /**
+   * O `_headers` é o caminho por onde a PWA chega de verdade a quem usa: é o
+   * Cloudflare Pages que serve produção. Nginx e o preview do Vite tinham
+   * teste; ele não. Dava para apagar a CSP da entrega real e a suíte inteira
+   * continuaria verde — a rede de proteção existia justamente onde ela menos
+   * fazia falta.
+   */
+  it("aplica a mesma política na entrega do Cloudflare Pages", async () => {
+    const pagesHeaders = await readFile(webFile("public/_headers"), "utf8");
+
+    expect(pagesHeaders).toContain("Content-Security-Policy: default-src 'self'");
+    expect(pagesHeaders).toContain("frame-ancestors 'none'");
+    expect(pagesHeaders).toContain("object-src 'none'");
+    expect(pagesHeaders).toContain("script-src 'self';");
+    expect(pagesHeaders).toContain("X-Content-Type-Options: nosniff");
+    expect(pagesHeaders).toContain("X-Frame-Options: DENY");
+    expect(pagesHeaders).toContain(
+      "Referrer-Policy: strict-origin-when-cross-origin",
+    );
+    expect(pagesHeaders).toContain(
+      "Permissions-Policy: camera=(), microphone=(), geolocation=(self)",
+    );
+  });
+
+  /**
+   * Sem HSTS, a primeira visita numa rede hostil pode ser rebaixada para HTTP
+   * antes de qualquer cabeçalho valer. O app trafega apontamento de obra e
+   * documento pessoal; a promessa de canal seguro precisa estar no código, não
+   * na configuração de borda que ninguém revisa junto com o diff.
+   */
+  it("promete canal seguro nos dois caminhos de produção", async () => {
+    const [pagesHeaders, securityHeaders] = await Promise.all([
+      readFile(webFile("public/_headers"), "utf8"),
+      readFile(webFile("security-headers.conf"), "utf8"),
+    ]);
+
+    expect(pagesHeaders).toContain(
+      "Strict-Transport-Security: max-age=31536000",
+    );
+    expect(securityHeaders).toContain(
+      'add_header Strict-Transport-Security "max-age=31536000" always;',
+    );
+  });
 });
