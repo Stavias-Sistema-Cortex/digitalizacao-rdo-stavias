@@ -423,4 +423,63 @@ describe("apagar e recuperar RDO", () => {
       baseVersao: 3,
     });
   });
+
+  /**
+   * A corrida que trazia o beco de volta.
+   *
+   * Uma reconciliação em outra aba move a original de CONFLICT para REJECTED
+   * entre a leitura e a transação. Exigir o mesmo estado de antes preservava a
+   * linha, e a checagem seguinte voltava a recusar o apagamento por "alteração
+   * recusada" — o mesmo impasse, agora por acidente de temporização. O que
+   * decide é se a edição continua presa, não em qual dos dois estados.
+   */
+  it("apaga mesmo quando a edição presa muda de conflito para recusa no meio do caminho", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdo({ syncStatus: "CONFLICT" }));
+    const presaId = crypto.randomUUID();
+    const linha = {
+      clientMutationId: presaId,
+      entidadeTipo: "RDO",
+      entidadeId: RDO_ID,
+      operacao: "ATUALIZAR_RDO_RASCUNHO",
+      status: "CONFLICT",
+      tentativas: 1,
+      ultimaTentativaEm: BASE_TIME,
+      ultimoErro: "Conflito de versão.",
+      baseVersao: 3,
+      payload: {},
+      criadaNoClienteEm: BASE_TIME,
+      updatedAt: BASE_TIME,
+      conflito: { versaoAtual: 3 },
+    };
+    await database.put("outbox_mutations", linha as never);
+
+    // A outra aba reconcilia: a original passa a REJECTED com a marca de
+    // superação, exatamente como o motor a deixa.
+    const original = database.getAllFromIndex;
+    let primeiraLeitura = true;
+    database.getAllFromIndex = (async (...args: unknown[]) => {
+      const resultado = await original.apply(database, args as never);
+      if (primeiraLeitura && args[0] === "outbox_mutations") {
+        primeiraLeitura = false;
+        await database.put("outbox_mutations", {
+          ...linha,
+          status: "REJECTED",
+          blockedReason: `SUPERSEDED_BY:${crypto.randomUUID()}`,
+        } as never);
+      }
+      return resultado;
+    }) as never;
+
+    try {
+      const apagado = await queueCancelRdo(rdo({ syncStatus: "CONFLICT" }));
+      expect(apagado.canceladoEm).not.toBeNull();
+    } finally {
+      database.getAllFromIndex = original;
+    }
+
+    const fila = await database.getAll("outbox_mutations");
+    expect(fila).toHaveLength(1);
+    expect(fila[0]).toMatchObject({ operacao: "CANCELAR_RDO" });
+  });
 });

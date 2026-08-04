@@ -52,6 +52,12 @@ function isRdoMutation(
   return mutation.entidadeTipo === "RDO";
 }
 
+/** Estados em que a edição parou de andar sozinha e espera uma decisão. */
+const PRESA: ReadonlySet<OutboxMutationRecord["status"]> = new Set([
+  "CONFLICT",
+  "REJECTED",
+]);
+
 /**
  * A fila do RDO precisa estar em estado conhecido antes de receber a marcação.
  *
@@ -318,10 +324,7 @@ async function liberarEdicoesPresasParaApagar(
     existing.id,
   ))
     .filter(isRdoMutation)
-    .filter(
-      (mutacao) =>
-        mutacao.status === "CONFLICT" || mutacao.status === "REJECTED",
-    );
+    .filter((mutacao) => PRESA.has(mutacao.status));
 
   if (presas.length === 0) {
     return existing;
@@ -345,9 +348,16 @@ async function liberarEdicoesPresasParaApagar(
 
   for (const mutacao of presas) {
     const atual = await outbox.get(mutacao.clientMutationId);
-    // Outra aba pode ter reconciliado no meio do caminho. Se o estado mudou,
-    // esta liberação não tem mais o que liberar aqui.
-    if (!atual || atual.status !== mutacao.status) {
+    /*
+     * Outra aba pode ter mexido na linha entre a leitura e esta transação. O
+     * que decide é se ela continua presa, não em qual dos dois estados: uma
+     * reconciliação concorrente move a original de CONFLICT para REJECTED, e
+     * exigir o mesmo estado de antes a preservaria — trazendo de volta o beco
+     * sem saída por uma corrida. Se voltou a andar (PENDING ou SYNCING), aí
+     * sim ela não é nossa para apagar, e a checagem seguinte decide o que
+     * fazer com ela.
+     */
+    if (!atual || !PRESA.has(atual.status)) {
       continue;
     }
     await outbox.delete(mutacao.clientMutationId);
