@@ -10,6 +10,19 @@ spring:
     ansi:
       enabled: ALWAYS
 
+  # O app valida o anexo contra cortex.storage.max-size-bytes, mas quem corta
+  # primeiro é o contêiner: sem esta configuração valia o padrão do Spring, de
+  # 1 MB por arquivo. Uma foto de obra passa disso com folga, então o envio
+  # morria antes de chegar ao serviço — e como o erro não é de rede, a fila
+  # local marcava o anexo como recusado e ele ficava esperando revisão para
+  # sempre. Os dois limites saem da mesma variável justamente para não
+  # divergirem de novo; o do envelope é maior porque carrega também o obraId e
+  # as bordas do multipart.
+  servlet:
+    multipart:
+      max-file-size: ${CORTEX_STORAGE_MAX_SIZE_BYTES:26214400}B
+      max-request-size: ${CORTEX_STORAGE_MAX_REQUEST_BYTES:27262976}B
+
   datasource:
     url: ${CORTEX_POSTGRES_URL}
     username: ${CORTEX_POSTGRES_USER:joaolucas}

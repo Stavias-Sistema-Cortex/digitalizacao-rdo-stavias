@@ -863,11 +863,18 @@ public class SyncService {
             SyncBaseVersionConflictException exception
     ) {
         return transactionTemplate.execute(status -> {
+            JsonNode snapshotRemoto = snapshotCanonicoDaVersao(
+                    exception.entidadeTipo,
+                    exception.entidadeId,
+                    exception.versaoAtual
+            );
             JsonNode conflito = objectMapper.valueToTree(new ConflitoVersao(
                     exception.entidadeTipo,
                     exception.entidadeId,
                     exception.baseVersao,
-                    exception.versaoAtual
+                    exception.versaoAtual,
+                    snapshotRemoto != null,
+                    snapshotRemoto
             ));
 
             registrarMutacaoFinalizada(
@@ -2334,12 +2341,81 @@ public class SyncService {
         }
     }
 
+    /**
+     * O conflito precisa dizer o que o servidor tem, não só que houve conflito.
+     *
+     * Sem o estado remoto o dispositivo não consegue distinguir "mexemos no
+     * mesmo campo" de "mexemos em campos diferentes", e trata os dois como
+     * impasse humano. A fusão por campo existia do lado do cliente e nunca
+     * disparava por falta desta informação: todo conflito de versão virava
+     * decisão manual, inclusive quando as duas alterações nem se tocavam.
+     *
+     * {@code remoteCompleto} é a promessa de que {@code snapshotRemoto}
+     * descreve integralmente a entidade na versão atual. Quando não é possível
+     * garantir isso, ele vem falso e o dispositivo mantém a revisão manual —
+     * prometer completude que não se tem faria a fusão apagar campo alheio.
+     */
     private record ConflitoVersao(
             String entidadeTipo,
             String entidadeId,
             long baseVersao,
+            long versaoAtual,
+            boolean remoteCompleto,
+            JsonNode snapshotRemoto
+    ) {
+    }
+
+    /**
+     * O estado atual da entidade na forma que o dispositivo entende.
+     *
+     * A projeção do domínio não serve: cada handler grava o evento no formato
+     * que lhe convém, e um snapshot de forma diferente faria a fusão carregar
+     * campo estranho de volta no envelope. O que serve é o payload canônico da
+     * última mutação aplicada — ele foi produzido pelo próprio cliente, na
+     * forma exata que ele espera receber.
+     *
+     * A igualdade de versão é o que torna o dado confiável: só devolvemos o
+     * payload se a versão que ele produziu ainda é a versão corrente. Se
+     * qualquer outra coisa tocou a entidade depois — a web, um serviço, uma
+     * mutação legada —, esse payload não descreve mais o presente e nada é
+     * prometido.
+     */
+    private JsonNode snapshotCanonicoDaVersao(
+            String entidadeTipo,
+            String entidadeId,
             long versaoAtual
     ) {
+        try {
+            String payload = jdbcTemplate.queryForObject(
+                    """
+                    SELECT payload_json
+                    FROM sync_mutacao_cliente
+                    WHERE entidade_tipo = ?
+                      AND entidade_id = ?
+                      AND status = 'APLICADA'
+                      AND schema_version = 13
+                      AND resultado_json IS NOT NULL
+                      AND (resultado_json ->> 'versaoEntidade') = ?
+                    ORDER BY aplicada_em DESC
+                    LIMIT 1
+                    """,
+                    String.class,
+                    entidadeTipo,
+                    entidadeId,
+                    Long.toString(versaoAtual)
+            );
+            if (payload == null || payload.isBlank()) {
+                return null;
+            }
+            JsonNode snapshot = objectMapper.readTree(payload);
+            return snapshot != null && snapshot.isObject() ? snapshot : null;
+        } catch (EmptyResultDataAccessException exception) {
+            return null;
+        } catch (JsonProcessingException exception) {
+            // Um payload ilegível não é motivo para derrubar o push: o conflito
+            // segue como impasse manual, que é o comportamento de sempre.
+            return null;
+        }
     }
 
     private static class SyncBaseVersionConflictException extends RuntimeException {

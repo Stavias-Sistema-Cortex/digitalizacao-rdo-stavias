@@ -393,6 +393,15 @@ class PostgresqlCanonicalMutationIT {
                     .isEqualTo(1L);
             assertThat(result.conflito().path("versaoAtual").asLong())
                     .isEqualTo(2L);
+            // Sem o estado remoto o dispositivo não sabe se as duas alterações
+            // se tocam, e trata tudo como impasse humano. Com ele, a fusão por
+            // campo decide sozinha quando não há sobreposição.
+            assertThat(result.conflito().path("remoteCompleto").asBoolean())
+                    .isTrue();
+            assertThat(result.conflito().path("snapshotRemoto").path("id")
+                    .asText()).isEqualTo(obraId);
+            assertThat(result.conflito().path("snapshotRemoto").path("status")
+                    .asText()).isEqualTo("ATIVA");
         });
         assertThat(jdbc.queryForMap(
                 """
@@ -409,6 +418,121 @@ class PostgresqlCanonicalMutationIT {
                 .containsEntry("base_version", "1")
                 .containsEntry("current_version", "2");
         assertThat(domainWrites).hasValue(1);
+    }
+
+    /**
+     * A completude prometida tem de ser verdade.
+     *
+     * O payload canônico só descreve o presente enquanto a versão que ele
+     * produziu ainda é a corrente. Se qualquer outra coisa tocou a entidade
+     * depois — a web, um serviço, uma mutação legada —, ele virou passado. Se
+     * o servidor prometesse completude nesse caso, a fusão por campo tomaria
+     * um estado vencido como sendo o do servidor e apagaria a alteração de
+     * outra pessoa sem que ninguém percebesse. Melhor devolver o impasse.
+     */
+    @Test
+    void conflictOmitsRemoteSnapshotWhenServerStateCameFromOutsideSync()
+            throws Exception {
+        String ownerId = collaborator();
+        String obraId = worksite();
+        String deviceId = device(ownerId);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        when(currentUser.requireUserId()).thenReturn(ownerId);
+        when(currentUser.allowedObraIds(ownerId)).thenReturn(Optional.empty());
+        CortexOperationalMemoryService memory =
+                new CortexOperationalMemoryService(
+                        jdbc,
+                        mapper,
+                        mock(ApplicationEventPublisher.class)
+                );
+        recordObraEvent(
+                memory,
+                ownerId,
+                obraId,
+                "OBRA_CRIADA",
+                Map.of("id", obraId, "status", "ATIVA", "versaoLinha", 1L)
+        );
+
+        ObraService obraService = mock(ObraService.class);
+        when(obraService.arquivarObra(
+                org.mockito.ArgumentMatchers.eq(obraId),
+                org.mockito.ArgumentMatchers.argThat(
+                        request -> request.baseVersion() == 1L
+                ),
+                org.mockito.ArgumentMatchers.eq(ownerId)
+        )).thenAnswer(invocation -> {
+            recordObraEvent(
+                    memory,
+                    ownerId,
+                    obraId,
+                    "OBRA_ARQUIVADA",
+                    Map.of(
+                            "id", obraId,
+                            "status", "ATIVA",
+                            "arquivadoEm", "2026-07-28T15:00:00",
+                            "versaoLinha", 2L
+                    )
+            );
+            return obraResponse(
+                    obraId,
+                    LocalDateTime.of(2026, 7, 28, 15, 0),
+                    2L
+            );
+        });
+        SyncService service = new SyncService(
+                jdbc,
+                mapper,
+                transactions,
+                new SyncOperationRegistry(List.of(
+                        new ObraSyncOperationHandler(
+                                obraService,
+                                currentUser,
+                                mapper
+                        )
+                )),
+                currentUser,
+                mock(FinancialAccessService.class)
+        );
+        service.push(new SyncPushRequest(deviceId, List.of(
+                canonicalObraArchiveMutation(
+                        ownerId,
+                        deviceId,
+                        obraId,
+                        UUID.randomUUID().toString(),
+                        1L
+                )
+        )));
+
+        // Alguém mexeu na obra por fora do sync: a versão andou sem que
+        // nenhuma mutação canônica a tivesse produzido.
+        recordObraEvent(
+                memory,
+                ownerId,
+                obraId,
+                "OBRA_ATUALIZADA",
+                Map.of("id", obraId, "status", "ATIVA", "versaoLinha", 3L)
+        );
+
+        SyncPushResponse conflict = service.push(new SyncPushRequest(
+                deviceId,
+                List.of(canonicalObraArchiveMutation(
+                        ownerId,
+                        deviceId,
+                        obraId,
+                        UUID.randomUUID().toString(),
+                        1L
+                ))
+        ));
+
+        assertThat(conflict.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("DESCARTADA");
+            assertThat(result.conflito().path("versaoAtual").asLong())
+                    .isEqualTo(3L);
+            assertThat(result.conflito().path("remoteCompleto").asBoolean())
+                    .isFalse();
+            assertThat(result.conflito().path("snapshotRemoto").isNull())
+                    .isTrue();
+        });
     }
 
     @Test
