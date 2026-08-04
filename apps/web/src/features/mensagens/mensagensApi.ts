@@ -127,3 +127,37 @@ export async function downloadMessageAttachmentApi(
   }
   return response.blob();
 }
+
+/**
+ * Quem posso procurar para conversar.
+ *
+ * <p>Separado do catálogo administrativo de propósito: aquele é restrito ao
+ * papel Alfa, e usá-lo aqui era o que fazia a busca de participante devolver
+ * 403 para todo mundo que não administra o sistema. Este devolve só o
+ * necessário para endereçar — quem é a pessoa e o que ela faz.
+ */
+export interface DiretorioPessoa {
+  id: string;
+  nome: string | null;
+  nomePerfil: string | null;
+}
+
+export async function buscarDiretorioDeMensagens(
+  query: string,
+): Promise<DiretorioPessoa[]> {
+  const params = new URLSearchParams();
+  if (query.trim()) {
+    params.set("query", query.trim());
+  }
+  const response = await apiFetch(
+    `/mensagens/diretorio?${params.toString()}`,
+  );
+  const body = await readResponseBody(response);
+  if (!response.ok) {
+    throw new Error(responseErrorMessage(body, response.status));
+  }
+  if (!Array.isArray(body)) {
+    throw new Error("O diretório de pessoas veio incompleto.");
+  }
+  return body as DiretorioPessoa[];
+}

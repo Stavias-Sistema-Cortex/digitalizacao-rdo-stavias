@@ -13,11 +13,11 @@ import type { ObraLocalRecord } from "../../../lib/db/db.types";
 import { CreateConversationDialog } from "./CreateConversationDialog";
 
 vi.mock("../../rdos/rdoLookupApi", () => ({
-  buscarColaboradores: vi.fn().mockResolvedValue([]),
   buscarColaboradoresDaObra: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../mensagensApi", () => ({
+  buscarDiretorioDeMensagens: vi.fn().mockResolvedValue([]),
   createConversationApi: vi.fn(),
 }));
 
@@ -65,12 +65,12 @@ describe("CreateConversationDialog worksite selector", () => {
     );
 
     const selector = await screen.findByRole("combobox", {
-      name: "Obra usada para consultar pessoas",
+      name: "Filtrar pessoas por obra (opcional)",
     });
     await waitFor(() => {
       const options = within(selector).getAllByRole("option");
       expect(options.map((option) => option.textContent)).toEqual([
-        "Catálogo global",
+        "Todas as pessoas",
         "Obra ativa",
         "Obra inativa",
       ]);

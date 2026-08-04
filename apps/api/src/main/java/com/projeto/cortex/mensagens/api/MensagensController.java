@@ -1,6 +1,7 @@
 package com.projeto.cortex.mensagens.api;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.mensagens.domain.MessagingDirectoryService;
 import com.projeto.cortex.mensagens.domain.ConversaService;
 import com.projeto.cortex.mensagens.domain.MensagemService;
 import com.projeto.cortex.mensagens.domain.MessagingAuditContext;
@@ -42,15 +43,18 @@ public class MensagensController {
     private final ConversaService conversaService;
     private final MensagemService mensagemService;
     private final CurrentUserService currentUserService;
+    private final MessagingDirectoryService directoryService;
 
     public MensagensController(
             ConversaService conversaService,
             MensagemService mensagemService,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            MessagingDirectoryService directoryService
     ) {
         this.conversaService = conversaService;
         this.mensagemService = mensagemService;
         this.currentUserService = currentUserService;
+        this.directoryService = directoryService;
     }
 
     @PostMapping("/api/mensagens/conversas")
@@ -139,6 +143,22 @@ public class MensagensController {
             @RequestParam(defaultValue = "50") int limit
     ) {
         return mensagemService.history(conversationId, before, limit);
+    }
+
+    /**
+     * Quem posso procurar para conversar: qualquer colega ativo.
+     *
+     * <p>Existe separado de {@code /api/colaboradores} porque aquele é o
+     * catálogo administrativo, restrito ao papel Alfa e com dado de cadastro
+     * que a tarefa de endereçar uma mensagem não pede. Aqui não há checagem
+     * de papel nem de obra — mensagem atravessa a operação, e cercá-la pelo
+     * vínculo de obra deixava duas pessoas da mesma empresa sem se achar.
+     */
+    @GetMapping("/api/mensagens/diretorio")
+    public List<MessagingDirectoryResponse> directory(
+            @RequestParam(required = false) String query
+    ) {
+        return directoryService.buscar(query);
     }
 
     @GetMapping("/api/mensagens/busca")

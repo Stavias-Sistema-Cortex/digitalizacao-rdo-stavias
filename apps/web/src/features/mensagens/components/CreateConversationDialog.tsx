@@ -3,12 +3,14 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import type { ConversaTipo, ObraLocalRecord } from "../../../lib/db/db.types";
 import { filterOperationalObras } from "../../../lib/db/obraSelectors";
 import {
-  buscarColaboradores,
   buscarColaboradoresDaObra,
   type ColaboradorDaObra,
-  type ColaboradorLookup,
 } from "../../rdos/rdoLookupApi";
-import { createConversationApi } from "../mensagensApi";
+import {
+  buscarDiretorioDeMensagens,
+  createConversationApi,
+  type DiretorioPessoa,
+} from "../mensagensApi";
 import { messageFrom } from "../mensagensFormat";
 
 type DirectoryPerson = {
@@ -50,12 +52,14 @@ export function CreateConversationDialog(props: {
     setBusy(true);
     setError("");
     try {
-      if (!props.alfa && !obraId) {
-        throw new Error("Selecione uma obra para consultar participantes autorizados.");
-      }
+      // A obra restringe a busca quando alguém quer justamente a turma dela;
+      // sem obra escolhida, procura-se na empresa inteira. Antes, quem não era
+      // Alfa era obrigado a escolher uma obra e só encontrava quem estivesse
+      // vinculado a ela — duas pessoas da mesma empresa em frentes diferentes
+      // não se achavam, e mensagem é o que menos deveria depender disso.
       const found = obraId
         ? mapWorksitePeople(await buscarColaboradoresDaObra(obraId))
-        : mapGlobalPeople(await buscarColaboradores(query));
+        : mapDirectoryPeople(await buscarDiretorioDeMensagens(query));
       setPeople(
         found.filter((person) =>
           person.nome.toLocaleLowerCase("pt-BR").includes(query.trim().toLocaleLowerCase("pt-BR")),
@@ -132,9 +136,9 @@ export function CreateConversationDialog(props: {
             </label>
           ) : null}
           <label>
-            {type === "OBRA" ? "Obra" : "Obra usada para consultar pessoas"}
+            {type === "OBRA" ? "Obra" : "Filtrar pessoas por obra (opcional)"}
             <select value={obraId} onChange={(event) => setObraId(event.target.value)}>
-              <option value="">{props.alfa ? "Catálogo global" : "Selecione"}</option>
+              <option value="">Todas as pessoas</option>
               {obras.map((obra) => (
                 <option key={obra.id} value={obra.id}>{obra.nome}</option>
               ))}
@@ -200,12 +204,10 @@ function mapWorksitePeople(values: ColaboradorDaObra[]): DirectoryPerson[] {
   }));
 }
 
-function mapGlobalPeople(values: ColaboradorLookup[]): DirectoryPerson[] {
-  return values
-    .filter((person) => person.ativo)
-    .map((person) => ({
-      id: person.id,
-      nome: person.nome || "Colaborador",
-      detalhe: person.nomePerfil || person.nomeGrupo || "Ativo",
-    }));
+function mapDirectoryPeople(values: DiretorioPessoa[]): DirectoryPerson[] {
+  return values.map((person) => ({
+    id: person.id,
+    nome: person.nome || "Colaborador",
+    detalhe: person.nomePerfil || "Ativo",
+  }));
 }

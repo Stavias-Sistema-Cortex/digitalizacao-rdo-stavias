@@ -11,6 +11,7 @@ import com.projeto.cortex.mensagens.api.MessageResponse;
 import com.projeto.cortex.mensagens.api.MensagensController;
 import com.projeto.cortex.mensagens.domain.ConversaAccessPolicy;
 import com.projeto.cortex.mensagens.domain.MensagemService;
+import com.projeto.cortex.mensagens.domain.MessagingDirectoryService;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -99,7 +100,8 @@ class PostgresqlMessagingSearchIT {
         String userId = collaborator("Sem conversa HTTP");
         authenticate(userId);
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(
-                new MensagensController(null, messages, currentUser)
+                new MensagensController(null, messages, currentUser,
+                mock(MessagingDirectoryService.class))
         ).build();
 
         mockMvc.perform(get("/api/mensagens/busca")
