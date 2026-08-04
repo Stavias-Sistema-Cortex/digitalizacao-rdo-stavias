@@ -387,7 +387,7 @@ export function MensagensPage() {
     >
       <main className="mensagens-page">
         <CortexPageHeader
-          eyebrow="Operação · comunicação"
+          eyebrow="Comunicação"
           title="Mensagens"
           description={`${conversations.length} conversas autorizadas`}
           legacyPrefix="mensagens-header"

@@ -47,10 +47,18 @@ describe("layout da aba Mensagens", () => {
     expect(css).not.toContain("prefers-color-scheme: dark");
   });
 
-  // As bolhas deixaram de ser teal sólido; texto claro sobre elas sumiria.
+  /*
+   * As bolhas deixaram de ser teal sólido; texto claro sobre elas sumiria. O
+   * que precisa ser garantido é o contraste da falha sobre superfície clara —
+   * a cor sai do token de perigo da marca, e prender o hex aqui só amarraria a
+   * aba a um vermelho próprio, que foi justamente o que se desfez ao unificar
+   * a paleta.
+   */
   it("mantém o estado de falha legível sobre bolha clara", () => {
-    expect(rule(".mensagem-retry")).toContain("color: #a3312a;");
-    expect(rule(".mensagem-retry button")).toContain("color: #a3312a;");
+    expect(rule(".mensagem-retry")).toContain("color: var(--color-danger);");
+    expect(rule(".mensagem-retry button")).toContain(
+      "color: var(--color-danger);",
+    );
     expect(css).not.toContain("#ffd0c9");
     expect(css).not.toContain("color: rgb(255 255 255");
   });

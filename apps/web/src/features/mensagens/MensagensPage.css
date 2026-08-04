@@ -60,10 +60,10 @@
   margin-bottom: 14px;
   margin-inline: var(--mensagens-gutter);
   padding: 11px 14px;
-  border: 1px solid #e6b9b5;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 32%, var(--color-surface));
   border-radius: var(--radius-sm);
-  background: #fff6f5;
-  color: #8c3029;
+  background: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface));
+  color: var(--color-danger);
   font-size: 0.86rem;
 }
 
@@ -186,7 +186,7 @@
   min-width: 0;
   flex-direction: column;
   border-right: 1px solid var(--color-border);
-  background: #f8faf9;
+  background: var(--color-surface);
 }
 
 .mensagens-pane-heading {
@@ -278,18 +278,18 @@
 .mensagens-dialog input,
 .mensagens-dialog select {
   width: 100%;
-  border: 1px solid #cfd8d2;
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-text);
 }
 
 .mensagens-search-results header button {
-  border: 1px solid #cbd5cf;
+  border: 1px solid var(--color-border-strong);
   border-radius: 999px;
   padding: 8px 14px;
-  background: #fff;
-  color: #2f4e43;
+  background: var(--color-surface);
+  color: var(--color-brand-teal);
   font-size: 0.8rem;
   font-weight: 500;
 }
@@ -326,15 +326,15 @@
 }
 
 .mensagens-conversation-list > li + li > button {
-  border-top: 1px solid #eaefec;
+  border-top: 1px solid var(--color-canvas);
 }
 
 .mensagens-conversation-list > li > button:hover {
-  background: #eef4f1;
+  background: var(--color-canvas);
 }
 
 .mensagens-conversation-list > li > button.active {
-  background: #e6f0ec;
+  background: var(--color-canvas);
   box-shadow: inset 3px 0 var(--color-brand-teal);
 }
 
@@ -393,7 +393,7 @@
   bottom: -1px;
   width: 11px;
   height: 11px;
-  border: 2px solid #f8faf9;
+  border: 2px solid var(--color-surface);
   border-radius: 50%;
   background: var(--color-brand-yellow);
 }
@@ -416,7 +416,7 @@
 
 .mensagens-conversation-list small,
 .mensagens-conversation-list time {
-  color: #748078;
+  color: var(--color-muted);
   font-size: 0.72rem;
 }
 
@@ -440,7 +440,7 @@
 .mensagens-thread {
   min-width: 0;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  background: #ffffff;
+  background: var(--color-surface);
 }
 
 /* Itens de grid nascem com min-width:auto e não encolhem abaixo do
@@ -457,7 +457,7 @@
   min-height: 64px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .mensagens-thread-header .mensagens-avatar {
@@ -492,12 +492,12 @@
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: #5a675f;
+  color: var(--color-muted);
   cursor: pointer;
 }
 
 .mensagens-info-btn:hover {
-  background: #eef2ef;
+  background: var(--color-canvas);
   color: var(--color-brand-teal);
 }
 
@@ -508,7 +508,7 @@
   gap: 2px;
   overflow-y: auto;
   padding: 20px 22px 24px;
-  background: #ffffff;
+  background: var(--color-surface);
   scroll-behavior: smooth;
 }
 
@@ -627,10 +627,10 @@
 }
 
 .mensagem-bubble--falhou {
-  border-color: #e0b4ae;
-  border-left-color: #a3312a;
-  background: #fff6f5;
-  color: #6d2a24;
+  border-color: color-mix(in srgb, var(--color-danger) 34%, var(--color-surface));
+  border-left-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface));
+  color: var(--color-danger);
 }
 
 .mensagem-corpo {
@@ -646,20 +646,20 @@
 .mensagem-deleted {
   margin: 0;
   flex: 0 1 auto;
-  color: #738078;
+  color: var(--color-muted);
   font-size: 0.88rem;
   font-style: italic;
 }
 
 .mensagem-bubble--mine .mensagem-deleted {
-  color: #5d7a70;
+  color: var(--color-muted);
 }
 
 .mensagem-meta {
   display: inline-flex;
   align-items: center;
   margin-left: auto;
-  color: #5c7d73;
+  color: var(--color-muted);
 }
 
 .mensagem-tick {
@@ -668,11 +668,11 @@
 }
 
 .mensagem-bubble--pendente .mensagem-meta {
-  color: #7c9a90;
+  color: var(--color-muted);
 }
 
 .mensagem-tick--fail {
-  color: #a3312a;
+  color: var(--color-danger);
 }
 
 .mensagem-attachments {
@@ -689,17 +689,17 @@
   align-items: center;
   gap: 9px;
   padding: 7px 10px;
-  border: 1px solid #d5e2dc;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: #f4f8f6;
-  color: #24483e;
+  background: var(--color-surface);
+  color: var(--color-brand-teal);
   text-align: left;
 }
 
 .mensagem-bubble--mine .mensagem-attachments button {
-  border-color: #bcd8ce;
+  border-color: var(--color-border-strong);
   background: rgb(255 255 255 / 70%);
-  color: #24483e;
+  color: var(--color-brand-teal);
 }
 
 .mensagem-attachments svg {
@@ -718,12 +718,12 @@
 
 .mensagem-attachments small {
   flex-shrink: 0;
-  color: #718078;
+  color: var(--color-muted);
   font-size: 0.66rem;
 }
 
 .mensagem-bubble--mine .mensagem-attachments small {
-  color: #5d7a70;
+  color: var(--color-muted);
 }
 
 .mensagem-retry {
@@ -732,14 +732,14 @@
   align-items: center;
   gap: 9px;
   margin-top: 4px;
-  color: #a3312a;
+  color: var(--color-danger);
   font-size: 0.68rem;
 }
 
 .mensagem-retry button {
   border: 0;
   background: transparent;
-  color: #a3312a;
+  color: var(--color-danger);
   font-size: inherit;
   font-weight: 500;
   text-decoration: underline;
@@ -753,13 +753,13 @@
 }
 
 .mensagem-error summary {
-  color: #5d7a70;
+  color: var(--color-muted);
   cursor: pointer;
 }
 
 .mensagem-error p {
   margin: 5px 0 0;
-  color: #4a5851;
+  color: var(--color-graphite);
 }
 
 .mensagens-empty {
@@ -793,7 +793,7 @@
 .mensagens-composer {
   padding: 12px 14px 16px;
   border-top: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 /* Barra única de redação, enquadrada como os demais controles do sistema. */
@@ -818,12 +818,12 @@
   height: 38px;
   place-items: center;
   border-radius: var(--radius-control);
-  color: #4d5b54;
+  color: var(--color-graphite);
   cursor: pointer;
 }
 
 .mensagens-attach:hover {
-  background: #eef2ef;
+  background: var(--color-canvas);
   color: var(--color-brand-teal);
 }
 
@@ -885,7 +885,7 @@
 .mensagens-composer-hint {
   display: block;
   margin: 8px 0 0 14px;
-  color: #a15a2a;
+  color: color-mix(in srgb, var(--color-brand-yellow) 32%, var(--color-danger));
   font-size: 0.68rem;
 }
 
@@ -912,7 +912,7 @@
 .mensagens-file-preview button {
   border: 0;
   background: transparent;
-  color: #a2352d;
+  color: var(--color-danger);
   font-size: 0.68rem;
   font-weight: 500;
 }
@@ -940,7 +940,7 @@
   min-width: 0;
   flex-direction: column;
   overflow-y: auto;
-  background: #fcfdfc;
+  background: var(--color-surface);
 }
 
 .mensagens-context > header {
@@ -964,19 +964,19 @@
   place-items: center;
   border: 0;
   border-radius: 50%;
-  background: #eef1ef;
-  color: #43514a;
+  background: var(--color-canvas);
+  color: var(--color-graphite);
   cursor: pointer;
 }
 
-.mensagens-drawer-close:hover { background: #e2e7e4; }
+.mensagens-drawer-close:hover { background: var(--color-border); }
 
 .mensagens-info-identity {
   display: grid;
   justify-items: center;
   gap: 6px;
   padding: 28px 20px 22px;
-  border-bottom: 1px solid #e5eae7;
+  border-bottom: 1px solid var(--color-border);
   text-align: center;
 }
 
@@ -995,7 +995,7 @@
 }
 
 .mensagens-info-section {
-  border-bottom: 1px solid #e5eae7;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .mensagens-info-toggle {
@@ -1006,7 +1006,7 @@
   padding: 14px 16px;
   border: 0;
   background: transparent;
-  color: #758079;
+  color: var(--color-muted);
   font-size: 0.65rem;
   font-weight: 500;
   letter-spacing: 0.07em;
@@ -1079,10 +1079,10 @@
   width: 100%;
   gap: 3px;
   padding: 9px 10px;
-  border: 1px solid #d9e0dc;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fff;
-  color: #30493f;
+  background: var(--color-surface);
+  color: var(--color-brand-teal);
   text-align: left;
 }
 
@@ -1113,14 +1113,14 @@
   gap: 11px;
   padding: 12px 16px;
   border: 0;
-  border-top: 1px solid #e4e9e6;
+  border-top: 1px solid var(--color-border);
   background: transparent;
   color: inherit;
   text-align: left;
 }
 
 .mensagens-search-results li > button:hover {
-  background: #eef4f1;
+  background: var(--color-canvas);
 }
 
 .mensagens-search-results .mensagens-avatar {
@@ -1150,7 +1150,7 @@
   display: -webkit-box;
   margin: 3px 0;
   overflow: hidden;
-  color: #415149;
+  color: var(--color-graphite);
   font-size: 0.8rem;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -1179,7 +1179,7 @@
   overflow-y: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: #fff;
+  background: var(--color-surface);
   box-shadow: var(--shadow-overlay);
 }
 
@@ -1209,8 +1209,8 @@
   height: 34px;
   border: 0;
   border-radius: 50%;
-  background: #eef1ef;
-  color: #43514a;
+  background: var(--color-canvas);
+  color: var(--color-graphite);
   font-size: 1.25rem;
 }
 
@@ -1224,7 +1224,7 @@
 .mensagens-directory-search label {
   display: grid;
   gap: 6px;
-  color: #4a5851;
+  color: var(--color-graphite);
   font-size: 0.78rem;
   font-weight: 500;
 }
@@ -1244,10 +1244,10 @@
 .mensagens-directory-search button,
 .mensagens-dialog form > footer > button:first-child {
   padding: 9px 14px;
-  border: 1px solid #cbd5cf;
+  border: 1px solid var(--color-border-strong);
   border-radius: 999px;
-  background: #fff;
-  color: #315047;
+  background: var(--color-surface);
+  color: var(--color-brand-teal);
   font-weight: 500;
 }
 
@@ -1256,13 +1256,13 @@
   overflow-y: auto;
   margin: 0;
   padding: 10px;
-  border: 1px solid #d8dfda;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
 }
 
 .mensagens-dialog legend {
   padding: 0 5px;
-  color: #4f5d56;
+  color: var(--color-graphite);
   font-size: 0.74rem;
   font-weight: 500;
 }
@@ -1277,7 +1277,7 @@
   align-items: center;
   gap: 9px;
   padding: 8px 5px;
-  border-bottom: 1px solid #edf0ee;
+  border-bottom: 1px solid var(--color-canvas);
   font-size: 0.78rem;
 }
 
@@ -1297,7 +1297,7 @@
 
 .mensagens-form-error {
   margin: 0;
-  color: #a3312a;
+  color: var(--color-danger);
   font-size: 0.78rem;
 }
 
@@ -1339,7 +1339,7 @@
   }
 
   .mensagens-context > header .mensagens-mobile-back {
-    background: #eef1ef;
+    background: var(--color-canvas);
   }
 
   .mensagens-context {
@@ -1454,9 +1454,9 @@
   border-radius: var(--radius-container);
 }
 
-.mensagens-workspace { border-color: #bfc7c2; }
+.mensagens-workspace { border-color: var(--color-border-strong); }
 .mensagens-conversations,
-.mensagens-context { background: #f7f8f6; }
+.mensagens-context { background: var(--color-surface); }
 
 .mensagens-pane-heading,
 .mensagens-search,
@@ -1464,7 +1464,7 @@
 .mensagens-composer,
 .mensagens-context > header,
 .mensagens-context > section {
-  border-color: #c8cfca;
+  border-color: var(--color-border-strong);
 }
 
 .mensagens-conversation-list > li > button {
@@ -1474,7 +1474,7 @@
 }
 
 .mensagens-conversation-list > li > button.active {
-  background: #fff;
+  background: var(--color-surface);
   box-shadow: inset 3px 0 var(--color-ink);
 }
 
@@ -1482,7 +1482,7 @@
    a geometria é institucionalizada, senão todos virariam o mesmo disco cinza. */
 .mensagens-context-people li > span {
   border-radius: var(--radius-control);
-  background: #dfe5e1;
+  background: var(--color-border);
   color: var(--color-ink);
   font-weight: 600;
 }

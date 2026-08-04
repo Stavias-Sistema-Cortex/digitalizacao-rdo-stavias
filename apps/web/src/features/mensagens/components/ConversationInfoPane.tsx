@@ -73,7 +73,7 @@ export function ConversationInfoPane(props: ConversationInfoPaneProps) {
         <small>{props.scope}</small>
       </div>
 
-      <InfoSection title="Informação" defaultOpen>
+      <InfoSection title="Obra e sincronização" defaultOpen>
         {conversation.obraId ? (
           <p className="mensagens-info-linha">
             <strong>{worksite?.nome ?? "Obra vinculada"}</strong>
