@@ -1,4 +1,7 @@
-import type { CadastroTrecho } from "../trecho/trechoCadastrado";
+import {
+  extensaoMedidaEmCampo,
+  type CadastroTrecho,
+} from "../trecho/trechoCadastrado";
 import type { ServicoExecutadoDraft } from "../../rdos/rdo.types";
 
 /**
@@ -89,10 +92,22 @@ export function propriedadesDaFormaDesenhada(
   if (sentido) propriedades.sentido = sentido;
   const faixa = limpo(cadastro.faixa);
   if (faixa) propriedades.faixa = faixa;
-  if (extensaoDaLinhaM !== null && extensaoDaLinhaM > 0) {
-    // Extensão da linha é medida da própria geometria, não declaração de
-    // quantidade: descreve o que foi desenhado, e por isso fica.
-    propriedades.extensaoM = extensaoDaLinhaM;
+
+  // Nome é rótulo do balão no mapa, e por isso não repete o quilômetro: se
+  // repetisse, corrigir o RDO deixaria a linha rotulada com o km antigo — a
+  // mesma divergência, escrita em prosa. Rodovia e sentido saem dos campos
+  // aqui do lado, então o rótulo não tem como discordar deles.
+  const nome = [rodovia, sentido && `sentido ${sentido}`]
+    .filter(Boolean)
+    .join(" · ");
+  if (nome) propriedades.nome = nome;
+
+  // A extensão digitada é medida de campo e prevalece; sem ela vale o
+  // comprimento da própria linha desenhada, que é geometria, não estimativa.
+  // Nenhuma das duas é declaração de quantidade — essa mora no RDO.
+  const medida = extensaoMedidaEmCampo(cadastro) ?? extensaoDaLinhaM;
+  if (medida !== null && Number.isFinite(medida) && medida > 0) {
+    propriedades.extensaoM = Math.round(medida);
   }
   return propriedades;
 }

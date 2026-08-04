@@ -40,7 +40,6 @@ const ESTADO_LABEL: Record<string, string> = {
   EXECUTADO: "Executado",
   VALIDADO: "Validado",
   REJEITADO: "Rejeitado",
-  DECLARADO: "Declarado no mapa",
 };
 
 function Bloco({

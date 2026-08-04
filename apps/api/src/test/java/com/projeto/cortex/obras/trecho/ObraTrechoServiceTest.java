@@ -64,14 +64,11 @@ class ObraTrechoServiceTest {
                     if (sql.contains("rdo_controle_geometrico")) {
                         return controles;
                     }
-                    if (sql.contains("obra_geometria")) {
-                        return List.of();
-                    }
                     return execucoes;
                 });
         when(jdbcTemplate.queryForObject(
                 anyString(), any(RowMapper.class),
-                eq(OBRA_ID), eq(OBRA_ID), eq(OBRA_ID), eq(OBRA_ID)
+                eq(OBRA_ID), eq(OBRA_ID), eq(OBRA_ID)
         )).thenReturn(atualizadoEm);
     }
 
@@ -502,87 +499,38 @@ class ObraTrechoServiceTest {
     }
 
 
+    /**
+     * O desenho não é uma segunda fonte da régua.
+     *
+     * <p>A geometria já alimentou o esquemático por conta própria, com
+     * quilometragem gravada nas suas propriedades. Existiam então duas
+     * declarações do mesmo trecho — a do desenho e a do apontamento — sem nada
+     * que as reconciliasse: corrigir o RDO deixava o mapa mentindo, apagar o
+     * RDO deixava o desenho de pé, e a régua chegou a exibir uma rodovia que
+     * nenhum apontamento citava.
+     *
+     * <p>Hoje o desenho escreve a linha de execução do RDO do dia e a régua lê
+     * só de lá. Se esta consulta voltar, as duas verdades voltam com ela.
+     */
     @Test
     @SuppressWarnings("unchecked")
-    void declaredStretchReachesTheSchematicAndSplitsBothLanes() throws Exception {
-        // O trecho combinado com a concessionária existe antes de qualquer
-        // apontamento; sem esta fonte ele ficava só no mapa e nunca aparecia na
-        // régua, que é onde se lê a interdição.
+    void theRulerNeverReadsStretchesFromGeometry() {
         when(obraRepository.findById(OBRA_ID)).thenReturn(Optional.of(obraAtiva()));
+        List<String> consultas = new java.util.ArrayList<>();
         when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(OBRA_ID)))
                 .thenAnswer(invocation -> {
-                    String sql = invocation.getArgument(0);
-                    if (!sql.contains("obra_geometria")) {
-                        return List.of();
-                    }
-                    RowMapper<Object> mapper = invocation.getArgument(1);
-                    return List.of(mapper.mapRow(trechoDeclaradoRow("AMBAS"), 0));
+                    consultas.add(invocation.getArgument(0));
+                    return List.of();
                 });
         when(jdbcTemplate.queryForObject(
                 anyString(), any(RowMapper.class),
-                eq(OBRA_ID), eq(OBRA_ID), eq(OBRA_ID), eq(OBRA_ID)
+                eq(OBRA_ID), eq(OBRA_ID), eq(OBRA_ID)
         )).thenReturn(null);
 
-        List<SegmentoTrecho> segmentos =
-                service.buscarTrecho(OBRA_ID).segmentos();
-
-        assertThat(segmentos).hasSize(2);
-        assertThat(segmentos)
-                .allSatisfy(segmento -> {
-                    assertThat(segmento.origem())
-                            .isEqualTo(ObraTrechoResponse.Origem.CADASTRO_MAPA);
-                    // O sentido decide de que lado do canteiro o bloco cai;
-                    // perdê-lo empilharia a interdição na pista errada.
-                    assertThat(segmento.sentido()).isEqualTo("SUL");
-                    assertThat(segmento.status()).isEqualTo("EM_EXECUCAO");
-                });
-        assertThat(segmentos).extracting(SegmentoTrecho::faixa)
-                .containsExactlyInAnyOrder("DIREITA", "ESQUERDA");
-        // A extensão é do trecho, não de cada faixa: reparti-la inventaria uma
-        // medição por faixa que ninguém fez.
-        assertThat(segmentos).extracting(SegmentoTrecho::extensaoM)
-                .containsExactlyInAnyOrder(new BigDecimal("1480"), null);
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void declaredStretchWithoutBothEndsStaysOutOfTheRuler() throws Exception {
-        when(obraRepository.findById(OBRA_ID)).thenReturn(Optional.of(obraAtiva()));
-        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(OBRA_ID)))
-                .thenAnswer(invocation -> {
-                    String sql = invocation.getArgument(0);
-                    if (!sql.contains("obra_geometria")) {
-                        return List.of();
-                    }
-                    RowMapper<Object> mapper = invocation.getArgument(1);
-                    ResultSet linha = trechoDeclaradoRow("DIREITA");
-                    when(linha.getString("km_final")).thenReturn(null);
-                    return List.of(mapper.mapRow(linha, 0));
-                });
-        when(jdbcTemplate.queryForObject(
-                anyString(), any(RowMapper.class),
-                eq(OBRA_ID), eq(OBRA_ID), eq(OBRA_ID), eq(OBRA_ID)
-        )).thenReturn(null);
-
-        // Um extremo isolado é ponto, não trecho: continua no mapa e fica fora
-        // da régua, em vez de ser desenhado num lugar arbitrário.
         assertThat(service.buscarTrecho(OBRA_ID).segmentos()).isEmpty();
-    }
-
-    private ResultSet trechoDeclaradoRow(String faixa) throws SQLException {
-        ResultSet rs = mock(ResultSet.class);
-        when(rs.getString("id")).thenReturn("geo-1");
-        when(rs.getDate("valido_desde"))
-                .thenReturn(java.sql.Date.valueOf(LocalDate.of(2026, 7, 28)));
-        when(rs.getString("nome")).thenReturn("SP-310 · km 172 a 171");
-        when(rs.getString("rodovia")).thenReturn("SP-310");
-        when(rs.getString("sentido")).thenReturn("SUL");
-        when(rs.getString("faixa")).thenReturn(faixa);
-        when(rs.getString("status")).thenReturn("EM_EXECUCAO");
-        when(rs.getString("km_inicial")).thenReturn("172");
-        when(rs.getString("km_final")).thenReturn("171");
-        when(rs.getString("extensao_m")).thenReturn("1480");
-        return rs;
+        assertThat(consultas)
+                .isNotEmpty()
+                .noneMatch(sql -> sql.contains("obra_geometria"));
     }
 
     private ResultSet execucaoRow(String unidade, String quantidade) throws SQLException {

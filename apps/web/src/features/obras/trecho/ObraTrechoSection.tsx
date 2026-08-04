@@ -175,7 +175,6 @@ export function ObraTrechoSection({
         obra={obra}
         podeDesenhar={podeDesenhar}
         endereco={endereco}
-        segmentosDoRdo={projecao?.segmentos ?? []}
       />
       {projecao && leitura ? (
         <TrechoEsquematico

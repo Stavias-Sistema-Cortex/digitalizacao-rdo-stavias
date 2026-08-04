@@ -108,4 +108,35 @@ describe("o desenho alimenta o RDO", () => {
       "extensaoM",
     );
   });
+
+  /**
+   * Quem esticou a trena em campo mediu melhor do que a linha traçada por
+   * cima do mapa. Ignorar o campo preenchido gravaria a estimativa e jogaria
+   * fora a medição.
+   */
+  it("deixa a extensão medida em campo prevalecer sobre a da linha", () => {
+    expect(
+      propriedadesDaFormaDesenhada(cadastro({ extensaoM: "1500" }), 1_234),
+    ).toMatchObject({ extensaoM: 1_500 });
+    expect(
+      propriedadesDaFormaDesenhada(cadastro({ extensaoM: "abc" }), 1_234),
+    ).toMatchObject({ extensaoM: 1_234 });
+  });
+
+  /**
+   * O balão do mapa precisa de um título, mas repetir o quilômetro nele
+   * recriaria a divergência em prosa: corrigido o RDO, o rótulo continuaria
+   * anunciando o km antigo.
+   */
+  it("rotula pela rodovia e pelo sentido, nunca pelo quilômetro", () => {
+    expect(propriedadesDaFormaDesenhada(cadastro(), null).nome).toBe(
+      "SP-310 · sentido NORTE",
+    );
+    expect(
+      propriedadesDaFormaDesenhada(cadastro({ sentido: "" }), null).nome,
+    ).toBe("SP-310");
+    expect(propriedadesDaFormaDesenhada(cadastro(), null).nome).not.toContain(
+      "172",
+    );
+  });
 });

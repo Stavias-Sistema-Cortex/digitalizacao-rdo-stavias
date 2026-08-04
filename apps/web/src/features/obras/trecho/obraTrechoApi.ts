@@ -34,7 +34,6 @@ const ORIGENS_ACEITAS = [
   "PROGRAMACAO",
   "RDO_CONTROLE",
   "EXECUCAO_SERVICO",
-  "CADASTRO_MAPA",
 ] as const satisfies readonly OrigemSegmento[];
 
 type OrigemSemLeitura = Exclude<

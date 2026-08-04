@@ -17,6 +17,9 @@ const registrarTrechoDesenhado = vi.hoisted(() => vi.fn());
 const encerrarGeometria = vi.hoisted(() => vi.fn());
 const resolverRdoDoTrecho = vi.hoisted(() => vi.fn());
 const createAndPersistLocalPendingRdoDraft = vi.hoisted(() => vi.fn());
+const getLocalRdo = vi.hoisted(() => vi.fn());
+const rdoDraftFromLocalRecord = vi.hoisted(() => vi.fn());
+const saveExistingRdoDraftAtomically = vi.hoisted(() => vi.fn());
 const leaflet = vi.hoisted(() => ({
   marcando: null as string | null,
   ultimoRascunho: null as {
@@ -38,6 +41,11 @@ vi.mock("./obraGeometriaMutations", () => ({
 vi.mock("./rdoDoTrechoDesenhado", () => ({ resolverRdoDoTrecho }));
 vi.mock("../../rdos/rdoDraftCreation", () => ({
   createAndPersistLocalPendingRdoDraft,
+}));
+vi.mock("../../../lib/db/rdoRepository", () => ({ getLocalRdo }));
+vi.mock("../../../lib/db/localRdoService", () => ({
+  rdoDraftFromLocalRecord,
+  saveExistingRdoDraftAtomically,
 }));
 const satelite = vi.hoisted(() => ({
   ultimaLeitura: undefined as unknown,
@@ -114,7 +122,18 @@ beforeEach(() => {
   resolverRdoDoTrecho.mockReset();
   resolverRdoDoTrecho.mockResolvedValue({ rdoId: "rdo-1", criaRdo: false });
   createAndPersistLocalPendingRdoDraft.mockReset();
-  createAndPersistLocalPendingRdoDraft.mockResolvedValue({});
+  createAndPersistLocalPendingRdoDraft.mockResolvedValue({
+    draft: { id: "rdo-1", servicosExecutados: [] },
+  });
+  getLocalRdo.mockReset();
+  getLocalRdo.mockResolvedValue({ id: "rdo-1" });
+  rdoDraftFromLocalRecord.mockReset();
+  rdoDraftFromLocalRecord.mockReturnValue({
+    id: "rdo-1",
+    servicosExecutados: [],
+  });
+  saveExistingRdoDraftAtomically.mockReset();
+  saveExistingRdoDraftAtomically.mockResolvedValue({});
   leaflet.marcando = null;
   leaflet.ultimoRascunho = null;
   leaflet.marcar = null;
@@ -347,24 +366,86 @@ describe("RodoviaWorkspace", () => {
     );
     await user.click(screen.getByRole("button", { name: "Registrar trecho" }));
 
+    // O quilômetro passou a morar na linha de execução do RDO, e só lá. Antes
+    // ele existia também nas propriedades da geometria, sem nada que
+    // reconciliasse os dois: corrigir num lado deixava o outro mentindo.
     await waitFor(() =>
-      expect(registrarTrechoDesenhado).toHaveBeenCalledWith(
+      expect(saveExistingRdoDraftAtomically).toHaveBeenCalledWith(
         expect.objectContaining({
-          obraId: "obra-1",
-          pontos,
-          propriedades: expect.objectContaining({
-            rodovia: "SP-310",
-            faixa: "DIREITA",
-            kmInicial: 172,
-            kmFinal: 171,
-            status: "PENDENTE",
-          }),
+          id: "rdo-1",
+          servicosExecutados: [
+            expect.objectContaining({
+              trechoInicial: "172",
+              trechoFinal: "171",
+              faixa: "DIREITA",
+              localizacao: "SP-310",
+              statusValidacao: "REGISTRADA",
+            }),
+          ],
         }),
       ),
     );
+    expect(registrarTrechoDesenhado).toHaveBeenCalledWith(
+      expect.objectContaining({
+        obraId: "obra-1",
+        rdoId: "rdo-1",
+        pontos,
+        propriedades: expect.objectContaining({
+          rodovia: "SP-310",
+          faixa: "DIREITA",
+          status: "PENDENTE",
+        }),
+      }),
+    );
+    const desenhada = registrarTrechoDesenhado.mock.calls.at(-1)?.[0];
+    expect(desenhada.propriedades).not.toHaveProperty("kmInicial");
+    expect(desenhada.propriedades).not.toHaveProperty("kmFinal");
     expect(
       await screen.findByText(/sobe sozinho na próxima sincronização/),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * Gravar a linha no RDO e falhar ao gravar a geometria deixa o apontamento
+   * já lançado. Se salvar de novo acrescentasse outra linha, o mesmo trecho
+   * seria declarado duas vezes — e duas declarações do mesmo trabalho descem
+   * para o Financeiro como se fossem dois.
+   */
+  it("não duplica a linha do RDO quando o salvamento é repetido após falhar", async () => {
+    registrarTrechoDesenhado.mockRejectedValueOnce(
+      new Error("Não foi possível gravar a mutação."),
+    );
+    const user = userEvent.setup();
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    await user.click(screen.getByRole("button", { name: /Desenhar trecho/ }));
+    marcar("INICIO", INICIO);
+    marcar("FIM", FIM);
+    await screen.findByRole("form", { name: /Cadastro do trecho/i });
+    await user.type(screen.getByLabelText("Rodovia"), "SP-310");
+    await user.type(screen.getByLabelText("Km inicial"), "172");
+    await user.type(screen.getByLabelText("Km final"), "171");
+
+    await user.click(screen.getByRole("button", { name: "Registrar trecho" }));
+    await screen.findByText(/Não foi possível gravar a mutação/);
+
+    const primeira = saveExistingRdoDraftAtomically.mock.calls.at(-1)?.[0];
+    expect(primeira.servicosExecutados).toHaveLength(1);
+    // A segunda tentativa reencontra o RDO já com a linha lançada.
+    rdoDraftFromLocalRecord.mockReturnValue({
+      id: "rdo-1",
+      servicosExecutados: primeira.servicosExecutados,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Registrar trecho" }));
+    await screen.findByText(/sobe sozinho na próxima sincronização/);
+
+    const segunda = saveExistingRdoDraftAtomically.mock.calls.at(-1)?.[0];
+    expect(segunda.servicosExecutados).toHaveLength(1);
+    expect(segunda.servicosExecutados[0].localId).toBe(
+      primeira.servicosExecutados[0].localId,
+    );
   });
 
   it("recusa o cadastro sem os dois extremos e não grava nada", async () => {
@@ -385,61 +466,6 @@ describe("RodoviaWorkspace", () => {
       await screen.findByText(/km inicial e o km final/i),
     ).toBeInTheDocument();
     expect(registrarTrechoDesenhado).not.toHaveBeenCalled();
-  });
-
-  it("avisa quando o RDO apurou outra faixa no mesmo pedaço da pista", async () => {
-    const user = userEvent.setup();
-    render(
-      <RodoviaWorkspace
-        obra={obra}
-        podeDesenhar
-        segmentosDoRdo={[{
-          id: "seg-1",
-          origem: "EXECUCAO_SERVICO",
-          rdoId: "rdo-1",
-          numeroRdo: "RDO-0042",
-          data: "2026-07-28",
-          servicoNome: "Fresagem",
-          subtrecho: null,
-          sentido: null,
-          pista: null,
-          faixa: "ESQUERDA",
-          kmInicial: 171.4,
-          kmFinal: 171.8,
-          estacaInicial: null,
-          estacaFinal: null,
-          extensaoM: null,
-          larguraM: null,
-          areaM2: null,
-          massaTonelada: null,
-          status: "VALIDADA",
-          rdoStatus: "ENVIADO",
-          procedencia: "SERVIDOR",
-          pistaInferida: false,
-        }]}
-      />,
-    );
-    await screen.findByTestId("mapa-leaflet");
-
-    await user.click(screen.getByRole("button", { name: /Desenhar trecho/ }));
-    marcar("INICIO", INICIO);
-    marcar("FIM", FIM);
-
-    await screen.findByRole("form", { name: /Cadastro do trecho/i });
-    await user.type(screen.getByLabelText("Km inicial"), "172");
-    await user.type(screen.getByLabelText("Km final"), "171");
-    await user.selectOptions(
-      screen.getByLabelText("Faixa interditada"),
-      "DIREITA",
-    );
-
-    // O aviso é informativo: nem o cadastro nem o RDO são corrigidos.
-    const alerta = await screen.findByRole("alert");
-    expect(alerta).toHaveTextContent(/RDO-0042/);
-    expect(alerta).toHaveTextContent(/ESQUERDA/);
-    expect(
-      screen.getByRole("button", { name: "Registrar trecho" }),
-    ).toBeEnabled();
   });
 
   it("declara a obra sem georreferência em vez de centrar num ponto inventado", async () => {

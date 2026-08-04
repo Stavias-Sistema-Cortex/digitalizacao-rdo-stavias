@@ -54,20 +54,26 @@ public record ObraTrechoResponse(
     ) {
     }
 
-    /** Origem autoritativa de um segmento da projeção. */
+    /**
+     * Origem autoritativa de um segmento da projeção — sempre um apontamento.
+     *
+     * <p>Houve uma quarta origem, {@code CADASTRO_MAPA}, alimentada por
+     * {@code obra_geometria}: o trecho desenhado no mapa entrava na régua por
+     * conta própria, com a quilometragem guardada nas propriedades da
+     * geometria. Eram duas declarações do mesmo trecho sem nada que as
+     * reconciliasse — corrigir o RDO deixava o mapa mentindo, apagar o RDO
+     * deixava o desenho de pé, e a régua chegou a exibir uma rodovia que
+     * nenhum apontamento citava. Hoje o desenho escreve a linha de execução do
+     * RDO do dia e chega aqui como {@code EXECUCAO_SERVICO}, igual a quem
+     * digitou.
+     */
     public enum Origem {
         /** Trecho planejado em {@code programacao_operacional}. */
         PROGRAMACAO,
         /** Controle geométrico executado, lançado no verso do RDO. */
         RDO_CONTROLE,
         /** Serviço executado com trecho inicial/final declarado no RDO. */
-        EXECUCAO_SERVICO,
-        /**
-         * Trecho declarado à mão sobre o mapa, em {@code obra_geometria}.
-         * É o combinado — a interdição acertada antes de qualquer apontamento —
-         * e convive com o apurado sem substituí-lo.
-         */
-        CADASTRO_MAPA
+        EXECUCAO_SERVICO
     }
 
     public record SegmentoTrecho(

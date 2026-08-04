@@ -7,12 +7,20 @@
  * posicionável e sai da régua em vez de ganhar um valor arbitrário.
  */
 
+/**
+ * De onde a régua tira cada bloco — sempre de um apontamento.
+ *
+ * <p>Houve uma quarta origem, `CADASTRO_MAPA`: o trecho desenhado no mapa
+ * entrava aqui por conta própria, com a quilometragem guardada nas
+ * propriedades da geometria. Eram duas declarações do mesmo trecho sem nada
+ * que as reconciliasse — corrigir o RDO deixava o mapa mentindo, apagar o RDO
+ * deixava o desenho de pé. Hoje o desenho escreve a linha de execução do RDO
+ * do dia e chega aqui como `EXECUCAO_SERVICO`, igual a quem digitou.
+ */
 export type OrigemSegmento =
   | "PROGRAMACAO"
   | "RDO_CONTROLE"
-  | "EXECUCAO_SERVICO"
-  /** Trecho declarado à mão sobre o mapa, antes ou ao lado do apontamento. */
-  | "CADASTRO_MAPA";
+  | "EXECUCAO_SERVICO";
 
 /**
  * De onde o segmento veio.
@@ -397,13 +405,7 @@ export type EstadoSegmento =
   | "RASCUNHO"
   | "EXECUTADO"
   | "VALIDADO"
-  | "REJEITADO"
-  /**
-   * Trecho declarado à mão sobre o mapa. Tem estado próprio de propósito:
-   * pintá-lo de "executado" ou "validado" faria uma declaração de intenção
-   * parecer produção apurada, e "validado" aqui significa receita reconhecida.
-   */
-  | "DECLARADO";
+  | "REJEITADO";
 
 /**
  * Estado real do segmento.
@@ -418,11 +420,6 @@ export type EstadoSegmento =
  * significa executado, não aprovado.
  */
 export function estadoDoSegmento(segmento: SegmentoTrecho): EstadoSegmento {
-  if (segmento.origem === "CADASTRO_MAPA") {
-    // Vale mesmo antes de sincronizar: o que este bloco afirma é a declaração
-    // de alguém, e isso não muda quando o servidor confirma o registro.
-    return "DECLARADO";
-  }
   if (segmento.procedencia === "DISPOSITIVO") {
     return "PENDENTE";
   }

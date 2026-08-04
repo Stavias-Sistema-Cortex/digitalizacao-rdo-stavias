@@ -23,15 +23,12 @@ import {
 import { rotuloDaCategoria } from "./mapCategories";
 import {
   CADASTRO_VAZIO,
-  divergenciasComORdo,
   FAIXAS_INTERDITAVEIS,
-  propriedadesDoCadastro,
   STATUS_DO_TRECHO,
   validarCadastro,
   type CadastroTrecho,
   type StatusTrechoCadastrado,
 } from "../trecho/trechoCadastrado";
-import type { SegmentoTrecho } from "../trecho/trechoGeometry";
 import {
   buildOperationalFeatureCollection,
   comprimentoAproximadoM,
@@ -47,6 +44,16 @@ import {
 } from "./obraGeometriaMutations";
 import { hojeIso } from "./execucaoDoTrecho";
 import { resolverRdoDoTrecho } from "./rdoDoTrechoDesenhado";
+import {
+  execucaoDoTrechoDesenhado,
+  propriedadesDaFormaDesenhada,
+} from "./trechoAlimentaORdo";
+import { getLocalRdo } from "../../../lib/db/rdoRepository";
+import {
+  rdoDraftFromLocalRecord,
+  saveExistingRdoDraftAtomically,
+} from "../../../lib/db/localRdoService";
+import type { RdoDraft } from "../../rdos/rdo.types";
 import { createAndPersistLocalPendingRdoDraft } from "../../rdos/rdoDraftCreation";
 import {
   CapturaDeCampoError,
@@ -68,11 +75,6 @@ interface RodoviaWorkspaceProps {
    * enquanto a obra não tem coordenada nem geometria.
    */
   endereco?: EnderecoDaObra;
-  /**
-   * Segmentos que o RDO apurou. Servem só para confrontar o trecho declarado
-   * com o que foi executado no mesmo pedaço da pista; nada é sobrescrito.
-   */
-  segmentosDoRdo?: readonly SegmentoTrecho[];
 }
 
 type EstadoLeitura =
@@ -134,7 +136,6 @@ export function RodoviaWorkspace({
   obra,
   podeDesenhar,
   endereco,
-  segmentosDoRdo = [],
 }: RodoviaWorkspaceProps) {
   const [estado, setEstado] = useState<EstadoLeitura>({ fase: "carregando" });
   const [aviso, setAviso] = useState<string | null>(null);
@@ -418,15 +419,24 @@ export function RodoviaWorkspace({
     [rascunho.inicio, rascunho.fim],
   );
 
-  const divergencias = useMemo(
-    () => divergenciasComORdo(cadastro, segmentosDoRdo),
-    [cadastro, segmentosDoRdo],
+  /**
+   * Identidade da linha que este desenho declara no RDO.
+   *
+   * <p>Fica de fora do `cadastro` de propósito: precisa sobreviver a uma
+   * tentativa que falhou. Gravar o apontamento e falhar na geometria deixa a
+   * linha lançada; sem uma identidade estável, salvar de novo lançaria uma
+   * segunda linha do mesmo trecho — e duas declarações do mesmo trabalho
+   * descem para o Financeiro como se fossem dois.
+   */
+  const [localIdDaLinha, setLocalIdDaLinha] = useState(() =>
+    crypto.randomUUID(),
   );
 
   const cancelarCadastro = useCallback(() => {
     setRascunho(RASCUNHO_VAZIO);
     setMarcando(null);
     setCadastro(CADASTRO_VAZIO);
+    setLocalIdDaLinha(crypto.randomUUID());
     setAviso(null);
   }, []);
 
@@ -447,21 +457,22 @@ export function RodoviaWorkspace({
     }
     setSalvandoCadastro(true);
     try {
-      // Desenhar e apontar são duas portas para o mesmo registro. O trecho
-      // pertence ao RDO do dia: é o que faz o desenho sumir quando o
-      // apontamento é apagado, e o que impede uma rodovia declarada aqui de
-      // divergir da obra sem nada reconciliar.
+      // Desenhar e apontar são duas portas para o mesmo registro. O
+      // quilômetro passa a morar só na linha de execução do RDO: era ele que
+      // existia em dois lugares, sem nada que os reconciliasse, e corrigir num
+      // lado deixava o outro mentindo.
       const data = hojeIso();
       const { rdoId, criaRdo } = await resolverRdoDoTrecho({
         obraId: obra.id,
         data,
       });
+      let rascunhoDoDia: RdoDraft;
       if (criaRdo) {
         // Sem apontamento do dia, o desenho abre um. Nasce pendente de
         // contexto, como qualquer RDO criado sem o recibo da obra em mãos:
-        // sobe quando o contexto chegar, e até lá o trecho já aparece neste
-        // aparelho como trabalho do dia.
-        await createAndPersistLocalPendingRdoDraft(
+        // sobe quando o contexto chegar, e até lá o trabalho já aparece neste
+        // aparelho.
+        const criado = await createAndPersistLocalPendingRdoDraft(
           {
             obra: {
               id: obra.id,
@@ -483,16 +494,47 @@ export function RodoviaWorkspace({
           },
           { draftId: rdoId },
         );
+        rascunhoDoDia = criado.draft;
+      } else {
+        const registro = await getLocalRdo(rdoId);
+        if (!registro) {
+          throw new Error(
+            "O RDO deste dia não está neste aparelho. Abra-o uma vez antes de desenhar.",
+          );
+        }
+        rascunhoDoDia = rdoDraftFromLocalRecord(registro);
       }
+
+      // Substitui em vez de acrescentar quando a linha já está lá: é o que
+      // torna repetir o salvamento inofensivo depois de uma falha.
+      const linha = execucaoDoTrechoDesenhado({
+        cadastro,
+        localId: localIdDaLinha,
+      });
+      const jaLancada = rascunhoDoDia.servicosExecutados.some(
+        (servico) => servico.localId === linha.localId,
+      );
+      await saveExistingRdoDraftAtomically({
+        ...rascunhoDoDia,
+        servicosExecutados: jaLancada
+          ? rascunhoDoDia.servicosExecutados.map((servico) =>
+              servico.localId === linha.localId ? linha : servico,
+            )
+          : [...rascunhoDoDia.servicosExecutados, linha],
+      });
+
+      // A geometria guarda a forma, e nada que o apontamento já afirme.
       await registrarTrechoDesenhado({
         obraId: obra.id,
         rdoId,
         pontos: [inicio, fim],
-        propriedades: propriedadesDoCadastro(cadastro, extensaoDaLinha),
+        propriedades: propriedadesDaFormaDesenhada(cadastro, extensaoDaLinha),
       });
       setRascunho(RASCUNHO_VAZIO);
       setMarcando(null);
       setCadastro(CADASTRO_VAZIO);
+      // O próximo desenho é outro trabalho, e por isso outra linha.
+      setLocalIdDaLinha(crypto.randomUUID());
       setAviso(
         "Trecho registrado neste dispositivo. Ele sobe sozinho na próxima sincronização.",
       );
@@ -508,7 +550,15 @@ export function RodoviaWorkspace({
     } finally {
       setSalvandoCadastro(false);
     }
-  }, [cadastro, extensaoDaLinha, obra.id, obra.nome, rascunho, recarregar]);
+  }, [
+    cadastro,
+    extensaoDaLinha,
+    localIdDaLinha,
+    obra.id,
+    obra.nome,
+    rascunho,
+    recarregar,
+  ]);
 
   /**
    * Registra onde a equipe está agora.
@@ -807,27 +857,6 @@ export function RodoviaWorkspace({
               </select>
             </label>
           </div>
-
-          {divergencias.length > 0 ? (
-            <div className="rodovia-cadastro__divergencia" role="alert">
-              <strong>
-                O RDO apurou outra coisa neste mesmo pedaço da pista.
-              </strong>
-              <ul>
-                {divergencias.map((item) => (
-                  <li key={`${item.campo}:${item.apurado}`}>
-                    {item.campo}: você declarou <b>{item.cadastrado}</b> e o
-                    {item.numeroRdo ? ` ${item.numeroRdo}` : " RDO"} registrou{" "}
-                    <b>{item.apurado}</b>.
-                  </li>
-                ))}
-              </ul>
-              <small>
-                Nada é corrigido automaticamente. O cadastro é o combinado e o
-                RDO é o executado; salvar mantém os dois, lado a lado.
-              </small>
-            </div>
-          ) : null}
 
           <footer>
             <button type="button" onClick={cancelarCadastro}>

@@ -77,51 +77,6 @@ public class ObraTrechoService {
              ORDER BY e.data_execucao ASC, e.id ASC
             """;
 
-    /**
-     * Trecho desenhado sobre o mapa, que é o RDO visto por outro ângulo.
-     *
-     * <p>As chaves lidas são as mesmas que a política de payload da ontologia
-     * já autoriza para geometria. Só entra o que está vigente: uma geometria
-     * encerrada descreve um acordo que deixou de valer.
-     *
-     * <p>O {@code JOIN} com o RDO é o que faltava, e a ausência dele era
-     * visível na tela. As outras três fontes deste serviço descendem do
-     * apontamento e somem quando ele é apagado; esta filtrava obra, categoria e
-     * status e nada mais, então o desenho sobrevivia ao RDO que ele
-     * representava — e, sem amarração, a rodovia digitada à mão podia ser outra
-     * que ninguém conferia. Desenhar e apontar são duas portas para o mesmo
-     * registro, e agora as duas fecham juntas.
-     */
-    private static final String SEGMENTOS_TRECHO_CADASTRADO = """
-            SELECT g.id,
-                   g.valido_desde,
-                   g.objeto_id AS rdo_id,
-                   r.numero_rdo,
-                   r.data_rdo,
-                   r.status AS rdo_status,
-                   g.propriedades_json ->> 'nome' AS nome,
-                   g.propriedades_json ->> 'rodovia' AS rodovia,
-                   g.propriedades_json ->> 'sentido' AS sentido,
-                   g.propriedades_json ->> 'faixa' AS faixa,
-                   g.propriedades_json ->> 'status' AS status,
-                   g.propriedades_json ->> 'kmInicial' AS km_inicial,
-                   g.propriedades_json ->> 'kmFinal' AS km_final,
-                   g.propriedades_json ->> 'extensaoM' AS extensao_m
-              FROM obra_geometria g
-              JOIN rdo r
-                ON r.id = g.objeto_id
-               AND r.obra_id = g.obra_id
-             WHERE g.obra_id = ?
-               AND g.categoria = 'TRECHO'
-               AND g.status = 'ATIVA'
-               AND g.objeto_tipo = 'RDO'
-               AND r.cancelado_em IS NULL
-             ORDER BY g.valido_desde ASC, g.id ASC
-            """;
-
-    /** Interdição declarada nas duas faixas de uma vez. */
-    private static final String FAIXA_AMBAS = "AMBAS";
-
     /** RDO ainda em preenchimento pelo apontador. */
     private static final String RASCUNHO = "RASCUNHO";
 
@@ -138,12 +93,6 @@ public class ObraTrechoService {
                 UNION ALL
                 SELECT MAX(e.atualizado_em)
                   FROM execucao_servico_rdo e WHERE e.obra_id = ?
-                UNION ALL
-                SELECT MAX(g.atualizado_em)
-                  FROM obra_geometria g
-                 WHERE g.obra_id = ?
-                   AND g.categoria = 'TRECHO'
-                   AND g.status = 'ATIVA'
             ) AS fontes
             """;
 
@@ -194,7 +143,11 @@ public class ObraTrechoService {
         todos.addAll(jdbcTemplate.query(
                 SEGMENTOS_EXECUCAO_SERVICO, this::mapExecucaoServico, obraId
         ));
-        todos.addAll(segmentosDeclarados(obraId));
+        // O desenho no mapa não é mais fonte do trecho: ele escreve a linha de
+        // execução do apontamento, e o trecho lê o apontamento. Manter esta
+        // fonte mostraria o mesmo trabalho duas vezes — uma pela geometria,
+        // outra pela execução — e recriaria as duas declarações de quilômetro
+        // que este trabalho existe para eliminar.
         // Antes de qualquer recorte: a herança precisa enxergar todos os
         // controles do RDO, inclusive os que um filtro de data removeria.
         todos = inferirPistaDoControle(todos);
@@ -465,96 +418,6 @@ public class ObraTrechoService {
         );
     }
 
-    /**
-     * Trechos declarados sobre o mapa, projetados como segmentos.
-     *
-     * "Ambas as faixas" vira dois segmentos, um por faixa: a interdição ocupa
-     * as duas de verdade, e um bloco só deixaria metade da pista sem marcação
-     * no esquemático. A extensão fica no primeiro — reparti-la entre as faixas
-     * inventaria uma medição por faixa que ninguém fez.
-     */
-    private List<SegmentoTrecho> segmentosDeclarados(String obraId) {
-        List<TrechoDeclarado> declarados = jdbcTemplate.query(
-                SEGMENTOS_TRECHO_CADASTRADO,
-                (rs, rowNum) -> new TrechoDeclarado(
-                        rs.getString("id"),
-                        rs.getString("rdo_id"),
-                        texto(rs.getString("numero_rdo")),
-                        texto(rs.getString("rdo_status")),
-                        // A data do bloco é a do apontamento, não a do
-                        // desenho: o trecho conta o dia do trabalho.
-                        localDate(rs, "data_rdo") != null
-                                ? localDate(rs, "data_rdo")
-                                : localDate(rs, "valido_desde"),
-                        texto(rs.getString("nome")),
-                        texto(rs.getString("sentido")),
-                        texto(rs.getString("faixa")),
-                        texto(rs.getString("status")),
-                        QuilometroParser.parse(rs.getString("km_inicial")),
-                        QuilometroParser.parse(rs.getString("km_final")),
-                        decimal(rs.getString("extensao_m"))
-                ),
-                obraId
-        );
-
-        List<SegmentoTrecho> segmentos = new ArrayList<>();
-        for (TrechoDeclarado declarado : declarados) {
-            if (declarado.kmInicial() == null || declarado.kmFinal() == null) {
-                // Sem os dois extremos não há bloco desenhável; o registro
-                // continua no mapa, mas não entra na régua.
-                continue;
-            }
-            List<String> faixas = FAIXA_AMBAS.equalsIgnoreCase(declarado.faixa())
-                    ? List.of("DIREITA", "ESQUERDA")
-                    : java.util.Collections.singletonList(declarado.faixa());
-            for (int indice = 0; indice < faixas.size(); indice++) {
-                String faixa = faixas.get(indice);
-                segmentos.add(new SegmentoTrecho(
-                        faixas.size() > 1
-                                ? declarado.id() + ":" + faixa
-                                : declarado.id(),
-                        Origem.CADASTRO_MAPA,
-                        declarado.rdoId(),
-                        declarado.numeroRdo(),
-                        declarado.data(),
-                        declarado.nome(),
-                        null,
-                        declarado.sentido(),
-                        null,
-                        faixa,
-                        declarado.kmInicial(),
-                        declarado.kmFinal(),
-                        null,
-                        null,
-                        indice == 0 ? declarado.extensaoM() : null,
-                        null,
-                        null,
-                        null,
-                        declarado.status(),
-                        declarado.rdoStatus(),
-                        false
-                ));
-            }
-        }
-        return segmentos;
-    }
-
-    /** Leitura crua de um trecho declarado, antes de virar segmento. */
-    private record TrechoDeclarado(
-            String id,
-            String rdoId,
-            String numeroRdo,
-            String rdoStatus,
-            LocalDate data,
-            String nome,
-            String sentido,
-            String faixa,
-            String status,
-            BigDecimal kmInicial,
-            BigDecimal kmFinal,
-            BigDecimal extensaoM
-    ) {
-    }
 
     private SegmentoTrecho mapExecucaoServico(ResultSet rs, int rowNum) throws SQLException {
         return new SegmentoTrecho(
@@ -644,7 +507,7 @@ public class ObraTrechoService {
                     java.sql.Timestamp momento = rs.getTimestamp(1);
                     return momento == null ? null : momento.toLocalDateTime();
                 },
-                obraId, obraId, obraId, obraId
+                obraId, obraId, obraId
         );
     }
 
@@ -683,21 +546,4 @@ public class ObraTrechoService {
         return valor == null || valor.isBlank() ? null : valor.trim();
     }
 
-    /**
-     * Número lido de uma chave JSON.
-     *
-     * Texto que não é número devolve nulo em vez de zero: zero é medida válida
-     * e inventá-lo faria o esquemático afirmar uma extensão que ninguém mediu.
-     */
-    private static BigDecimal decimal(String valor) {
-        String limpo = texto(valor);
-        if (limpo == null) {
-            return null;
-        }
-        try {
-            return new BigDecimal(limpo);
-        } catch (NumberFormatException ignorado) {
-            return null;
-        }
-    }
 }
