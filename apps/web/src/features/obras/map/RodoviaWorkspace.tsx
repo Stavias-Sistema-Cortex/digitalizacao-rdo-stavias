@@ -216,6 +216,7 @@ export function RodoviaWorkspace({
    */
   const [pontoParaRemover, setPontoParaRemover] = useState<string | null>(null);
   const [removendo, setRemovendo] = useState(false);
+  const [erroDaRemocao, setErroDaRemocao] = useState<string | null>(null);
   /*
    * Removidos nesta sessão.
    *
@@ -360,6 +361,7 @@ export function RodoviaWorkspace({
 
   const pedirRemocaoDoPonto = useCallback((id: string) => {
     setPontoParaRemover(id);
+    setErroDaRemocao(null);
     setAviso(null);
   }, []);
 
@@ -380,12 +382,15 @@ export function RodoviaWorkspace({
       setPontoParaRemover(null);
       recarregar();
     } catch (motivo: unknown) {
-      setAviso(
+      // A recusa fica na própria pergunta, e a pergunta continua aberta. Ela
+      // já foi para o aviso do topo da página: numa obra com conteúdo, isso
+      // fica longe da mão que acabou de clicar, e a remoção que falhou era
+      // indistinguível de uma que não fez nada.
+      setErroDaRemocao(
         motivo instanceof Error
           ? motivo.message
           : "Não foi possível encerrar o ponto.",
       );
-      setPontoParaRemover(null);
     } finally {
       setRemovendo(false);
     }
@@ -1058,6 +1063,11 @@ export function RodoviaWorkspace({
                 {formatarInstante(pontoEscolhido.properties.observadoEm)}.
               </small>
             ) : null}
+            {erroDaRemocao ? (
+              <p className="rodovia-confirma__erro" role="alert">
+                {erroDaRemocao}
+              </p>
+            ) : null}
             <div className="rodovia-confirma__acoes">
               <button
                 type="button"
@@ -1065,7 +1075,7 @@ export function RodoviaWorkspace({
                 disabled={removendo}
                 onClick={() => setPontoParaRemover(null)}
               >
-                Cancelar
+                {erroDaRemocao ? "Fechar" : "Cancelar"}
               </button>
               <button
                 type="button"
@@ -1073,7 +1083,11 @@ export function RodoviaWorkspace({
                 disabled={removendo}
                 onClick={() => void removerPonto()}
               >
-                {removendo ? "Removendo…" : "Remover"}
+                {removendo
+                  ? "Removendo…"
+                  : erroDaRemocao
+                    ? "Tentar de novo"
+                    : "Remover"}
               </button>
             </div>
           </div>

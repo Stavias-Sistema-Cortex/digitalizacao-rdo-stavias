@@ -238,6 +238,39 @@ describe("RodoviaWorkspace", () => {
     ]);
   });
 
+  /**
+   * A recusa precisa aparecer onde a mão está. Ela ia para o aviso do topo da
+   * página, que numa obra com conteúdo fica longe da vista — a remoção que
+   * falhou era indistinguível de uma que simplesmente não fez nada, e é
+   * exatamente assim que ela foi relatada.
+   */
+  it("mostra a recusa dentro da pergunta, sem fechá-la", async () => {
+    encerrarGeometria.mockRejectedValue(
+      new Error("Este desenho ainda não subiu para o servidor."),
+    );
+    const user = userEvent.setup();
+    carregarMapaObra.mockResolvedValue(
+      leitura({ dados: { obra, features: [pontoOperacional("ponto-1")] } }),
+    );
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    clicarNaLixeira("ponto-1");
+    await user.click(await screen.findByRole("button", { name: "Remover" }));
+
+    expect(
+      await screen.findByText(/ainda não subiu para o servidor/),
+    ).toBeInTheDocument();
+    // A pergunta continua aberta, oferecendo a segunda tentativa.
+    expect(
+      screen.getByRole("button", { name: "Tentar de novo" }),
+    ).toBeInTheDocument();
+    // E o ponto continua no mapa, porque nada foi removido de verdade.
+    expect(
+      leaflet.ultimasFeatures.features.map((feature) => feature.id),
+    ).toContain("ponto-1");
+  });
+
   /** Desistir tem que ser tão fácil quanto pedir. */
   it("não remove nada quando a confirmação é cancelada", async () => {
     const user = userEvent.setup();

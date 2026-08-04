@@ -466,7 +466,13 @@
 .rodovia-confirma {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  /*
+   * Acima dos dois mapas. O Leaflet empilha os próprios painéis a partir de
+   * 400 e chega a 800 nos controles, e o painel vetorial desenha por cima de
+   * qualquer coisa abaixo disso — a pergunta aparecia atrás do mapa, com o
+   * botão de remover coberto pela metade.
+   */
+  z-index: 1200;
   display: grid;
   place-items: center;
   padding: 1rem;
@@ -497,6 +503,16 @@
 
 .rodovia-confirma__caixa small {
   color: color-mix(in srgb, var(--color-surface) 62%, transparent);
+}
+
+/* A recusa fica onde a mão está, não num aviso no topo da página. */
+.rodovia-confirma__erro {
+  margin: 0.6rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--color-danger) 22%, transparent);
+  color: var(--color-surface);
+  font-size: 0.8125rem;
 }
 
 .rodovia-confirma__acoes {
