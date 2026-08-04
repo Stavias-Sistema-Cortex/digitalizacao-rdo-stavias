@@ -31,7 +31,15 @@ const leaflet = vi.hoisted(() => ({
     | null,
   ultimasFeatures: { features: [] } as { features: { id: string }[] },
   espelho: undefined as unknown,
+  removerPonto: null as ((id: string) => void) | null,
 }));
+
+/** A lixeira do balão do ponto, como o mapa a acionaria ao clique. */
+function clicarNaLixeira(id: string) {
+  act(() => {
+    leaflet.removerPonto?.(id);
+  });
+}
 
 vi.mock("./obraMapApi", () => ({ carregarMapaObra }));
 vi.mock("./obraGeometriaMutations", () => ({
@@ -69,12 +77,14 @@ vi.mock("./LeafletTrechoMap", () => ({
         ponto: { lat: number; lng: number },
       ) => void;
       onCamera?: unknown;
+      onRemoverPonto?: ((id: string) => void) | null;
     }) => {
       leaflet.marcando = props.marcando ?? null;
       leaflet.ultimoRascunho = props.rascunho ?? null;
       leaflet.marcar = props.onPontoMarcado ?? null;
       leaflet.ultimasFeatures = props.features;
       leaflet.espelho = props.onCamera ?? null;
+      leaflet.removerPonto = props.onRemoverPonto ?? null;
       return (
         <div
           data-testid="mapa-leaflet"
@@ -165,39 +175,71 @@ describe("RodoviaWorkspace", () => {
    * lido como evidência, então ponto que ninguém tira vira afirmação que
    * ninguém desmente.
    */
-  it("encerra o ponto operacional com o motivo declarado", async () => {
+  it("encerra o ponto escolhido no mapa com o motivo declarado", async () => {
     const user = userEvent.setup();
     carregarMapaObra.mockResolvedValue(
-      leitura({ dados: { obra, features: [pontoOperacional("ponto-1")] } }),
+      leitura({
+        dados: {
+          obra,
+          features: [pontoOperacional("ponto-1"), pontoOperacional("ponto-2")],
+        },
+      }),
     );
     render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
 
-    await user.click(await screen.findByRole("button", { name: "Remover" }));
+    clicarNaLixeira("ponto-2");
     await user.type(
-      screen.getByLabelText("Motivo do encerramento"),
+      await screen.findByLabelText("Motivo do encerramento"),
       "Marcação no lugar errado",
     );
-    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+    await user.click(screen.getByRole("button", { name: "Encerrar ponto" }));
 
     await waitFor(() =>
       expect(encerrarGeometria).toHaveBeenCalledWith(
-        "ponto-1",
+        "ponto-2",
         "Marcação no lugar errado",
       ),
     );
   });
 
+  /**
+   * Todo ponto operacional se chama "Ponto operacional". Uma lista deles
+   * repetia o mesmo rótulo dezenas de vezes e não dizia qual era qual — quem
+   * escolhe a marcação errada precisa apontar para ela no mapa, e nada de
+   * encerramento aparece antes disso.
+   */
+  it("não põe na tela uma lista de pontos para escolher", async () => {
+    carregarMapaObra.mockResolvedValue(
+      leitura({
+        dados: {
+          obra,
+          features: [pontoOperacional("ponto-1"), pontoOperacional("ponto-2")],
+        },
+      }),
+    );
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    expect(screen.queryByText("Pontos operacionais")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Motivo do encerramento"),
+    ).not.toBeInTheDocument();
+  });
+
   /** Encerrar é registro, e registro sem porquê não explica nada depois. */
   it("não deixa encerrar sem motivo", async () => {
-    const user = userEvent.setup();
     carregarMapaObra.mockResolvedValue(
       leitura({ dados: { obra, features: [pontoOperacional("ponto-1")] } }),
     );
     render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
 
-    await user.click(await screen.findByRole("button", { name: "Remover" }));
+    clicarNaLixeira("ponto-1");
 
-    expect(screen.getByRole("button", { name: "Confirmar" })).toBeDisabled();
+    expect(
+      await screen.findByRole("button", { name: "Encerrar ponto" }),
+    ).toBeDisabled();
     expect(encerrarGeometria).not.toHaveBeenCalled();
   });
 

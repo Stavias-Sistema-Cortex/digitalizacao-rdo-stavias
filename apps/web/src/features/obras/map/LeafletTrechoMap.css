@@ -126,6 +126,52 @@
   color: var(--color-ink);
 }
 
+/*
+ * A lixeira fica no canto do balão, encostada no título do ponto: é ali que
+ * se sabe qual marcação está sendo apagada. Discreta em repouso e vermelha ao
+ * toque — apagar não é a ação que o balão convida a fazer, é a que ele
+ * permite quando alguém já decidiu.
+ */
+.leaflet-trecho .leaflet-trecho-remover {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.leaflet-trecho .leaflet-trecho-remover svg {
+  width: 15px;
+  height: 15px;
+}
+
+.leaflet-trecho .leaflet-trecho-remover:hover,
+.leaflet-trecho .leaflet-trecho-remover:focus-visible {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* Âncora da lixeira, e o título não corre por baixo dela. */
+.leaflet-trecho .leaflet-trecho-popup {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.leaflet-trecho .leaflet-trecho-popup:has(.leaflet-trecho-remover) {
+  padding-right: 26px;
+}
+
 .leaflet-trecho .leaflet-popup-tip {
   border: 1px solid var(--color-ink);
   box-shadow: none;

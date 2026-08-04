@@ -165,6 +165,12 @@ export function RodoviaWorkspace({
    * evidência, ponto que ninguém consegue tirar vira afirmação que ninguém
    * consegue desmentir.
    *
+   * A porta é a lixeira no balão do próprio ponto. A primeira tentativa foi
+   * uma lista à parte, e ela não funcionava: todo ponto operacional se chama
+   * "Ponto operacional", então a lista repetia o mesmo rótulo dezenas de
+   * vezes, com uma data ao lado, e ninguém conseguia dizer qual daquelas
+   * linhas era a marcação errada. Escolher o ponto é olhar para o mapa.
+   *
    * O motivo fica junto do pedido, e não num prompt do navegador: encerrar
    * é registro, e registro sem porquê não explica nada a quem ler depois.
    */
@@ -267,13 +273,23 @@ export function RodoviaWorkspace({
     [colecaoCompleta, filtro],
   );
 
-  const pontosOperacionais = useMemo(
+  // O ponto escolhido no mapa, para o painel dizer de qual marcação se trata
+  // antes de pedir o motivo.
+  const pontoEscolhido = useMemo(
     () =>
-      colecaoCompleta.features.filter(
-        (feature) => categoriaDaFeature(feature) === "PONTO_OPERACIONAL",
-      ),
-    [colecaoCompleta.features],
+      pontoParaRemover
+        ? (colecaoCompleta.features.find(
+            (feature) => feature.id === pontoParaRemover,
+          ) ?? null)
+        : null,
+    [colecaoCompleta.features, pontoParaRemover],
   );
+
+  const pedirRemocaoDoPonto = useCallback((id: string) => {
+    setPontoParaRemover(id);
+    setMotivoRemocao("");
+    setAviso(null);
+  }, []);
 
   const removerPonto = useCallback(async () => {
     if (!pontoParaRemover) return;
@@ -941,73 +957,58 @@ export function RodoviaWorkspace({
         anuncia o que faz ou o que já é — e, com aria-pressed junto, o leitor de
         tela diz as duas coisas e elas se contradizem.
       */}
-      {pontosOperacionais.length > 0 ? (
+      {/*
+        Só aparece depois de a lixeira ser apertada no ponto: até lá não há
+        nada a decidir, e um formulário permanente de encerramento na tela
+        pesa mais do que a ação que ele serve.
+      */}
+      {pontoParaRemover ? (
         <section
-          className="rodovia-pontos"
-          aria-label="Pontos operacionais registrados"
+          className="rodovia-ponto-remocao"
+          aria-label="Encerramento do ponto operacional"
         >
-          <h3>Pontos operacionais</h3>
-          <ul className="rodovia-pontos-lista">
-            {pontosOperacionais.map((ponto) => (
-              <li key={ponto.id}>
-                <span className="rodovia-ponto-rotulo">
-                  {rotuloDaCategoria(categoriaDaFeature(ponto))}
-                </span>
-                <time>
-                  {formatarInstante(
-                    typeof ponto.properties.observadoEm === "string"
-                      ? ponto.properties.observadoEm
-                      : null,
-                  )}
-                </time>
-                {pontoParaRemover === ponto.id ? null : (
-                  <button
-                    type="button"
-                    disabled={removendo}
-                    onClick={() => {
-                      setPontoParaRemover(ponto.id);
-                      setMotivoRemocao("");
-                      setAviso(null);
-                    }}
-                  >
-                    Remover
-                  </button>
-                )}
-                {pontoParaRemover === ponto.id ? (
-                  <div className="rodovia-ponto-remocao">
-                    <label>
-                      Motivo do encerramento
-                      <input
-                        value={motivoRemocao}
-                        onChange={(evento) =>
-                          setMotivoRemocao(evento.target.value)
-                        }
-                        placeholder="Ex.: marcação feita no lugar errado"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="is-danger"
-                      disabled={removendo || !motivoRemocao.trim()}
-                      onClick={() => void removerPonto()}
-                    >
-                      Confirmar
-                    </button>
-                    <button
-                      type="button"
-                      disabled={removendo}
-                      onClick={() => {
-                        setPontoParaRemover(null);
-                        setMotivoRemocao("");
-                      }}
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <div className="rodovia-ponto-remocao__cabecalho">
+            <strong>
+              Encerrar{" "}
+              {pontoEscolhido
+                ? rotuloDaCategoria(categoriaDaFeature(pontoEscolhido))
+                : "ponto operacional"}
+            </strong>
+            {pontoEscolhido &&
+            typeof pontoEscolhido.properties.observadoEm === "string" ? (
+              <time>
+                {formatarInstante(pontoEscolhido.properties.observadoEm)}
+              </time>
+            ) : null}
+          </div>
+          <label>
+            Motivo do encerramento
+            <input
+              value={motivoRemocao}
+              onChange={(evento) => setMotivoRemocao(evento.target.value)}
+              placeholder="Ex.: marcação feita no lugar errado"
+            />
+          </label>
+          <div className="rodovia-ponto-remocao__acoes">
+            <button
+              type="button"
+              className="is-danger"
+              disabled={removendo || !motivoRemocao.trim()}
+              onClick={() => void removerPonto()}
+            >
+              Encerrar ponto
+            </button>
+            <button
+              type="button"
+              disabled={removendo}
+              onClick={() => {
+                setPontoParaRemover(null);
+                setMotivoRemocao("");
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
           <small>
             Encerrar tira o ponto do mapa e preserva o registro no histórico.
           </small>
@@ -1053,6 +1054,7 @@ export function RodoviaWorkspace({
               rascunho={rascunho}
               marcando={podeDesenhar ? marcando : null}
               onPontoMarcado={aoMarcarPonto}
+              onRemoverPonto={pedirRemocaoDoPonto}
               camera={
                 travado && camera?.origem === "vetorial" ? camera.valor : null
               }

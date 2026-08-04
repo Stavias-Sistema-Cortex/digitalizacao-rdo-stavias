@@ -1,18 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
+import { corDaCategoria, corDoToken } from "./mapCategories";
 import {
-  corDaCategoria,
-  corDoToken,
-  rotuloDaCategoria,
-  rotuloDaFonte,
-} from "./mapCategories";
-import {
-  ROTULO_POR_FASE,
   faseDaFeature,
   pesoDaFase,
-  servicoDaFeature,
   TOKEN_POR_FASE,
 } from "./execucaoDoTrecho";
+import { escapeHtml, popupElement } from "./popupDoMapa";
 import type { OperationalFeatureCollection } from "./mapGeometry";
 import {
   RASCUNHO_VAZIO,
@@ -64,7 +58,19 @@ interface LeafletTrechoMapProps {
   marcando?: ExtremoDoTrecho | null;
   /** Coordenada realmente clicada, para o extremo em marcação. */
   onPontoMarcado?: (extremo: ExtremoDoTrecho, ponto: PontoGeografico) => void;
+  /**
+   * Pedido de remoção do ponto operacional aberto no balão.
+   *
+   * <p>A lixeira mora no próprio ponto porque é ali que se sabe qual é ele.
+   * Uma lista à parte só conseguia repetir "Ponto operacional" e uma data
+   * dezenas de vezes — ninguém consegue apontar no meio disso qual marcação
+   * está no lugar errado, e a decisão que a tela pedia era exatamente essa.
+   *
+   * <p>Nulo esconde a lixeira.
+   */
+  onRemoverPonto?: ((id: string) => void) | null;
 }
+
 
 /*
  * Tracejado do trecho encerrado, em pixels da tela.
@@ -78,14 +84,6 @@ const DASH_DO_ENCERRADO = "11 6";
 const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
 
 /**
  * Marcador desenhado em CSS.
@@ -108,39 +106,6 @@ function siglaDaCategoria(categoria: unknown): string {
   if (categoria === "PONTO_OPERACIONAL") return "PO";
   if (categoria === "FRENTE_TRABALHO") return "FT";
   return categoria.slice(0, 2);
-}
-
-function popupHtml(properties: Record<string, unknown>): string {
-  const titulo =
-    typeof properties.nome === "string" && properties.nome
-      ? properties.nome
-      : rotuloDaCategoria(properties.categoria);
-  const servico = servicoDaFeature({ properties } as never);
-  const fase = properties.faseExecucao;
-  const detalhes = [
-    // O serviço vem antes de qualquer metadado: é o que o segmento REPRESENTA
-    // no campo, e era a informação que existia no dado sem aparecer na tela.
-    servico && servico !== titulo ? servico : null,
-    typeof fase === "string" && fase in ROTULO_POR_FASE
-      ? ROTULO_POR_FASE[fase as keyof typeof ROTULO_POR_FASE]
-      : null,
-    typeof properties.numeroRdo === "string"
-      ? `RDO ${properties.numeroRdo}`
-      : null,
-    typeof properties.validoDesde === "string"
-      ? `desde ${properties.validoDesde.slice(0, 10)}`
-      : null,
-    typeof properties.categoria === "string"
-      ? rotuloDaCategoria(properties.categoria)
-      : null,
-    typeof properties.fonte === "string"
-      ? rotuloDaFonte(properties.fonte)
-      : null,
-  ].filter((item): item is string => Boolean(item));
-
-  return `<strong>${escapeHtml(titulo)}</strong><span>${escapeHtml(
-    detalhes.join(" · "),
-  )}</span>`;
 }
 
 const APARENCIA_DO_EXTREMO: Readonly<
@@ -172,6 +137,7 @@ export function LeafletTrechoMap({
   rascunho = RASCUNHO_VAZIO,
   marcando = null,
   onPontoMarcado,
+  onRemoverPonto = null,
 }: LeafletTrechoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
@@ -180,6 +146,11 @@ export function LeafletTrechoMap({
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const marcandoRef = useRef<ExtremoDoTrecho | null>(marcando);
   const aoMarcarRef = useRef(onPontoMarcado);
+  // O balão é montado quando a camada é redesenhada, e a camada não é
+  // redesenhada a cada render: sem a referência, a lixeira chamaria a função
+  // que valia no desenho anterior.
+  const aoRemoverRef = useRef(onRemoverPonto);
+  const podeRemover = Boolean(onRemoverPonto);
   const enquadramentoRef = useRef<string | null>(null);
   // O movimento veio do outro mapa: devolvê-lo faria o par oscilar.
   const impondoCameraRef = useRef(false);
@@ -193,6 +164,7 @@ export function LeafletTrechoMap({
   useEffect(() => {
     marcandoRef.current = marcando;
     aoMarcarRef.current = onPontoMarcado;
+    aoRemoverRef.current = onRemoverPonto;
   });
 
   useEffect(() => {
@@ -420,7 +392,11 @@ export function LeafletTrechoMap({
         }),
       onEachFeature: (feature, layer) => {
         layer.bindPopup(
-          popupHtml((feature.properties ?? {}) as Record<string, unknown>),
+          popupElement(
+            (feature.properties ?? {}) as Record<string, unknown>,
+            typeof feature.id === "string" ? feature.id : null,
+            aoRemoverRef.current ?? null,
+          ),
           { closeButton: false },
         );
       },
@@ -442,7 +418,7 @@ export function LeafletTrechoMap({
     if (bounds.isValid()) {
       map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
     }
-  }, [features, estado]);
+  }, [features, estado, podeRemover]);
 
   /*
    * Redesenha o rascunho a partir do que foi recebido.
