@@ -269,4 +269,158 @@ describe("apagar e recuperar RDO", () => {
       canceladoEm: "2026-08-01T18:30:00.000Z",
     });
   });
+  /**
+   * Apagar é a saída do conflito insolúvel, não mais uma porta trancada.
+   *
+   * A recusa era circular: "resolva o conflito antes de apagar", quando o
+   * conflito é justamente o motivo de querer apagar. Com os dois lados no mesmo
+   * campo não há fusão a propor, então o registro ficava para sempre com a
+   * tarja vermelha e nenhuma ação capaz de tirá-la.
+   */
+  it("apaga o RDO mesmo com uma edição local presa em conflito", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdo({ syncStatus: "CONFLICT" }));
+    const presaId = crypto.randomUUID();
+    await database.put("outbox_mutations", {
+      clientMutationId: presaId,
+      entidadeTipo: "RDO",
+      entidadeId: RDO_ID,
+      operacao: "ATUALIZAR_RDO_RASCUNHO",
+      status: "CONFLICT",
+      tentativas: 1,
+      ultimaTentativaEm: BASE_TIME,
+      ultimoErro: "Conflito de versão.",
+      baseVersao: 3,
+      payload: {},
+      criadaNoClienteEm: BASE_TIME,
+      updatedAt: BASE_TIME,
+      conflito: { versaoAtual: 7 },
+    } as never);
+    await database.put("operational_events", {
+      id: crypto.randomUUID(),
+      type: "RDO_EDITADO",
+      principalEntity: { tipo: "RDO", id: RDO_ID },
+      principalEntityKey: `RDO:${RDO_ID}`,
+      relatedEntities: [],
+      obraId: OBRA_ID,
+      rdoId: RDO_ID,
+      colaboradorId: null,
+      occurredAt: BASE_TIME,
+      syncedAt: null,
+      origin: "OFFLINE",
+      responsibleUserId: USER_ID,
+      responsibleUserName: "Apontador",
+      payload: {},
+      syncStatus: "SYNC_FAILED",
+      schemaVersion: 13,
+      clientMutationId: presaId,
+      deviceId: DEVICE_ID,
+      correlationId: crypto.randomUUID(),
+      causationId: null,
+      entityVersion: 3,
+      result: "CONFLICT",
+      errorCategory: "VERSION_CONFLICT",
+    } as never);
+
+    const apagado = await queueCancelRdo(rdo({ syncStatus: "CONFLICT" }));
+
+    expect(apagado.canceladoEm).not.toBeNull();
+    const fila = await database.getAll("outbox_mutations");
+    // A edição presa saiu da fila; ficou só o apagamento.
+    expect(fila).toHaveLength(1);
+    expect(fila[0]).toMatchObject({
+      operacao: "CANCELAR_RDO",
+      status: "PENDING",
+      // Contra a versão que o servidor informou no conflito, não contra a que
+      // este aparelho conhecia: senão o apagamento nasceria em conflito também.
+      baseVersao: 7,
+    });
+  });
+
+  /** O que se perde é a intenção de escrita, nunca o rastro dela. */
+  it("preserva na Memória a evidência da edição abandonada", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdo({ syncStatus: "CONFLICT" }));
+    const presaId = crypto.randomUUID();
+    await database.put("outbox_mutations", {
+      clientMutationId: presaId,
+      entidadeTipo: "RDO",
+      entidadeId: RDO_ID,
+      operacao: "ATUALIZAR_RDO_RASCUNHO",
+      status: "CONFLICT",
+      tentativas: 1,
+      ultimaTentativaEm: BASE_TIME,
+      ultimoErro: "Conflito de versão.",
+      baseVersao: 3,
+      payload: {},
+      criadaNoClienteEm: BASE_TIME,
+      updatedAt: BASE_TIME,
+      conflito: { versaoAtual: 4 },
+    } as never);
+    const eventoId = crypto.randomUUID();
+    await database.put("operational_events", {
+      id: eventoId,
+      type: "RDO_EDITADO",
+      principalEntity: { tipo: "RDO", id: RDO_ID },
+      principalEntityKey: `RDO:${RDO_ID}`,
+      relatedEntities: [],
+      obraId: OBRA_ID,
+      rdoId: RDO_ID,
+      colaboradorId: null,
+      occurredAt: BASE_TIME,
+      syncedAt: null,
+      origin: "OFFLINE",
+      responsibleUserId: USER_ID,
+      responsibleUserName: "Apontador",
+      payload: {},
+      syncStatus: "SYNC_FAILED",
+      schemaVersion: 13,
+      clientMutationId: presaId,
+      deviceId: DEVICE_ID,
+      correlationId: crypto.randomUUID(),
+      causationId: null,
+      entityVersion: 3,
+      result: "CONFLICT",
+      errorCategory: "VERSION_CONFLICT",
+    } as never);
+
+    await queueCancelRdo(rdo({ syncStatus: "CONFLICT" }));
+
+    const evento = await database.get("operational_events", eventoId);
+    expect(evento).toMatchObject({
+      result: "DISCARDED",
+      errorCategory: "SUPERSEDED_BY_RDO_DELETION",
+    });
+  });
+
+  /** Recusa é do servidor, e some pela mesma porta quando o registro sai. */
+  it("apaga o RDO com uma alteração recusada parada na fila", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdo({ syncStatus: "ERROR" }));
+    await database.put("outbox_mutations", {
+      clientMutationId: crypto.randomUUID(),
+      entidadeTipo: "RDO",
+      entidadeId: RDO_ID,
+      operacao: "ATUALIZAR_RDO_RASCUNHO",
+      status: "REJECTED",
+      tentativas: 2,
+      ultimaTentativaEm: BASE_TIME,
+      ultimoErro: "Recusado pelo servidor.",
+      baseVersao: 3,
+      payload: {},
+      criadaNoClienteEm: BASE_TIME,
+      updatedAt: BASE_TIME,
+      conflito: null,
+    } as never);
+
+    const apagado = await queueCancelRdo(rdo({ syncStatus: "ERROR" }));
+
+    expect(apagado.canceladoEm).not.toBeNull();
+    const fila = await database.getAll("outbox_mutations");
+    expect(fila).toHaveLength(1);
+    expect(fila[0]).toMatchObject({
+      operacao: "CANCELAR_RDO",
+      baseVersao: 3,
+    });
+  });
 });

@@ -12,6 +12,7 @@ const syncMocks = vi.hoisted(() => ({
     errors: 0,
     retryableErrors: 0,
     conflicts: 0,
+    reconciledReplacementByOriginalId: new Map(),
   })),
   pull: vi.fn(async () => ({ pulled: 1, messagingConversationIds: [] })),
   ack: vi.fn(async () => 121),

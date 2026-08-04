@@ -248,9 +248,14 @@ export function RdoWorkspacePage() {
       return;
     }
 
+    // Com uma edição presa em conflito, apagar também abre mão dela — e quem
+    // decide precisa saber disso antes, não depois.
+    const avisoDeConflito = record.syncStatus === "CONFLICT"
+      ? " A alteração local que ficou em conflito é abandonada junto; o registro dela permanece na Memória."
+      : "";
     if (
       !window.confirm(
-        `Apagar o RDO ${rotulo}? Ele sai dos números e dos relatórios, mas continua guardado e pode ser recuperado pelo filtro "Apagado".`,
+        `Apagar o RDO ${rotulo}? Ele sai dos números e dos relatórios, mas continua guardado e pode ser recuperado pelo filtro "Apagado".${avisoDeConflito}`,
       )
     ) {
       return;

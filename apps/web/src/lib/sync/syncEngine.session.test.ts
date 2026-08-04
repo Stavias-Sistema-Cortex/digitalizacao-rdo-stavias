@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
     errors: 0,
     retryableErrors: 0,
     conflicts: 0,
+    reconciledReplacementByOriginalId: new Map(),
     appliedMutationIds: [],
     handledMutationIds: [],
     errorMutationIds: [],
@@ -219,6 +220,7 @@ describe("session-scoped sync single flight", () => {
         errors: 1,
         retryableErrors: 0,
         conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
         appliedMutationIds: [],
         handledMutationIds: ["original-rdo"],
         errorMutationIds: ["original-rdo"],
@@ -229,6 +231,7 @@ describe("session-scoped sync single flight", () => {
         errors: 0,
         retryableErrors: 0,
         conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
         appliedMutationIds: ["recovered-rdo"],
         handledMutationIds: ["recovered-rdo"],
         errorMutationIds: [],
@@ -278,6 +281,7 @@ describe("session-scoped sync single flight", () => {
         errors: 1,
         retryableErrors: 0,
         conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
         appliedMutationIds: [],
         handledMutationIds: ["original-rdo"],
         errorMutationIds: ["original-rdo"],
@@ -288,6 +292,7 @@ describe("session-scoped sync single flight", () => {
         errors: 1,
         retryableErrors: 0,
         conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
         appliedMutationIds: [],
         handledMutationIds: ["recovered-rdo"],
         errorMutationIds: ["recovered-rdo"],
@@ -329,6 +334,7 @@ describe("session-scoped sync single flight", () => {
         errors: 1,
         retryableErrors: 0,
         conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
         appliedMutationIds: [],
         handledMutationIds: ["original-rdo"],
         errorMutationIds: ["original-rdo"],
@@ -339,6 +345,7 @@ describe("session-scoped sync single flight", () => {
         errors: 0,
         retryableErrors: 0,
         conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
         appliedMutationIds: [],
         handledMutationIds: [],
         errorMutationIds: [],
@@ -378,6 +385,7 @@ describe("session-scoped sync single flight", () => {
         errors: 1,
         retryableErrors: 0,
         conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
         appliedMutationIds: [],
         handledMutationIds: ["original-rdo"],
         errorMutationIds: ["original-rdo"],
@@ -388,6 +396,7 @@ describe("session-scoped sync single flight", () => {
         errors: 0,
         retryableErrors: 0,
         conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
         appliedMutationIds: ["unrelated-old-mutation"],
         handledMutationIds: ["unrelated-old-mutation"],
         errorMutationIds: [],
@@ -426,6 +435,7 @@ describe("session-scoped sync single flight", () => {
         errors: 1,
         retryableErrors: 0,
         conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
         appliedMutationIds: [],
         handledMutationIds: ["current-unrelated-error"],
         errorMutationIds: ["current-unrelated-error"],
@@ -436,6 +446,7 @@ describe("session-scoped sync single flight", () => {
         errors: 0,
         retryableErrors: 0,
         conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
         appliedMutationIds: ["old-replacement"],
         handledMutationIds: ["old-replacement"],
         errorMutationIds: [],
@@ -477,5 +488,99 @@ describe("session-scoped sync single flight", () => {
 
     expect(listener).not.toHaveBeenCalled();
     window.removeEventListener(SYNC_COMPLETED_EVENT, listener);
+  });
+  /**
+   * O conflito que a fusão por campo resolve tem de morrer na janela em que
+   * nasceu.
+   *
+   * O reenvio do mesmo ciclo só acontecia quando o push devolvia `errors`, e
+   * conflito conta em `conflicts`. A substituta já reconciliada ficava na fila
+   * esperando a próxima janela — trinta segundos de tarja vermelha, no melhor
+   * caso, por um impasse que já não existia. E o resumo ainda relatava o
+   * conflito, pedindo decisão sobre o que estava resolvido.
+   */
+  it("envia no mesmo ciclo a substituta de um conflito reconciliado", async () => {
+    mocks.push
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 0,
+        errors: 0,
+        retryableErrors: 0,
+        conflicts: 1,
+        reconciledReplacementByOriginalId: new Map([
+          ["original-rdo", "substituta-rdo"],
+        ]),
+        appliedMutationIds: [],
+        handledMutationIds: ["original-rdo"],
+        errorMutationIds: [],
+      })
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 1,
+        errors: 0,
+        retryableErrors: 0,
+        conflicts: 0,
+        reconciledReplacementByOriginalId: new Map(),
+        appliedMutationIds: ["substituta-rdo"],
+        handledMutationIds: ["substituta-rdo"],
+        errorMutationIds: [],
+      });
+
+    await expect(syncNow()).resolves.toMatchObject({
+      pushed: 2,
+      applied: 1,
+      // Nasceu e morreu aqui dentro: não há conflito a relatar.
+      conflicts: 0,
+    });
+    expect(mocks.push).toHaveBeenCalledTimes(2);
+  });
+
+  /** Se a substituta também conflita, o impasse é real e continua contado. */
+  it("mantém o conflito no resumo quando a substituta também não passa", async () => {
+    mocks.push
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 0,
+        errors: 0,
+        retryableErrors: 0,
+        conflicts: 1,
+        reconciledReplacementByOriginalId: new Map([
+          ["original-rdo", "substituta-rdo"],
+        ]),
+        appliedMutationIds: [],
+        handledMutationIds: ["original-rdo"],
+        errorMutationIds: [],
+      })
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 0,
+        errors: 0,
+        retryableErrors: 0,
+        conflicts: 1,
+        reconciledReplacementByOriginalId: new Map(),
+        appliedMutationIds: [],
+        handledMutationIds: ["substituta-rdo"],
+        errorMutationIds: [],
+      });
+
+    await expect(syncNow()).resolves.toMatchObject({ conflicts: 1 });
+  });
+
+  /** Sem reconciliação não há o que reenviar: um push só, como antes. */
+  it("não reenvia quando o conflito não pôde ser reconciliado", async () => {
+    mocks.push.mockResolvedValueOnce({
+      pushed: 1,
+      applied: 0,
+      errors: 0,
+      retryableErrors: 0,
+      conflicts: 1,
+      reconciledReplacementByOriginalId: new Map(),
+      appliedMutationIds: [],
+      handledMutationIds: ["original-rdo"],
+      errorMutationIds: [],
+    });
+
+    await expect(syncNow()).resolves.toMatchObject({ conflicts: 1 });
+    expect(mocks.push).toHaveBeenCalledTimes(1);
   });
 });

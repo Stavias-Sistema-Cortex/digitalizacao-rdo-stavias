@@ -7,6 +7,7 @@ import type {
 import { getSyncState, updateSyncState } from "../../lib/db/syncStateRepository";
 import { commitLocalMutation } from "../../lib/sync/localMutationCoordinator";
 import { isCanonicalOutboxMutation } from "../../lib/sync/mutationEnvelope";
+import { conflictServerVersion } from "../../lib/sync/syncStorage";
 import { getSession } from "../auth/authSession";
 
 const UUID_PATTERN =
@@ -289,6 +290,103 @@ export async function descartarRdoLocalNaoSincronizado(
 }
 
 /**
+ * Apagar o RDO supera as edições locais que ficaram presas nele.
+ *
+ * A recusa era circular: o botão dizia "resolva o conflito antes de apagar",
+ * mas o conflito é justamente o motivo de querer apagar, e quando os dois lados
+ * mexem no mesmo campo não existe fusão a propor. O registro ficava para
+ * sempre, com a tarja vermelha e nenhuma saída — o beco que este produto não
+ * pode ter.
+ *
+ * Quem decide que o registro inteiro sai já decidiu que a edição parada não
+ * tem mais objeto. Então ela deixa a fila e o evento fica na Memória marcado
+ * como descartado: some a intenção de escrita, nunca o rastro de que ela
+ * existiu.
+ *
+ * A versão importa tanto quanto a fila. Um conflito significa que o servidor
+ * andou; enfileirar o apagamento contra a versão que este aparelho conhecia
+ * criaria um segundo conflito na hora — trocar um impasse por outro. Por isso
+ * a versão do servidor, que o próprio conflito informa, é adotada antes.
+ */
+async function liberarEdicoesPresasParaApagar(
+  existing: LocalRdoRecord,
+): Promise<LocalRdoRecord> {
+  const database = await getCortexDb();
+  const presas = (await database.getAllFromIndex(
+    "outbox_mutations",
+    "by-entity-id",
+    existing.id,
+  ))
+    .filter(isRdoMutation)
+    .filter(
+      (mutacao) =>
+        mutacao.status === "CONFLICT" || mutacao.status === "REJECTED",
+    );
+
+  if (presas.length === 0) {
+    return existing;
+  }
+
+  const versaoDoServidor = presas
+    .map(conflictServerVersion)
+    .filter((versao): versao is number => versao !== null)
+    .reduce<number | null>(
+      (maior, versao) => (maior === null || versao > maior ? versao : maior),
+      null,
+    );
+
+  const timestamp = new Date().toISOString();
+  const transaction = database.transaction(
+    ["rdos", "outbox_mutations", "operational_events"],
+    "readwrite",
+  );
+  const outbox = transaction.objectStore("outbox_mutations");
+  const eventos = transaction.objectStore("operational_events");
+
+  for (const mutacao of presas) {
+    const atual = await outbox.get(mutacao.clientMutationId);
+    // Outra aba pode ter reconciliado no meio do caminho. Se o estado mudou,
+    // esta liberação não tem mais o que liberar aqui.
+    if (!atual || atual.status !== mutacao.status) {
+      continue;
+    }
+    await outbox.delete(mutacao.clientMutationId);
+    for (
+      const evento of await eventos
+        .index("by-client-mutation-id")
+        .getAll(mutacao.clientMutationId)
+    ) {
+      await eventos.put({
+        ...evento,
+        result: "DISCARDED",
+        syncStatus: "LOCAL_ONLY",
+        errorCategory: "SUPERSEDED_BY_RDO_DELETION",
+      });
+    }
+  }
+
+  const rdos = transaction.objectStore("rdos");
+  const gravado = await rdos.get(existing.id);
+  if (!gravado) {
+    await transaction.done;
+    throw new Error("O RDO não está mais neste dispositivo.");
+  }
+  const atualizado: LocalRdoRecord = {
+    ...gravado,
+    versaoEntidade:
+      versaoDoServidor !== null &&
+        versaoDoServidor > (gravado.versaoEntidade ?? -1)
+        ? versaoDoServidor
+        : gravado.versaoEntidade,
+    syncStatus: "PENDING_SYNC",
+    updatedAt: timestamp,
+  };
+  await rdos.put(atualizado);
+  await transaction.done;
+  return atualizado;
+}
+
+/**
  * Apaga o RDO sem apagar o que ele registrou.
  *
  * O registro sai da operação — receita, PDOR, encadeamento do RDO seguinte e
@@ -301,11 +399,12 @@ export async function queueCancelRdo(
   if (existing.canceladoEm) {
     throw new Error("O RDO já está apagado.");
   }
+  const atual = await liberarEdicoesPresasParaApagar(existing);
   const timestamp = new Date().toISOString();
   return queueRdoLifecycleMutation(
-    existing,
+    atual,
     {
-      ...existing,
+      ...atual,
       statusRdo: "CANCELADA",
       canceladoEm: timestamp,
       syncStatus: "PENDING_SYNC",

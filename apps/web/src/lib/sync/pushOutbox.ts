@@ -30,6 +30,16 @@ export interface PushOutboxSummary {
   appliedMutationIds: readonly string[];
   handledMutationIds: readonly string[];
   errorMutationIds: readonly string[];
+  /**
+   * Conflitos que a fusão por campo já resolveu, e a substituta que responde
+   * por cada um.
+   *
+   * Sem essa lista o motor não tinha como saber que havia trabalho novo pronto
+   * para subir, e a substituta esperava a próxima janela — meia dúzia de
+   * segundos de impasse virava meio minuto de tarja vermelha por um conflito
+   * que já estava resolvido.
+   */
+  reconciledReplacementByOriginalId: ReadonlyMap<string, string>;
 }
 
 interface PreparedMutation {
@@ -82,10 +92,12 @@ export async function pushOutbox(
       appliedMutationIds: [],
       handledMutationIds,
       errorMutationIds,
+      reconciledReplacementByOriginalId: new Map(),
     };
   }
 
   const handled = new Set<string>();
+  const reconciledReplacementByOriginalId = new Map<string, string>();
   try {
     const response = await pushMutationsApi({
       dispositivoId: deviceId,
@@ -132,13 +144,19 @@ export async function pushOutbox(
           result.status === "DESCARTADA" ||
           result.status === "CONFLITO"
         ) {
-          await reconcileCanonicalConflict(
+          const substituta = await reconcileCanonicalConflict(
             row.clientMutationId,
             undefined,
             undefined,
             undefined,
             guard,
           );
+          if (substituta) {
+            reconciledReplacementByOriginalId.set(
+              row.clientMutationId,
+              substituta.clientMutationId,
+            );
+          }
         }
       } catch (error: unknown) {
         assertSyncSession(guard);
@@ -183,6 +201,7 @@ export async function pushOutbox(
       appliedMutationIds,
       handledMutationIds,
       errorMutationIds,
+      reconciledReplacementByOriginalId,
     };
   } catch (error: unknown) {
     assertSyncSession(guard);

@@ -2864,7 +2864,7 @@ export function mutationAfterErroredRetry(
   );
 }
 
-function conflictServerVersion(
+export function conflictServerVersion(
   mutation: OutboxMutationRecord,
 ): number | null {
   const version = mutation.conflito?.versaoAtual;

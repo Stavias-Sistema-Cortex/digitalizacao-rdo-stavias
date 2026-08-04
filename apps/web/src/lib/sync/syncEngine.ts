@@ -117,9 +117,19 @@ async function executeSync(
         })
       : 0;
     await assertSyncExecution(guard, lease);
-    const retryPushSummary = recoveredAfterPush > 0
-      ? await pushOutbox(deviceId, guard)
-      : {
+    /*
+     * A fusão por campo já resolveu o conflito e a substituta está na fila; o
+     * ciclo só não a enviava porque o reenvio dependia de `errors`, e conflito
+     * conta em `conflicts`. A resolução ficava esperando a próxima janela, com
+     * a tarja vermelha acesa por um impasse que já não existia. Conflito que se
+     * resolve sozinho tem de morrer na janela em que nasceu.
+     */
+    const conflitosReconciliados =
+      pushSummary.reconciledReplacementByOriginalId;
+    const retryPushSummary =
+      recoveredAfterPush > 0 || conflitosReconciliados.size > 0
+        ? await pushOutbox(deviceId, guard)
+        : {
           pushed: 0,
           applied: 0,
           errors: 0,
@@ -128,6 +138,7 @@ async function executeSync(
           appliedMutationIds: [],
           handledMutationIds: [],
           errorMutationIds: [],
+          reconciledReplacementByOriginalId: new Map<string, string>(),
         };
     await assertSyncExecution(guard, lease);
     const pullSummary = await pullEvents(deviceId, guard);
@@ -150,6 +161,17 @@ async function executeSync(
       ...recoveredReplacementByOriginalId,
     ].filter(([originalId, replacementId]) =>
       currentPushErrorIds.has(originalId) &&
+      retryHandledIds.has(replacementId)
+    ).length;
+    /*
+     * Um conflito cuja substituta subiu nesta mesma janela não é um conflito
+     * a relatar: ele nasceu e morreu aqui dentro. Contá-lo faria a tela pedir
+     * uma decisão sobre algo que já está resolvido — que é como o impasse
+     * ganhava vida útil mesmo quando a fusão automática funcionava.
+     */
+    const conflitosResolvidosNestaJanela = [
+      ...conflitosReconciliados,
+    ].filter(([, replacementId]) =>
       retryHandledIds.has(replacementId)
     ).length;
 
@@ -184,7 +206,11 @@ async function executeSync(
       retryableErrors:
         pushSummary.retryableErrors +
         retryPushSummary.retryableErrors,
-      conflicts: pushSummary.conflicts + retryPushSummary.conflicts,
+      conflicts:
+        Math.max(
+          0,
+          pushSummary.conflicts - conflitosResolvidosNestaJanela,
+        ) + retryPushSummary.conflicts,
       pulled: pullSummary.pulled,
       acknowledgedCommitSeq,
     };
