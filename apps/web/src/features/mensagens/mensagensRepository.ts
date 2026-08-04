@@ -18,6 +18,7 @@ import {
   type ConversationPreview,
 } from "./mensagensView";
 import { guardSyncTransaction } from "../../lib/sync/guardedSyncTransaction";
+import { LOCAL_MUTATION_QUEUED_EVENT } from "../../lib/sync/localMutationCoordinator";
 import {
   assertSyncSession,
   type SyncSessionGuard,
@@ -106,6 +107,14 @@ export async function queueMessage(input: {
   }
   await transaction.done;
   emitMessagesChanged();
+  /*
+   * A mensagem entra na fila pela escrita direta, sem passar pelo coordenador
+   * canônico — e por isso era a única escrita local que não avisava o
+   * agendador. Quem enviava daqui era salvo pelo `syncNow` explícito da tela;
+   * qualquer outro caminho ficava esperando a janela de trinta segundos. O
+   * aviso é o contrato de toda escrita local: escreveu, o sync acorda.
+   */
+  anunciarEscritaLocal();
   return {
     ...hashedPlan.message,
     anexos: hashedPlan.attachments,
@@ -416,6 +425,8 @@ export async function retryMessage(messageId: string): Promise<void> {
   }
   await transaction.done;
   emitMessagesChanged();
+  // A mensagem voltou para a fila: o mesmo aviso vale aqui.
+  anunciarEscritaLocal();
 }
 
 export async function localAttachmentBlob(
@@ -472,5 +483,12 @@ function formatBytes(bytes: number): string {
 export function emitMessagesChanged(): void {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(MESSAGES_CHANGED_EVENT));
+  }
+}
+
+/** Avisa o agendador que há trabalho novo na fila, como toda escrita local. */
+function anunciarEscritaLocal(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(LOCAL_MUTATION_QUEUED_EVENT));
   }
 }

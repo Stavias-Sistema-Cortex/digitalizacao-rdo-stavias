@@ -678,6 +678,31 @@ describe("jornada offline do Córtex", () => {
     expect(rede.entidade("RDO", registros.rdoId)).toMatchObject({ versao: 1 });
   });
 
+  /**
+   * A mensagem entra na fila pela escrita direta, sem passar pelo coordenador
+   * canônico, e por isso era a única escrita local que não avisava o
+   * agendador: dependia do `syncNow` explícito da tela de Mensagens para não
+   * ficar esperando a janela de trinta segundos. Toda escrita local acorda o
+   * sync — esta também.
+   */
+  it("a mensagem enfileirada acorda o sync como qualquer outra escrita local", async () => {
+    const execucoes: string[] = [];
+    const agendador = agendadorDeTeste((gatilho) => execucoes.push(gatilho));
+    agendador.start();
+    execucoes.length = 0;
+
+    await queueMessage({
+      conversaId: CONVERSA_ID,
+      corpo: "Chegamos no km 12.",
+      files: [],
+    });
+
+    await vi.waitFor(() => {
+      expect(execucoes).toContain("LOCAL_WRITE");
+    });
+    agendador.dispose();
+  });
+
   it("o retorno da conexão dispara a sincronização sem ninguém apertar nada", async () => {
     desligarRede();
     await jornadaSemSinal();

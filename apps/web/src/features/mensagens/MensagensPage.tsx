@@ -396,7 +396,7 @@ export function MensagensPage() {
               type="button"
               className="mensagens-primary"
               onClick={() => setShowCreate(true)}
-              disabled={!navigator.onLine || !hasOnlineSession()}
+              disabled={!snapshot.isOnline || !hasOnlineSession()}
             >
               Nova conversa
             </button>
@@ -425,7 +425,7 @@ export function MensagensPage() {
             previews={previews}
             selectedId={selectedId}
             currentUserId={session?.colaboradorId ?? ""}
-            isOnline={navigator.onLine}
+            isOnline={snapshot.isOnline}
             now={now}
             search={search}
             searchResults={searchResults}
@@ -458,7 +458,7 @@ export function MensagensPage() {
                 value={body}
                 files={files}
                 sending={sending}
-                isOnline={navigator.onLine}
+                isOnline={snapshot.isOnline}
                 onChange={(value) =>
                   selectedId &&
                   setDrafts((current) => ({ ...current, [selectedId]: value }))
