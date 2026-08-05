@@ -151,16 +151,18 @@ class PostgresqlCortex3FlowIT {
         CurrentUserService currentUsers = new CurrentUserService(
                 jdbc, new MockEnvironment(), false
         );
-        // O escopo de obra abriu: a obra "de outrem" existe no catálogo e por
-        // isso entra também. O que este fluxo continua provando adiante é o que
-        // não abriu junto — a receita e o PDOR seguem presos à concessão
-        // financeira explícita, que é outra porta.
+        // O escopo de obra voltou ao vínculo. A obra "de outrem" existe no
+        // catálogo e é justamente por isso que ela prova alguma coisa: estar
+        // cadastrada não é estar autorizada, e só o vínculo decide. Adiante o
+        // fluxo prova a segunda porta, independente desta — receita e PDOR
+        // seguem presos à concessão financeira explícita mesmo na obra
+        // vinculada.
         assertThat(currentUsers.allowedObraIds(actorId))
-                .contains(Set.of(worksite.getId(), foreignWorksiteId));
+                .contains(Set.of(worksite.getId()));
         assertThat(currentUsers.podeAcessarObra(actorId, worksite.getId()))
                 .isTrue();
         assertThat(currentUsers.podeAcessarObra(actorId, foreignWorksiteId))
-                .isTrue();
+                .isFalse();
 
         String previousRdoId = id();
         String previousWorkforceItemId = id();
