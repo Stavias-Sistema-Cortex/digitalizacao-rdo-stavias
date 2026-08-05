@@ -95,10 +95,14 @@ class RdoPdfExportServiceTest {
                             "EQUIPAMENTOS",
                             "TRECHOS E SERVIÇOS",
                             "MATERIAIS",
-                            "CONTROLES GEOMÉTRICOS",
                             "OBSERVAÇÕES",
                             "ASSINATURAS"
                     )
+                    // A seção do verso repetia largura, espessura e estaca que
+                    // a tabela de trechos e serviços já imprime na frente. O
+                    // dado continua no relatório; o que saiu foi a segunda
+                    // cópia dele.
+                    .doesNotContain("CONTROLES GEOMÉTRICOS")
                     .doesNotContain(
                             "rdo-42",
                             "rdo-41",

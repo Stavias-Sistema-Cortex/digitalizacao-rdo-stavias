@@ -3810,6 +3810,35 @@ export async function reconcileCanonicalConflict(
   if (original.entityType === "TAREFA") {
     return null;
   }
+  /*
+   * Sem loja principal não há onde gravar o snapshot reconciliado — e isso não
+   * é defeito da mutação.
+   *
+   * O conflito de equipe atravessava tudo: remoto completo, mescla possível,
+   * substituta construída. Só no fim, na hora de gravar o snapshot local,
+   * `principalStoreFor` não encontrava loja para EQUIPE e estourava. Quem
+   * chama a reconciliação trata exceção como mutação corrompida, então
+   * carimbava LOCAL_RESULT_APPLY_INVALID com uma mensagem interna sobre
+   * "snapshot local reconciliável". Cada conflito de equipe virava dois
+   * cartões vermelhos: o conflito de versão que o servidor recusou e, atrás
+   * dele, uma recusa local que só descrevia a limitação do reconciliador.
+   *
+   * Registrar `teams` como loja não resolveria. O que a mescla produz está na
+   * forma de transporte, e o registro local precisa de `obraNome`,
+   * `versaoEntidade` e as marcas de sincronização, que o transporte não
+   * carrega; gravar a mescla crua apagaria o nome da obra do cartão.
+   * Reconstruir o registro exigiria ler o local aqui dentro, e esta função
+   * monta snapshot sem tocar no banco.
+   *
+   * O desfecho honesto é o de TAREFA: não há saída automática, então o
+   * conflito permanece item de revisão explícita — com o descarte individual e
+   * o descarte em lote como saída — em vez de ser reclassificado como
+   * corrupção. Vale para qualquer tipo futuro sem loja: devolver à revisão
+   * humana, não inventar recusa.
+   */
+  if (!lojaPrincipalDe(original.entityType)) {
+    return null;
+  }
   const allMutations = await database.getAll("outbox_mutations");
   const aliasedReplacementId = original.entityType === "OBRA" &&
       typeof original.blockedReason === "string"
@@ -4376,10 +4405,24 @@ function replacementDomainSnapshot(
   return { ...merged };
 }
 
-function principalStoreFor(
-  entityType: string,
-): "rdos" | "mensagens" | "mensagem_conversas" | "mensagem_anexos" |
-  "service_catalog" | "service_price_versions" | "obras" {
+type LojaPrincipal =
+  | "rdos"
+  | "mensagens"
+  | "mensagem_conversas"
+  | "mensagem_anexos"
+  | "service_catalog"
+  | "service_price_versions"
+  | "obras";
+
+/**
+ * A loja onde mora o snapshot de um tipo, ou nada quando ele não tem uma.
+ *
+ * <p>Separado de `principalStoreFor` porque "não tem loja" é uma resposta
+ * legítima em um dos dois chamadores: a reconciliação de conflito pode
+ * desistir e devolver o caso à revisão humana. Só o caminho de upload
+ * canônico exige a loja, e lá a ausência é mesmo defeito.
+ */
+function lojaPrincipalDe(entityType: string): LojaPrincipal | null {
   if (entityType === "RDO") return "rdos";
   if (entityType === "MENSAGEM") return "mensagens";
   if (entityType === "CONVERSA") return "mensagem_conversas";
@@ -4387,9 +4430,17 @@ function principalStoreFor(
   if (entityType === "SERVICE") return "service_catalog";
   if (entityType === "SERVICE_PRICE_VERSION") return "service_price_versions";
   if (entityType === "OBRA") return "obras";
-  throw new Error(
-    `entityType ${entityType} não possui snapshot local reconciliável.`,
-  );
+  return null;
+}
+
+function principalStoreFor(entityType: string): LojaPrincipal {
+  const loja = lojaPrincipalDe(entityType);
+  if (!loja) {
+    throw new Error(
+      `entityType ${entityType} não possui snapshot local reconciliável.`,
+    );
+  }
+  return loja;
 }
 
 /** Quarantines one locally corrupt row without preventing independent work. */

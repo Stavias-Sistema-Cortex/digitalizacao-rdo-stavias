@@ -1,7 +1,6 @@
 import { jsPDF } from "jspdf";
 
 import corporateWordmark from "../../../assets/login/stavias-logo.png?inline";
-import { calcularControleGeometrico } from "../rdoCalculations";
 import type { NumericInput } from "../rdo.types";
 import {
   buildRdoExportProjection,
@@ -593,65 +592,6 @@ function drawMaterials(
   return y + 2;
 }
 
-function geometryCells(
-  projection: RdoExportProjection,
-  index: number,
-): string[] {
-  const value = item(projection.geometry, index);
-  if (!value) return Array.from({ length: 9 }, () => "");
-  const calculation = calcularControleGeometrico(value);
-  return [
-    userText(value.subtrecho),
-    numeric(value.comprimentoM),
-    numeric(value.larguraM),
-    numeric(value.espessura1Cm),
-    numeric(value.espessura2Cm),
-    numeric(value.espessura3Cm),
-    numeric(calculation.espessuraMediaCm),
-    numeric(calculation.volumeM3),
-    numeric(calculation.massaTonelada),
-  ];
-}
-
-function drawGeometry(
-  document: jsPDF,
-  top: number,
-  projection: RdoExportProjection,
-): number {
-  const widths = [38, 18, 15, 15, 15, 15, 18, 22, 34];
-  let y = drawRow(
-    document,
-    top,
-    widths,
-    4,
-    [
-      "SUBTRECHO",
-      "COMP. m",
-      "LARG. m",
-      "E1 cm",
-      "E2 cm",
-      "E3 cm",
-      "MÉDIA cm",
-      "VOL. m³",
-      "MASSA t",
-    ],
-    "bold",
-    4.8,
-  );
-  for (let row = 0; row < 36; row += 1) {
-    y = drawRow(
-      document,
-      y,
-      widths,
-      3.6,
-      geometryCells(projection, row),
-      "normal",
-      4.4,
-    );
-  }
-  return y + 2;
-}
-
 function drawObservations(
   document: jsPDF,
   top: number,
@@ -767,8 +707,13 @@ function renderBack(
   );
   y = sectionBar(document, y, "MATERIAIS");
   y = drawMaterials(document, y, projection);
-  y = sectionBar(document, y, "CONTROLES GEOMÉTRICOS");
-  y = drawGeometry(document, y, projection);
+  /*
+   * A seção de controle geométrico saiu do verso junto com a etapa que a
+   * preenchia, e era duplicata: as mesmas medidas já aparecem na tabela de
+   * trecho trabalhado da frente, agora também para os serviços. RDO anterior à
+   * remoção continua mostrando o que registrou — na tabela da frente, uma vez
+   * só. Espelha a remoção equivalente em RdoPdfFormRenderer.
+   */
   y = sectionBar(document, y, "OBSERVAÇÕES");
   y = drawObservations(document, y, projection.observations);
   y = sectionBar(document, y, "ASSINATURAS");

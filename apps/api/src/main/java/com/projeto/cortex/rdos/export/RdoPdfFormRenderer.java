@@ -248,8 +248,14 @@ final class RdoPdfFormRenderer {
             );
             y = sectionBar(content, y, "MATERIAIS");
             y = drawMaterials(content, y, aggregate.materials());
-            y = sectionBar(content, y, "CONTROLES GEOMÉTRICOS");
-            y = drawGeometry(content, y, aggregate.geometry());
+            /*
+             * A seção de controle geométrico saiu do verso junto com a etapa
+             * que a preenchia. Ela era, além disso, duplicata: as mesmas
+             * medidas já aparecem na tabela de trecho trabalhado da frente,
+             * agora também para os serviços. RDO anterior à remoção continua
+             * mostrando o que registrou — só que na tabela da frente, e não
+             * duas vezes.
+             */
             y = sectionBar(content, y, "OBSERVAÇÕES");
             y = drawObservations(content, y, aggregate.observations());
             y = sectionBar(content, y, "ASSINATURAS");
@@ -585,44 +591,6 @@ final class RdoPdfFormRenderer {
             );
         }
         return top - 103f;
-    }
-
-    private float drawGeometry(
-            PDPageContentStream content,
-            float top,
-            List<RdoResponse.ControleGeometricoItem> controls
-    ) throws IOException {
-        float[] widths = {
-            108f, 55f, 45f, 47f, 47f, 47f, 49f, 60f,
-            CONTENT_WIDTH - 458f
-        };
-        drawRow(
-                content,
-                PAGE_MARGIN,
-                top,
-                widths,
-                10f,
-                new String[] {
-                    "SUBTRECHO", "COMP. m", "LARG. m", "E1 cm", "E2 cm",
-                    "E3 cm", "MÉDIA cm", "VOL. m³", "MASSA t"
-                },
-                bold,
-                4.8f
-        );
-        for (int row = 0; row < 36; row++) {
-            RdoResponse.ControleGeometricoItem value = item(controls, row);
-            drawRow(
-                    content,
-                    PAGE_MARGIN,
-                    top - 10f - (row * 7.5f),
-                    widths,
-                    7.5f,
-                    geometryCells(value),
-                    regular,
-                    4.4f
-            );
-        }
-        return top - 283f;
     }
 
     private float drawObservations(
@@ -1050,24 +1018,6 @@ final class RdoPdfFormRenderer {
 
     private String materialInvoice(MaterialRow value) throws IOException {
         return value == null ? "" : user(value.invoice());
-    }
-
-    private String[] geometryCells(RdoResponse.ControleGeometricoItem value)
-            throws IOException {
-        if (value == null) {
-            return new String[9];
-        }
-        return new String[] {
-            user(value.subtrecho()),
-            decimal(value.comprimentoM()),
-            decimal(value.larguraM()),
-            decimal(value.espessura1Cm()),
-            decimal(value.espessura2Cm()),
-            decimal(value.espessura3Cm()),
-            decimal(value.espessuraMediaCm()),
-            decimal(value.volumeM3()),
-            decimal(value.massaTonelada())
-        };
     }
 
     private <T> T item(List<T> values, int index) {
