@@ -57,11 +57,20 @@ class CurrentUserServiceAuthorizationTest {
         )).thenReturn(papel);
     }
 
-    /** As obras em que o colaborador tem vínculo ATIVO. */
+    /**
+     * As obras que o colaborador alcança, por vínculo direto ou por equipe.
+     *
+     * <p>A consulta é uma união das duas portas, então o identificador entra
+     * duas vezes — uma para cada lado. O teste não distingue por qual delas o
+     * acesso veio, e não deve: quem decide isso é
+     * {@link com.projeto.cortex.auth.AutorizacaoDeObra}, e a cerca só precisa
+     * saber se existe caminho.
+     */
     private void obrasVinculadas(String userId, String... obraIds) {
         when(jdbc.queryForList(
                 contains("FROM vinculo_colaborador_obra"),
                 eq(String.class),
+                eq(userId),
                 eq(userId)
         )).thenReturn(List.of(obraIds));
     }
@@ -69,18 +78,23 @@ class CurrentUserServiceAuthorizationTest {
     /**
      * A consulta pontual, que pergunta por uma obra só. É separada da listagem
      * de propósito: é a forma que o índice da V66 atende.
+     *
+     * <p>Os quatro argumentos alternam obra e colaborador porque a expressão
+     * carrega os dois caminhos, cada um com o seu par.
      */
     private void vinculoAtivoNaObra(
             String userId,
             String obraId,
             boolean vinculado
     ) {
-        when(jdbc.queryForList(
+        when(jdbc.queryForObject(
                 contains("FROM vinculo_colaborador_obra"),
-                eq(Integer.class),
+                eq(Boolean.class),
+                eq(obraId),
                 eq(userId),
-                eq(obraId)
-        )).thenReturn(vinculado ? List.of(1) : List.of());
+                eq(obraId),
+                eq(userId)
+        )).thenReturn(vinculado);
     }
 
     private void rdoNaObra(String rdoId, String obraId) {
@@ -123,11 +137,13 @@ class CurrentUserServiceAuthorizationTest {
 
         assertThat(service.podeAcessarObra("alfa", "obra-1")).isTrue();
 
-        verify(jdbc, times(0)).queryForList(
+        verify(jdbc, times(0)).queryForObject(
                 contains("FROM vinculo_colaborador_obra"),
-                eq(Integer.class),
+                eq(Boolean.class),
+                eq("obra-1"),
                 eq("alfa"),
-                eq("obra-1")
+                eq("obra-1"),
+                eq("alfa")
         );
     }
 
@@ -401,6 +417,7 @@ class CurrentUserServiceAuthorizationTest {
         verify(jdbc, times(1)).queryForList(
                 contains("FROM vinculo_colaborador_obra"),
                 eq(String.class),
+                eq("beta"),
                 eq("beta")
         );
     }
@@ -420,11 +437,13 @@ class CurrentUserServiceAuthorizationTest {
         service.podeAcessarObra("beta", "obra-1");
         service.podeAcessarObra("beta", "obra-1");
 
-        verify(jdbc, times(1)).queryForList(
+        verify(jdbc, times(1)).queryForObject(
                 contains("FROM vinculo_colaborador_obra"),
-                eq(Integer.class),
+                eq(Boolean.class),
+                eq("obra-1"),
                 eq("beta"),
-                eq("obra-1")
+                eq("obra-1"),
+                eq("beta")
         );
     }
 

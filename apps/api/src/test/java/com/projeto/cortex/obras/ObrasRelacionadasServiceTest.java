@@ -69,13 +69,17 @@ class ObrasRelacionadasServiceTest {
 
         montagem.service().listarParaColaborador();
 
+        // As duas portas de entrada, e a obra arquivada fora das duas.
         verify(montagem.jdbc()).query(
                 argThat((String sql) ->
                         sql.contains("vinculo_colaborador_obra")
-                                && sql.contains("v.status = 'ATIVO'")
+                                && sql.contains("vinculo.status = 'ATIVO'")
+                                && sql.contains("equipe_membro membro")
+                                && sql.contains("alocacao.status = 'ATIVO'")
                                 && sql.contains("o.arquivado_em IS NULL")
                 ),
                 any(RowMapper.class),
+                eq("colab-1"),
                 eq("colab-1")
         );
     }
@@ -93,8 +97,10 @@ class ObrasRelacionadasServiceTest {
 
         verify(montagem.jdbc()).query(
                 argThat((String sql) ->
-                        sql.contains("LOWER(v.colaborador_id) = LOWER(?)")),
+                        sql.contains("LOWER(vinculo.colaborador_id) = LOWER(?)")
+                                && sql.contains("LOWER(membro.colaborador_id) = LOWER(?)")),
                 any(RowMapper.class),
+                eq("Colab-1"),
                 eq("Colab-1")
         );
     }

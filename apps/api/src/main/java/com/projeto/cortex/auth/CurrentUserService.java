@@ -283,19 +283,15 @@ public class CurrentUserService implements AuthSessionProfileResolver {
 
         return lembrarNaRequisicao(
                 new ChaveObraEspecifica(colaboradorId.trim(), obraId.trim()),
-                () -> !jdbcTemplate.queryForList(
-                        """
-                        SELECT 1
-                        FROM vinculo_colaborador_obra
-                        WHERE LOWER(colaborador_id) = LOWER(?)
-                          AND status = 'ATIVO'
-                          AND obra_id = ?
-                        LIMIT 1
-                        """,
-                        Integer.class,
+                () -> Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                        "SELECT "
+                                + AutorizacaoDeObra.existeCaminhoParaObra("?"),
+                        Boolean.class,
+                        obraId.trim(),
                         colaboradorId.trim(),
-                        obraId.trim()
-                ).isEmpty()
+                        obraId.trim(),
+                        colaboradorId.trim()
+                ))
         );
     }
 
@@ -333,13 +329,9 @@ public class CurrentUserService implements AuthSessionProfileResolver {
         return lembrarNaRequisicao(
                 new ChaveObras(colaboradorId.trim()),
                 () -> Optional.of(Set.copyOf(jdbcTemplate.queryForList(
-                        """
-                        SELECT obra_id
-                        FROM vinculo_colaborador_obra
-                        WHERE LOWER(colaborador_id) = LOWER(?)
-                          AND status = 'ATIVO'
-                        """,
+                        AutorizacaoDeObra.OBRAS_ALCANCADAS,
                         String.class,
+                        colaboradorId.trim(),
                         colaboradorId.trim()
                 )))
         );

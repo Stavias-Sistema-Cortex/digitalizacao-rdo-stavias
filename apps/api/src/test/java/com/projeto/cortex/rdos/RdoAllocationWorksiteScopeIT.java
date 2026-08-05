@@ -26,6 +26,7 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import com.projeto.cortex.auth.CurrentUserService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -462,6 +463,139 @@ class RdoAllocationWorksiteScopeIT {
                 "REGISTRADA",
                 "scope regression"
         );
+    }
+
+    /*
+     * A cerca do Beta conhecia uma porta só. A operação usa a outra: monta-se a
+     * frente, aloca-se na obra, e quem está dentro dela trabalha ali — sem que
+     * ninguém escreva um vínculo pessoa a pessoa. O resultado era o Córtex negar
+     * obra a quem estava escalado nela.
+     *
+     * Este teste roda contra o Postgres de verdade porque o unitário mocka o
+     * JDBC: lá dá para afirmar que o SQL contém os fragmentos certos, não que
+     * eles decidem certo. A diferença importa numa fronteira de autorização.
+     */
+    @Test
+    void equipeAlocadaNaObraAutorizaOBetaQueNaoTemVinculoDireto() {
+        String obra = id();
+        String outraObra = id();
+        insertWorksite(obra, "Com equipe");
+        insertWorksite(outraObra, "Sem nada");
+        String membro = id();
+        insertCollaborator(membro, true, false);
+        String forasteiro = id();
+        insertCollaborator(forasteiro, true, false);
+
+        String equipe = insertTeam(obra, "Frente por equipe", "ATIVA", membro);
+        assignTeamToWorksite(equipe, obra, "ATIVO", false);
+        insertTeamMember(equipe, membro, "ATIVO", false);
+
+        CurrentUserService authorization = newAuthorizationService();
+
+        assertThat(authorization.podeAcessarObra(membro, obra)).isTrue();
+        assertThat(authorization.allowedObraIds(membro))
+                .get().asInstanceOf(
+                        org.assertj.core.api.InstanceOfAssertFactories.COLLECTION)
+                .containsExactly(obra);
+
+        assertThat(authorization.podeAcessarObra(membro, outraObra)).isFalse();
+        assertThat(authorization.podeAcessarObra(forasteiro, obra)).isFalse();
+    }
+
+    /*
+     * Vigência é parte da regra, e é o caso em que esquecer sai caro em
+     * silêncio: a linha continua no banco, só que encerrada. Uma frente que saiu
+     * da obra não pode continuar dando acesso a ela.
+     */
+    @Test
+    void equipeArquivadaAlocacaoEncerradaEMembroRemovidoNaoAutorizamNinguem() {
+        String obra = id();
+        insertWorksite(obra, "Vigencia");
+        String autor = id();
+        insertCollaborator(autor, true, false);
+
+        String deArquivada = id();
+        insertCollaborator(deArquivada, true, false);
+        String equipeArquivada =
+                insertTeam(obra, "Frente arquivada", "ARQUIVADA", autor);
+        assignTeamToWorksite(equipeArquivada, obra, "ATIVO", false);
+        insertTeamMember(equipeArquivada, deArquivada, "ATIVO", false);
+
+        String deEncerrada = id();
+        insertCollaborator(deEncerrada, true, false);
+        String equipeQueSaiu = insertTeam(obra, "Frente que saiu", "ATIVA", autor);
+        assignTeamToWorksite(equipeQueSaiu, obra, "ENCERRADO", true);
+        insertTeamMember(equipeQueSaiu, deEncerrada, "ATIVO", false);
+
+        String removido = id();
+        insertCollaborator(removido, true, false);
+        String equipeViva = insertTeam(obra, "Frente viva", "ATIVA", autor);
+        assignTeamToWorksite(equipeViva, obra, "ATIVO", false);
+        insertTeamMember(equipeViva, removido, "REMOVIDO", true);
+
+        CurrentUserService authorization = newAuthorizationService();
+
+        assertThat(authorization.podeAcessarObra(deArquivada, obra)).isFalse();
+        assertThat(authorization.podeAcessarObra(deEncerrada, obra)).isFalse();
+        assertThat(authorization.podeAcessarObra(removido, obra)).isFalse();
+    }
+
+    private static CurrentUserService newAuthorizationService() {
+        return new CurrentUserService(
+                jdbc,
+                new org.springframework.mock.env.MockEnvironment(),
+                false
+        );
+    }
+
+    private static String insertTeam(
+            String worksiteId,
+            String name,
+            String status,
+            String authorId
+    ) {
+        String teamId = id();
+        jdbc.update("""
+                INSERT INTO equipe (
+                    id, obra_id, obra_principal_id, nome, status,
+                    criado_por, atualizado_por
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, teamId, worksiteId, worksiteId, name, status,
+                authorId, authorId);
+        return teamId;
+    }
+
+    private static void assignTeamToWorksite(
+            String teamId,
+            String worksiteId,
+            String status,
+            boolean ended
+    ) {
+        jdbc.update("""
+                INSERT INTO equipe_obra (
+                    id, equipe_id, obra_id, status, inicio_em, fim_em,
+                    atribuido_por
+                ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP,
+                          CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END,
+                          'scope-test')
+                """, id(), teamId, worksiteId, status, ended);
+    }
+
+    private static void insertTeamMember(
+            String teamId,
+            String collaboratorId,
+            String status,
+            boolean ended
+    ) {
+        jdbc.update("""
+                INSERT INTO equipe_membro (
+                    id, equipe_id, colaborador_id, status, fim_em,
+                    adicionado_por, atribuido_por, atualizado_por
+                ) VALUES (?, ?, ?, ?,
+                          CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END,
+                          ?, ?, ?)
+                """, id(), teamId, collaboratorId, status, ended,
+                collaboratorId, collaboratorId, collaboratorId);
     }
 
     private static void insertWorksite(String worksiteId, String name) {

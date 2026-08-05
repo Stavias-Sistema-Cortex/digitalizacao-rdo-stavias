@@ -53,12 +53,14 @@ class OperationalTimelineControllerAuthorizationMockMvcTest {
     }
 
     private void vinculo(String userId, String obraId, boolean ativo) {
-        when(jdbcTemplate.queryForList(
+        when(jdbcTemplate.queryForObject(
                 contains("vinculo_colaborador_obra"),
-                eq(Integer.class),
+                eq(Boolean.class),
+                eq(obraId),
                 eq(userId),
-                eq(obraId)
-        )).thenReturn(ativo ? List.of(1) : List.of());
+                eq(obraId),
+                eq(userId)
+            )).thenReturn(ativo);
     }
 
     /**

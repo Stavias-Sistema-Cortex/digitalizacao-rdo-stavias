@@ -1,5 +1,6 @@
 package com.projeto.cortex.obras;
 
+import com.projeto.cortex.auth.AutorizacaoDeObra;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.financeiro.access.FinancialPermission;
@@ -99,19 +100,14 @@ public class ObrasRelacionadasService {
 
         String sql = global
                 ? PROJECAO + ORDENACAO
-                : PROJECAO + """
-                  AND EXISTS (
-                      SELECT 1
-                      FROM vinculo_colaborador_obra v
-                      WHERE v.obra_id = o.id
-                        AND LOWER(v.colaborador_id) = LOWER(?)
-                        AND v.status = 'ATIVO'
-                  )
-                  """ + ORDENACAO;
+                : PROJECAO
+                        + " AND "
+                        + AutorizacaoDeObra.existeCaminhoParaObra("o.id")
+                        + ORDENACAO;
 
         List<ObraRelacionadaResponse> obras = global
                 ? jdbcTemplate.query(sql, PROJETAR_OBRA)
-                : jdbcTemplate.query(sql, PROJETAR_OBRA, userId);
+                : jdbcTemplate.query(sql, PROJETAR_OBRA, userId, userId);
 
         Set<String> financeWorksites = financialAccessService.allowedObraIds(
                 userId,
