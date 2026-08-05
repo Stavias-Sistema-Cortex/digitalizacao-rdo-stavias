@@ -72,6 +72,11 @@ public class ColaboradorDaObraService {
                         rs.getString("nome_perfil"),
                         rs.getString("nome_grupo")
                 ),
+                // Três vezes, uma por EXISTS: vínculo, alocação e presença em
+                // RDO. Faltava o terceiro, e faltar argumento para um `?` não
+                // devolve lista errada — estoura a consulta inteira. Nenhum
+                // teste pegava porque todos mockam este serviço.
+                obraId,
                 obraId,
                 obraId
         );

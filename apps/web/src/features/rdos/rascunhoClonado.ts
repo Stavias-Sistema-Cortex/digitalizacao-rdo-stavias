@@ -89,6 +89,20 @@ export function rascunhoClonadoDe(
     ...origem,
     id: novoId(),
 
+    // A data NÃO se repete: o recurso se chama "clonar para outra data", e
+    // herdá-la faria o diálogo pré-selecionar exatamente o dia do qual se está
+    // copiando. Em branco, a tela cai no dia de hoje, que é a única sugestão
+    // defensável. Isto ficou mais grave depois que um segundo RDO no mesmo dia
+    // passou a ser aceito: sem zerar, um clone distraído vira duplicata do
+    // próprio dia de origem, e nada no banco o impede.
+    dataRdo: "",
+
+    // Quem preenche é quem está com a sessão aberta, não quem preencheu o RDO
+    // copiado. `comPreenchidoPor` só preenche campo vazio, então herdar aqui
+    // faria o RDO novo alegar autoria de outra pessoa — a mesma falsidade de
+    // procedência que se evitou ao separar clone de importação.
+    preenchidoPor: "",
+
     // Identidade: zerada por higiene. O contexto sobrescreve tudo isto, e
     // deixar valor velho aqui só sobreviveria se o contexto falhasse — momento
     // em que herdar o número de outro RDO seria o pior desfecho possível.

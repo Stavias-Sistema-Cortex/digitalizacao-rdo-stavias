@@ -107,7 +107,6 @@ describe("clonar um RDO", () => {
     expect(clone.kmFinalProgramado).toBe("398");
     expect(clone.encarregadoObra).toBe("Carlos");
     expect(clone.fiscalizacaoCampo).toBe("Fiscal");
-    expect(clone.preenchidoPor).toBe("Apontador");
   });
 
   /*
@@ -178,6 +177,26 @@ describe("clonar um RDO", () => {
     expect(clone.previousRdoNumber).toBe("");
     expect(clone.creationContextVersion).toBeNull();
     expect(clone.programacaoId).toBe("");
+  });
+
+  /*
+   * O recurso se chama "clonar para outra data". Herdar a data faria o diálogo
+   * pré-selecionar o dia do qual se copia — e como um segundo RDO no mesmo dia
+   * passou a ser aceito, e não há restrição de unicidade no banco, o clone
+   * distraído viraria duplicata sem que nada reclamasse.
+   */
+  it("não herda a data da origem", () => {
+    expect(rascunhoClonadoDe(rdoDeOntem(), idsSequenciais()).dataRdo).toBe("");
+  });
+
+  /*
+   * Quem preenche é quem está com a sessão aberta. comPreenchidoPor só preenche
+   * campo vazio, então herdar aqui faria o RDO alegar autoria de outra pessoa.
+   */
+  it("não herda quem preencheu o RDO copiado", () => {
+    expect(
+      rascunhoClonadoDe(rdoDeOntem(), idsSequenciais()).preenchidoPor,
+    ).toBe("");
   });
 
   it("nasce com identidade própria e como rascunho local", () => {
