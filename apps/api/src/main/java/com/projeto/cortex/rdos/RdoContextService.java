@@ -124,6 +124,9 @@ public class RdoContextService {
         List<RdoContextResponse.EquipamentoContexto> equipamentos =
                 listarEquipamentosAtivosDaObra(obraId);
 
+        List<RdoContextResponse.EquipeContexto> equipes =
+                listarEquipesVigentesDaObra(obraId);
+
         long catalogRevision = buscarCatalogRevision();
         List<RdoContextResponse.ServiceCatalogContext> serviceCatalog =
                 listarCatalogoServicos(obraId, data, catalogRevision);
@@ -152,6 +155,10 @@ public class RdoContextService {
         snapshotPayload.put("programacoes", programacoes);
         snapshotPayload.put("colaboradores", colaboradores);
         snapshotPayload.put("equipamentos", equipamentos);
+        // Entra no payload porque o recibo descreve o que foi servido. Fora
+        // dele, mudar a equipe da obra não invalidaria o contexto, e a tela
+        // continuaria sugerindo uma frente que já saiu.
+        snapshotPayload.put("equipes", equipes);
         snapshotPayload.put("serviceCatalog", serviceCatalog);
         snapshotPayload.put("coverage", coverage);
         snapshotPayload.put("sourceVersion", sourceVersion);
@@ -180,6 +187,7 @@ public class RdoContextService {
                 programacoes,
                 colaboradores,
                 equipamentos,
+                equipes,
                 serviceCatalog,
                 coverage,
                 new RdoContextResponse.ContextFreshness(
@@ -742,6 +750,55 @@ public class RdoContextService {
                 ),
                 obraId,
                 data
+        );
+    }
+
+    /**
+     * As frentes vigentes da obra, para o rateio sugerir em vez de exigir que
+     * alguém digite o nome certo de cabeça.
+     *
+     * <p>O campo Equipe do rateio era um caixa de texto vazio: quem preenchia
+     * tinha de lembrar o nome exato, e um erro de digitação criava uma frente
+     * que só existe naquele RDO. A lista vem daqui e o campo continua aceitando
+     * texto livre — nem toda alocação corresponde a uma equipe cadastrada, e
+     * recusar o que está fora do catálogo trocaria uma sugestão por barreira.
+     *
+     * <p>São várias por obra, e a contagem de integrantes vai junto porque é o
+     * que distingue duas frentes de nome parecido na hora de escolher.
+     */
+    private List<RdoContextResponse.EquipeContexto> listarEquipesVigentesDaObra(
+            String obraId
+    ) {
+        return jdbcTemplate.query(
+                """
+                SELECT
+                    equipe.id,
+                    equipe.nome,
+                    equipe.descricao,
+                    count(membro.id) AS integrantes
+                FROM equipe_obra alocacao
+                JOIN equipe
+                  ON equipe.id = alocacao.equipe_id
+                 AND equipe.status = 'ATIVA'
+                 AND equipe.deletado_em IS NULL
+                LEFT JOIN equipe_membro membro
+                  ON membro.equipe_id = equipe.id
+                 AND membro.status = 'ATIVO'
+                 AND membro.fim_em IS NULL
+                 AND membro.deletado_em IS NULL
+                WHERE alocacao.obra_id = ?
+                  AND alocacao.status = 'ATIVO'
+                  AND alocacao.fim_em IS NULL
+                GROUP BY equipe.id, equipe.nome, equipe.descricao
+                ORDER BY equipe.nome, equipe.id
+                """,
+                (rs, rowNum) -> new RdoContextResponse.EquipeContexto(
+                        rs.getString("id"),
+                        rs.getString("nome"),
+                        rs.getString("descricao"),
+                        rs.getInt("integrantes")
+                ),
+                obraId
         );
     }
 

@@ -15,6 +15,7 @@ public record RdoContextResponse(
         List<ProgramacaoContexto> programacoes,
         List<ColaboradorContexto> colaboradores,
         List<EquipamentoContexto> equipamentos,
+        List<EquipeContexto> equipes,
         List<ServiceCatalogContext> serviceCatalog,
         ContextCoverage coverage,
         ContextFreshness freshness,
@@ -37,7 +38,7 @@ public record RdoContextResponse(
         this(
                 obra, data, nextNumberSuggestion, previousRdo,
                 previousWorkforce, programacoes, colaboradores, equipamentos,
-                List.of(), coverage, freshness, provenance
+                List.of(), List.of(), coverage, freshness, provenance
         );
     }
 
@@ -110,6 +111,22 @@ public record RdoContextResponse(
             String nome,
             String papelNaObra,
             String nomePerfil
+    ) {
+    }
+
+    /**
+     * Uma frente vigente da obra, para o rateio poder sugerir em vez de exigir
+     * digitação.
+     *
+     * <p>É lista porque a obra tem várias, e o campo continua aceitando texto
+     * livre: nem toda alocação corresponde a uma equipe cadastrada, e recusar o
+     * que não está no catálogo transformaria uma sugestão em barreira.
+     */
+    public record EquipeContexto(
+            String id,
+            String nome,
+            String descricao,
+            int integrantes
     ) {
     }
 

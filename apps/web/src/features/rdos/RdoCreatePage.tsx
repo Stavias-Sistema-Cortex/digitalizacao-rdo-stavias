@@ -47,6 +47,7 @@ import {
   buscarAssets,
   type AssetLookup,
   type ColaboradorLookup,
+  type RdoContextTeam,
 } from "./rdoLookupApi";
 import {
   formatRdoServiceType,
@@ -672,6 +673,36 @@ export function RdoCreatePage({
     : "Catálogo parcial ou indisponível. Sincronize o contexto antes de selecionar um preço.";
   const buscarTiposServico = (query: string): Promise<RdoServiceType[]> =>
     Promise.resolve(searchRdoServiceTypes(serviceCatalog, query));
+
+  /*
+   * As frentes vigentes da obra. O campo era caixa de texto vazia: quem
+   * preenchia tinha de lembrar o nome exato, e um erro de digitação criava uma
+   * frente que só existe naquele RDO. Sugerir resolve o caso comum sem fechar o
+   * incomum — a digitação continua valendo, porque nem toda alocação
+   * corresponde a uma equipe cadastrada.
+   */
+  const equipesDaObra = activeCreationContext?.equipes ?? [];
+  const buscarEquipesDaObra = (
+    query: string,
+  ): Promise<RdoContextTeam[]> => {
+    const alvo = query
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .trim()
+      .toLocaleLowerCase("pt-BR");
+    if (!alvo) return Promise.resolve(equipesDaObra);
+    return Promise.resolve(
+      equipesDaObra.filter((equipe) =>
+        [equipe.nome, equipe.descricao]
+          .filter(Boolean)
+          .join(" ")
+          .normalize("NFD")
+          .replace(/\p{Diacritic}/gu, "")
+          .toLocaleLowerCase("pt-BR")
+          .includes(alvo),
+      ),
+    );
+  };
   const rateioCollaborators = useMemo<ColaboradorLookup[]>(() => {
     const collaboratorsById = new Map<string, ColaboradorLookup>();
     const authorizedIds = new Set(
@@ -2274,21 +2305,34 @@ export function RdoCreatePage({
                   getSubtitle={getColaboradorSubtitle}
                 />
 
-                <label>
-                  Equipe
-                  <input
-                    value={item.equipe}
-                    onChange={(event) =>
-                      updateAlocacaoColaborador(
-                        item.localId,
-                        {
-                          equipe:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
+                <LookupField
+                  label="Equipe"
+                  value={item.equipe}
+                  placeholder="Equipe da obra ou nome livre"
+                  emptyMessage={
+                    equipesDaObra.length === 0
+                      ? "Nenhuma equipe vigente nesta obra. Pode digitar o nome."
+                      : "Nenhuma equipe com esse nome. Pode digitar o seu."
+                  }
+                  search={buscarEquipesDaObra}
+                  onQueryChange={(value) =>
+                    updateAlocacaoColaborador(item.localId, {
+                      equipe: value,
+                    })
+                  }
+                  onSelect={(equipe) =>
+                    updateAlocacaoColaborador(item.localId, {
+                      equipe: equipe.nome ?? "",
+                    })
+                  }
+                  getKey={(equipe) => equipe.id}
+                  getTitle={(equipe) => equipe.nome ?? "Sem nome"}
+                  getSubtitle={(equipe) =>
+                    equipe.integrantes === 1
+                      ? "1 integrante"
+                      : `${equipe.integrantes} integrantes`
+                  }
+                />
 
                 <LookupField
                   label="Tipo de serviço"

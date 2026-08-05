@@ -2558,6 +2558,60 @@ class PostgresqlRdoCreationContextIT {
                 .isEqualTo("UNAVAILABLE");
     }
 
+    /*
+     * O campo Equipe do rateio era caixa de texto vazia: quem preenchia tinha de
+     * lembrar o nome exato, e um erro de digitação criava uma frente que só
+     * existe naquele RDO. A lista sai daqui — e como a obra tem várias frentes,
+     * ela vem inteira, com a contagem que distingue duas de nome parecido.
+     */
+    @Test
+    void contextoListaTodasAsEquipesVigentesDaObraComSuasContagens() {
+        String obra = id();
+        String outraObra = id();
+        inserirObra(obra, "Com frentes");
+        inserirObra(outraObra, "Vizinha");
+        String autor = inserirColaborador(
+                "Autor frentes", "autorfrentes@fixture.invalid", "***.930.***-**");
+        String pedro = inserirColaborador(
+                "Pedro", "pedro@fixture.invalid", "***.931.***-**");
+        String paula = inserirColaborador(
+                "Paula", "paula@fixture.invalid", "***.932.***-**");
+
+        String fresagem = inserirEquipe(obra, "Frente de fresagem", "ATIVA", autor);
+        alocarEquipeNaObra(fresagem, obra, "ATIVO");
+        inserirMembro(fresagem, pedro, "ATIVO", autor);
+        inserirMembro(fresagem, paula, "ATIVO", autor);
+
+        String pintura = inserirEquipe(obra, "Frente de pintura", "ATIVA", autor);
+        alocarEquipeNaObra(pintura, obra, "ATIVO");
+
+        // As três que não valem: arquivada, alocação encerrada e de outra obra.
+        String arquivada = inserirEquipe(obra, "Frente arquivada", "ARQUIVADA", autor);
+        alocarEquipeNaObra(arquivada, obra, "ATIVO");
+        String saiu = inserirEquipe(obra, "Frente que saiu", "ATIVA", autor);
+        alocarEquipeNaObra(saiu, obra, "ENCERRADO");
+        String vizinha = inserirEquipe(outraObra, "Frente vizinha", "ATIVA", autor);
+        alocarEquipeNaObra(vizinha, outraObra, "ATIVO");
+
+        RdoContextResponse response = new RdoContextService(jdbc)
+                .buscarContexto(obra, SELECTED_DATE);
+
+        assertThat(response.equipes())
+                .extracting(RdoContextResponse.EquipeContexto::nome)
+                .containsExactly("Frente de fresagem", "Frente de pintura");
+        assertThat(response.equipes())
+                .filteredOn(equipe -> equipe.nome().equals("Frente de fresagem"))
+                .singleElement()
+                .extracting(RdoContextResponse.EquipeContexto::integrantes)
+                .isEqualTo(2);
+        // Frente sem ninguém continua na lista: ela existe e pode receber gente.
+        assertThat(response.equipes())
+                .filteredOn(equipe -> equipe.nome().equals("Frente de pintura"))
+                .singleElement()
+                .extracting(RdoContextResponse.EquipeContexto::integrantes)
+                .isEqualTo(0);
+    }
+
     private String inserirEquipe(
             String obraId,
             String nome,

@@ -58,6 +58,7 @@ export interface RdoCreationContextLookup {
   programacoes: RdoContextSchedule[];
   colaboradores: RdoContextCollaborator[];
   equipamentos: RdoContextEquipment[];
+  equipes?: RdoContextTeam[];
   serviceCatalog: RdoContextServiceCatalog[];
   coverage: {
     previousWorkforce: RdoContextCoverageSection;
@@ -250,6 +251,20 @@ export interface RdoContextCollaborator {
   nome: string | null;
   papelNaObra: string | null;
   nomePerfil: string | null;
+}
+
+/**
+ * Uma frente vigente da obra, para o rateio sugerir em vez de exigir digitação.
+ *
+ * <p>Opcional no contrato de propósito: contexto guardado antes desta versão
+ * não tem o campo, e exigi-lo faria toda leitura em cache ser recusada como
+ * incompatível — o app perderia o contexto offline de quem já estava com ele.
+ */
+export interface RdoContextTeam {
+  id: string;
+  nome: string | null;
+  descricao: string | null;
+  integrantes: number;
 }
 
 export interface RdoContextEquipment {
