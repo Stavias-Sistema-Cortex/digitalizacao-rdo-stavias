@@ -120,3 +120,36 @@ describe("busca de pessoas", () => {
     expect(proximoDestaque(0, 1, 0)).toBe(-1);
   });
 });
+
+describe("busca por palavras soltas", () => {
+  const paulo = pessoa("PAULO SERGIO DA SILVA NERIS", {
+    cpfMascarado: "***.***.***-50",
+  });
+
+  /*
+   * O filtro comparava o texto inteiro como pedaço contíguo, então exigia o
+   * nome completo, na ordem exata. Era o oposto do que uma busca deve pedir.
+   */
+  it("acha pelo primeiro e pelo último nome, sem os do meio", () => {
+    expect(correspondeAoTermo(paulo, "paulo neris")).toBe(true);
+    expect(correspondeAoTermo(paulo, "neris paulo")).toBe(true);
+  });
+
+  it("continua achando por uma palavra só e pelo nome inteiro", () => {
+    expect(correspondeAoTermo(paulo, "paulo")).toBe(true);
+    expect(correspondeAoTermo(paulo, "neris")).toBe(true);
+    expect(correspondeAoTermo(paulo, "PAULO SERGIO DA SILVA NERIS")).toBe(true);
+  });
+
+  it("exige todas as palavras, para cada uma estreitar o resultado", () => {
+    expect(correspondeAoTermo(paulo, "paulo ferreira")).toBe(false);
+  });
+
+  it("ignora acento e caixa", () => {
+    expect(correspondeAoTermo(pessoa("JOSÉ ANTÔNIO"), "jose antonio")).toBe(true);
+  });
+
+  it("cruza nome com CPF mascarado na mesma busca", () => {
+    expect(correspondeAoTermo(paulo, "neris 50")).toBe(true);
+  });
+});

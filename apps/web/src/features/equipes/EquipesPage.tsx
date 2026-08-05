@@ -9,6 +9,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { CortexShell } from "../../components/shell/CortexShell";
 import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import { SeletorDePessoa } from "./SeletorDePessoa";
+import { camposQueFaltam, mensagemDoQueFalta } from "./camposQueFaltam";
 import type {
   ColaboradorLocalRecord,
   ObraLocalRecord,
@@ -459,8 +460,9 @@ export function EquipesPage() {
 
   async function submitMember(event: FormEvent) {
     event.preventDefault();
-    if (!selectedTeam || !memberForm.colaboradorId || !memberForm.funcaoOperacionalId || !memberForm.motivo.trim()) {
-      setActionError("Informe pessoa, função e motivo da alteração.");
+    const faltando = camposQueFaltam(memberForm);
+    if (!selectedTeam || faltando.length > 0) {
+      setActionError(mensagemDoQueFalta(faltando));
       return;
     }
     setIsSaving(true);

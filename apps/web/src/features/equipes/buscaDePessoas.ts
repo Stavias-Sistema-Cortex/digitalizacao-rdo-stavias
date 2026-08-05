@@ -53,7 +53,10 @@ export function ordenarPorRelevancia(
   pessoas: readonly ColaboradorLocalRecord[],
   termo: string,
 ): ColaboradorLocalRecord[] {
-  const alvo = normalizar(termo);
+  // Ordena pela primeira palavra digitada: é a que a pessoa considera o começo
+  // do nome, e ordenar pelo texto inteiro deixaria de casar assim que a busca
+  // passasse a aceitar palavras soltas.
+  const alvo = normalizar(termo).split(/\s+/).filter(Boolean)[0] ?? "";
   if (!alvo) {
     return [...pessoas].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   }
@@ -69,19 +72,35 @@ export function ordenarPorRelevancia(
   });
 }
 
-/** Casa contra nome, CPF mascarado e perfil — os três aparecem na linha. */
+/**
+ * Casa contra nome, CPF mascarado e perfil — os três aparecem na linha.
+ *
+ * <p>Cada palavra digitada é procurada por conta própria. Comparar o texto
+ * inteiro como um pedaço contíguo obrigava a acertar o nome na ordem exata e
+ * sem pular nada: "paulo neris" não achava "PAULO SERGIO DA SILVA NERIS",
+ * porque essas duas palavras nunca aparecem juntas. Só o nome completo servia,
+ * o que é o oposto do que uma busca deve pedir — ninguém digita cinco nomes
+ * para achar quem já conhece pelo primeiro e pelo último.
+ *
+ * <p>Exigir que <em>todas</em> as palavras apareçam, e não qualquer uma, é o
+ * que mantém a busca útil: cada palavra a mais estreita o resultado, como quem
+ * digita espera.
+ */
 export function correspondeAoTermo(
   pessoa: ColaboradorLocalRecord,
   termo: string,
 ): boolean {
-  const alvo = normalizar(termo);
-  if (!alvo) {
+  const palavras = normalizar(termo).split(/\s+/).filter(Boolean);
+  if (palavras.length === 0) {
     return true;
   }
-  return (
-    normalizar(pessoa.nome).includes(alvo) ||
-    normalizar(pessoa.cpfMascarado ?? "").includes(alvo) ||
-    normalizar(pessoa.nomePerfil ?? "").includes(alvo)
+  const campos = [
+    normalizar(pessoa.nome),
+    normalizar(pessoa.cpfMascarado ?? ""),
+    normalizar(pessoa.nomePerfil ?? ""),
+  ];
+  return palavras.every((palavra) =>
+    campos.some((campo) => campo.includes(palavra)),
   );
 }
 
