@@ -189,6 +189,11 @@ git diff --check
 - [ ] `cortex-api` está no Render como web service Docker `free` na região
   `ohio`, branch `develop`, `autoDeployTrigger` desligado e health check
   `/api/readiness`.
+- [ ] O auto-deploy do serviço `cortex-api` está desligado **no painel do
+  Render**, e não apenas no `render.yaml`. O arquivo só governa serviços
+  sincronizados como Blueprint; um serviço criado à mão ignora
+  `autoDeployTrigger` e continua subindo sozinho a cada push em `develop`.
+  Ver "Auto-deploy do Render fora de ordem", abaixo.
 - [ ] O environment protegido `production` do GitHub possui os secrets
   `CORTEX_NEON_MIGRATION_PASSWORD`, `RENDER_DEPLOY_HOOK_URL` e
   `CLOUDFLARE_API_TOKEN`; URL Neon sem credencial, usuário migrador,
@@ -222,6 +227,41 @@ git diff --check
   `CORTEX_SYNC_ACADEMY_ENABLED=false` e
   `CORTEX_SYNC_ZELADORIA_ENABLED=false` até que cada fonte read-only tenha um
   caminho público seguro e passe sua validação QA.
+
+## Auto-deploy do Render fora de ordem
+
+O deploy de produção tem uma ordem obrigatória, imposta pelo workflow: publicar
+a imagem da API, **migrar o Neon com essa mesma imagem** e só então acionar o
+Render e esperar a revisão subir. A migração é quem grava a evidência pública do
+release; sem ela no banco, `PostgresqlRuntimeReadinessGuard` recusa iniciar,
+porque `RENDER_GIT_COMMIT` não encontra linha correspondente.
+
+Quando o serviço do Render está com auto-deploy ligado, ele clona o `develop` e
+sobe a API por conta própria, minutos antes de a migração rodar. O resultado é um
+deploy que falha assim:
+
+```
+==> Checking out commit <sha> in branch develop
+java.lang.IllegalStateException: PostgreSQL Córtex não está pronto para
+  validar o marcador público de release.
+    at PostgresqlRuntimeReadinessGuard.requireReleaseEvidence(...)
+==> Exited with status 1
+```
+
+Esse traço **não indica aplicação quebrada**: é o guarda cumprindo o papel dele,
+impedindo a API de atender contra um banco sem evidência daquele release. O
+deploy ordenado do workflow, que vem em seguida, sobe normalmente — mas o
+diagnóstico se repete a cada release e consome tempo de quem investiga.
+
+Como confirmar qual dos dois deploys falhou: compare o horário do log do Render
+com o início do run de produção. Um crash **antes** do passo "Migrate Neon with
+the immutable API image" é o auto-deploy fora de ordem. Um crash **depois** dele
+é falha real e pede investigação.
+
+Correção, no painel do Render (não há como fazer pelo repositório): desligar o
+auto-deploy do serviço `cortex-api`, ou conectá-lo ao Blueprint para que o
+`autoDeployTrigger: off` do `render.yaml` passe a valer. O deploy continua
+acontecendo a cada merge — pelo deploy hook do workflow, na ordem correta.
 
 ## Limite de evidência externa
 
