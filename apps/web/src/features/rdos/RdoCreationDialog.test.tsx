@@ -3,6 +3,8 @@
 import { createRef } from "react";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+
+import { dataDeHojeLocal } from "./dataDeHojeLocal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RdoCreationDialog } from "./RdoCreationDialog";
@@ -186,6 +188,19 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/*
+ * A data já nasce em hoje, então apontar outro dia é trocar, não preencher.
+ * Digitar por cima sem limpar concatenaria com a sugestão.
+ */
+async function escolherData(
+  user: ReturnType<typeof userEvent.setup>,
+  data: string,
+) {
+  const campo = screen.getByLabelText("Data do RDO");
+  await user.clear(campo);
+  await user.type(campo, data);
+}
+
 function renderDialog(overrides: {
   onClose?: () => void;
   onCreated?: (
@@ -228,15 +243,21 @@ describe("diálogo obra-first de RDO", () => {
     await waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(1));
   });
 
-  it("exige obra e data, mostra proveniência persistida e só então cria", async () => {
+  /*
+   * A data deixou de ser um passo: já vem em hoje. O que ainda falta escolher
+   * é a obra, e é ela que passa a destravar a criação.
+   */
+  it("exige a obra, sugere hoje, mostra proveniência persistida e só então cria", async () => {
     const user = userEvent.setup();
     const { onCreated } = renderDialog();
     const create = screen.getByRole("button", { name: "Criar rascunho" });
     expect(create).toBeDisabled();
+    expect(screen.getByLabelText("Data do RDO")).toHaveValue(
+      dataDeHojeLocal(),
+    );
 
     await user.click(await screen.findByRole("radio", { name: /Conservação/i }));
-    expect(create).toBeDisabled();
-    await user.type(screen.getByLabelText("Data do RDO"), "2026-07-22");
+    await escolherData(user, "2026-07-22");
 
     expect(await screen.findByText("Cache local")).toBeVisible();
     expect(screen.getByText("Versão 5")).toBeVisible();
@@ -272,7 +293,7 @@ describe("diálogo obra-first de RDO", () => {
     });
     renderDialog();
     await user.click(await screen.findByRole("radio", { name: /Conservação/i }));
-    await user.type(screen.getByLabelText("Data do RDO"), "2026-07-22");
+    await escolherData(user, "2026-07-22");
 
     expect(await screen.findByText("Parcial")).toBeVisible();
     expect(screen.getByText("Colaboradores 2/4")).toBeVisible();
@@ -292,7 +313,7 @@ describe("diálogo obra-first de RDO", () => {
     const { onCreated } = renderDialog();
 
     await user.click(await screen.findByRole("radio", { name: /Conservação/i }));
-    await user.type(screen.getByLabelText("Data do RDO"), "2026-07-22");
+    await escolherData(user, "2026-07-22");
 
     expect(await screen.findByText("Local pendente")).toBeVisible();
     expect(screen.getByText("Receipt canônico pendente")).toBeVisible();
@@ -321,19 +342,17 @@ describe("diálogo obra-first de RDO", () => {
     mocks.getCached.mockResolvedValue(undefined);
     renderDialog();
     await user.click(await screen.findByRole("radio", { name: /Conservação/i }));
-    await user.type(screen.getByLabelText("Data do RDO"), "2026-07-22");
+    await escolherData(user, "2026-07-22");
     expect(await screen.findByText(RDO_CONTEXT_OFFLINE_MISSING)).toBeVisible();
   });
 
   it("refaz a validação estrita do contexto pelo botão acessível de tentativa", async () => {
     const user = userEvent.setup();
     setOnline(true);
-    // Só as duas sondagens do próprio diálogo ficam sem cache. A terceira
-    // chamada é a da apuração do impedimento, e nela o recibo já existe —
-    // resolver o contexto grava o recibo antes de devolver.
-    mocks.getCached
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(undefined);
+    // Só a sondagem do próprio diálogo fica sem cache. A da apuração do
+    // impedimento encontra o recibo, porque resolver o contexto o grava antes
+    // de devolver.
+    mocks.getCached.mockResolvedValueOnce(undefined);
     mocks.requireContext
       .mockRejectedValueOnce(new Error(RDO_CREATION_CONTEXT_INCOMPATIBLE))
       .mockResolvedValueOnce({
@@ -344,8 +363,9 @@ describe("diálogo obra-first de RDO", () => {
       });
     renderDialog();
 
+    // A data já vem preenchida, então escolher a obra basta para a primeira
+    // tentativa acontecer.
     await user.click(await screen.findByRole("radio", { name: /Conservação/i }));
-    await user.type(screen.getByLabelText("Data do RDO"), "2026-07-22");
 
     expect(await screen.findByText(RDO_CREATION_CONTEXT_INCOMPATIBLE))
       .toBeVisible();
@@ -360,7 +380,7 @@ describe("diálogo obra-first de RDO", () => {
     expect(mocks.requireContext).toHaveBeenCalledTimes(2);
     expect(mocks.requireContext).toHaveBeenLastCalledWith(
       WORKSITE_ID,
-      "2026-07-22",
+      dataDeHojeLocal(),
       true,
     );
     expect(screen.getByRole("button", { name: "Criar rascunho" }))
@@ -385,7 +405,7 @@ describe("diálogo obra-first de RDO", () => {
     const user = userEvent.setup();
     const { onClose } = renderDialog();
     await user.click(await screen.findByRole("radio", { name: /Conservação/i }));
-    await user.type(screen.getByLabelText("Data do RDO"), "2026-07-22");
+    await escolherData(user, "2026-07-22");
     expect(await screen.findByText("Cache local")).toBeVisible();
     expect(screen.getByRole("button", { name: "Criar rascunho" })).toBeEnabled();
 

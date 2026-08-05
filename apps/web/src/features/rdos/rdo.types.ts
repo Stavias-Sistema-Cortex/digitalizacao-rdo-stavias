@@ -107,6 +107,9 @@ export interface ServicoExecutadoDraft {
   pista: string;
   faixa: string;
   localizacao: string;
+  /** Largura e espessura executadas: é delas que saem área e volume. */
+  larguraM: NumericInput;
+  espessuraCm: NumericInput;
   turno: "" | TurnoRdo;
   statusValidacao: "" | "REGISTRADA" | "VALIDADA" | "REJEITADA";
   retrabalho: boolean;
@@ -207,6 +210,11 @@ export interface RdoDraft {
   condicaoManha: CondicaoClimatica;
   condicaoTarde: CondicaoClimatica;
   condicaoNoite: CondicaoClimatica;
+  /**
+   * Deu ou não deu para trabalhar. O clima não responde isso sozinho: chove e
+   * a frente segue; não chove e o trecho está intransitável por outro motivo.
+   */
+  condicaoTrabalho: "" | "PRATICAVEL" | "IMPRATICAVEL";
   pluviometriaMm: NumericInput;
   observacoes: string;
   preenchidoPor: string;

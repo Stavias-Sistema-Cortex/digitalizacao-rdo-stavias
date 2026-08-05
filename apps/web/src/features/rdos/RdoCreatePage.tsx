@@ -27,7 +27,6 @@ import type {
 } from "../../lib/db/db.types";
 import {
   createEmptyAlocacaoColaborador,
-  createEmptyControleGeometrico,
   createEmptyEquipamento,
   createEmptyMaterial,
   createEmptyRdo,
@@ -35,7 +34,6 @@ import {
 } from "./createEmptyRdo";
 import type {
   AlocacaoColaboradorDraft,
-  ControleGeometricoDraft,
   EquipamentoDraft,
   MaterialDraft,
   NumericInput,
@@ -57,9 +55,10 @@ import {
   type RdoServiceType,
 } from "./rdoServiceTypes";
 import {
-  calcularControleGeometrico,
   calcularSobraMaterial,
+  extensionMeters,
   formatCalculatedNumber,
+  medidasDoServico,
 } from "./rdoCalculations";
 import { useRdoLocalPersistence } from "./useRdoLocalPersistence";
 import { UNIDADES_RDO, normalizarUnidade } from "./unidades";
@@ -262,23 +261,47 @@ function fileSizeLabel(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function parseKm(value: string): number | null {
-  const parsed = Number(value.trim().replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function extensionMeters(
-  start: string,
-  end: string,
-): number | null {
-  const startKm = parseKm(start);
-  const endKm = parseKm(end);
-
-  if (startKm === null || endKm === null || endKm < startKm) {
-    return null;
-  }
-
-  return Math.round((endKm - startKm) * 1000 * 1000) / 1000;
+/**
+ * Comprimento, área e volume do serviço — contas, não campos.
+ *
+ * <p>Cada uma só aparece quando as parcelas existem: sem largura não há área,
+ * e área ausente não é área zero. Mostrar zero onde falta medida faria o
+ * relatório somar produção que ninguém executou.
+ */
+function MedidasDoServicoCalculadas({
+  item,
+}: {
+  item: ServicoExecutadoDraft;
+}) {
+  const { comprimentoM, areaM2, volumeM3 } = medidasDoServico(item);
+  return (
+    <div className="computed-grid rdo-servico-medidas">
+      <CalculatedMetric
+        label="Comprimento"
+        value={
+          comprimentoM === null
+            ? "Em branco"
+            : `${formatCalculatedNumber(comprimentoM)} m`
+        }
+      />
+      <CalculatedMetric
+        label="Área"
+        value={
+          areaM2 === null
+            ? "Em branco"
+            : `${formatCalculatedNumber(areaM2)} m²`
+        }
+      />
+      <CalculatedMetric
+        label="Volume"
+        value={
+          volumeM3 === null
+            ? "Em branco"
+            : `${formatCalculatedNumber(volumeM3)} m³`
+        }
+      />
+    </div>
+  );
 }
 
 function hasText(value: string): boolean {
@@ -787,17 +810,6 @@ export function RdoCreatePage({
           hasText(item.materialNome),
         ),
       },
-      {
-        id: "rdo-controle-geometrico",
-        label: "Controle geométrico",
-        isComplete: draft.controlesGeometricos.some(
-          (item) =>
-            hasText(item.subtrecho) ||
-            hasText(item.numero) ||
-            hasText(item.kmInicial) ||
-            hasText(item.kmFinal),
-        ),
-      },
     ],
     [draft, photoCount],
   );
@@ -1021,21 +1033,6 @@ export function RdoCreatePage({
       ...current,
       alocacoesColaboradores:
         current.alocacoesColaboradores.map((item) =>
-          item.localId === localId
-            ? { ...item, ...patch }
-            : item,
-        ),
-    }));
-  }
-
-  function updateControle(
-    localId: string,
-    patch: Partial<ControleGeometricoDraft>,
-  ) {
-    setDraft((current) => ({
-      ...current,
-      controlesGeometricos:
-        current.controlesGeometricos.map((item) =>
           item.localId === localId
             ? { ...item, ...patch }
             : item,
@@ -1381,33 +1378,6 @@ export function RdoCreatePage({
 
         <div className="form-grid">
           <label>
-            Obra ID
-            <input
-              value={draft.obraId}
-              readOnly
-              aria-readonly="true"
-            />
-
-            <small>
-              Definido automaticamente pela obra selecionada.
-            </small>
-          </label>
-
-          <label>
-            Programação ID
-            <input
-              value={draft.programacaoId}
-              onChange={(event) =>
-                updateField(
-                  "programacaoId",
-                  event.target.value,
-                )
-              }
-              placeholder="UUID da programação"
-            />
-          </label>
-
-          <label>
             Número do RDO
             <input
               value={draft.numeroRdo}
@@ -1553,34 +1523,6 @@ export function RdoCreatePage({
           </label>
 
           <label>
-            Trecho programado inicial
-            <input
-              value={draft.kmInicialProgramado}
-              onChange={(event) =>
-                updateField(
-                  "kmInicialProgramado",
-                  event.target.value,
-                )
-              }
-              placeholder="Km/estaca inicial"
-            />
-          </label>
-
-          <label>
-            Trecho programado final
-            <input
-              value={draft.kmFinalProgramado}
-              onChange={(event) =>
-                updateField(
-                  "kmFinalProgramado",
-                  event.target.value,
-                )
-              }
-              placeholder="Km/estaca final"
-            />
-          </label>
-
-          <label>
             Trecho interditado inicial
             <input
               value={draft.kmInicialInterditado}
@@ -1621,44 +1563,6 @@ export function RdoCreatePage({
             />
           </label>
 
-          <label>
-            Apontador do RDO
-            <input
-              value={draft.apontadorRdo}
-              onChange={(event) =>
-                updateField(
-                  "apontadorRdo",
-                  event.target.value,
-                )
-              }
-            />
-          </label>
-
-          <label>
-            Encarregado da obra
-            <input
-              value={draft.encarregadoObra}
-              onChange={(event) =>
-                updateField(
-                  "encarregadoObra",
-                  event.target.value,
-                )
-              }
-            />
-          </label>
-
-          <label>
-            Fiscalização de campo
-            <input
-              value={draft.fiscalizacaoCampo}
-              onChange={(event) =>
-                updateField(
-                  "fiscalizacaoCampo",
-                  event.target.value,
-                )
-              }
-            />
-          </label>
         </div>
 
         <div className="computed-grid rdo-extension-grid">
@@ -1746,6 +1650,33 @@ export function RdoCreatePage({
               </select>
             </label>
           ))}
+
+          <label>
+            Condição do dia
+            <select
+              value={draft.condicaoTrabalho}
+              onChange={(event) =>
+                updateField(
+                  "condicaoTrabalho",
+                  event.target.value as RdoDraft["condicaoTrabalho"],
+                )
+              }
+            >
+              <option value="">Selecione</option>
+              <option value="PRATICAVEL">Praticável</option>
+              <option value="IMPRATICAVEL">Impraticável</option>
+            </select>
+            {/*
+              * Deixar em branco é dizer que ninguém declarou, e é assim que
+              * fica gravado. Ausência não vira "praticável" por omissão: um
+              * dia parado que o relatório conta como trabalhado some da
+              * medição.
+              */}
+            <small>
+              Se ficar em branco, o RDO registra que a condição não foi
+              declarada.
+            </small>
+          </label>
 
           <label>
             Pluviometria (mm)
@@ -1966,6 +1897,108 @@ export function RdoCreatePage({
                 />
 
                 <label>
+                  Pista
+                  <input
+                    value={item.pista}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          pista:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Faixa
+                  <input
+                    value={item.faixa}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          faixa:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Localização
+                  <input
+                    value={item.localizacao}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          localizacao:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Km inicial
+                  <input
+                    value={item.trechoInicial}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          trechoInicial:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Km final
+                  <input
+                    value={item.trechoFinal}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          trechoFinal:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <NumericField
+                  label="Largura (m)"
+                  value={item.larguraM}
+                  onChange={(value) =>
+                    updateServicoExecutado(item.localId, {
+                      larguraM: value,
+                    })
+                  }
+                />
+
+                <NumericField
+                  label="Espessura (cm)"
+                  value={item.espessuraCm}
+                  onChange={(value) =>
+                    updateServicoExecutado(item.localId, {
+                      espessuraCm: value,
+                    })
+                  }
+                />
+
+                <MedidasDoServicoCalculadas item={item} />
+
+                <label>
                   Preço versionado
                   <select
                     value={item.priceVersionId}
@@ -2105,86 +2138,6 @@ export function RdoCreatePage({
                       Noturno
                     </option>
                   </select>
-                </label>
-
-                <label>
-                  Trecho inicial
-                  <input
-                    value={item.trechoInicial}
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          trechoInicial:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Trecho final
-                  <input
-                    value={item.trechoFinal}
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          trechoFinal:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Pista
-                  <input
-                    value={item.pista}
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          pista:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Faixa
-                  <input
-                    value={item.faixa}
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          faixa:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Localização
-                  <input
-                    value={item.localizacao}
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          localizacao:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
                 </label>
 
                 <label className="checkbox-field">
@@ -3023,346 +2976,6 @@ export function RdoCreatePage({
         </div>
       </section>
 
-          <section className="form-card" id="rdo-controle-geometrico">
-        <CollectionHeader
-          title="Controle geométrico"
-          onAdd={() =>
-            setDraft((current) => ({
-              ...current,
-              controlesGeometricos: [
-                ...current.controlesGeometricos,
-                createEmptyControleGeometrico(),
-              ],
-            }))
-          }
-        />
-
-        <div className="collection-list">
-          {draft.controlesGeometricos.map(
-            (item, index) => (
-              <div
-                className="collection-row"
-                key={item.localId}
-              >
-                <div className="row-title">
-                  <strong>
-                    Trecho {index + 1}
-                  </strong>
-
-                  <button
-                    type="button"
-                    className="danger-link"
-                    onClick={() =>
-                      removeCollectionItem(
-                        "controlesGeometricos",
-                        item.localId,
-                      )
-                    }
-                  >
-                    Remover
-                  </button>
-                </div>
-
-                <div className="form-grid">
-                  <label>
-                    Subtrecho
-                    <input
-                      value={item.subtrecho}
-                      onChange={(event) =>
-                        updateControle(
-                          item.localId,
-                          {
-                            subtrecho:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Número
-                    <input
-                      value={item.numero}
-                      onChange={(event) =>
-                        updateControle(
-                          item.localId,
-                          {
-                            numero:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Estaca inicial
-                    <input
-                      value={item.estacaInicial}
-                      onChange={(event) =>
-                        updateControle(
-                          item.localId,
-                          {
-                            estacaInicial:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Estaca final
-                    <input
-                      value={item.estacaFinal}
-                      onChange={(event) =>
-                        updateControle(
-                          item.localId,
-                          {
-                            estacaFinal:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    KM inicial
-                    <input
-                      value={item.kmInicial}
-                      onChange={(event) =>
-                        updateControle(
-                          item.localId,
-                          {
-                            kmInicial:
-                              event.target.value,
-                          },
-                        )
-                      }
-                      placeholder="100.000"
-                    />
-                  </label>
-
-                  <label>
-                    KM final
-                    <input
-                      value={item.kmFinal}
-                      onChange={(event) =>
-                        updateControle(
-                          item.localId,
-                          {
-                            kmFinal:
-                              event.target.value,
-                          },
-                        )
-                      }
-                      placeholder="100.500"
-                    />
-                  </label>
-
-                  <label>
-                    Pista
-                    <input
-                      value={item.pista}
-                      onChange={(event) =>
-                        updateControle(
-                          item.localId,
-                          {
-                            pista:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Faixa
-                    <input
-                      value={item.faixa}
-                      onChange={(event) =>
-                        updateControle(
-                          item.localId,
-                          {
-                            faixa:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Ordem de serviço
-                    <input
-                      value={item.ordemServico}
-                      onChange={(event) =>
-                        updateControle(
-                          item.localId,
-                          {
-                            ordemServico:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <NumericField
-                    label="Comprimento (m)"
-                    value={item.comprimentoM}
-                    onChange={(value) =>
-                      updateControle(
-                        item.localId,
-                        {
-                          comprimentoM: value,
-                        },
-                      )
-                    }
-                  />
-
-                  <NumericField
-                    label="Largura (m)"
-                    value={item.larguraM}
-                    onChange={(value) =>
-                      updateControle(
-                        item.localId,
-                        {
-                          larguraM: value,
-                        },
-                      )
-                    }
-                  />
-
-                  <NumericField
-                    label="Espessura 1 (cm)"
-                    value={item.espessura1Cm}
-                    onChange={(value) =>
-                      updateControle(
-                        item.localId,
-                        {
-                          espessura1Cm: value,
-                        },
-                      )
-                    }
-                  />
-
-                  <NumericField
-                    label="Espessura 2 (cm)"
-                    value={item.espessura2Cm}
-                    onChange={(value) =>
-                      updateControle(
-                        item.localId,
-                        {
-                          espessura2Cm: value,
-                        },
-                      )
-                    }
-                  />
-
-                  <NumericField
-                    label="Espessura 3 (cm)"
-                    value={item.espessura3Cm}
-                    onChange={(value) =>
-                      updateControle(
-                        item.localId,
-                        {
-                          espessura3Cm: value,
-                        },
-                      )
-                    }
-                  />
-
-                  <NumericField
-                    label="Densidade"
-                    value={item.densidade}
-                    onChange={(value) =>
-                      updateControle(
-                        item.localId,
-                        {
-                          densidade: value,
-                        },
-                      )
-                    }
-                  />
-                </div>
-
-                <div className="computed-grid">
-                  {(() => {
-                    const calculo =
-                      calcularControleGeometrico(item);
-
-                    return (
-                      <>
-                        <CalculatedMetric
-                          label="Espessura média"
-                          value={`${formatCalculatedNumber(
-                            calculo.espessuraMediaCm,
-                          )} cm`}
-                        />
-                        <CalculatedMetric
-                          label="Área"
-                          value={`${formatCalculatedNumber(
-                            calculo.areaM2,
-                          )} m²`}
-                        />
-                        <CalculatedMetric
-                          label="Volume"
-                          value={`${formatCalculatedNumber(
-                            calculo.volumeM3,
-                          )} m³`}
-                        />
-                        <CalculatedMetric
-                          label="Massa"
-                          value={`${formatCalculatedNumber(
-                            calculo.massaTonelada,
-                          )} t`}
-                        />
-                      </>
-                    );
-                  })()}
-                </div>
-
-                <label className="full-width">
-                  Atividades executadas / observações
-                  <textarea
-                    rows={3}
-                    value={item.atividadeObservacoes}
-                    onChange={(event) =>
-                      updateControle(
-                        item.localId,
-                        {
-                          atividadeObservacoes:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label className="full-width">
-                  Observações do controle
-                  <textarea
-                    rows={3}
-                    value={item.observacoes}
-                    onChange={(event) =>
-                      updateControle(
-                        item.localId,
-                        {
-                          observacoes:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-              </div>
-            ),
-          )}
-        </div>
-      </section>
 
       {canViewRawPayload && showJson && (
         <section className="form-card json-preview">

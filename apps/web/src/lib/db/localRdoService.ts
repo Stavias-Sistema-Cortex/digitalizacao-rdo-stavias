@@ -630,6 +630,13 @@ function buildServicoExecutadoPayload(
     trechoFinal: nullIfEmpty(item.trechoFinal),
     pista: nullIfEmpty(item.pista),
     faixa: nullIfEmpty(item.faixa),
+    // Rascunho gravado antes da V69 não tem estes campos, e `undefined` não é
+    // JSON: o envelope canônico recusa, e a recusa derruba a sincronização do
+    // dia inteiro. Ausência vira null, que é o que o banco entende por medida
+    // não informada.
+    larguraM: typeof item.larguraM === "number" ? item.larguraM : null,
+    espessuraCm:
+      typeof item.espessuraCm === "number" ? item.espessuraCm : null,
     localizacao: nullIfEmpty(item.localizacao),
     turno: nullIfEmpty(item.turno),
     statusValidacao: item.statusValidacao,
@@ -675,6 +682,8 @@ function buildServicoExecutadoLocalPayload(
     trechoFinal: item.trechoFinal,
     pista: item.pista,
     faixa: item.faixa,
+    larguraM: item.larguraM ?? "",
+    espessuraCm: item.espessuraCm ?? "",
     localizacao: item.localizacao,
     turno: item.turno,
     statusValidacao: item.statusValidacao,
@@ -832,6 +841,7 @@ export function buildRdoSyncPayload(
     condicaoManha: draft.condicaoManha || null,
     condicaoTarde: draft.condicaoTarde || null,
     condicaoNoite: draft.condicaoNoite || null,
+    condicaoTrabalho: draft.condicaoTrabalho || null,
     pluviometriaMm:
       draft.pluviometriaMm === ""
         ? null
@@ -938,6 +948,7 @@ function buildRdoLocalPayload(
     condicaoManha: draft.condicaoManha,
     condicaoTarde: draft.condicaoTarde,
     condicaoNoite: draft.condicaoNoite,
+    condicaoTrabalho: draft.condicaoTrabalho ?? "",
     pluviometriaMm: draft.pluviometriaMm,
     observacoes: draft.observacoes,
     preenchidoPor: draft.preenchidoPor,

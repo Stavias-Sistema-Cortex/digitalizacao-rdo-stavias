@@ -56,6 +56,11 @@ export function execucaoDoTrechoDesenhado(input: {
     trechoFinal: limpo(cadastro.kmFinal),
     pista: "",
     faixa: limpo(cadastro.faixa),
+    // O trecho desenhado no mapa não mede largura nem espessura: quem as
+    // conhece é quem executou. Nascem vazias para que área e volume fiquem em
+    // branco em vez de zero.
+    larguraM: "",
+    espessuraCm: "",
     localizacao: limpo(cadastro.rodovia),
     turno: "",
     // Registrada, não validada: o desenho é declaração de quem estava lá, e

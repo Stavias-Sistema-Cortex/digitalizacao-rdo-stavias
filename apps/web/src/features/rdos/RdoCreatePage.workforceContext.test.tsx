@@ -654,7 +654,13 @@ describe("catálogo contextual de mão de obra em RDO legado/importado", () => {
     });
   });
 
-  it("mantém obra e número canônicos somente leitura no formulário", () => {
+  /*
+   * O identificador da obra saiu da tela. Ele continua no rascunho e na
+   * ontologia, que é onde tem função; na Identificação ele só competia com o
+   * nome da obra pela atenção de quem aponta, e um UUID não diz a ninguém em
+   * que obra está trabalhando.
+   */
+  it("não expõe o id da obra e mantém o número canônico somente leitura", () => {
     const draft = legacyDraft();
     draft.numeroRdo = "RDO-1";
 
@@ -668,13 +674,10 @@ describe("catálogo contextual de mão de obra em RDO legado/importado", () => {
       />,
     );
 
-    expect(screen.getByLabelText(/^Obra ID/)).toHaveValue("obra-a");
-    expect(screen.getByLabelText(/^Obra ID/)).toHaveAttribute("readonly");
+    expect(screen.queryByLabelText(/^Obra ID/)).toBeNull();
+    expect(screen.queryByLabelText(/^Programação ID/)).toBeNull();
     expect(screen.getByLabelText(/^Número do RDO/)).toHaveValue("RDO-1");
     expect(screen.getByLabelText(/^Número do RDO/)).toHaveAttribute("readonly");
-    expect(
-      screen.getByText("Definido automaticamente pela obra selecionada."),
-    ).toBeVisible();
     expect(
       screen.getByText("O número é preenchido automaticamente."),
     ).toBeVisible();

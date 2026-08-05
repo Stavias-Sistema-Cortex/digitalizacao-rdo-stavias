@@ -184,6 +184,8 @@ function mapServicosExecutados(
       trechoFinal: asString(item.trechoFinal),
       pista: asString(item.pista),
       faixa: asString(item.faixa),
+      larguraM: asNumericInput(item.larguraM),
+      espessuraCm: asNumericInput(item.espessuraCm),
       localizacao: asString(item.localizacao),
       turno: asString(
         item.turno,
@@ -357,6 +359,9 @@ export function localRecordToDraft(
     condicaoNoite: asString(
       payload.condicaoNoite,
     ) as RdoDraft["condicaoNoite"],
+    condicaoTrabalho: asString(
+      payload.condicaoTrabalho,
+    ) as RdoDraft["condicaoTrabalho"],
     pluviometriaMm:
       payload.pluviometriaMm === null
         ? ""

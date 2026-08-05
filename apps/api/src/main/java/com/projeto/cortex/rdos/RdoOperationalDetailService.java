@@ -904,6 +904,8 @@ public class RdoOperationalDetailService {
                         trecho_final,
                         pista,
                         faixa,
+                        largura_m,
+                        espessura_cm,
                         localizacao,
                         data_execucao,
                         turno,
@@ -923,7 +925,7 @@ public class RdoOperationalDetailService {
                         accepted_at
                     ) VALUES (
                         ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         CASE WHEN ?::varchar IS NULL THEN NULL ELSE now() END
                     )
                     RETURNING accepted_at
@@ -944,6 +946,8 @@ public class RdoOperationalDetailService {
                     nuloSeVazio(item.trechoFinal()),
                     nuloSeVazio(item.pista()),
                     nuloSeVazio(item.faixa()),
+                    item.larguraM(),
+                    item.espessuraCm(),
                     nuloSeVazio(item.localizacao()),
                     dataRdo,
                     prepared.turn(),

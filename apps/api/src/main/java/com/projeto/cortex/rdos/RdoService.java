@@ -166,6 +166,7 @@ public class RdoService {
                     condicao_manha,
                     condicao_tarde,
                     condicao_noite,
+                    condicao_trabalho,
                     pluviometria_mm,
                     status,
                     observacoes,
@@ -173,7 +174,7 @@ public class RdoService {
                     apontador_rdo,
                     encarregado_obra,
                     fiscalizacao_campo
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rdoId,
                 obraId,
@@ -203,6 +204,9 @@ public class RdoService {
                 request.condicaoManha(),
                 request.condicaoTarde(),
                 request.condicaoNoite(),
+                RdoDraftUpdateService.condicaoTrabalhoValida(
+                        request.condicaoTrabalho()
+                ),
                 request.pluviometriaMm(),
                 status,
                 request.observacoes(),

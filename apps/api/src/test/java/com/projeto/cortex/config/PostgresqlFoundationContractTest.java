@@ -63,7 +63,7 @@ class PostgresqlFoundationContractTest {
         assertTrue(commonProfile.contains("classpath:db/migration-postgresql"));
         assertTrue(profile.contains("enabled: false"),
                 "normal PostgreSQL runtime must never execute migrations");
-        assertTrue(commonProfile.contains("required-schema-version: 68"));
+        assertTrue(commonProfile.contains("required-schema-version: 69"));
         assertFalse(commonProfile.contains("classpath:db/migration\n"),
                 "the PostgreSQL profile must not run the MySQL migration directory");
         assertFalse((profile + commonProfile).toLowerCase().contains("supabase"),

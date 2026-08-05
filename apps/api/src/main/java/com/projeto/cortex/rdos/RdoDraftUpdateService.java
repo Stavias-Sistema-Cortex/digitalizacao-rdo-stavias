@@ -159,6 +159,7 @@ public class RdoDraftUpdateService {
                     condicao_manha = ?,
                     condicao_tarde = ?,
                     condicao_noite = ?,
+                    condicao_trabalho = ?,
                     pluviometria_mm = ?,
                     observacoes = ?,
                     preenchido_por = ?,
@@ -201,6 +202,7 @@ public class RdoDraftUpdateService {
                 request.condicaoManha(),
                 request.condicaoTarde(),
                 request.condicaoNoite(),
+                condicaoTrabalhoValida(request.condicaoTrabalho()),
                 request.pluviometriaMm(),
                 request.observacoes(),
                 nuloSeVazio(request.preenchidoPor()),
@@ -796,6 +798,28 @@ public class RdoDraftUpdateService {
                 );
             }
         }
+    }
+
+    /**
+     * Só PRATICAVEL ou IMPRATICAVEL entram na coluna.
+     *
+     * <p>O banco também recusa qualquer outra coisa, por CHECK. Recusar aqui
+     * antes é o que transforma um valor inesperado em erro de requisição, e
+     * não em falha de constraint no meio da transação de gravação.
+     */
+    static String condicaoTrabalhoValida(String valor) {
+        if (valor == null || valor.isBlank()) {
+            return null;
+        }
+        String normalizado = valor.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!normalizado.equals("PRATICAVEL")
+                && !normalizado.equals("IMPRATICAVEL")) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "condicaoTrabalho aceita apenas PRATICAVEL ou IMPRATICAVEL."
+            );
+        }
+        return normalizado;
     }
 
     private Object[] controleValues(

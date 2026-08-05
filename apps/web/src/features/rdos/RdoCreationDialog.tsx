@@ -27,6 +27,7 @@ import {
 import type { RdoDraft } from "./rdo.types";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
 import { AUTH_SESSION_CHANGED_EVENT } from "../auth/authSession";
+import { dataDeHojeLocal } from "./dataDeHojeLocal";
 
 import "./RdoCreationDialog.css";
 
@@ -74,8 +75,18 @@ export function RdoCreationDialog({
   const [worksites, setWorksites] = useState<ObraLocalRecord[]>([]);
   const [query, setQuery] = useState("");
   const [selectedWorksiteId, setSelectedWorksiteId] = useState("");
+  /*
+   * A data começa em hoje, e continua trocável.
+   *
+   * O RDO é diário e quase sempre é o de hoje; nascer vazio obrigava a abrir o
+   * calendário toda vez para escolher a única data provável. Quem aponta um
+   * dia anterior troca — o campo é o mesmo de antes.
+   *
+   * Data local, não UTC: às 21h de Pirassununga o dia UTC já virou, e o
+   * apontador receberia amanhã como sugestão de hoje.
+   */
   const [selectedDate, setSelectedDate] = useState(
-    initialDraft?.dataRdo ?? "",
+    initialDraft?.dataRdo || dataDeHojeLocal(),
   );
   const [contextResult, setContextResult] =
     useState<ResolvedRdoDraftCreationContext | null>(null);

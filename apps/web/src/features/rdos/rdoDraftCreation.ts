@@ -5,6 +5,7 @@ import {
   saveNewRdoDraftAtomically,
 } from "../../lib/db/localRdoService";
 import { getCachedRdoCreationContext } from "./rdoCreationContextRepository";
+import { getSession } from "../auth/authSession";
 import type { CanonicalOutboxMutationRecord } from "../../lib/db/db.types";
 import { createEmptyRdo } from "./createEmptyRdo";
 import {
@@ -28,6 +29,22 @@ export interface CreateRdoDraftOptions {
 export interface CreatedRdoDraft {
   draft: RdoDraft;
   mutation: CanonicalOutboxMutationRecord;
+}
+
+/**
+ * Quem está preenchendo é quem está com a sessão aberta.
+ *
+ * <p>O campo nascia vazio e cada apontador digitava o próprio nome todo dia,
+ * a cada RDO. O dado já está no aparelho — a sessão é local, então isto
+ * funciona sem rede — e continua editável: quem preenche pelo colega corrige
+ * o nome, e quem quiser apagar apaga.
+ */
+function comPreenchidoPor(draft: RdoDraft): RdoDraft {
+  if (draft.preenchidoPor.trim()) {
+    return draft;
+  }
+  const nome = getSession()?.nome?.trim() ?? "";
+  return nome ? { ...draft, preenchidoPor: nome } : draft;
 }
 
 /**
@@ -99,9 +116,11 @@ export async function createAndPersistRdoDraft(
     context,
     options.workforceIdFactory,
   );
-  const draft = options.baseDraft
-    ? mergeImportedEvidence(contextualDraft, options.baseDraft)
-    : contextualDraft;
+  const draft = comPreenchidoPor(
+    options.baseDraft
+      ? mergeImportedEvidence(contextualDraft, options.baseDraft)
+      : contextualDraft,
+  );
   const persisted = await saveNewRdoDraftAtomically(draft, {
     occurredAt: options.occurredAt,
   });
@@ -127,9 +146,11 @@ export async function createAndPersistLocalPendingRdoDraft(
     context,
     options.workforceIdFactory,
   );
-  const draft = options.baseDraft
-    ? mergeLocalPendingImportedEvidence(contextualDraft, options.baseDraft)
-    : contextualDraft;
+  const draft = comPreenchidoPor(
+    options.baseDraft
+      ? mergeLocalPendingImportedEvidence(contextualDraft, options.baseDraft)
+      : contextualDraft,
+  );
   const persisted = await saveLocalPendingRdoDraftAtomically(draft, {
     occurredAt: options.occurredAt,
   });

@@ -47,10 +47,13 @@ describe("RDO institutional document workspace", () => {
       "mao-de-obra",
       "equipamentos",
       "materiais",
-      "controle-geometrico",
     ]) {
       expect(createPage).toContain(`id="rdo-${sectionId}"`);
     }
+
+    // O controle geométrico saiu do RDO: a Stavias não o usa, e uma etapa que
+    // ninguém preenche só alonga o índice e a sensação de formulário infinito.
+    expect(createPage).not.toContain('id="rdo-controle-geometrico"');
 
     expect(css).toMatch(
       /\.rdo-document-layout\s*\{[^}]*grid-template-columns:\s*minmax\(180px,\s*220px\)\s+minmax\(0,\s*1fr\);/s,
