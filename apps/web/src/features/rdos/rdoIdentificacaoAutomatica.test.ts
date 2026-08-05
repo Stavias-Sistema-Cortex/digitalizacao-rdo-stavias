@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { dataDeHojeLocal } from "./dataDeHojeLocal";
+import { validPreviousRdo } from "./rdoCreationContext";
 import { extensionMeters, medidasDoServico } from "./rdoCalculations";
 
 describe("extensão entre dois km", () => {
@@ -94,5 +95,48 @@ describe("medidas do serviço executado", () => {
       areaM2: null,
       volumeM3: null,
     });
+  });
+});
+
+describe("RDO anterior do mesmo dia", () => {
+  const contexto = {
+    obra: { id: "obra-1" },
+    data: "2026-05-08",
+    previousRdo: { id: "rdo-0002", dataRdo: "2026-05-08" },
+    provenance: { previousRdoId: "rdo-0002" },
+  } as never;
+
+  /*
+   * Quem monta o rascunho aceitava anterior de data igual; quem validava a
+   * gravação exigia data estritamente menor. Bastava existir um RDO do mesmo
+   * dia na mesma obra para o rascunho nascer apontando para ele e a gravação
+   * exigir que não apontasse para nada — nenhum segundo RDO do dia podia ser
+   * criado, e a recusa culpava "os dados de cabeçalho".
+   */
+  it("é reconhecido como anterior, e não descartado por empate de data", () => {
+    expect(validPreviousRdo(contexto)?.id).toBe("rdo-0002");
+  });
+
+  it("continua descartando o que é posterior à data do RDO", () => {
+    expect(
+      validPreviousRdo({
+        ...contexto,
+        previousRdo: { id: "rdo-0003", dataRdo: "2026-05-09" },
+        provenance: { previousRdoId: "rdo-0003" },
+      } as never),
+    ).toBeNull();
+  });
+
+  it("continua exigindo que o servidor confirme quem é o anterior", () => {
+    expect(
+      validPreviousRdo({
+        ...contexto,
+        provenance: { previousRdoId: "outro" },
+      } as never),
+    ).toBeNull();
+  });
+
+  it("não deixa o RDO ser anterior de si mesmo", () => {
+    expect(validPreviousRdo(contexto, "rdo-0002")).toBeNull();
   });
 });

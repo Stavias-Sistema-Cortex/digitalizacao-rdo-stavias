@@ -20,7 +20,21 @@ export type RdoContextTruthStatus =
   | "PARTIAL"
   | "LOCAL_PENDING";
 
-function validPreviousRdo(
+/**
+ * Qual RDO o contexto declara como anterior — a mesma resposta para todos.
+ *
+ * <p>Esta regra existia duas vezes, escrita de dois jeitos: aqui, montando o
+ * rascunho, e em `hasCanonicalCreationIdentity`, validando a gravação. Uma
+ * aceitava anterior de data igual, a outra exigia data estritamente menor.
+ * Bastava existir um RDO do mesmo dia na mesma obra para o rascunho nascer
+ * apontando para ele e a gravação exigir que não apontasse para nada: recusa
+ * garantida, e nenhum segundo RDO do dia podia ser criado.
+ *
+ * <p>Quem decide quem é o anterior é o servidor, em `provenance.previousRdoId`
+ * — as duas pontas já exigiam concordância com ele. O que faltava era
+ * concordarem entre si, e por isso agora é uma função só.
+ */
+export function validPreviousRdo(
   context: RdoCreationContextLookup,
   currentRdoId = "",
 ): RdoCreationContextLookup["previousRdo"] {

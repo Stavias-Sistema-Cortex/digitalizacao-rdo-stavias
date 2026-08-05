@@ -24,6 +24,7 @@ import {
   captureContextSession,
   type RdoContextSessionGuard,
 } from "../../features/rdos/rdoCreationContextRepository";
+import { validPreviousRdo } from "../../features/rdos/rdoCreationContext";
 import { getCortexDb } from "./cortexDb";
 import type {
   CanonicalOperationalEventRecord,
@@ -207,13 +208,10 @@ function hasCanonicalCreationIdentity(
   draft: RdoDraft,
   context: RdoCreationContextLookup,
 ): boolean {
-  const previous = context.previousRdo;
+  // A mesma função que montou o rascunho decide aqui, para as duas pontas não
+  // poderem discordar de novo.
   const canonicalPreviousRdoId =
-    previous &&
-      previous.dataRdo < context.data &&
-      context.provenance.previousRdoId === previous.id
-      ? previous.id
-      : "";
+    validPreviousRdo(context, draft.id)?.id ?? "";
   return draft.numeroRdo === contextualText(context.nextNumberSuggestion) &&
     draft.cliente === contextualText(context.obra.cliente) &&
     draft.contrato === contextualText(context.obra.codigoContrato) &&
