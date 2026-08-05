@@ -151,4 +151,71 @@ describe("a equipe aprende a versão que o servidor devolve", () => {
       (await database.get("teams", EQUIPE_ID))?.versaoEntidade,
     ).toBe(7);
   });
+  /*
+   * O defeito que o usuário via como "a sincronização não roda": três pessoas
+   * adicionadas à mesma equipe antes de qualquer sincronização produzem três
+   * mutações com a MESMA versão-base. A primeira aplica e leva a equipe adiante;
+   * as outras duas chegam com base vencida e voltam como conflito. O painel
+   * mostrava três membros, o cartão mostrava zero, e nada dizia que o segundo
+   * gesto nunca teve chance.
+   *
+   * Reapoiar é seguro aqui porque a versão nova veio do gesto anterior desta
+   * mesma pessoa, neste mesmo aparelho — quem fez a segunda edição já sabia da
+   * primeira. Conflito de verdade vem de outro aparelho, pelo pull, e continua
+   * exigindo decisão.
+   */
+  it("reapoia as edições irmãs que ainda esperam na fila", async () => {
+    const mutation = await semearEquipeEMutacao(0);
+    const database = await getCortexDb();
+    await database.put("outbox_mutations", {
+      ...(mutation as unknown as Record<string, unknown>),
+      clientMutationId: "00000000-0000-4000-8000-0000000004b1",
+      status: "PENDING",
+      baseVersao: 0,
+    } as never);
+    await markMutationAsSyncing(mutation);
+
+    await applyPushResultAtomically({
+      clientMutationId: MUTATION_ID,
+      status: "APLICADA",
+      resultado: { versaoEntidade: 3 },
+    } as never);
+
+    expect(
+      (await database.get(
+        "outbox_mutations",
+        "00000000-0000-4000-8000-0000000004b1",
+      ))?.baseVersao,
+    ).toBe(3);
+  });
+
+  /*
+   * A irmã que já está adiante não retrocede. Reescrever cegamente devolveria
+   * uma versão-base menor do que a que ela já tinha, e o servidor recusaria por
+   * conta de um "conserto".
+   */
+  it("não faz a irmã retroceder para uma versão anterior à dela", async () => {
+    const mutation = await semearEquipeEMutacao(0);
+    const database = await getCortexDb();
+    await database.put("outbox_mutations", {
+      ...(mutation as unknown as Record<string, unknown>),
+      clientMutationId: "00000000-0000-4000-8000-0000000004b2",
+      status: "PENDING",
+      baseVersao: 9,
+    } as never);
+    await markMutationAsSyncing(mutation);
+
+    await applyPushResultAtomically({
+      clientMutationId: MUTATION_ID,
+      status: "APLICADA",
+      resultado: { versaoEntidade: 3 },
+    } as never);
+
+    expect(
+      (await database.get(
+        "outbox_mutations",
+        "00000000-0000-4000-8000-0000000004b2",
+      ))?.baseVersao,
+    ).toBe(9);
+  });
 });

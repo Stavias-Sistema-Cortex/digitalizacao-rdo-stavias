@@ -779,6 +779,71 @@ async function rdoSyncStatusFromOutbox(
   );
 }
 
+/**
+ * Reapoia na versão nova as edições da mesma entidade que ainda estão na fila.
+ *
+ * <p>Sem isso, uma sequência de gestos sobre a mesma coisa se envenena. Três
+ * pessoas adicionadas à mesma equipe antes de qualquer sincronização produzem
+ * três mutações com a <em>mesma</em> versão-base: a primeira aplica e leva a
+ * equipe adiante, e as outras duas chegam com base vencida e voltam como
+ * conflito. O painel mostra três membros, o cartão mostra zero, e nada na fila
+ * dá sinal de que o segundo gesto nunca teve chance.
+ *
+ * <p>Reapoiar aqui é seguro pelo lugar de onde isto é chamado: o recibo de uma
+ * mutação <em>nossa</em> que acabou de aplicar. A versão nova é consequência do
+ * gesto anterior desta mesma pessoa, neste mesmo aparelho — quem fez a segunda
+ * edição já sabia da primeira. Conflito de verdade é outro caso: vem de outro
+ * aparelho, chega pelo pull, e continua exigindo decisão.
+ *
+ * <p>CREATE fica de fora porque criar exige base nula; dar-lhe uma versão
+ * tornaria o envelope inválido. E os dois apelidos da versão são escritos
+ * juntos: o contrato canônico exige `baseVersao === baseVersion`, e mexer em um
+ * só faria a mutação ser recusada localmente como incoerente. O hash não entra
+ * nessa conta — ele cobre o payload, não a versão-base.
+ */
+async function rebasePendingSiblings(
+  store: OutboxEntityMutationStore,
+  applied: OutboxMutationRecord,
+  resultVersion: number | null,
+  timestamp: string,
+): Promise<void> {
+  if (
+    !Number.isSafeInteger(resultVersion) ||
+    (resultVersion as number) < 0
+  ) {
+    return;
+  }
+
+  const mutations = await store
+    .index("by-entity-id")
+    .getAll(applied.entidadeId);
+
+  for (const candidate of mutations) {
+    if (
+      candidate.clientMutationId === applied.clientMutationId ||
+      candidate.entidadeTipo !== applied.entidadeTipo ||
+      candidate.entidadeId !== applied.entidadeId ||
+      candidate.status !== "PENDING" ||
+      candidate.baseVersao === null ||
+      candidate.baseVersao === undefined
+    ) {
+      continue;
+    }
+    // Já está na versão nova ou adiante dela: reescrever seria retroceder.
+    if (candidate.baseVersao >= (resultVersion as number)) {
+      continue;
+    }
+    await store.put({
+      ...candidate,
+      baseVersao: resultVersion as number,
+      ...(isCanonicalOutboxMutation(candidate)
+        ? { baseVersion: resultVersion as number }
+        : {}),
+      updatedAt: timestamp,
+    });
+  }
+}
+
 async function rebasePendingLegacyRdoDependents(
   store: OutboxEntityMutationStore,
   applied: OutboxMutationRecord,
@@ -3327,6 +3392,12 @@ export async function applyPushResultAtomically(
       updatedAt: timestamp,
     });
     await rebasePendingLegacyRdoDependents(
+      outboxStore,
+      mutation,
+      resultVersion,
+      timestamp,
+    );
+    await rebasePendingSiblings(
       outboxStore,
       mutation,
       resultVersion,
