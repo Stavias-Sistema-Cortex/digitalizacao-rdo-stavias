@@ -770,16 +770,63 @@ export function EquipesPage() {
             {actionError && <div className="teams-action-error" role="alert">{actionError}<button type="button" onClick={() => setActionError(null)}>×</button></div>}
             <div className="teams-detail-scroll">
               <section className="teams-overview">
-                <div><span>Status</span><strong className={`teams-status teams-status--${selectedTeam.status.toLowerCase()}`}>{selectedTeam.status === "ATIVA" ? "Ativa" : "Arquivada"}</strong></div>
-                <div><span>Vigência</span><strong>{formatDate(selectedTeam.inicioValidadeEm)} — {formatDate(selectedTeam.fimValidadeEm)}</strong></div>
-                <div><span>Responsável</span><strong>{activeMembers.find((member) => member.responsavel)?.colaboradorNome ?? "Não definido"}</strong></div>
-                <div><span>Última mudança</span><strong>{formatDateTime(selectedTeam.atualizadoEm)}</strong></div>
+                <div>
+                  <span>Status</span>
+                  <strong className={`teams-status teams-status--${selectedTeam.status.toLowerCase()}`}>
+                    {selectedTeam.status === "ATIVA" ? "Ativa" : "Arquivada"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Vigência</span>
+                  <strong>
+                    {formatDate(selectedTeam.inicioValidadeEm)} — {formatDate(selectedTeam.fimValidadeEm)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Responsável</span>
+                  <strong>
+                    {activeMembers.find((member) => member.responsavel)?.colaboradorNome ?? "Não definido"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Última mudança</span>
+                  <strong>{formatDateTime(selectedTeam.atualizadoEm)}</strong>
+                </div>
               </section>
               {selectedTeam.descricao && <p className="teams-description">{selectedTeam.descricao}</p>}
 
               <section className="teams-section">
                 <header><h3>Membros ativos <span className="teams-section-count">{activeMembers.length}</span></h3>{alfa && selectedTeam.status === "ATIVA" && <button type="button" onClick={() => void openAddMember()}>Adicionar pessoa</button>}</header>
-                {activeMembers.length === 0 ? <div className="teams-section-empty">Nenhuma participação ativa nesta equipe.</div> : <div className="teams-members-grid">{activeMembers.map((member) => <button type="button" className="teams-member-card" key={member.id} onClick={() => setSelectedMember(member)}><span className="teams-member-avatar">{participantInitials(member.colaboradorNome)}</span><span><strong>{member.colaboradorNome}</strong><small>{member.funcaoNome}</small><em>{member.responsavel ? "Responsável · " : ""}{formatDate(member.inicioEm)}</em></span><b className={`teams-access teams-access--${(member.papelAcesso ?? "beta").toLowerCase()}`}>{member.papelAcesso ?? "Acesso não informado"}</b></button>)}</div>}
+                {activeMembers.length === 0 ? <div className="teams-section-empty">Nenhuma participação ativa nesta equipe.</div> : <div className="teams-members-grid">{activeMembers.map((member) => (
+                  <button
+                    type="button"
+                    className="teams-member-card"
+                    key={member.id}
+                    onClick={() => setSelectedMember(member)}
+                  >
+                    <span className="teams-member-avatar">
+                      {participantInitials(member.colaboradorNome)}
+                    </span>
+                    <span>
+                      <strong>{member.colaboradorNome}</strong>
+                      <small>{member.funcaoNome}</small>
+                      <em>
+                        {member.responsavel ? "Responsável · " : ""}
+                        {formatDate(member.inicioEm)}
+                      </em>
+                    </span>
+                    {/*
+                      O selo só aparece quando diz alguma coisa. "Acesso não
+                      informado" em toda linha não informava nada e ainda
+                      roubava a largura do nome, que é o dado da ficha.
+                    */}
+                    {member.papelAcesso ? (
+                      <b className={`teams-access teams-access--${member.papelAcesso.toLowerCase()}`}>
+                        {member.papelAcesso}
+                      </b>
+                    ) : null}
+                  </button>
+                ))}</div>}
               </section>
 
               <section className="teams-section teams-relations">
