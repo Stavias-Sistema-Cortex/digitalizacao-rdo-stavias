@@ -27,6 +27,56 @@ public class ColaboradorDaObraService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * Encontra pessoas pelo nome para formar equipe, sem abrir o cadastro todo.
+     *
+     * <p>Termo vazio devolve lista vazia, e isso é a regra, não uma economia: é
+     * o que separa "achar quem eu procuro" de "navegar o cadastro da empresa".
+     * Sem ela, o endpoint seria o catálogo global com outra porta — o mesmo
+     * dado que hoje exige Alfa, alcançável por qualquer Beta.
+     *
+     * <p>O teto de 20 acompanha a mesma ideia. Quem sabe de quem precisa acha
+     * nos primeiros; quem estivesse varrendo teria de digitar termos cada vez
+     * mais específicos, que é exatamente o comportamento que se quer exigir.
+     *
+     * <p>A busca ignora caixa, mas <em>não</em> ignora acento: a extensão
+     * {@code unaccent} não está instalada neste banco, e criá-la é migração —
+     * que travaria este conserto atrás de uma release. Fica registrado como
+     * limitação real: quem digitar "Adao" não acha "Adão". Vale uma migração
+     * depois, não vale segurar isto agora.
+     */
+    public List<ColaboradorDaObraResponse> buscarParaFormarEquipe(String termo) {
+        String alvo = termo == null ? "" : termo.trim();
+        if (alvo.isEmpty()) {
+            return List.of();
+        }
+
+        return jdbcTemplate.query(
+                """
+                SELECT
+                    c.id,
+                    c.nome,
+                    c.cpf_mascarado,
+                    c.nome_perfil,
+                    c.nome_grupo
+                FROM colaborador c
+                WHERE c.ativo = TRUE
+                  AND c.deletado_em IS NULL
+                  AND LOWER(c.nome) LIKE LOWER(?)
+                ORDER BY c.nome, c.id
+                LIMIT 20
+                """,
+                (rs, rowNum) -> new ColaboradorDaObraResponse(
+                        rs.getString("id"),
+                        rs.getString("nome"),
+                        rs.getString("cpf_mascarado"),
+                        rs.getString("nome_perfil"),
+                        rs.getString("nome_grupo")
+                ),
+                "%" + alvo + "%"
+        );
+    }
+
     public List<ColaboradorDaObraResponse> listarPorObra(String obraId) {
         return jdbcTemplate.query(
                 """

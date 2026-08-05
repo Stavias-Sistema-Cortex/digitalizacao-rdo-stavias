@@ -21,6 +21,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -175,5 +176,47 @@ class ColaboradorDaObraControllerMockMvcTest {
                 .andExpect(status().isOk());
 
         verify(service).listarAutorizados("qualquer");
+    }
+    /*
+     * As duas pontas se travavam: para entrar na equipe da obra era preciso já
+     * pertencer à obra, e a equipe é justamente a porta de entrada. O Beta
+     * ficava sem conseguir trazer quem veio do Academy e não tem nenhum dos
+     * quatro caminhos.
+     */
+    @Test
+    void betaComAcessoAObraBuscaPessoaPeloNomeParaFormarEquipe() throws Exception {
+        papel("beta", PapelAcesso.BETA);
+        vinculo("beta", "obra-1", true);
+        when(service.buscarParaFormarEquipe("adao")).thenReturn(List.of(
+                new ColaboradorDaObraResponse(
+                        "col-1", "ADAO LEITE", "***.111.***-**",
+                        "Encarregado", "OPERACIONAL")
+        ));
+
+        mockMvc.perform(get("/api/obras/obra-1/colaboradores/busca")
+                        .param("termo", "adao")
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "beta"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(
+                        org.hamcrest.Matchers.containsString("ADAO LEITE")));
+    }
+
+    /*
+     * A porta continua sendo a obra. Buscar por uma obra que não se alcança
+     * seria o catálogo global disfarçado de busca escopada.
+     */
+    @Test
+    void betaSemAcessoAObraNaoBuscaNinguemPorEla() throws Exception {
+        papel("beta", PapelAcesso.BETA);
+        vinculo("beta", "obra-2", false);
+
+        mockMvc.perform(get("/api/obras/obra-2/colaboradores/busca")
+                        .param("termo", "adao")
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "beta"))
+                .andExpect(status().isForbidden());
     }
 }
