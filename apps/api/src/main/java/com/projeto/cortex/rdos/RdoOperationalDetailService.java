@@ -369,6 +369,8 @@ public class RdoOperationalDetailService {
                     trecho_final,
                     pista,
                     faixa,
+                    largura_m,
+                    espessura_cm,
                     localizacao,
                     turno,
                     status_validacao,
@@ -409,7 +411,9 @@ public class RdoOperationalDetailService {
                         rs.getBoolean("producao_rejeitada"),
                         rs.getString("observacoes"),
                         rs.getString("pista"),
-                        rs.getString("faixa")
+                        rs.getString("faixa"),
+                        rs.getBigDecimal("largura_m"),
+                        rs.getBigDecimal("espessura_cm")
                 ),
                 rdoId
         );

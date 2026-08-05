@@ -1,5 +1,5 @@
 import type { ObraLocalRecord } from "../../../lib/db/db.types";
-import { calcularControleGeometrico } from "../rdoCalculations";
+import { calcularControleGeometrico, medidasDoServico } from "../rdoCalculations";
 import type {
   ControleGeometricoDraft,
   EquipamentoDraft,
@@ -285,6 +285,14 @@ function observations(rdo: RdoDraft): string {
   const candidate = text(rdo.previousRdoNumber);
   const previousRdoNumber = candidate === text(rdo.previousRdoId) || UUID_TEXT.test(candidate) ? "" : candidate;
   if (rdo.previousRdoId && previousRdoNumber && workforce.some((item) => text(item.origemItemId))) entries.push(`Continuidade da equipe: mão de obra importada do RDO ${sanitizeRdoCellText(previousRdoNumber)}`);
+  // A praticabilidade encabeça as observações porque responde a pergunta que o
+  // relatório existe para responder — deu ou não deu para trabalhar. Vai aqui,
+  // e não numa célula própria, porque o template é validado por SHA-256 e
+  // inventar campo exigiria versão nova do arquivo. Ausência não vira
+  // "praticável": quem não declarou fica sem a linha, o que é diferente de
+  // afirmar que deu. Espelha addPracticabilityObservation do servidor.
+  if (rdo.condicaoTrabalho === "PRATICAVEL") entries.push("Condição do dia: praticável");
+  if (rdo.condicaoTrabalho === "IMPRATICAVEL") entries.push("Condição do dia: impraticável");
   for (const [period, condition] of [["manhã", rdo.condicaoManha], ["tarde", rdo.condicaoTarde], ["noite", rdo.condicaoNoite]] as const) if (condition === "NUBLADO") entries.push(`Clima ${period}: Nublado`);
   const add = (label: string, value: string) => { if (text(value)) entries.push(`${sanitizeRdoCellText(label)}: ${sanitizeRdoCellText(value)}`); };
   add("RDO", rdo.observacoes);
@@ -334,7 +342,14 @@ export function buildRdoExportProjection(snapshot: RdoWorkbookSnapshot): RdoExpo
   }), ...services.map((item) => {
     const quantity = number(item.quantidadeExecutada);
     const quantityText = quantity === null ? "" : `${quantity}${text(item.unidade) ? ` ${text(item.unidade)}` : ""}`;
-    return { start: text(item.trechoInicial), end: text(item.trechoFinal), itemNumber: "", length: null, width: null, thicknessMeters: null, roadway: text(item.localizacao), lane: "", serviceOrder: "", activity: [text(item.servicoNome), quantityText ? `Quantidade: ${quantityText}` : ""].filter(Boolean).join(" | ") };
+    // As colunas LARG. e Espessura já existiam no template e nos dois PDFs;
+    // o que faltava era o valor chegar. Comprimento é conta, não campo — o
+    // trecho já diz a extensão, e guardá-la ao lado das parcelas criaria duas
+    // versões da mesma verdade. Espessura vai em metros porque é assim que a
+    // planilha e o PDF a esperam, e a captura é em centímetros.
+    const medidas = medidasDoServico(item);
+    const espessura = number(item.espessuraCm);
+    return { start: text(item.trechoInicial), end: text(item.trechoFinal), itemNumber: "", length: medidas.comprimentoM, width: number(item.larguraM), thicknessMeters: espessura === null ? null : espessura / 100, roadway: firstNonBlank(item.pista, item.localizacao), lane: text(item.faixa), serviceOrder: "", activity: [text(item.servicoNome), quantityText ? `Quantidade: ${quantityText}` : ""].filter(Boolean).join(" | ") };
   })];
   assertRows(workforce.length, MAX_WORKFORCE_GROUPS, "RDO_EXPORT_OVERFLOW_WORKFORCE", "grupos de mão de obra");
   assertRows(equipment.length, MAX_EQUIPMENT, "RDO_EXPORT_OVERFLOW_EQUIPMENT", "equipamentos/veículos");

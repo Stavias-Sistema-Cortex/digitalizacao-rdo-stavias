@@ -331,6 +331,17 @@ public class RdoExportAggregateFactory {
             entries.add("Continuidade da equipe: mão de obra importada do RDO "
                     + safeText(previousRdoNumber));
         }
+        /*
+         * A praticabilidade encabeça as observações porque responde a pergunta
+         * que o relatório existe para responder — deu ou não deu para
+         * trabalhar. Ela entra aqui, e não numa célula própria, porque o
+         * template é versionado por SHA-256: inventar campo exigiria uma nova
+         * versão do arquivo, e a informação não pode esperar por isso.
+         *
+         * Ausência não vira "praticável": RDO anterior à V69 e quem não
+         * declarou ficam sem a linha, que é diferente de afirmar que deu.
+         */
+        addPracticabilityObservation(entries, rdo.condicaoTrabalho());
         addCloudObservation(entries, "manhã", rdo.condicaoManha());
         addCloudObservation(entries, "tarde", rdo.condicaoTarde());
         addCloudObservation(entries, "noite", rdo.condicaoNoite());
@@ -381,6 +392,18 @@ public class RdoExportAggregateFactory {
             );
         }
         return result;
+    }
+
+    private void addPracticabilityObservation(
+            List<String> entries,
+            String condition
+    ) {
+        String normalized = normalize(condition);
+        if ("PRATICAVEL".equals(normalized)) {
+            entries.add("Condição do dia: praticável");
+        } else if ("IMPRATICAVEL".equals(normalized)) {
+            entries.add("Condição do dia: impraticável");
+        }
     }
 
     private void addCloudObservation(
