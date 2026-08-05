@@ -1,0 +1,122 @@
+.funcoes-page {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.funcoes-lista-card,
+.funcoes-form-card {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: none;
+}
+
+.funcoes-lista-card {
+  overflow-x: auto;
+}
+
+.funcoes-lista-card .section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.funcoes-tabela {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.funcoes-tabela th,
+.funcoes-tabela td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.funcoes-tabela th {
+  border-bottom-color: var(--color-ink);
+  color: var(--color-ink);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.funcoes-tabela td {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.funcoes-tabela code {
+  font-size: 0.82rem;
+}
+
+/* A inativa continua na lista porque é aqui que ela volta a ser ativada;
+   o esmaecido diz que ela não está em uso sem escondê-la. */
+.funcoes-linha-inativa td {
+  color: var(--color-muted);
+}
+
+.funcoes-form-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.funcoes-form-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+
+.funcoes-form-card small {
+  color: var(--color-muted);
+  font-size: 0.74rem;
+}
+
+.funcoes-check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px !important;
+}
+
+.funcoes-check span {
+  color: var(--color-ink);
+  font-size: 0.84rem;
+}
+
+.funcoes-nota {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+.funcoes-form-card footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.funcoes-page .secondary-button,
+.funcoes-page .primary-button,
+.funcoes-page .status-badge {
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+
+@media (max-width: 760px) {
+  .funcoes-lista-card .section-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -670,7 +670,21 @@ export function EquipesPage() {
         eyebrow="Estrutura operacional"
         title="Equipes"
         actions={alfa ? (
-          <button type="button" onClick={openCreateTeam}>Criar equipe</button>
+          <>
+            {/*
+              * O catálogo de funções fica a um clique da tela que o consome:
+              * quem descobre que falta um cargo está montando equipe, não
+              * procurando uma tela de administração.
+              */}
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => navigate("/equipes/funcoes")}
+            >
+              Funções operacionais
+            </button>
+            <button type="button" onClick={openCreateTeam}>Criar equipe</button>
+          </>
         ) : null}
         status={{
           code: isLoading

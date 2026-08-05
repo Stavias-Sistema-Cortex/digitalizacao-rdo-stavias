@@ -137,8 +137,48 @@ export async function fetchTeam(teamId: string): Promise<TeamDto> {
   return requireOkJson<TeamDto>(`/equipes/${encodeURIComponent(teamId)}`);
 }
 
-export async function fetchOperationalRoles(): Promise<OperationalRoleDto[]> {
-  return requireOkJson<OperationalRoleDto[]>("/funcoes-operacionais");
+export async function fetchOperationalRoles(
+  incluirInativas = false,
+): Promise<OperationalRoleDto[]> {
+  return requireOkJson<OperationalRoleDto[]>(
+    incluirInativas
+      ? "/funcoes-operacionais?incluirInativas=true"
+      : "/funcoes-operacionais",
+  );
+}
+
+export interface OperationalRoleInput {
+  codigo: string;
+  nome: string;
+  descricao: string | null;
+  ativo: boolean;
+  ordemExibicao: number;
+}
+
+export async function createOperationalRole(
+  input: OperationalRoleInput,
+): Promise<OperationalRoleDto> {
+  return requireOkJson<OperationalRoleDto>(
+    "/funcoes-operacionais",
+    jsonOptions("POST", input),
+  );
+}
+
+/**
+ * Atualiza a função conferindo a versão que a tela leu.
+ *
+ * <p>`baseVersao` é exigida pelo servidor e é o que transforma duas edições
+ * simultâneas em recusa explícita (409) em vez de uma sobrescrevendo a outra
+ * em silêncio. Quem chama precisa tratar o conflito relendo a lista.
+ */
+export async function updateOperationalRole(
+  id: string,
+  input: OperationalRoleInput & { baseVersao: number },
+): Promise<OperationalRoleDto> {
+  return requireOkJson<OperationalRoleDto>(
+    `/funcoes-operacionais/${encodeURIComponent(id)}`,
+    jsonOptions("PUT", input),
+  );
 }
 
 export async function fetchTeamHistory(teamId: string): Promise<TeamHistoryPageDto> {

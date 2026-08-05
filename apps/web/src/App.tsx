@@ -75,6 +75,12 @@ const IntegracoesPage = lazy(() =>
   })),
 );
 
+const FuncoesOperacionaisPage = lazy(() =>
+  import("./features/equipes/FuncoesOperacionaisPage").then((module) => ({
+    default: module.FuncoesOperacionaisPage,
+  })),
+);
+
 const MensagensPage = lazy(() =>
   import("./features/mensagens/MensagensPage").then((module) => ({
     default: module.MensagensPage,
@@ -95,6 +101,28 @@ function IntegracoesRoute() {
       <IntegracoesPage
         onBack={() => {
           navigate("/home");
+        }}
+      />
+    </CortexShell>
+  );
+}
+
+// O catálogo de funções é escrito só pelo Alfa: POST e PUT de
+// /api/funcoes-operacionais chamam requireAlfa. Como em GestaoObrasRoute, o
+// guard aqui só evita oferecer a tela a quem receberia 403 ao salvar — quem
+// autoriza de verdade é o backend.
+function FuncoesOperacionaisRoute() {
+  const navigate = useNavigate();
+
+  if (!isAlfa(getSession())) {
+    return <Navigate to="/equipes" replace />;
+  }
+
+  return (
+    <CortexShell active="equipes">
+      <FuncoesOperacionaisPage
+        onBack={() => {
+          navigate("/equipes");
         }}
       />
     </CortexShell>
@@ -348,6 +376,10 @@ function App({ initialAuthUnavailable = false }: AppProps) {
           <Route
             path="/integracoes"
             element={<IntegracoesRoute />}
+          />
+          <Route
+            path="/equipes/funcoes"
+            element={<FuncoesOperacionaisRoute />}
           />
           <Route
             path="*"
