@@ -61,6 +61,29 @@ public class ColaboradorDaObraService {
                             WHERE mo.colaborador_id = c.id
                               AND r.obra_id = ?
                         )
+                     OR EXISTS (
+                            -- A quarta fonte, que faltava. A equipe passou a
+                            -- abrir a obra no catálogo do RDO e na cerca do
+                            -- Beta; aqui continuava ignorada, e o efeito era um
+                            -- Beta não enxergar nem quem já está em outra
+                            -- frente da mesma obra. Três lugares que decidem a
+                            -- mesma coisa precisam decidir igual.
+                            SELECT 1
+                            FROM equipe_obra alocacao
+                            JOIN equipe
+                              ON equipe.id = alocacao.equipe_id
+                             AND equipe.status = 'ATIVA'
+                             AND equipe.deletado_em IS NULL
+                            JOIN equipe_membro membro
+                              ON membro.equipe_id = equipe.id
+                             AND membro.colaborador_id = c.id
+                             AND membro.status = 'ATIVO'
+                             AND membro.fim_em IS NULL
+                             AND membro.deletado_em IS NULL
+                            WHERE alocacao.obra_id = ?
+                              AND alocacao.status = 'ATIVO'
+                              AND alocacao.fim_em IS NULL
+                        )
                   )
                 ORDER BY c.nome, c.id
                 LIMIT 500
@@ -72,10 +95,11 @@ public class ColaboradorDaObraService {
                         rs.getString("nome_perfil"),
                         rs.getString("nome_grupo")
                 ),
-                // Três vezes, uma por EXISTS: vínculo, alocação e presença em
-                // RDO. Faltava o terceiro, e faltar argumento para um `?` não
-                // devolve lista errada — estoura a consulta inteira. Nenhum
-                // teste pegava porque todos mockam este serviço.
+                // Quatro vezes, uma por EXISTS: vínculo, alocação, presença
+                // em RDO e equipe. Faltar argumento para um `?` não devolve
+                // lista errada — estoura a consulta inteira. Nenhum teste pega
+                // isso porque todos mockam este serviço.
+                obraId,
                 obraId,
                 obraId,
                 obraId
