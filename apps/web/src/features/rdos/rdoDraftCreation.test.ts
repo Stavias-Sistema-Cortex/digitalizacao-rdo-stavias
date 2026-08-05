@@ -469,7 +469,7 @@ describe("transação inicial do novo RDO", () => {
     draft.creationContextVersion = null;
 
     await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
-      "Contexto versionado da obra é obrigatório para criar o RDO.",
+      "Este rascunho ainda não recebeu o contexto versionado da obra.",
     );
     await expectNoCreateWrites();
   });
@@ -522,7 +522,7 @@ describe("transação inicial do novo RDO", () => {
     draft.creationContextVersion = 999;
 
     await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
-      "Contexto versionado da obra é obrigatório para criar o RDO.",
+      "O contexto foi atualizado depois que este rascunho começou.",
     );
     await expectNoCreateWrites();
   });
@@ -551,7 +551,7 @@ describe("transação inicial do novo RDO", () => {
     draft.creationContextVersion = 7;
 
     await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
-      "Contexto versionado da obra é obrigatório para criar o RDO.",
+      "O contexto desta obra e data não está guardado neste dispositivo.",
     );
     await expectNoCreateWrites();
   });
@@ -568,12 +568,22 @@ describe("transação inicial do novo RDO", () => {
     wrongDate.dataRdo = "2026-07-23";
     wrongDate.creationContextVersion = 7;
 
-    for (const draft of [wrongWorksite, wrongDate]) {
-      await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
-        "Contexto versionado da obra é obrigatório para criar o RDO.",
-      );
-      await expectNoCreateWrites(draft.id);
-    }
+    /*
+     * As duas recusas continuam de pé, mas por motivos diferentes — e é essa
+     * distinção que a mensagem única escondia. Obra fora do escopo é
+     * permissão; data sem recibo é carregamento. Mandar recarregar o contexto
+     * a quem não tem acesso à obra é mandar repetir para sempre o que nunca
+     * vai funcionar.
+     */
+    await expect(saveNewRdoDraftAtomically(wrongWorksite)).rejects.toThrow(
+      "Sua sessão não tem acesso a esta obra.",
+    );
+    await expectNoCreateWrites(wrongWorksite.id);
+
+    await expect(saveNewRdoDraftAtomically(wrongDate)).rejects.toThrow(
+      "O contexto desta obra e data não está guardado neste dispositivo.",
+    );
+    await expectNoCreateWrites(wrongDate.id);
   });
 
   it("rejeita provenance incoerente e cobertura obrigatória ou opcional parcial", async () => {
@@ -656,7 +666,7 @@ describe("transação inicial do novo RDO", () => {
       draft.creationContextVersion = 7;
 
       await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
-        "Contexto versionado da obra é obrigatório para criar o RDO.",
+        "Recarregue o contexto",
       );
       await expectNoCreateWrites(draft.id);
     }
@@ -678,7 +688,7 @@ describe("transação inicial do novo RDO", () => {
     draft.creationContextVersion = 7;
 
     await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
-      "Contexto versionado da obra é obrigatório para criar o RDO.",
+      "Sua sessão não tem acesso a esta obra.",
     );
     setSession({
       colaboradorId: USER_ID,
@@ -738,7 +748,7 @@ describe("transação inicial do novo RDO", () => {
       );
 
       await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
-        "Contexto versionado da obra é obrigatório para criar o RDO.",
+        "Recarregue o contexto",
       );
       await expectNoCreateWrites(draft.id);
     }

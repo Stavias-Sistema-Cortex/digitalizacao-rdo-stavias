@@ -31,7 +31,10 @@ vi.mock("./rdoCreationContextRepository", () => ({
   requireRdoCreationContext: mocks.requireContext,
   requireRdoDraftCreationContext: mocks.requireContext,
 }));
-vi.mock("./rdoDraftCreation", () => ({
+// A apuração do impedimento fica real: é ela que decide se o botão libera, e
+// dublá-la faria o teste afirmar sobre um botão que ninguém governa.
+vi.mock("./rdoDraftCreation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./rdoDraftCreation")>()),
   createAndPersistRdoDraft: mocks.createDraft,
   createAndPersistLocalPendingRdoDraft: mocks.createPendingDraft,
 }));
@@ -325,7 +328,12 @@ describe("diálogo obra-first de RDO", () => {
   it("refaz a validação estrita do contexto pelo botão acessível de tentativa", async () => {
     const user = userEvent.setup();
     setOnline(true);
-    mocks.getCached.mockResolvedValue(undefined);
+    // Só as duas sondagens do próprio diálogo ficam sem cache. A terceira
+    // chamada é a da apuração do impedimento, e nela o recibo já existe —
+    // resolver o contexto grava o recibo antes de devolver.
+    mocks.getCached
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
     mocks.requireContext
       .mockRejectedValueOnce(new Error(RDO_CREATION_CONTEXT_INCOMPATIBLE))
       .mockResolvedValueOnce({

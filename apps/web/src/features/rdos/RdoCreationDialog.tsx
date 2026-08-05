@@ -10,7 +10,6 @@ import {
 import type { ObraLocalRecord } from "../../lib/db/db.types";
 import {
   contextPresentation,
-  isRdoCreationContextComplete,
   RDO_CONTEXT_OFFLINE_MISSING,
 } from "./rdoCreationContext";
 import {
@@ -23,6 +22,7 @@ import {
 import {
   createAndPersistLocalPendingRdoDraft,
   createAndPersistRdoDraft,
+  motivoParaNaoCriarRdo,
 } from "./rdoDraftCreation";
 import type { RdoDraft } from "./rdo.types";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
@@ -237,14 +237,49 @@ export function RdoCreationDialog({
           label: "Local pendente",
         }
     : null;
+  /*
+   * O impedimento é apurado com o mesmo critério da gravação.
+   *
+   * Antes o botão liberava com `isRdoCreationContextComplete`, que só olha a
+   * cobertura, e a gravação recusava por mais de vinte outras condições. O
+   * botão prometia o que a gravação não cumpria, e a recusa chegava como uma
+   * frase que contradizia o painel ao lado.
+   */
+  const [impedimento, setImpedimento] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    // Adiado um tique: marcar o estado ainda dentro do efeito encadeia
+    // renderizações, e a apuração é assíncrona de qualquer forma.
+    const id = window.setTimeout(() => {
+      if (!contextResult || contextResult.kind === "LOCAL_PENDING") {
+        setImpedimento(null);
+        return;
+      }
+      void motivoParaNaoCriarRdo(
+        contextResult.context,
+        initialDraft ? { baseDraft: initialDraft } : {},
+      )
+        .then((motivo) => {
+          if (!cancelado) setImpedimento(motivo);
+        })
+        .catch(() => {
+          // Falhar ao apurar não é o mesmo que estar impedido: a gravação
+          // continua sendo a autoridade, e ela recusa com o motivo certo.
+          if (!cancelado) setImpedimento(null);
+        });
+    }, 0);
+    return () => {
+      cancelado = true;
+      window.clearTimeout(id);
+    };
+  }, [contextResult, initialDraft]);
+
   const canCreate = Boolean(
     selectedWorksiteId &&
       selectedDate &&
       contextResult &&
-      (
-        contextResult.kind === "LOCAL_PENDING" ||
-        isRdoCreationContextComplete(contextResult.context)
-      ) &&
+      (contextResult.kind === "LOCAL_PENDING" || impedimento === null) &&
       !isCreating,
   );
 
@@ -475,6 +510,28 @@ export function RdoCreationDialog({
                 disabled={isLoadingContext}
               >
                 {isLoadingContext ? "Tentando novamente…" : "Tentar novamente"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/*
+          * O impedimento aparece junto do botão que ele desabilita. Botão
+          * cinza sem explicação faz a pessoa procurar o que fez de errado —
+          * quando o problema quase sempre está no contexto, não nela.
+          */}
+        {!error && impedimento ? (
+          <div className="rdo-creation-error" role="status">
+            <span>{impedimento}</span>
+            {selectedWorksiteId && selectedDate ? (
+              <button
+                type="button"
+                onClick={retryContext}
+                disabled={isLoadingContext}
+              >
+                {isLoadingContext
+                  ? "Recarregando…"
+                  : "Recarregar contexto"}
               </button>
             ) : null}
           </div>

@@ -166,9 +166,6 @@ export function rdoCreationContextBlockReason(
     : "RDO_CREATION_CONTEXT_REQUIRED";
 }
 
-const RDO_CREATION_CONTEXT_REQUIRED =
-  "Contexto versionado da obra é obrigatório para criar o RDO.";
-
 function contextualText(value: string | null | undefined): string {
   return value?.trim() ?? "";
 }
@@ -226,59 +223,160 @@ function hasCanonicalCreationIdentity(
     draft.previousRdoId === canonicalPreviousRdoId;
 }
 
-function validCreationContextReceipt(
+/**
+ * Por que o recibo do contexto não serve — ou null quando ele serve.
+ *
+ * <p>Isto era um booleano, e as vinte e poucas condições abaixo desembocavam
+ * todas na mesma frase: "Contexto versionado da obra é obrigatório para criar
+ * o RDO". Quem lia via a tela afirmar, no mesmo instante e a poucos
+ * centímetros de distância, que o contexto estava presente e atualizado. Um
+ * aviso que contradiz o que a própria tela mostra não é aviso: é ruído que
+ * ensina a ignorar avisos.
+ *
+ * <p>A recusa continua sendo a mesma — nada aqui passou a ser aceito. O que
+ * muda é ela dizer qual condição reprovou, que é a única informação capaz de
+ * levar a uma ação.
+ */
+export function motivoDoReciboRecusado(
   draft: RdoDraft,
   record: RdoCreationContextCacheRecord,
-): boolean {
+): string | null {
+  let context: RdoCreationContextLookup;
+  let coverage: RdoCreationContextLookup["coverage"];
+  let freshness: RdoCreationContextLookup["freshness"];
+  let provenance: RdoCreationContextLookup["provenance"];
   try {
-    const context = record.context as unknown as RdoCreationContextLookup;
-    const { coverage, freshness, provenance } = context;
-    const generatedAt = parseContractInstant(freshness.generatedAt);
-    const staleAfter = parseContractInstant(freshness.staleAfter);
-    return record.obraId === draft.obraId &&
-      record.selectedDate === draft.dataRdo &&
-      record.receiptVersion === draft.creationContextVersion &&
-      record.sourceVersion === provenance.sourceVersion &&
-      context.obra.id === draft.obraId &&
-      context.data === draft.dataRdo &&
-      provenance.worksiteId === draft.obraId &&
-      provenance.selectedDate === draft.dataRdo &&
-      provenance.receiptVersion === draft.creationContextVersion &&
-      Number.isSafeInteger(provenance.receiptVersion) &&
-      provenance.receiptVersion > 0 &&
-      Number.isSafeInteger(provenance.sourceVersion) &&
-      provenance.sourceVersion >= 0 &&
-      provenance.sourceVersion === freshness.sourceVersion &&
-      freshness.status === "FRESH" &&
-      provenance.generatedAt === freshness.generatedAt &&
-      provenance.previousRdoId === (context.previousRdo?.id ?? null) &&
-      generatedAt !== null &&
-      staleAfter !== null &&
-      generatedAt < staleAfter &&
-      canonicalMutationJson(record.coverage) ===
-        canonicalMutationJson(coverage as unknown as Record<string, unknown>) &&
-      completeCoverage(coverage.previousWorkforce) &&
-      completeCoverage(coverage.programacoes) &&
-      completeCoverage(coverage.colaboradores) &&
-      completeCoverage(coverage.equipamentos) &&
-      explicitCatalogCoverage(coverage.serviceCatalog) &&
-      explicitCatalogCoverage(coverage.priceCatalog) &&
-      hasCanonicalCreationIdentity(draft, context);
+    context = record.context as unknown as RdoCreationContextLookup;
+    ({ coverage, freshness, provenance } = context);
   } catch {
-    return false;
+    return "O recibo do contexto guardado neste dispositivo está ilegível."
+      + " Recarregue o contexto da obra.";
   }
+
+  if (
+    record.obraId !== draft.obraId ||
+    context.obra.id !== draft.obraId ||
+    provenance.worksiteId !== draft.obraId
+  ) {
+    return "O contexto guardado é de outra obra. Recarregue o contexto.";
+  }
+  if (
+    record.selectedDate !== draft.dataRdo ||
+    context.data !== draft.dataRdo ||
+    provenance.selectedDate !== draft.dataRdo
+  ) {
+    return "O contexto guardado é de outra data. Recarregue o contexto"
+      + " para a data escolhida.";
+  }
+  if (
+    record.receiptVersion !== draft.creationContextVersion ||
+    provenance.receiptVersion !== draft.creationContextVersion
+  ) {
+    return "O contexto foi atualizado depois que este rascunho começou."
+      + " Recarregue o contexto e refaça a criação.";
+  }
+  if (
+    !Number.isSafeInteger(provenance.receiptVersion) ||
+    provenance.receiptVersion <= 0 ||
+    !Number.isSafeInteger(provenance.sourceVersion) ||
+    provenance.sourceVersion < 0 ||
+    record.sourceVersion !== provenance.sourceVersion ||
+    provenance.sourceVersion !== freshness.sourceVersion
+  ) {
+    return "As versões do contexto da obra não fecham entre si."
+      + " Recarregue o contexto.";
+  }
+  if (freshness.status !== "FRESH") {
+    return "O contexto da obra não está marcado como atualizado pelo"
+      + " servidor. Recarregue o contexto.";
+  }
+
+  const generatedAt = parseContractInstant(freshness.generatedAt);
+  const staleAfter = parseContractInstant(freshness.staleAfter);
+  if (
+    provenance.generatedAt !== freshness.generatedAt ||
+    generatedAt === null ||
+    staleAfter === null ||
+    generatedAt >= staleAfter
+  ) {
+    return "As datas de validade do contexto da obra são inconsistentes."
+      + " Recarregue o contexto.";
+  }
+  if (provenance.previousRdoId !== (context.previousRdo?.id ?? null)) {
+    return "O RDO anterior indicado pelo contexto não confere com o que veio"
+      + " junto. Recarregue o contexto.";
+  }
+  if (
+    canonicalMutationJson(record.coverage) !==
+      canonicalMutationJson(coverage as unknown as Record<string, unknown>)
+  ) {
+    return "A cobertura guardada difere da que veio no contexto."
+      + " Recarregue o contexto.";
+  }
+
+  const secaoIncompleta = primeiraSecaoIncompleta(coverage);
+  if (secaoIncompleta) {
+    return `O servidor não entregou ${secaoIncompleta} por inteiro para esta`
+      + " obra e data. Recarregue o contexto; se persistir, é a origem que"
+      + " está devolvendo dados parciais.";
+  }
+
+  if (!hasCanonicalCreationIdentity(draft, context)) {
+    return "Os dados de cabeçalho do rascunho não conferem com o contexto da"
+      + " obra. Recarregue o contexto e refaça a criação.";
+  }
+  return null;
 }
 
+/** Qual parte do contexto veio pela metade, em nome legível. */
+function primeiraSecaoIncompleta(
+  coverage: RdoCreationContextLookup["coverage"],
+): string | null {
+  if (!completeCoverage(coverage.previousWorkforce)) {
+    return "a mão de obra do RDO anterior";
+  }
+  if (!completeCoverage(coverage.programacoes)) {
+    return "as programações";
+  }
+  if (!completeCoverage(coverage.colaboradores)) {
+    return "os colaboradores";
+  }
+  if (!completeCoverage(coverage.equipamentos)) {
+    return "os equipamentos";
+  }
+  if (!explicitCatalogCoverage(coverage.serviceCatalog)) {
+    return "o catálogo de serviços";
+  }
+  if (!explicitCatalogCoverage(coverage.priceCatalog)) {
+    return "a tabela de preços";
+  }
+  return null;
+}
+
+/*
+ * Quatro recusas distintas dividiam uma frase só.
+ *
+ * A pior delas era a de escopo: quem não tinha acesso à obra lia que faltava
+ * "contexto versionado" — um problema de permissão descrito como problema de
+ * carregamento, que manda a pessoa recarregar para sempre. Cada caminho abaixo
+ * agora diz o que de fato aconteceu.
+ */
 async function requireExactRdoCreationContext(
   draft: RdoDraft,
 ): Promise<RdoContextSessionGuard> {
   if (rdoCreationContextBlockReason(draft)) {
-    throw new Error(RDO_CREATION_CONTEXT_REQUIRED);
+    throw new Error(
+      "Este rascunho ainda não recebeu o contexto versionado da obra."
+      + " Recarregue o contexto antes de criar.",
+    );
   }
   const guard = captureContextSession();
   const session = guard.session;
   if (!session.escopoGlobal && !session.obraIds.includes(draft.obraId)) {
-    throw new Error(RDO_CREATION_CONTEXT_REQUIRED);
+    throw new Error(
+      "Sua sessão não tem acesso a esta obra. Peça vínculo a um"
+      + " administrador para criar RDO nela.",
+    );
   }
   const database = await getCortexDb();
   assertContextSession(guard);
@@ -288,12 +386,15 @@ async function requireExactRdoCreationContext(
     draft.dataRdo,
   ]);
   assertContextSession(guard);
-  if (
-    !record ||
-    record.ownerId !== session.colaboradorId ||
-    !validCreationContextReceipt(draft, record)
-  ) {
-    throw new Error(RDO_CREATION_CONTEXT_REQUIRED);
+  if (!record || record.ownerId !== session.colaboradorId) {
+    throw new Error(
+      "O contexto desta obra e data não está guardado neste dispositivo."
+      + " Recarregue o contexto antes de criar.",
+    );
+  }
+  const motivo = motivoDoReciboRecusado(draft, record);
+  if (motivo) {
+    throw new Error(motivo);
   }
   return guard;
 }
