@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,11 +24,15 @@ import static org.mockito.Mockito.when;
 /**
  * A lista de obras da Home e do RDO.
  *
- * <p>Ela filtrava por {@code vinculo_colaborador_obra}, e quem não estivesse
- * vinculado não via a obra — nem para consultar. Deixou de filtrar: a consulta
- * é a mesma para todo mundo, e por isso não recebe mais nenhum parâmetro. É
- * disso que estes testes tomam conta, porque um parâmetro reintroduzido aqui
- * seria uma cerca voltando sem alarde.
+ * <p>Ela já filtrou por vínculo, deixou de filtrar, e volta a filtrar: quem é
+ * Beta enxerga apenas as obras em que trabalha. A ida e a volta são a razão de
+ * estes testes olharem o SQL e não só o resultado — a cerca já saiu daqui uma
+ * vez sem que nada ficasse vermelho, e é isso que não pode se repetir.
+ *
+ * <p>O que cada teste protege: que Alfa não receba condição de vínculo, que Beta
+ * receba, e que a comparação de {@code colaborador_id} seja por {@code LOWER}
+ * dos dois lados. Esta última é a que evita o pior desfecho — o colaborador
+ * autorizado na obra que mesmo assim não a vê na lista.
  */
 class ObrasRelacionadasServiceTest {
 
@@ -39,14 +44,16 @@ class ObrasRelacionadasServiceTest {
     ) {
     }
 
-    private static Montagem montarPara(String userId, boolean admin) {
+    private static Montagem montarPara(String userId, boolean alfa) {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         CurrentUserService users = mock(CurrentUserService.class);
         FinancialAccessService financial = mock(FinancialAccessService.class);
         when(users.requireUserId()).thenReturn(userId);
-        when(users.isAdmin(userId)).thenReturn(admin);
+        when(users.isAlfa(userId)).thenReturn(alfa);
         when(financial.allowedObraIds(anyString(), any())).thenReturn(Set.of());
         when(jdbc.query(anyString(), any(RowMapper.class)))
+                .thenReturn(List.of());
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class)))
                 .thenReturn(List.of());
         return new Montagem(
                 jdbc,
@@ -56,29 +63,45 @@ class ObrasRelacionadasServiceTest {
         );
     }
 
-    /**
-     * O caso que motivou a mudança: quem não tem vínculo nenhum recebe a mesma
-     * consulta que o administrador, sem condição de vínculo e sem parâmetro que
-     * pudesse recortá-la por pessoa.
-     */
     @Test
-    void colaboradorSemVinculoRecebeAConsultaSemRecorte() {
+    void betaRecebeAConsultaRecortadaPeloVinculoAtivo() {
         Montagem montagem = montarPara("colab-1", false);
 
         montagem.service().listarParaColaborador();
 
         verify(montagem.jdbc()).query(
                 argThat((String sql) ->
-                        !sql.contains("vinculo_colaborador_obra")
+                        sql.contains("vinculo_colaborador_obra")
+                                && sql.contains("v.status = 'ATIVO'")
                                 && sql.contains("o.arquivado_em IS NULL")
                 ),
-                any(RowMapper.class)
+                any(RowMapper.class),
+                eq("colab-1")
+        );
+    }
+
+    /**
+     * O defeito que a caixa causa é silencioso: a pessoa passa na autorização da
+     * obra e mesmo assim não a encontra na lista. As duas pontas comparam por
+     * {@code LOWER}, e é aqui que isso fica escrito.
+     */
+    @Test
+    void oVinculoEComparadoSemDiferenciarCaixaNosDoisLados() {
+        Montagem montagem = montarPara("Colab-1", false);
+
+        montagem.service().listarParaColaborador();
+
+        verify(montagem.jdbc()).query(
+                argThat((String sql) ->
+                        sql.contains("LOWER(v.colaborador_id) = LOWER(?)")),
+                any(RowMapper.class),
+                eq("Colab-1")
         );
     }
 
     @Test
-    void adminRecebeExatamenteAMesmaConsulta() {
-        Montagem montagem = montarPara("admin-1", true);
+    void alfaNaoRecebeCondicaoDeVinculoNemParametro() {
+        Montagem montagem = montarPara("alfa-1", true);
 
         montagem.service().listarParaColaborador();
 
@@ -91,7 +114,7 @@ class ObrasRelacionadasServiceTest {
 
     @Test
     void projecaoRelacionadaCarregaVersaoAutoritativa() throws Exception {
-        Montagem montagem = montarPara("admin-1", true);
+        Montagem montagem = montarPara("alfa-1", true);
         ResultSet row = mock(ResultSet.class);
         LocalDateTime updatedAt = LocalDateTime.of(2026, 7, 28, 19, 55);
 

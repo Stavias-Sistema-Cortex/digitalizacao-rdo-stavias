@@ -29,11 +29,14 @@ import static org.mockito.Mockito.when;
  * Cobre o núcleo de autorização Alfa/Beta: resolução de papel, acesso à obra e
  * a forma do escopo devolvido.
  *
- * <p>A obra deixou de ser compartimento — qualquer colaborador reconhecido
- * alcança qualquer obra. O que estes testes guardam agora é a fronteira que
- * ficou: papel nulo não entra em lugar nenhum, e o escopo de um Beta é
- * enumerado em vez de vazio, porque vazio significa "sem restrição" e o perfil
- * de sessão lê isso como papel administrativo.
+ * <p>A obra voltou a ser compartimento para quem é Beta: sem vínculo
+ * {@code ATIVO} não há acesso. Duas fronteiras convivem, e confundi-las é o
+ * erro fácil — papel nulo não entra em obra nenhuma nem com vínculo gravado, e
+ * Alfa entra em todas sem vínculo nenhum. O vínculo só decide o caso do meio.
+ *
+ * <p>O escopo de um Beta continua enumerado em vez de vazio, mesmo quando o
+ * conjunto é vazio de verdade: {@code Optional.empty()} significa "sem
+ * restrição", e o perfil de sessão lê isso como papel administrativo.
  */
 class CurrentUserServiceAuthorizationTest {
 
@@ -54,11 +57,30 @@ class CurrentUserServiceAuthorizationTest {
         )).thenReturn(papel);
     }
 
-    private void obrasExistentes(String... obraIds) {
+    /** As obras em que o colaborador tem vínculo ATIVO. */
+    private void obrasVinculadas(String userId, String... obraIds) {
         when(jdbc.queryForList(
-                contains("FROM obra"),
-                eq(String.class)
+                contains("FROM vinculo_colaborador_obra"),
+                eq(String.class),
+                eq(userId)
         )).thenReturn(List.of(obraIds));
+    }
+
+    /**
+     * A consulta pontual, que pergunta por uma obra só. É separada da listagem
+     * de propósito: é a forma que o índice da V66 atende.
+     */
+    private void vinculoAtivoNaObra(
+            String userId,
+            String obraId,
+            boolean vinculado
+    ) {
+        when(jdbc.queryForList(
+                contains("FROM vinculo_colaborador_obra"),
+                eq(Integer.class),
+                eq(userId),
+                eq(obraId)
+        )).thenReturn(vinculado ? List.of(1) : List.of());
     }
 
     private void rdoNaObra(String rdoId, String obraId) {
@@ -79,19 +101,34 @@ class CurrentUserServiceAuthorizationTest {
         assertThat(service.allowedObraIds("alfa")).isEqualTo(Optional.empty());
     }
 
-    /**
-     * Beta alcança obra com que nunca teve vínculo. Era o caso que faltava: a
-     * pessoa existia, a obra existia, e mesmo assim uma não achava a outra.
-     */
     @Test
-    void betaAcessaQualquerObraSemDependerDeVinculo() {
+    void betaEntraOndeTemVinculoAtivoENaoEntraOndeNaoTem() {
         papel("beta", PapelAcesso.BETA);
+        vinculoAtivoNaObra("beta", "obra-da-frente", true);
+        vinculoAtivoNaObra("beta", "obra-de-outra-frente", false);
 
         assertThat(service.isAlfa("beta")).isFalse();
+        assertThat(service.podeAcessarObra("beta", "obra-da-frente")).isTrue();
         assertThat(service.podeAcessarObra("beta", "obra-de-outra-frente"))
-                .isTrue();
-        assertThat(service.podeAcessarObra("beta", "obra-nunca-vista"))
-                .isTrue();
+                .isFalse();
+    }
+
+    /**
+     * Alfa não consulta vínculo: o papel já responde. Se consultasse, um Alfa
+     * sem linha na tabela perderia acesso a tudo — e ninguém vincula Alfa.
+     */
+    @Test
+    void alfaNaoConsultaVinculoParaDecidir() {
+        papel("alfa", PapelAcesso.ALFA);
+
+        assertThat(service.podeAcessarObra("alfa", "obra-1")).isTrue();
+
+        verify(jdbc, times(0)).queryForList(
+                contains("FROM vinculo_colaborador_obra"),
+                eq(Integer.class),
+                eq("alfa"),
+                eq("obra-1")
+        );
     }
 
     /**
@@ -100,18 +137,32 @@ class CurrentUserServiceAuthorizationTest {
      * <p>Vazio quer dizer "sem restrição", e {@code AuthSessionResponse} deriva
      * o papel efetivo justamente da ausência de restrição. Devolver vazio aqui
      * faria todo colaborador se apresentar como Alfa na sessão, e com ele
-     * entrariam Financeiro e PDOR — que ficaram de fora de propósito. O escopo
-     * de obra abriu; o papel, não.
+     * entrariam Financeiro e PDOR — que ficaram de fora de propósito.
      */
     @Test
-    void allowedObraIdsDeBetaEnumeraTodasAsObrasSemVirarEscopoGlobal() {
+    void allowedObraIdsDeBetaEnumeraAsObrasVinculadas() {
         papel("beta", PapelAcesso.BETA);
-        obrasExistentes("obra-1", "obra-2", "obra-3");
+        obrasVinculadas("beta", "obra-1", "obra-2");
 
         Optional<Set<String>> escopo = service.allowedObraIds("beta");
 
-        assertThat(escopo).contains(Set.of("obra-1", "obra-2", "obra-3"));
-        assertThat(escopo).isNotEmpty();
+        assertThat(escopo).contains(Set.of("obra-1", "obra-2"));
+    }
+
+    /**
+     * O desfecho mais fácil de confundir com defeito: Beta sem vínculo nenhum
+     * entra no sistema e não vê obra alguma. Conjunto vazio, e não ausência de
+     * restrição — a diferença entre não ver nada e ver tudo.
+     */
+    @Test
+    void betaSemVinculoRecebeConjuntoVazioENaoEscopoGlobal() {
+        papel("beta", PapelAcesso.BETA);
+        obrasVinculadas("beta");
+
+        Optional<Set<String>> escopo = service.allowedObraIds("beta");
+
+        assertThat(escopo).contains(Set.of());
+        assertThat(escopo).isNotEqualTo(Optional.empty());
     }
 
     @Test
@@ -170,10 +221,6 @@ class CurrentUserServiceAuthorizationTest {
         assertThat(service.podeAcessarObra("beta", " ")).isFalse();
     }
 
-    /**
-     * A fronteira que sobrou. Não é mais entre obras: é entre quem o cadastro
-     * reconhece e quem não reconhece.
-     */
     @Test
     void requireWorksiteAccessBloqueiaQuemNaoTemPapel() {
         papel("fantasma", null);
@@ -185,11 +232,24 @@ class CurrentUserServiceAuthorizationTest {
     }
 
     @Test
-    void requireWorksiteAccessLiberaBetaEmObraSemVinculo() {
+    void requireWorksiteAccessBloqueiaBetaEmObraSemVinculo() {
         papel("beta", PapelAcesso.BETA);
+        vinculoAtivoNaObra("beta", "obra-de-outra-frente", false);
         autenticarComo("beta");
 
-        service.requireWorksiteAccess("obra-de-outra-frente");
+        assertThatThrownBy(() ->
+                service.requireWorksiteAccess("obra-de-outra-frente"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("permissão para acessar esta obra");
+    }
+
+    @Test
+    void requireWorksiteAccessLiberaBetaNaObraVinculada() {
+        papel("beta", PapelAcesso.BETA);
+        vinculoAtivoNaObra("beta", "obra-da-frente", true);
+        autenticarComo("beta");
+
+        service.requireWorksiteAccess("obra-da-frente");
     }
 
     @Test
@@ -213,13 +273,31 @@ class CurrentUserServiceAuthorizationTest {
                 .hasMessageContaining("permissão para acessar esta obra");
     }
 
+    /**
+     * O RDO não é porta dos fundos para a obra: a autorização resolve a obra do
+     * RDO e cobra o mesmo vínculo. Sem isso, bastaria um id de RDO para ler o
+     * diário de uma frente à qual a pessoa não pertence.
+     */
     @Test
-    void requireRdoAccessLiberaBetaNoRdoDeObraSemVinculo() {
+    void requireRdoAccessBloqueiaBetaNoRdoDeObraSemVinculo() {
         papel("beta", PapelAcesso.BETA);
         rdoNaObra("rdo-2", "obra-de-outra-frente");
+        vinculoAtivoNaObra("beta", "obra-de-outra-frente", false);
         autenticarComo("beta");
 
-        service.requireRdoAccess("rdo-2");
+        assertThatThrownBy(() -> service.requireRdoAccess("rdo-2"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("permissão para acessar esta obra");
+    }
+
+    @Test
+    void requireRdoAccessLiberaBetaNoRdoDaObraVinculada() {
+        papel("beta", PapelAcesso.BETA);
+        rdoNaObra("rdo-3", "obra-da-frente");
+        vinculoAtivoNaObra("beta", "obra-da-frente", true);
+        autenticarComo("beta");
+
+        service.requireRdoAccess("rdo-3");
     }
 
     @Test
@@ -313,7 +391,7 @@ class CurrentUserServiceAuthorizationTest {
     @Test
     void listaDeObrasEConsultadaUmaVezPorRequisicao() {
         papel("beta", PapelAcesso.BETA);
-        obrasExistentes("obra-1", "obra-2");
+        obrasVinculadas("beta", "obra-1", "obra-2");
         autenticarComo("beta");
 
         service.allowedObraIds("beta");
@@ -321,8 +399,32 @@ class CurrentUserServiceAuthorizationTest {
         service.allowedObraIds("beta");
 
         verify(jdbc, times(1)).queryForList(
-                contains("FROM obra"),
-                eq(String.class)
+                contains("FROM vinculo_colaborador_obra"),
+                eq(String.class),
+                eq("beta")
+        );
+    }
+
+    /**
+     * A verificação pontual também é lembrada, e por obra. Serviços que
+     * percorrem uma lista perguntam pela mesma obra muitas vezes na mesma
+     * requisição.
+     */
+    @Test
+    void oVinculoDeUmaObraEConsultadoUmaVezPorRequisicao() {
+        papel("beta", PapelAcesso.BETA);
+        vinculoAtivoNaObra("beta", "obra-1", true);
+        autenticarComo("beta");
+
+        service.podeAcessarObra("beta", "obra-1");
+        service.podeAcessarObra("beta", "obra-1");
+        service.podeAcessarObra("beta", "obra-1");
+
+        verify(jdbc, times(1)).queryForList(
+                contains("FROM vinculo_colaborador_obra"),
+                eq(Integer.class),
+                eq("beta"),
+                eq("obra-1")
         );
     }
 

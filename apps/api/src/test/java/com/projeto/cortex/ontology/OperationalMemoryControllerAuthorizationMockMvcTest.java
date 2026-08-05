@@ -82,8 +82,9 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
             throws Exception {
         papel("beta", PapelAcesso.BETA);
         when(jdbcTemplate.queryForList(
-                contains("FROM obra"),
-                eq(String.class)
+                contains("vinculo_colaborador_obra"),
+                eq(String.class),
+                eq("beta")
         )).thenReturn(List.of(WORKSITE_A));
         when(financialAccessService.allowedObraIds(
                 "beta",
@@ -115,8 +116,9 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
     void betaReceivesOnlyItsRealAuthorizedWorksiteScope() throws Exception {
         papel("beta", PapelAcesso.BETA);
         when(jdbcTemplate.queryForList(
-                contains("FROM obra"),
-                eq(String.class)
+                contains("vinculo_colaborador_obra"),
+                eq(String.class),
+                eq("beta")
         )).thenReturn(List.of(WORKSITE_A));
 
         mockMvc.perform(get("/api/ontology/memory")
@@ -158,12 +160,34 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
         verify(service, never()).search(any(), any(), any(), any());
     }
 
+    /**
+     * A memória operacional guarda o histórico da obra, e por isso segue o
+     * mesmo escopo dela: pedir a memória de uma frente à qual não se pertence é
+     * a forma mais direta de contornar a cerca, e recebe o mesmo 403.
+     */
     @Test
-    void betaReadsTheMemoryOfAWorksiteItIsNotLinkedTo() throws Exception {
+    void betaDoesNotReadTheMemoryOfAWorksiteItIsNotLinkedTo() throws Exception {
         papel("beta", PapelAcesso.BETA);
+        vinculo("beta", WORKSITE_B, false);
 
         mockMvc.perform(get("/api/ontology/memory")
                         .param("obraId", WORKSITE_B)
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "beta"
+                        ))
+                .andExpect(status().isForbidden());
+
+        verify(service, never()).search(any(), any(), any(), any());
+    }
+
+    @Test
+    void betaReadsTheMemoryOfTheWorksiteItIsLinkedTo() throws Exception {
+        papel("beta", PapelAcesso.BETA);
+        vinculo("beta", WORKSITE_A, true);
+
+        mockMvc.perform(get("/api/ontology/memory")
+                        .param("obraId", WORKSITE_A)
                         .requestAttr(
                                 CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
                                 "beta"
@@ -198,8 +222,9 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                 eq("rdo-1")
         )).thenReturn(WORKSITE_A);
         when(jdbcTemplate.queryForList(
-                contains("FROM obra"),
-                eq(String.class)
+                contains("vinculo_colaborador_obra"),
+                eq(String.class),
+                eq("beta")
         )).thenReturn(List.of(WORKSITE_A));
         when(jdbcTemplate.queryForObject(
                 contains("sync_dispositivo"),
@@ -339,12 +364,12 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
     }
 
     private void vinculo(String userId, String obraId, boolean ativo) {
-        when(jdbcTemplate.queryForObject(
+        when(jdbcTemplate.queryForList(
                 contains("vinculo_colaborador_obra"),
                 eq(Integer.class),
                 eq(userId),
                 eq(obraId)
-        )).thenReturn(ativo ? 1 : 0);
+        )).thenReturn(ativo ? List.of(1) : List.of());
     }
 
     private void assertThatRecordField(

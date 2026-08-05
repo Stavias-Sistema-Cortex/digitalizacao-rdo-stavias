@@ -190,11 +190,15 @@ public final class OperationalEventVisibilityPolicy {
                 + " WHERE cp.conversa_id = " + alias + ".id"
                 + " AND cp.colaborador_id = ? AND cp.status = 'ATIVO'"
                 + " AND cp.removido_em IS NULL AND cp.deletado_em IS NULL)"
+                // O vínculo é comparado por LOWER dos dois lados, como em
+                // CurrentUserService e na lista de obras. Comparar cru aqui e
+                // normalizado lá produz o desencontro mais caro de diagnosticar:
+                // a pessoa entra na obra e não enxerga a conversa da obra.
                 + " AND (" + alias + ".tipo IN ('DIRETA', 'GRUPO')"
                 + " OR (" + alias + ".tipo = 'OBRA' AND EXISTS ("
                 + "SELECT 1 FROM vinculo_colaborador_obra v"
                 + " WHERE v.obra_id = " + alias + ".obra_id"
-                + " AND v.colaborador_id = ? AND v.status = 'ATIVO'))"
+                + " AND LOWER(v.colaborador_id) = LOWER(?) AND v.status = 'ATIVO'))"
                 + " OR (" + alias + ".tipo = 'EQUIPE' AND EXISTS ("
                 + "SELECT 1 FROM equipe e"
                 + " JOIN equipe_membro em ON em.equipe_id = e.id"
@@ -204,7 +208,7 @@ public final class OperationalEventVisibilityPolicy {
                 + " AND e.status = 'ATIVA' AND e.deletado_em IS NULL"
                 + " AND em.colaborador_id = ? AND em.status = 'ATIVO'"
                 + " AND em.removido_em IS NULL AND em.deletado_em IS NULL"
-                + " AND v.colaborador_id = ? AND v.status = 'ATIVO')))";
+                + " AND LOWER(v.colaborador_id) = LOWER(?) AND v.status = 'ATIVO')))";
         return new SqlPredicate(sql, List.of(actor, actor, actor, actor));
     }
 

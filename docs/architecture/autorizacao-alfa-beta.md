@@ -49,6 +49,28 @@ alocações vigentes (`alocacao_colaborador` com `status <> 'CANCELADA'`) em
 vínculos explícitos `ATIVO`, preservando o acesso atual sem manter a inferência
 em tempo de execução.
 
+### Histórico: a cerca saiu e voltou
+
+Entre a V26 e a V70 houve um período em que o vínculo **não** decidia acesso.
+`podeAcessarObra` passou a aceitar qualquer colaborador reconhecido e
+`allowedObraIds` passou a enumerar todas as obras, com um motivo real: cercar
+sem vínculo cadastrado deixava o apontador sem obra nenhuma, e quem trabalhava
+numa frente não achava a obra ao lado.
+
+A operação pediu a cerca de volta — quem aponta deve ver a sua obra, não a de
+todos — e a `V70__vinculo_de_obra_a_partir_da_operacao.sql` reconstrói os
+vínculos a partir da operação já registrada (alocação vigente e presença em
+`rdo_mao_obra`) antes de a regra voltar a valer. `ON CONFLICT DO NOTHING`
+preserva revogações explícitas: backfill não desfaz decisão de ninguém.
+
+Duas consequências que valem estar escritas, porque parecem defeito:
+
+- **Beta sem vínculo entra e não vê obra alguma.** É o desfecho correto. Quem
+  investigar isso deve olhar `vinculo_colaborador_obra` antes do código.
+- **A cerca tem custo de manutenção.** Colaborador novo, ou remanejado de
+  frente, precisa de vínculo atribuído em Gestão de Obras. Foi a falta disso
+  que motivou a remoção da primeira vez.
+
 ## 3. Aplicação da autorização (backend)
 
 `CurrentUserService` é o **ponto central** de decisão:

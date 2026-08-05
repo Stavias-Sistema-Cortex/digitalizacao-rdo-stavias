@@ -4,6 +4,7 @@ import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.financeiro.access.FinancialPermission;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -31,64 +32,86 @@ public class ObrasRelacionadasService {
         this.financialAccessService = financialAccessService;
     }
 
+    private static final String PROJECAO = """
+            SELECT
+                o.id,
+                o.codigo_contrato,
+                o.nome,
+                o.cliente,
+                o.cidade,
+                o.uf,
+                o.rodovia,
+                o.status,
+                o.observacoes,
+                o.latitude,
+                o.longitude,
+                o.atualizado_em,
+                o.versao_linha,
+                NULL AS valor_contratual
+            FROM obra o
+            WHERE o.arquivado_em IS NULL
+            """;
+
+    private static final String ORDENACAO = """
+            ORDER BY o.atualizado_em DESC, o.id DESC
+            LIMIT 200
+            """;
+
+    private static final RowMapper<ObraRelacionadaResponse> PROJETAR_OBRA =
+            (rs, rowNum) -> new ObraRelacionadaResponse(
+                    rs.getString("id"),
+                    rs.getString("codigo_contrato"),
+                    rs.getString("nome"),
+                    rs.getString("cliente"),
+                    rs.getString("cidade"),
+                    rs.getString("uf"),
+                    rs.getString("rodovia"),
+                    rs.getString("status"),
+                    rs.getString("observacoes"),
+                    rs.getBigDecimal("latitude"),
+                    rs.getBigDecimal("longitude"),
+                    rs.getBigDecimal("valor_contratual"),
+                    rs.getTimestamp("atualizado_em") == null
+                            ? null
+                            : rs.getTimestamp("atualizado_em").toLocalDateTime(),
+                    rs.getLong("versao_linha")
+            );
+
     /**
-     * Toda obra não arquivada, para qualquer colaborador.
+     * As obras não arquivadas que o colaborador pode abrir: todas, para Alfa;
+     * as de vínculo {@code ATIVO}, para Beta.
      *
-     * <p>Aqui existia um {@code EXISTS} sobre {@code vinculo_colaborador_obra}
-     * que decidia o que cada um via. Ele carregava um defeito silencioso além
-     * da regra: comparava {@code colaborador_id} sem normalizar caixa, enquanto
-     * a autorização em {@code CurrentUserService} comparava com {@code LOWER}.
-     * Bastava uma diferença de caixa entre as tabelas para a pessoa passar na
-     * autorização da obra e mesmo assim nunca vê-la na lista — permitida e
-     * invisível ao mesmo tempo. Os dois problemas saem pela mesma porta.
+     * <p>O {@code EXISTS} compara {@code colaborador_id} com {@code LOWER} dos
+     * dois lados, e isso não é preciosismo. Quando esta consulta filtrava sem
+     * normalizar caixa e {@code CurrentUserService} filtrava com, uma diferença
+     * de caixa entre as tabelas bastava para a pessoa passar na autorização da
+     * obra e mesmo assim nunca vê-la na lista — permitida e invisível ao mesmo
+     * tempo, que é o defeito mais caro de diagnosticar. As duas pontas comparam
+     * do mesmo jeito de propósito.
      *
-     * <p>O valor contratual, esse, continua saindo só para quem tem permissão
-     * financeira: é filtrado depois da consulta, e não por ela.
+     * <p>O valor contratual continua saindo só para quem tem permissão
+     * financeira: é filtrado depois da consulta, e não por ela. Vínculo com a
+     * obra não é permissão financeira.
      */
     public List<ObraRelacionadaResponse> listarParaColaborador() {
         String userId = currentUserService.requireUserId();
+        boolean global = currentUserService.isAlfa(userId);
 
-        List<ObraRelacionadaResponse> obras = jdbcTemplate.query(
-                """
-                SELECT
-                    o.id,
-                    o.codigo_contrato,
-                    o.nome,
-                    o.cliente,
-                    o.cidade,
-                    o.uf,
-                    o.rodovia,
-                    o.status,
-                    o.observacoes,
-                    o.latitude,
-                    o.longitude,
-                    o.atualizado_em,
-                    o.versao_linha,
-                    NULL AS valor_contratual
-                FROM obra o
-                WHERE o.arquivado_em IS NULL
-                ORDER BY o.atualizado_em DESC, o.id DESC
-                LIMIT 200
-                """,
-                (rs, rowNum) -> new ObraRelacionadaResponse(
-                        rs.getString("id"),
-                        rs.getString("codigo_contrato"),
-                        rs.getString("nome"),
-                        rs.getString("cliente"),
-                        rs.getString("cidade"),
-                        rs.getString("uf"),
-                        rs.getString("rodovia"),
-                        rs.getString("status"),
-                        rs.getString("observacoes"),
-                        rs.getBigDecimal("latitude"),
-                        rs.getBigDecimal("longitude"),
-                        rs.getBigDecimal("valor_contratual"),
-                        rs.getTimestamp("atualizado_em") == null
-                                ? null
-                                : rs.getTimestamp("atualizado_em").toLocalDateTime(),
-                        rs.getLong("versao_linha")
-                )
-        );
+        String sql = global
+                ? PROJECAO + ORDENACAO
+                : PROJECAO + """
+                  AND EXISTS (
+                      SELECT 1
+                      FROM vinculo_colaborador_obra v
+                      WHERE v.obra_id = o.id
+                        AND LOWER(v.colaborador_id) = LOWER(?)
+                        AND v.status = 'ATIVO'
+                  )
+                  """ + ORDENACAO;
+
+        List<ObraRelacionadaResponse> obras = global
+                ? jdbcTemplate.query(sql, PROJETAR_OBRA)
+                : jdbcTemplate.query(sql, PROJETAR_OBRA, userId);
 
         Set<String> financeWorksites = financialAccessService.allowedObraIds(
                 userId,

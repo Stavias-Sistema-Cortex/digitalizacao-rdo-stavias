@@ -2,6 +2,8 @@ package com.projeto.cortex.ontology;
 
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.auth.PapelAcesso;
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -50,10 +52,18 @@ class OperationalTimelineControllerAuthorizationMockMvcTest {
         )).thenReturn(papel);
     }
 
+    private void vinculo(String userId, String obraId, boolean ativo) {
+        when(jdbcTemplate.queryForList(
+                contains("vinculo_colaborador_obra"),
+                eq(Integer.class),
+                eq(userId),
+                eq(obraId)
+        )).thenReturn(ativo ? List.of(1) : List.of());
+    }
+
     /**
-     * A linha do tempo de uma obra deixou de depender de vínculo. Quem a
-     * fronteira ainda barra é quem o cadastro não reconhece — sem papel não há
-     * leitura de obra nenhuma.
+     * Duas fronteiras diferentes chegam ao mesmo 403, e confundi-las é fácil:
+     * quem o cadastro não reconhece não lê obra nenhuma, com ou sem vínculo.
      */
     @Test
     void quemNaoTemPapelNaoLeEventos() throws Exception {
@@ -72,8 +82,23 @@ class OperationalTimelineControllerAuthorizationMockMvcTest {
     }
 
     @Test
-    void betaLeEventosDeObraSemVinculo() throws Exception {
+    void betaLeEventosDaObraVinculada() throws Exception {
         papel("beta", PapelAcesso.BETA);
+        vinculo("beta", "obra-da-frente", true);
+
+        mockMvc.perform(get("/api/ontology/timeline")
+                        .param("obraId", "obra-da-frente")
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "beta"
+                        ))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void betaNaoLeEventosDeObraSemVinculo() throws Exception {
+        papel("beta", PapelAcesso.BETA);
+        vinculo("beta", "obra-de-outra-frente", false);
 
         mockMvc.perform(get("/api/ontology/timeline")
                         .param("obraId", "obra-de-outra-frente")
@@ -81,7 +106,10 @@ class OperationalTimelineControllerAuthorizationMockMvcTest {
                                 CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
                                 "beta"
                         ))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
+
+        verify(service, never())
+                .timeline(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

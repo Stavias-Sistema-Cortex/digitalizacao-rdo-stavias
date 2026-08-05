@@ -30,22 +30,26 @@ import org.springframework.web.server.ResponseStatusException;
  * <ul>
  *   <li><b>ALFA</b>: enxerga todas as obras e <em>administra</em> — cadastro de
  *       obra, Financeiro e PDOR seguem exigindo este papel.</li>
- *   <li><b>BETA</b>: enxerga todas as obras, sem administrá-las.</li>
+ *   <li><b>BETA</b>: enxerga e aponta apenas nas obras em que tem vínculo
+ *       {@code ATIVO}, sem administrá-las.</li>
  * </ul>
  *
- * <p>A obra deixou de ser compartimento. O vínculo explícito decidia quem a
- * enxergava, e o efeito prático era o contrário do pretendido: quem trabalhava
- * numa frente não achava a obra ao lado, o apontamento de campo esbarrava em
- * cadastro que ninguém tinha feito ainda, e o Córtex — que existe para ser a
- * memória da obra — só respondia a quem já sabia onde procurar. Quem é da casa
- * enxerga a operação inteira.
+ * <p>A obra voltou a ser compartimento para quem é Beta. Houve um período em que
+ * não era: o vínculo foi afrouxado porque cercava gente que precisava trabalhar,
+ * e todo colaborador reconhecido passou a enxergar a operação inteira. A decisão
+ * se inverteu — quem aponta em campo deve ver a sua obra, não a de todos —, e a
+ * cerca volta pelo mesmo lugar por onde saiu, que é este.
  *
- * <p>O que <em>não</em> se abriu, e não deve se abrir por tabela: Financeiro e
- * PDOR continuam restritos ao papel ALFA, com porta própria
- * ({@code FinancialAccessService} e a lista de tipos financeiros em
- * {@code OperationalEventVisibilityPolicy}), independente do escopo de obra. O
- * vínculo permanece na base descrevendo quem é da equipe de cada obra — deixou
- * de ser cerca, não deixou de ser informação.
+ * <p>O afrouxamento tinha um motivo real, e ele não desapareceu: cercar sem
+ * vínculo cadastrado deixa o apontador sem obra nenhuma. Por isso a V70
+ * reconstrói os vínculos a partir da operação já registrada antes de a regra
+ * voltar a valer, e a manutenção passa a ser explícita, na tela de Gestão de
+ * Obras. Quem cerca precisa manter a porta.
+ *
+ * <p>O que <em>não</em> muda com o escopo de obra: Financeiro e PDOR continuam
+ * restritos ao papel ALFA, com porta própria ({@code FinancialAccessService} e a
+ * lista de tipos financeiros em {@code OperationalEventVisibilityPolicy}). Ter
+ * vínculo com a obra nunca foi, e não passa a ser, permissão financeira.
  */
 @Service
 public class CurrentUserService implements AuthSessionProfileResolver {
@@ -75,6 +79,9 @@ public class CurrentUserService implements AuthSessionProfileResolver {
     }
 
     private record ChaveObras(String colaboradorId) {
+    }
+
+    private record ChaveObraEspecifica(String colaboradorId, String obraId) {
     }
 
     private final JdbcTemplate jdbcTemplate;
@@ -245,12 +252,20 @@ public class CurrentUserService implements AuthSessionProfileResolver {
     }
 
     /**
-     * Decisão booleana e não lançadora de acesso à obra. Qualquer colaborador
-     * reconhecido acessa qualquer obra. Base de authz para a Stav.IA e demais
-     * consultas por obra.
+     * Decisão booleana e não lançadora de acesso à obra. Alfa entra em qualquer
+     * uma; Beta entra apenas onde tem vínculo {@code ATIVO}. Base de authz para
+     * a Stav.IA e demais consultas por obra.
      *
-     * <p>O que continua barrando é ser ou não colaborador: papel nulo é quem o
-     * cadastro não reconhece, e esse não entra em obra nenhuma.
+     * <p>Papel nulo é quem o cadastro não reconhece, e esse não entra em obra
+     * nenhuma — nem com vínculo gravado, porque a linha sobrevive ao colaborador
+     * ser desativado.
+     *
+     * <p>A consulta pergunta por uma obra só, em vez de listar todas e procurar
+     * dentro: é a forma que o índice {@code idx_vinculo_colaborador_obra_
+     * colaborador_lower} atende, com {@code obra_id} como terceira coluna. Daí a
+     * comparação de {@code colaborador_id} ser por {@code LOWER} e a de
+     * {@code obra_id} não — trocar isso aqui anula o índice sem mudar resultado
+     * nenhum, e a autorização passa a varrer a tabela.
      */
     public boolean podeAcessarObra(String colaboradorId, String obraId) {
         if (colaboradorId == null || colaboradorId.isBlank()
@@ -258,17 +273,40 @@ public class CurrentUserService implements AuthSessionProfileResolver {
             return false;
         }
 
-        return papelAcesso(colaboradorId) != null;
+        PapelAcesso papel = papelAcesso(colaboradorId);
+        if (papel == null) {
+            return false;
+        }
+        if (papel == PapelAcesso.ALFA) {
+            return true;
+        }
+
+        return lembrarNaRequisicao(
+                new ChaveObraEspecifica(colaboradorId.trim(), obraId.trim()),
+                () -> !jdbcTemplate.queryForList(
+                        """
+                        SELECT 1
+                        FROM vinculo_colaborador_obra
+                        WHERE LOWER(colaborador_id) = LOWER(?)
+                          AND status = 'ATIVO'
+                          AND obra_id = ?
+                        LIMIT 1
+                        """,
+                        Integer.class,
+                        colaboradorId.trim(),
+                        obraId.trim()
+                ).isEmpty()
+        );
     }
 
     /**
-     * Obras às quais o usuário tem acesso — hoje, todas.
+     * Obras às quais o usuário tem acesso.
      * <ul>
      *   <li>{@code Optional.empty()} — escopo global, sem restrição. Reservado
      *       a quem é ALFA de fato, porque o perfil de sessão lê a ausência de
      *       restrição como papel administrativo.</li>
-     *   <li>{@code Optional.of(conjunto)} — BETA, com o conjunto de todas as
-     *       obras enumerado.</li>
+     *   <li>{@code Optional.of(conjunto)} — BETA, com as obras de vínculo
+     *       {@code ATIVO} enumeradas.</li>
      * </ul>
      * Usuário inválido recebe {@code Optional.of(Set.of())} (nega tudo).
      *
@@ -276,7 +314,12 @@ public class CurrentUserService implements AuthSessionProfileResolver {
      * pode ser "simplificada" depois: {@code AuthSessionResponse} deriva o papel
      * efetivo da ausência de restrição, então devolver vazio aqui promoveria
      * todo colaborador a ALFA na sessão — e com ele viriam Financeiro e PDOR,
-     * que não são para vir. O escopo de obra abriu; o papel, não.
+     * que não são para vir.
+     *
+     * <p>Beta sem vínculo nenhum recebe conjunto vazio, e conjunto vazio nega
+     * tudo. É o desfecho correto e o mais fácil de confundir com defeito: a
+     * pessoa entra, autentica e não vê obra alguma. Quem investigar isso deve
+     * olhar {@code vinculo_colaborador_obra} antes do código.
      */
     public Optional<Set<String>> allowedObraIds(String colaboradorId) {
         PapelAcesso papel = papelAcesso(colaboradorId);
@@ -290,8 +333,14 @@ public class CurrentUserService implements AuthSessionProfileResolver {
         return lembrarNaRequisicao(
                 new ChaveObras(colaboradorId.trim()),
                 () -> Optional.of(Set.copyOf(jdbcTemplate.queryForList(
-                        "SELECT id FROM obra",
-                        String.class
+                        """
+                        SELECT obra_id
+                        FROM vinculo_colaborador_obra
+                        WHERE LOWER(colaborador_id) = LOWER(?)
+                          AND status = 'ATIVO'
+                        """,
+                        String.class,
+                        colaboradorId.trim()
                 )))
         );
     }

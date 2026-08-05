@@ -59,8 +59,9 @@ class OntologyGraphAuthorizationMockMvcTest {
         vinculo("beta", WORKSITE_A, true);
         vinculo("beta", WORKSITE_B, false);
         when(jdbcTemplate.queryForList(
-                contains("FROM obra"),
-                eq(String.class)
+                contains("vinculo_colaborador_obra"),
+                eq(String.class),
+                eq("beta")
         )).thenReturn(List.of(WORKSITE_A));
         when(queryService.resolveWorksiteIds(any())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
@@ -354,12 +355,12 @@ class OntologyGraphAuthorizationMockMvcTest {
     }
 
     private void vinculo(String userId, String obraId, boolean ativo) {
-        when(jdbcTemplate.queryForObject(
+        when(jdbcTemplate.queryForList(
                 contains("vinculo_colaborador_obra"),
                 eq(Integer.class),
                 eq(userId),
                 eq(obraId)
-        )).thenReturn(ativo ? 1 : 0);
+        )).thenReturn(ativo ? List.of(1) : List.of());
     }
 
     private GraphEntity entity(String id, String obraId) {

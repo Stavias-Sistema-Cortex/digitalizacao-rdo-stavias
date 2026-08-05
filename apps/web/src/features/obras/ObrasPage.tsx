@@ -22,6 +22,7 @@ import {
 } from "../home/homeFilters";
 import { useHomeData } from "../home/useHomeData";
 import { getSession, isAlfa } from "../auth/authSession";
+import { mensagemDeListaVazia } from "./mensagemDeListaVazia";
 import {
   buscarPdorAtual,
   buscarTimelineObra,
@@ -824,7 +825,7 @@ export function ObrasPage() {
               <p className="obras-empty">Carregando obras...</p>
             ) : filteredObras.length === 0 ? (
               <p className="obras-empty">
-                Nenhuma obra encontrada.
+                {mensagemDeListaVazia(obras.length, getSession())}
               </p>
             ) : (
               filteredObras.map((obra) => (

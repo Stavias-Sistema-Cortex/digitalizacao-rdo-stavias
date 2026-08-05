@@ -48,9 +48,18 @@ class RdoContextControllerAuthorizationMockMvcTest {
         )).thenReturn(papel);
     }
 
+    private void vinculo(String userId, String obraId, boolean ativo) {
+        when(jdbcTemplate.queryForList(
+                contains("vinculo_colaborador_obra"),
+                eq(Integer.class),
+                eq(userId),
+                eq(obraId)
+        )).thenReturn(ativo ? List.of(1) : List.of());
+    }
+
     /**
-     * O contexto de RDO de uma obra deixou de exigir vínculo. Sem papel, porém,
-     * não há contexto de obra nenhuma.
+     * O contexto de RDO é a porta pela qual se cria diário: sem vínculo com a
+     * obra, ela não abre. Sem papel também não, e por outro motivo.
      */
     @Test
     void quemNaoTemPapelNaoConsultaContexto() throws Exception {
@@ -71,6 +80,7 @@ class RdoContextControllerAuthorizationMockMvcTest {
     @Test
     void respostaAutorizadaNaoExpoeEmailNemCpfDoColaborador() throws Exception {
         papel("beta", PapelAcesso.BETA);
+        vinculo("beta", "obra-a", true);
         LocalDate data = LocalDate.of(2026, 7, 22);
         when(service.buscarContexto("obra-a", data, "beta")).thenReturn(new RdoContextResponse(
                 new RdoContextResponse.ObraContexto(
