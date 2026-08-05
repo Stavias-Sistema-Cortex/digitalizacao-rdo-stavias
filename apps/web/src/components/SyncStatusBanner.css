@@ -232,3 +232,39 @@ a.sync-chip__action {
     animation: none !important;
   }
 }
+
+/*
+ * O gesto destrutivo se anuncia. Ele mora no mesmo painel do descarte comum,
+ * então precisa de peso visual próprio — quem chega aqui já está tenso, e um
+ * botão igual aos outros seria apertado sem ler.
+ */
+.sync-chip__confirmacao {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e0b9b9;
+  border-radius: var(--radius-control, 8px);
+  background: #fbf0f0;
+}
+
+.sync-chip__confirmacao > p {
+  margin: 0 0 8px;
+  color: #782d2d;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.sync-chip__confirmacao-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sync-chip__action--danger {
+  border-color: #9f4a4a;
+  background: #8b2f2f;
+  color: #fff;
+}
+
+.sync-chip__action--danger:hover:not(:disabled) {
+  background: #782d2d;
+}

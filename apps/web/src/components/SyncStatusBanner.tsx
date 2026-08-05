@@ -17,6 +17,11 @@ import {
   descartarMutacoesMortas,
   requeueMutationsInReview,
 } from "../lib/sync/syncStorage";
+import {
+  apagarBaseLocal,
+  contarTrabalhoQueSeriaPerdido,
+  type TrabalhoNaoEnviado,
+} from "../lib/sync/recomecoDoZero";
 import "./SyncStatusBanner.css";
 
 interface StatusContent {
@@ -203,6 +208,9 @@ export function SyncStatusBanner() {
   const [isManualSyncing, setIsManualSyncing] =
     useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [zerarPedido, setZerarPedido] = useState(false);
+  const [perdaAoZerar, setPerdaAoZerar] =
+    useState<TrabalhoNaoEnviado | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const displayedStatus: SyncUiStatus =
@@ -351,6 +359,42 @@ export function SyncStatusBanner() {
     } finally {
       setIsManualSyncing(false);
       await refresh();
+    }
+  }
+
+  /*
+   * A conta vem antes do gesto. Perguntar "tem certeza?" sem dizer o tamanho do
+   * prejuízo é pedir uma decisão às cegas.
+   */
+  async function pedirParaZerar(): Promise<void> {
+    setZerarPedido(true);
+    setPerdaAoZerar(null);
+    setManualSyncError("");
+    try {
+      setPerdaAoZerar(await contarTrabalhoQueSeriaPerdido());
+    } catch {
+      // Sem a conta, o botão de confirmar segue desabilitado — melhor travar
+      // do que apagar sem saber o quanto.
+      setManualSyncError("Não foi possível conferir o que ainda não subiu.");
+    }
+  }
+
+  async function handleStartOver(): Promise<void> {
+    setIsManualSyncing(true);
+    setManualSyncError("");
+    try {
+      await apagarBaseLocal();
+      // Recarregar é parte do gesto: os dados em memória apontam para uma base
+      // que não existe mais, e seguir navegando sobre eles é o caminho curto
+      // para um erro que não diz nada.
+      window.location.reload();
+    } catch (error: unknown) {
+      setIsManualSyncing(false);
+      setManualSyncError(
+        error instanceof Error
+          ? error.message
+          : "Falha ao apagar os dados locais.",
+      );
     }
   }
 
@@ -541,6 +585,63 @@ export function SyncStatusBanner() {
                 Apaga a sua versão destes registros e aceita a do servidor.
                 Não mexe no que ainda tem substituta a caminho.
               </p>
+
+              {/*
+                A saída de último caso. O descarte acima resolve o comum: linhas
+                recusadas, uma a uma. Quando nem isso destrava, o honesto é
+                declarar bancarrota do que é local e reconstruir do servidor —
+                que é a verdade de qualquer jeito.
+
+                O preço aparece antes do gesto e com número, não como "alguns
+                registros": a pessoa precisa saber se está jogando fora três
+                apontamentos ou trinta.
+              */}
+              {zerarPedido ? (
+                <div className="sync-chip__confirmacao" role="alertdialog">
+                  <p>
+                    {perdaAoZerar === null
+                      ? "Conferindo o que ainda não subiu…"
+                      : perdaAoZerar.aindaPodemSubir === 0
+                        ? "Nada que ainda tenha como subir será perdido."
+                        : `${perdaAoZerar.aindaPodemSubir} ${
+                            perdaAoZerar.aindaPodemSubir === 1
+                              ? "registro que ainda tinha como subir vai sumir"
+                              : "registros que ainda tinham como subir vão sumir"
+                          } para sempre.`}
+                  </p>
+                  <div className="sync-chip__confirmacao-acoes">
+                    <button
+                      type="button"
+                      className="sync-chip__action sync-chip__action--danger"
+                      onClick={() => {
+                        void handleStartOver();
+                      }}
+                      disabled={isManualSyncing || perdaAoZerar === null}
+                    >
+                      Apagar e recarregar
+                    </button>
+                    <button
+                      type="button"
+                      className="sync-chip__action sync-chip__action--secondary"
+                      onClick={() => setZerarPedido(false)}
+                      disabled={isManualSyncing}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="sync-chip__action sync-chip__action--secondary"
+                  onClick={() => {
+                    void pedirParaZerar();
+                  }}
+                  disabled={isManualSyncing}
+                >
+                  Recomeçar do zero neste aparelho
+                </button>
+              )}
             </>
           ) : null}
         </div>
