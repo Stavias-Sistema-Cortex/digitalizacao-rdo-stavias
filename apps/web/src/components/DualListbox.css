@@ -1,0 +1,121 @@
+.dual-listbox {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dual-listbox__busca {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/*
+ * A coluna do meio é `auto` para os botões ocuparem só o que precisam; os dois
+ * painéis dividem o resto em partes iguais, porque nenhum dos lados é o
+ * principal — a pergunta é quem está dentro E quem falta.
+ */
+.dual-listbox__corpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.dual-listbox__painel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dual-listbox__painel-titulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dual-listbox__contagem {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+/*
+ * Altura fixa em vez de crescer com o conteúdo: uma frente de trinta empurraria
+ * os botões de mover para fora da tela, e mover é a ação principal daqui.
+ */
+.dual-listbox__lista {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.12));
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dual-listbox__item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dual-listbox__item > strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dual-listbox__item > span {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.dual-listbox__item.is-marcado {
+  border-color: currentColor;
+  background: var(--surface-selected, rgba(0, 0, 0, 0.06));
+}
+
+.dual-listbox__vazio {
+  padding: 12px 10px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.dual-listbox__acoes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: center;
+}
+
+/*
+ * Abaixo de 720px as duas colunas não cabem lado a lado sem truncar nome de
+ * gente. Empilhadas, os botões passam a ficar entre os painéis, que é a ordem
+ * de leitura correta: escolho, movo, confiro.
+ */
+@media (max-width: 720px) {
+  .dual-listbox__corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dual-listbox__acoes {
+    flex-direction: row;
+    justify-content: center;
+  }
+}

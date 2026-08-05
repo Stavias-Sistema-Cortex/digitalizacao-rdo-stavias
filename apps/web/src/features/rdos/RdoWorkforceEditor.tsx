@@ -6,6 +6,7 @@ import {
   type KeyboardEvent,
 } from "react";
 
+import { DualListbox, type DualListboxItem } from "../../components/DualListbox";
 import {
   addAuthorizedWorker,
   nextRosterFocusIndex,
@@ -34,43 +35,47 @@ export function RdoWorkforceEditor({
   sourceRdoNumber,
   onChange,
 }: RdoWorkforceEditorProps) {
-  const [additionId, setAdditionId] = useState("");
-  const [collaboratorQuery, setCollaboratorQuery] = useState("");
-  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
-  const [activeCatalogIndex, setActiveCatalogIndex] = useState(0);
   const [newCollaboratorName, setNewCollaboratorName] = useState("");
-  const catalogListId = useId();
   const newCollaboratorId = useId();
   const checkboxRefs = useRef<Array<HTMLInputElement | null>>([]);
   const existingIds = useMemo(
     () => new Set(draft.maoObra.map((row) => row.colaboradorId)),
     [draft.maoObra],
   );
-  const additions = collaborators.filter(
-    (collaborator) => !existingIds.has(collaborator.id),
+  const disponiveis = useMemo<DualListboxItem[]>(
+    () =>
+      collaborators
+        .filter((collaborator) => !existingIds.has(collaborator.id))
+        .map((collaborator) => ({
+          id: collaborator.id,
+          titulo: collaborator.nome?.trim() ||
+            collaborator.codigoColaborador?.trim() ||
+            "Colaborador sem nome",
+          detalhe: [
+            collaborator.codigoColaborador,
+            collaborator.papelNaObra,
+            collaborator.nomePerfil,
+          ].filter(Boolean).join(" · "),
+        })),
+    [collaborators, existingIds],
   );
-  const filteredAdditions = useMemo(() => {
-    const normalizedQuery = collaboratorQuery
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "")
-      .trim()
-      .toLocaleLowerCase("pt-BR");
-    if (!normalizedQuery) return additions;
-    return additions.filter((collaborator) =>
-      [
-        collaborator.nome,
-        collaborator.codigoColaborador,
-        collaborator.papelNaObra,
-        collaborator.nomePerfil,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .normalize("NFD")
-        .replace(/\p{Diacritic}/gu, "")
-        .toLocaleLowerCase("pt-BR")
-        .includes(normalizedQuery),
-    );
-  }, [additions, collaboratorQuery]);
+  /*
+   * O lado escolhido é indexado pelo localId, não pelo id do colaborador: quem
+   * foi somado à mão não tem cadastro, e sem localId sairia de vista sem sair
+   * do RDO.
+   */
+  const escolhidos = useMemo<DualListboxItem[]>(
+    () =>
+      draft.maoObra.map((row) => ({
+        id: row.localId,
+        titulo: row.nomeColaborador || row.colaboradorId ||
+          "Colaborador sem nome",
+        detalhe: row.availability === "UNAVAILABLE"
+          ? "Indisponível"
+          : row.cargo,
+      })),
+    [draft.maoObra],
+  );
   const selected = draft.maoObra.filter(
     (row) =>
       row.selected &&
@@ -99,13 +104,28 @@ export function RdoWorkforceEditor({
     checkboxRefs.current[next]?.focus();
   }
 
-  function addCollaborator(collaboratorId: string) {
-    if (!collaboratorId) return;
-    onChange(addAuthorizedWorker(draft, collaboratorId, collaborators));
-    setAdditionId("");
-    setCollaboratorQuery("");
-    setIsCatalogOpen(false);
-    setActiveCatalogIndex(0);
+  /*
+   * A frente inteira entra de uma vez. Dobrar as adições sobre o mesmo rascunho
+   * — em vez de um onChange por pessoa — evita que o pai perca as anteriores ao
+   * reagir só à última.
+   */
+  function addCollaborators(collaboratorIds: readonly string[]) {
+    const proximo = collaboratorIds.reduce(
+      (acumulado, collaboratorId) =>
+        collaboratorId
+          ? addAuthorizedWorker(acumulado, collaboratorId, collaborators)
+          : acumulado,
+      draft,
+    );
+    if (proximo !== draft) onChange(proximo);
+  }
+
+  function removeCollaborators(localIds: readonly string[]) {
+    const proximo = localIds.reduce(
+      (acumulado, localId) => removeRosterMember(acumulado, localId),
+      draft,
+    );
+    if (proximo !== draft) onChange(proximo);
   }
 
   function addNewCollaborator() {
@@ -126,30 +146,6 @@ export function RdoWorkforceEditor({
     setNewCollaboratorName("");
   }
 
-  function handleCatalogKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      if (filteredAdditions.length === 0) return;
-      setIsCatalogOpen(true);
-      setActiveCatalogIndex((current) => {
-        const direction = event.key === "ArrowDown" ? 1 : -1;
-        return (current + direction + filteredAdditions.length) %
-          filteredAdditions.length;
-      });
-      return;
-    }
-    if (event.key === "Enter" && isCatalogOpen) {
-      const collaborator = filteredAdditions[activeCatalogIndex];
-      if (!collaborator) return;
-      event.preventDefault();
-      addCollaborator(collaborator.id);
-      return;
-    }
-    if (event.key === "Escape") {
-      setIsCatalogOpen(false);
-    }
-  }
-
   return (
     <section
       className="form-card rdo-workforce-editor"
@@ -166,89 +162,24 @@ export function RdoWorkforceEditor({
         </p>
       </div>
 
+      <DualListbox
+        rotulo="Colaboradores do RDO"
+        disponiveis={disponiveis}
+        escolhidos={escolhidos}
+        onEscolher={addCollaborators}
+        onRemover={removeCollaborators}
+        tituloDisponiveis="Autorizados na obra"
+        tituloEscolhidos="Na equipe do RDO"
+        desabilitado={Boolean(catalogUnavailableMessage)}
+        mensagemSemDisponiveis={
+          catalogUnavailableMessage
+            ? "Nenhum colaborador autorizado carregado."
+            : "Todo mundo autorizado nesta obra já está na equipe."
+        }
+        mensagemSemEscolhidos="Nenhum trabalhador neste RDO ainda."
+      />
+
       <div className="rdo-workforce-controls">
-        <div className="rdo-workforce-catalog-picker">
-          <label htmlFor={`${catalogListId}-input`}>
-            Buscar colaborador autorizado
-          </label>
-          <input
-            id={`${catalogListId}-input`}
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded={isCatalogOpen}
-            aria-controls={catalogListId}
-            aria-activedescendant={
-              isCatalogOpen && filteredAdditions[activeCatalogIndex]
-                ? `${catalogListId}-${filteredAdditions[activeCatalogIndex].id}`
-                : undefined
-            }
-            value={collaboratorQuery}
-            placeholder="Nome, código ou papel na obra"
-            disabled={Boolean(catalogUnavailableMessage)}
-            onFocus={() => setIsCatalogOpen(true)}
-            onChange={(event) => {
-              setCollaboratorQuery(event.target.value);
-              setAdditionId("");
-              setActiveCatalogIndex(0);
-              setIsCatalogOpen(true);
-            }}
-            onKeyDown={handleCatalogKeyDown}
-          />
-          {isCatalogOpen ? (
-            <div
-              id={catalogListId}
-              className="rdo-workforce-catalog-results"
-              role="listbox"
-              aria-label="Colaboradores encontrados"
-            >
-              {filteredAdditions.length === 0 ? (
-                <p>Nenhum colaborador autorizado encontrado.</p>
-              ) : (
-                filteredAdditions.map((collaborator, index) => {
-                  const title = collaborator.nome?.trim() ||
-                    collaborator.codigoColaborador?.trim() ||
-                    "Colaborador sem nome";
-                  const details = [
-                    collaborator.codigoColaborador,
-                    collaborator.papelNaObra,
-                    collaborator.nomePerfil,
-                  ].filter(Boolean).join(" · ");
-                  return (
-                    <button
-                      key={collaborator.id}
-                      id={`${catalogListId}-${collaborator.id}`}
-                      type="button"
-                      role="option"
-                      aria-selected={additionId === collaborator.id}
-                      className={
-                        index === activeCatalogIndex
-                          ? "rdo-workforce-catalog-option is-active"
-                          : "rdo-workforce-catalog-option"
-                      }
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setAdditionId(collaborator.id);
-                        setCollaboratorQuery(title);
-                        setIsCatalogOpen(false);
-                      }}
-                    >
-                      <strong>{title}</strong>
-                      <span>{details}</span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          className="add-button"
-          disabled={!additionId || Boolean(catalogUnavailableMessage)}
-          onClick={() => addCollaborator(additionId)}
-        >
-          Adicionar à equipe
-        </button>
         <label>
           Apontador do RDO
           <select
@@ -288,7 +219,7 @@ export function RdoWorkforceEditor({
           className="add-button"
           disabled={!newCollaboratorName.trim()}
         >
-          Adicionar
+          Adicionar trabalhador
         </button>
       </form>
 

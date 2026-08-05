@@ -178,11 +178,9 @@ describe("equipe do RDO seguinte", () => {
       />,
     );
 
-    const busca = screen.getByRole("combobox", {
-      name: "Buscar colaborador autorizado",
-    });
-    await user.type(busca, "Carla");
-    await user.keyboard("{Enter}");
+    await user.type(screen.getByLabelText("Buscar"), "Carla");
+    await user.click(screen.getByRole("option", { name: /Carla/ }));
+    await user.click(screen.getByRole("button", { name: "Adicionar" }));
 
     const ultimo = aoMudar.mock.calls.at(-1)?.[0];
     expect(ultimo.maoObra).toHaveLength(3);
