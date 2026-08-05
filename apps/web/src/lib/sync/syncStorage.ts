@@ -1,4 +1,5 @@
 import { getCortexDb } from "../db/cortexDb";
+import { foiSubstituida } from "./superacaoDeMutacao";
 import type {
   CanonicalOperationalEventRecord,
   CanonicalOutboxMutationRecord,
@@ -1701,6 +1702,7 @@ export async function recoverRejectedArchivedObraMutationsForSync(
 }
 
 const SUPERSEDIDA_POR = /^SUPERSEDED_BY:/i;
+
 
 /**
  * Devolve à fila, a pedido explícito de quem opera, tudo o que está em revisão.
@@ -4561,7 +4563,18 @@ export async function descartarEdicaoEmConflito(
   );
   const outbox = transaction.objectStore("outbox_mutations");
   const mutation = await outbox.get(clientMutationId);
-  if (!mutation || mutation.status !== "CONFLICT") {
+  /*
+   * REJECTED entra aqui junto de CONFLICT, e a ausência dela era metade do
+   * beco. Um conflito tem duas versões e pede decisão; uma recusa definitiva
+   * não pede nada — e mesmo assim era o único estado sem saída na tela, porque
+   * o descarte se recusava a tocá-la. Reenviar também não resolvia: o reenvio
+   * troca a identidade da mutação mas preserva `baseVersao`, então a mesma
+   * recusa voltava.
+   */
+  if (
+    !mutation ||
+    (mutation.status !== "CONFLICT" && mutation.status !== "REJECTED")
+  ) {
     await transaction.done;
     return null;
   }
@@ -4603,11 +4616,84 @@ export async function descartarEdicaoEmConflito(
     }
   }
 
+  /*
+   * Devolve a equipe ao estado em que a reidratação pode alcançá-la.
+   *
+   * É a outra metade do beco. `replaceLocalTeams` e `putLocalTeam` recusam-se a
+   * sobrescrever equipe marcada como PENDING_SYNC, CONFLICT ou REJECTED —
+   * proteção correta, para não apagar edição local que ainda não subiu. Só que
+   * nada nunca limpava a marca quando a edição deixava de existir. Descartada a
+   * mutação, o registro local não tem mais nada de próprio a preservar, e
+   * continuar protegendo-o só o impedia de aprender a versão do servidor, que é
+   * justamente o número cuja defasagem o mantinha travado.
+   *
+   * Só libera quando não sobra mutação nenhuma para a equipe: havendo outra, a
+   * marca ainda descreve trabalho real, e apagá-la perderia esse trabalho na
+   * próxima reidratação.
+   */
+  if ((mutation.entidadeTipo as string) === "EQUIPE") {
+    const restantes = await outbox
+      .index("by-entity-id")
+      .getAll(mutation.entidadeId);
+    if (restantes.length === 0) {
+      const teamStore = transaction.objectStore("teams");
+      const team = await teamStore.get(mutation.entidadeId);
+      if (team) {
+        await teamStore.put({
+          ...team,
+          syncStatus: "SYNCED",
+          ultimoErro: null,
+          pendingMutationId: null,
+          atualizadoEm: timestamp,
+        });
+      }
+    }
+  }
+
   await transaction.done;
   return {
     entidadeTipo: mutation.entidadeTipo,
     entidadeId: mutation.entidadeId,
   };
+}
+
+/**
+ * Descarta de uma vez tudo o que não tem mais como subir.
+ *
+ * <p>O descarte individual resolve um cartão; não resolve vinte e três. E o
+ * gesto que a tela oferecia para o volume — reenviar — não podia funcionar:
+ * `requeueMutationsInReview` troca a identidade da mutação mas preserva
+ * `baseVersao`, então a recusa por versão volta idêntica. Quem tinha uma pilha
+ * de recusas ficava girando entre dois botões que não a diminuíam.
+ *
+ * <p>Pula quem tem substituta viva, e essa é a única regra delicada aqui: a
+ * reconciliação de conflito cria uma mutação nova e deixa a original marcada.
+ * Varrer `REJECTED` cegamente apagaria o ancestral de trabalho que ainda vai
+ * subir — o oposto de "nada se perde". A regra de superação é a mesma que a
+ * tarja usa para contar, importada em vez de reescrita.
+ *
+ * <p>Devolve quantas foram descartadas.
+ */
+export async function descartarMutacoesMortas(): Promise<number> {
+  const database = await getCortexDb();
+  const todas = await database.getAll("outbox_mutations");
+  const mortas = todas.filter(
+    (mutation) =>
+      (mutation.status === "REJECTED" || mutation.status === "CONFLICT") &&
+      !foiSubstituida(mutation, todas),
+  );
+
+  let descartadas = 0;
+  for (const mutation of mortas) {
+    // Uma transação por mutação, e não uma para todas: descartar é irreversível,
+    // e uma falha no meio de um lote atômico devolveria tudo — inclusive o que
+    // já tinha saído do caminho de quem opera. Parcial e honesto é melhor que
+    // tudo-ou-nada aqui.
+    if (await descartarEdicaoEmConflito(mutation.clientMutationId)) {
+      descartadas += 1;
+    }
+  }
+  return descartadas;
 }
 
 export async function returnMutationToPending(

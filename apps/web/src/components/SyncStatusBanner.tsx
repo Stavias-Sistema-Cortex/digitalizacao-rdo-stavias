@@ -13,7 +13,10 @@ import {
 } from "../lib/sync/useSyncStatus";
 import { syncNow } from "../lib/sync/syncEngine";
 import { isSyncLeaseContentionError } from "../lib/sync/syncLeaseContention";
-import { requeueMutationsInReview } from "../lib/sync/syncStorage";
+import {
+  descartarMutacoesMortas,
+  requeueMutationsInReview,
+} from "../lib/sync/syncStorage";
 import "./SyncStatusBanner.css";
 
 interface StatusContent {
@@ -297,6 +300,32 @@ export function SyncStatusBanner() {
 
   // "Sincronizar agora" não toca em registro recusado, por definição. Sem esta
   // ação, quem chega em "revisão necessária" não tem o que fazer na tela.
+  async function handleDiscardDead(): Promise<void> {
+    setIsManualSyncing(true);
+    setManualSyncError("");
+    try {
+      const descartadas = await descartarMutacoesMortas();
+      setManualSyncError(
+        descartadas === 0
+          ? "Nada foi descartado: tudo o que resta ainda tem como subir."
+          : `${descartadas} ${
+              descartadas === 1 ? "registro descartado" : "registros descartados"
+            }. A versão do servidor volta a valer.`,
+      );
+    } catch (error: unknown) {
+      if (!isSyncLeaseContentionError(error)) {
+        setManualSyncError(
+          error instanceof Error
+            ? error.message
+            : "Falha ao descartar os registros sem saída.",
+        );
+      }
+    } finally {
+      setIsManualSyncing(false);
+      await refresh();
+    }
+  }
+
   async function handleReleaseReview(): Promise<void> {
     setIsManualSyncing(true);
     setManualSyncError("");
@@ -445,6 +474,26 @@ export function SyncStatusBanner() {
               </button>
               <p className="sync-chip__hint">
                 Nada se perde: o que não subir volta para revisão.
+              </p>
+              {/*
+                Reenviar não resolve recusa por versão — o reenvio troca a
+                identidade da mutação, não a versão-base que o servidor recusou.
+                Sem esta saída, quem acumulava recusas girava entre dois botões
+                que não diminuíam a pilha.
+              */}
+              <button
+                type="button"
+                className="sync-chip__action sync-chip__action--secondary"
+                onClick={() => {
+                  void handleDiscardDead();
+                }}
+                disabled={isManualSyncing}
+              >
+                Descartar o que não tem mais como subir
+              </button>
+              <p className="sync-chip__hint">
+                Apaga a sua versão destes registros e aceita a do servidor.
+                Não mexe no que ainda tem substituta a caminho.
               </p>
             </>
           ) : null}
