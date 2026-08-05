@@ -65,10 +65,28 @@ async function readJson<T>(
   return body as T;
 }
 
+/*
+ * A mensagem padrão do cliente HTTP fala de "Córtex local", de ligar a API e de
+ * liberar a origem no navegador. É diagnóstico de quem desenvolve; esta tela é
+ * de administração, e quem a abre sem rede precisa saber o que dá para fazer —
+ * não onde procurar um erro de configuração que não existe.
+ */
+const SEM_REDE =
+  "Sem conexão com o servidor: o estado das integrações é consultado ao vivo e" +
+  " não fica guardado neste dispositivo. As solicitações já registradas seguem" +
+  " na fila e sobem sozinhas na reconexão.";
+
+const DEMOROU =
+  "O servidor demorou demais para responder o estado das integrações." +
+  " As solicitações já registradas seguem na fila.";
+
 export async function listarIntegracoes(): Promise<
   IntegracaoStatus[]
 > {
-  const response = await apiFetch("/integracoes");
+  const response = await apiFetch("/integracoes", {
+    connectionErrorMessage: SEM_REDE,
+    timeoutErrorMessage: DEMOROU,
+  });
 
   return readJson<IntegracaoStatus[]>(
     response,
@@ -161,6 +179,73 @@ export async function listarSolicitacoesIntegracaoPendentes(): Promise<
     )
     .map((mutation) => mutation.payload as unknown as IntegracaoPendingRequest)
     .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt));
+}
+
+export interface IntegracaoRequestOutcome {
+  id: string;
+  integracaoId: string;
+  acao: IntegracaoRequestAction;
+  estado: string;
+  mensagem: string;
+  executedAt: string | null;
+  requestedAt: string;
+}
+
+/**
+ * Um desfecho que não realizou a ação pedida.
+ *
+ * `DISABLED` é o caso de todo dia: com `CORTEX_IMPORT_ENABLED` desligado — o
+ * padrão em produção — toda sincronização manual é recusada. `RUNNING` fica de
+ * fora porque a ação começou; ela só ainda não terminou.
+ */
+export function desfechoRecusado(estado: string): boolean {
+  return estado === "DISABLED" || estado === "FAILED";
+}
+
+function texto(fonte: Record<string, unknown>, campo: string): string {
+  const valor = fonte[campo];
+  return typeof valor === "string" ? valor.trim() : "";
+}
+
+/**
+ * Os desfechos que o servidor já devolveu, do mais recente para o mais antigo.
+ *
+ * A linha da outbox sobrevive ao SYNCED e carrega o recibo, então o desfecho
+ * continua legível depois de recarregar a página — não é um aviso de sessão que
+ * se perde no primeiro F5.
+ */
+export async function listarDesfechosIntegracao(
+  limite = 5,
+): Promise<IntegracaoRequestOutcome[]> {
+  const mutations = await (await getCortexDb()).getAll("outbox_mutations");
+  return mutations
+    .filter(
+      (mutation) =>
+        isCanonicalOutboxMutation(mutation) &&
+        mutation.entityType === "SOLICITACAO_INTEGRACAO" &&
+        mutation.status === "SYNCED" &&
+        mutation.resultadoServidor != null,
+    )
+    .map((mutation) => {
+      const pedido = mutation.payload as unknown as IntegracaoPendingRequest;
+      const recibo = mutation.resultadoServidor as Record<string, unknown>;
+      const executedAt = texto(recibo, "executedAt");
+      return {
+        id: pedido.id,
+        integracaoId: texto(recibo, "integracaoId") || pedido.integracaoId,
+        acao: pedido.acao,
+        estado: texto(recibo, "estado") || "SEM_RESPOSTA",
+        mensagem: texto(recibo, "mensagem"),
+        executedAt: executedAt || null,
+        requestedAt: pedido.requestedAt,
+      };
+    })
+    .sort((left, right) =>
+      (right.executedAt ?? right.requestedAt).localeCompare(
+        left.executedAt ?? left.requestedAt,
+      ),
+    )
+    .slice(0, limite);
 }
 
 export async function testarConexaoIntegracao(

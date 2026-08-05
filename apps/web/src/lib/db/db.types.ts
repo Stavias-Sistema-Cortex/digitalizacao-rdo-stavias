@@ -389,6 +389,16 @@ interface OutboxMutationRecordBase {
   ultimaTentativaEm: string | null;
   ultimoErro: string | null;
   conflito: Record<string, unknown> | null;
+  /**
+   * Recibo do servidor para a mutação aplicada, quando a tela de origem precisa
+   * do desfecho e não apenas do fato de ter subido.
+   *
+   * Uma solicitação de integração é o caso: o servidor responde APLICADA mesmo
+   * ao recusar a sincronização (`estado: "DISABLED"`), porque a mutação foi de
+   * fato processada. Sem guardar o recibo, a linha ia a SYNCED, sumia da fila e
+   * a recusa ficava indistinguível de sucesso.
+   */
+  resultadoServidor?: Readonly<Record<string, unknown>> | null;
   criadaNoClienteEm: string;
   updatedAt: string;
   transport?: OutboxTransport;

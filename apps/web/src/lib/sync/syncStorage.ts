@@ -531,6 +531,17 @@ function isGeometriaMutation(mutation: OutboxMutationRecord): boolean {
 }
 
 /**
+ * A solicitação de integração é aplicada mesmo quando o servidor recusa a ação.
+ *
+ * O handler responde APLICADA com `estado: "DISABLED"` no corpo — a mutação foi
+ * processada, a sincronização é que não aconteceu. Por isso o recibo precisa
+ * sobreviver ao SYNCED: é a única prova do desfecho que a tela tem.
+ */
+function isIntegracaoMutation(mutation: OutboxMutationRecord): boolean {
+  return (mutation.entidadeTipo as string) === "SOLICITACAO_INTEGRACAO";
+}
+
+/**
  * Substitui o rascunho local de geometria pela versão que o servidor confirmou.
  *
  * O identificador autoritativo é gerado no servidor, então o registro desenhado
@@ -3267,6 +3278,9 @@ export async function applyPushResultAtomically(
       ultimoErro: null,
       conflito: null,
       blockedReason: null,
+      ...(isIntegracaoMutation(mutation)
+        ? { resultadoServidor: result.resultado ?? null }
+        : {}),
       updatedAt: timestamp,
     });
     await rebasePendingLegacyRdoDependents(

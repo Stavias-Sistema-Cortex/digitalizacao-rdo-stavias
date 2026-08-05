@@ -112,3 +112,36 @@
   border-radius: var(--radius-control);
   box-shadow: none;
 }
+
+.integracoes-desfechos {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.integracoes-desfecho {
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-size: 0.86rem;
+}
+
+/* A recusa precisa se separar do desfecho comum sem virar alarme: quem lê está
+   conferindo uma lista, não reagindo a uma falha do sistema. */
+.integracoes-desfecho-recusado {
+  border-color: color-mix(in srgb, var(--color-danger) 32%, var(--color-surface));
+  background: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface));
+}
+
+.integracoes-desfecho-mensagem {
+  margin-top: 6px;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.integracoes-desfecho-recusado .integracoes-desfecho-mensagem {
+  color: var(--color-danger);
+}

@@ -8,13 +8,18 @@ import { OperationalWorkspace } from "../../components/workspace/OperationalWork
 
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 import {
+  desfechoRecusado,
   descricaoDaEspera,
+  listarDesfechosIntegracao,
   listarIntegracoes,
   listarSolicitacoesIntegracaoPendentes,
   sincronizarIntegracao,
   testarConexaoIntegracao,
 } from "./integracoesApi";
-import type { IntegracaoPendingRequest } from "./integracoesApi";
+import type {
+  IntegracaoPendingRequest,
+  IntegracaoRequestOutcome,
+} from "./integracoesApi";
 import type { IntegracaoStatus } from "./integracoes.types";
 import "./IntegracoesPage.css";
 
@@ -74,6 +79,36 @@ function statusLabel(status: string) {
   }
 }
 
+/**
+ * O desfecho de uma solicitação, que não é o mesmo que o estado da integração.
+ *
+ * `statusLabel` descreve como a fonte está; aqui se descreve o que aconteceu com
+ * o pedido. Chamar uma sincronização recusada de "Desativada" descreveria o
+ * ambiente e deixaria de responder à única pergunta de quem clicou.
+ */
+function desfechoLabel(estado: string): string {
+  switch (estado) {
+    case "SUCCESS":
+      return "Concluída";
+    case "PARTIAL":
+      return "Concluída em parte";
+    case "FAILED":
+      return "Falhou";
+    case "RUNNING":
+      return "Em andamento";
+    case "DISABLED":
+      return "Recusada";
+    case "SEM_RESPOSTA":
+      return "Sem resposta do servidor";
+    default:
+      return estado;
+  }
+}
+
+function acaoLabel(acao: string): string {
+  return acao === "TESTAR" ? "Teste de conexão" : "Sincronização";
+}
+
 export function IntegracoesPage({
   onBack,
 }: IntegracoesPageProps) {
@@ -81,6 +116,8 @@ export function IntegracoesPage({
     useState<IntegracaoStatus[]>([]);
   const [pendingRequests, setPendingRequests] =
     useState<IntegracaoPendingRequest[]>([]);
+  const [outcomes, setOutcomes] =
+    useState<IntegracaoRequestOutcome[]>([]);
   const [selected, setSelected] =
     useState<IntegracaoStatus | null>(null);
   const [isLoading, setIsLoading] =
@@ -97,9 +134,13 @@ export function IntegracoesPage({
     setError("");
 
     try {
+      // O que está guardado neste aparelho vem primeiro: sem rede, a consulta
+      // abaixo estoura, e a fila e os desfechos já respondidos continuam sendo
+      // a parte da tela que ainda tem o que dizer.
       setPendingRequests(
         await listarSolicitacoesIntegracaoPendentes(),
       );
+      setOutcomes(await listarDesfechosIntegracao());
       const data = await listarIntegracoes();
       setIntegracoes(data);
       setSelected((current) => {
@@ -175,8 +216,10 @@ export function IntegracoesPage({
       setPendingRequests(
         await listarSolicitacoesIntegracaoPendentes(),
       );
+      setOutcomes(await listarDesfechosIntegracao());
       setMessage(
-        `Solicitação registrada — ${descricaoDaEspera(navigator.onLine)}.`,
+        `Solicitação registrada — ${descricaoDaEspera(navigator.onLine)}.` +
+        " O desfecho aparece abaixo quando o servidor responder.",
       );
     } catch (actionError: unknown) {
       setError(
@@ -252,6 +295,47 @@ export function IntegracoesPage({
                 {request.acao}
                 {" · "}
                 {descricaoDaEspera(navigator.onLine)}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {outcomes.length > 0 && (
+        <section className="form-card" aria-label="Desfecho das solicitações">
+          <h2>Desfecho das solicitações</h2>
+          <ul className="integracoes-desfechos">
+            {outcomes.map((outcome) => (
+              <li
+                key={outcome.id}
+                className={
+                  desfechoRecusado(outcome.estado)
+                    ? "integracoes-desfecho integracoes-desfecho-recusado"
+                    : "integracoes-desfecho"
+                }
+                {...(desfechoRecusado(outcome.estado)
+                  ? { role: "alert" as const }
+                  : {})}
+              >
+                <div>
+                  <strong>{outcome.integracaoId}</strong>
+                  {" · "}
+                  {acaoLabel(outcome.acao)}
+                  {" · "}
+                  <span className="status-badge">
+                    {desfechoLabel(outcome.estado)}
+                  </span>
+                  {" · "}
+                  {outcome.executedAt
+                    ? formatDateTime(outcome.executedAt)
+                    : "sem horário informado"}
+                </div>
+
+                {outcome.mensagem && (
+                  <div className="integracoes-desfecho-mensagem">
+                    {outcome.mensagem}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -357,7 +441,13 @@ export function IntegracoesPage({
               integracoes.length === 0 && (
               <tr>
                 <td colSpan={11}>
-                  Nenhuma integração encontrada.
+                  {/*
+                    * Sem a consulta, não se sabe quantas fontes existem. Afirmar
+                    * "nenhuma" seria relatar como fato algo que ninguém apurou.
+                    */}
+                  {error
+                    ? "Não foi possível consultar as fontes."
+                    : "Nenhuma integração encontrada."}
                 </td>
               </tr>
             )}
