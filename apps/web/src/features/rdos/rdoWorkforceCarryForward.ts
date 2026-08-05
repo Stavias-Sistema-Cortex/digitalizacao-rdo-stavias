@@ -54,8 +54,23 @@ export function carryForwardWorkforce(
       availability: available ? "AVAILABLE" : "UNAVAILABLE",
       selected: available,
       colaboradorId: collaboratorId,
+      /*
+       * Quem ainda está no catálogo entra com o nome de hoje; o retrato do RDO
+       * anterior só vale para quem saiu.
+       *
+       * Era o contrário, e o efeito se acumulava: cada RDO herda do anterior,
+       * então um nome corrigido no Academy — ou grafado errado uma vez —
+       * atravessava a cadeia inteira sem nunca alcançar a frente de serviço. Já
+       * para quem não está mais na obra o retrato é a única evidência de quem
+       * trabalhou naquele dia, e apagá-lo abriria um buraco no histórico.
+       */
       nomeColaborador:
-        item.nameSnapshot?.trim() || current?.nome?.trim() || "",
+        current?.nome?.trim() || item.nameSnapshot?.trim() || "",
+      /*
+       * A função continua vindo do retrato. Diferente do nome, ela é o que foi
+       * apontado naquele dia — o apontador pode tê-la ajustado de propósito, e
+       * sobrescrever isso com o perfil do cadastro desfaria a escolha dele.
+       */
       cargo:
         item.roleSnapshot?.trim() || current?.nomePerfil?.trim() || "",
       tipoVinculo: item.linkType?.trim() ?? "",

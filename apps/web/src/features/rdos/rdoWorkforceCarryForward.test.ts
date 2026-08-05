@@ -36,6 +36,51 @@ function previous(
 }
 
 describe("carry-forward determinístico da equipe", () => {
+  /*
+   * O retrato do RDO anterior ganhava do cadastro, e o efeito se acumulava:
+   * como cada RDO herda do anterior, um nome corrigido no Academy atravessava
+   * a cadeia inteira sem nunca alcançar a frente de serviço.
+   */
+  it("traz o nome de hoje para quem continua na obra", () => {
+    const rows = carryForwardWorkforce(
+      [previous("worker-a", { nameSnapshot: "ANA GRAFADA ERRADO" })],
+      [{ ...catalog[0], nome: "ANA CAROLINA SOUZA" }],
+      () => "linha-1",
+    );
+
+    expect(rows[0].nomeColaborador).toBe("ANA CAROLINA SOUZA");
+  });
+
+  /*
+   * Para quem saiu da obra o retrato é a única evidência de quem trabalhou
+   * naquele dia. Apagá-lo abriria um buraco no histórico.
+   */
+  it("mantém o retrato de quem não está mais no catálogo", () => {
+    const rows = carryForwardWorkforce(
+      [previous("worker-sumido", { nameSnapshot: "JOSE QUE SAIU" })],
+      catalog,
+      () => "linha-1",
+    );
+
+    expect(rows[0].nomeColaborador).toBe("JOSE QUE SAIU");
+    expect(rows[0].availability).toBe("UNAVAILABLE");
+  });
+
+  /*
+   * A função é diferente do nome: é o que foi apontado naquele dia, e o
+   * apontador pode tê-la ajustado de propósito. Sobrescrever com o perfil do
+   * cadastro desfaria a escolha dele.
+   */
+  it("preserva a função apontada, que não é o perfil do cadastro", () => {
+    const rows = carryForwardWorkforce(
+      [previous("worker-a", { roleSnapshot: "Sinaleira" })],
+      catalog,
+      () => "linha-1",
+    );
+
+    expect(rows[0].cargo).toBe("Sinaleira");
+  });
+
   it("seleciona todos os trabalhadores anteriores ainda autorizados", () => {
     const rows = carryForwardWorkforce(
       [previous("worker-a"), previous("worker-b")],
