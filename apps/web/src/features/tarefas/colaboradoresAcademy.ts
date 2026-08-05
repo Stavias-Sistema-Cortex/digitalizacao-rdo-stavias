@@ -1,6 +1,7 @@
 import {
   buscarColaboradores,
   buscarColaboradoresDaObra,
+  buscarColaboradoresParaEquipe,
 } from "../rdos/rdoLookupApi";
 import {
   listColaboradoresLocais,
@@ -13,9 +14,15 @@ import type { ColaboradorLocalRecord } from "../../lib/db/db.types";
  * IndexedDB; offline o reconhecimento segue funcionando com
  * o que já foi visto neste dispositivo.
  *
- * Com {@code obraId}, usa o endpoint escopado por obra — que funciona para o
- * usuário Beta (o catálogo global é administrativo). Sem obra, mantém o
- * catálogo global (perfil administrativo).
+ * Com {@code obraId}, fala pelos endpoints da obra — que funcionam para o Beta,
+ * já que o catálogo global é administrativo. Sem obra, usa o catálogo global.
+ *
+ * Dentro do escopo da obra há dois modos, e a diferença entre eles é o que
+ * destrava formar equipe: sem termo, a lista de quem já pertence à obra, para a
+ * tela abrir povoada; com termo, uma busca nominal que alcança quem ainda não
+ * pertence. Sem o segundo, as duas pontas se travavam — para entrar na equipe
+ * da obra era preciso já estar na obra, e a equipe é justamente a porta de
+ * entrada.
  */
 export async function hidratarColaboradoresAcademy(
   query = "",
@@ -23,8 +30,17 @@ export async function hidratarColaboradoresAcademy(
 ): Promise<ColaboradorLocalRecord[]> {
   const cachedAt = new Date().toISOString();
 
-  const records: ColaboradorLocalRecord[] = obraId
-    ? (await buscarColaboradoresDaObra(obraId))
+  const escopada = obraId
+    ? // Com termo, procura em todo o cadastro pela obra — é assim que quem
+      // monta a frente alcança alguém que ainda não pertence a ela. Sem termo,
+      // a lista de quem já está: a tela abre povoada, sem varrer o cadastro.
+      query.trim()
+      ? await buscarColaboradoresParaEquipe(obraId, query)
+      : await buscarColaboradoresDaObra(obraId)
+    : null;
+
+  const records: ColaboradorLocalRecord[] = escopada
+    ? escopada
         .filter((colaborador) => Boolean(colaborador.nome?.trim()))
         .map((colaborador) => ({
           id: colaborador.id,

@@ -622,9 +622,49 @@ export interface ColaboradorDaObra {
 export async function buscarColaboradoresDaObra(
   obraId: string,
 ): Promise<ColaboradorDaObra[]> {
-  const response = await apiFetch(
-    `/obras/${encodeURIComponent(obraId)}/colaboradores`,
+  return lerListaDeColaboradores(
+    await apiFetch(`/obras/${encodeURIComponent(obraId)}/colaboradores`),
   );
+}
+
+/**
+ * Busca nominal para trazer alguém de fora para a equipe da obra.
+ *
+ * <p>As duas pontas se travavam: para entrar na equipe da obra era preciso já
+ * pertencer à obra, e a equipe é justamente a porta de entrada. O Alfa nunca
+ * sentiu, porque recebe o cadastro inteiro; o Beta ficava sem conseguir trazer
+ * quem veio do Academy e não tem nenhum dos caminhos que a obra reconhece.
+ *
+ * <p>Termo em branco nem chega ao servidor. Lá a regra também vale — sem termo
+ * a resposta é vazia —, mas evitar a ida deixa explícito de que lado está a
+ * decisão: isto é busca, não listagem, e listar o cadastro da empresa continua
+ * sendo coisa de perfil administrativo.
+ */
+export async function buscarColaboradoresParaEquipe(
+  obraId: string,
+  termo: string,
+): Promise<ColaboradorDaObra[]> {
+  const alvo = termo.trim();
+  if (!alvo) return [];
+  return lerListaDeColaboradores(
+    await apiFetch(
+      `/obras/${encodeURIComponent(obraId)}/colaboradores/busca` +
+        `?termo=${encodeURIComponent(alvo)}`,
+    ),
+  );
+}
+
+/**
+ * O contrato dos dois endpoints de colaborador da obra, num lugar só.
+ *
+ * <p>Eram a mesma verificação campo a campo, e duplicá-la faria as duas
+ * envelhecerem diferente — com a metade esquecida aceitando o que a outra
+ * recusa, que é a classe de defeito mais difícil de enxergar aqui: nada
+ * quebra, só passa dado incompleto adiante.
+ */
+async function lerListaDeColaboradores(
+  response: Response,
+): Promise<ColaboradorDaObra[]> {
   const data = await readJson<unknown>(response);
   if (!Array.isArray(data)) {
     throw new RdoLookupPayloadError(

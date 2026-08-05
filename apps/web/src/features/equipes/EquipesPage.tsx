@@ -315,11 +315,15 @@ export function EquipesPage() {
     if (!selectedTeam) return;
     try {
       if (navigator.onLine && hasAuthenticatedConnection) {
-        // Montar equipe é ação exclusiva do Alfa, e ele precisa alcançar quem
-        // ainda não tem vínculo nenhum com a obra — numa obra recém-criada não
-        // há ninguém ligado a ela, e a lista escopada viria vazia justamente
-        // no momento em que se quer formar a equipe. O Beta continua restrito
-        // ao conjunto da obra a que tem acesso.
+        // O Alfa recebe o catálogo global porque precisa alcançar quem ainda
+        // não tem vínculo nenhum com a obra: numa obra recém-criada não há
+        // ninguém ligado a ela, e a lista escopada viria vazia justamente no
+        // momento em que se quer formar a equipe.
+        //
+        // O Beta chega ao mesmo alcance por outro caminho — a busca nominal
+        // pela obra, que exige termo e devolve pouco. Ele deixa de ficar preso
+        // a quem já pertence à obra sem que isso lhe abra o cadastro inteiro,
+        // que continua sendo leitura administrativa.
         await hidratarColaboradoresAcademy(
           query,
           alfa ? undefined : selectedTeam.obraPrincipalId,
