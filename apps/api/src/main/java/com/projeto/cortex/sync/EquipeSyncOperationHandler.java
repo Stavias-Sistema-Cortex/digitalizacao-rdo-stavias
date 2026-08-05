@@ -10,6 +10,7 @@ import com.projeto.cortex.equipes.EquipeMemberEndRequest;
 import com.projeto.cortex.equipes.EquipeMemberRequest;
 import com.projeto.cortex.equipes.EquipeResponse;
 import com.projeto.cortex.equipes.EquipeService;
+import com.projeto.cortex.equipes.EquipeUnarchiveRequest;
 import com.projeto.cortex.equipes.EquipeUpdateRequest;
 import com.projeto.cortex.equipes.EquipeWorksiteEndRequest;
 import com.projeto.cortex.equipes.EquipeWorksiteRequest;
@@ -30,6 +31,7 @@ public class EquipeSyncOperationHandler implements SyncOperationHandler {
             "CRIAR_EQUIPE",
             "ATUALIZAR_EQUIPE",
             "ARQUIVAR_EQUIPE",
+            "DESARQUIVAR_EQUIPE",
             "ALTERAR_VINCULO_EQUIPE"
     );
 
@@ -109,9 +111,10 @@ public class EquipeSyncOperationHandler implements SyncOperationHandler {
                 eventType = "EQUIPE_ATUALIZADA";
             }
             case "ARQUIVAR_EQUIPE" -> {
+                // Sem motivo obrigatório: o arquivamento se explica sozinho.
                 EquipeArchiveRequest request = new EquipeArchiveRequest(
                         mutation.baseVersion(),
-                        requiredText(payload, "motivo"),
+                        nullableText(payload, "motivo"),
                         nullableDateTime(payload, "arquivadaEm")
                 );
                 result = service.arquivar(
@@ -121,6 +124,18 @@ public class EquipeSyncOperationHandler implements SyncOperationHandler {
                         request.arquivadaEm()
                 );
                 eventType = "EQUIPE_ARQUIVADA";
+            }
+            case "DESARQUIVAR_EQUIPE" -> {
+                EquipeUnarchiveRequest request = new EquipeUnarchiveRequest(
+                        mutation.baseVersion(),
+                        nullableDateTime(payload, "desarquivadaEm")
+                );
+                result = service.desarquivar(
+                        teamId,
+                        request.baseVersao(),
+                        request.desarquivadaEm()
+                );
+                eventType = "EQUIPE_DESARQUIVADA";
             }
             case "ALTERAR_VINCULO_EQUIPE" -> {
                 applyLinkChange(teamId, payload);

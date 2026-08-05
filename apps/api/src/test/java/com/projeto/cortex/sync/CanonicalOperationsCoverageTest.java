@@ -71,6 +71,7 @@ class CanonicalOperationsCoverageTest {
                 "CRIAR_EQUIPE",
                 "ATUALIZAR_EQUIPE",
                 "ARQUIVAR_EQUIPE",
+                "DESARQUIVAR_EQUIPE",
                 "ALTERAR_VINCULO_EQUIPE",
                 "VINCULAR_COLABORADOR_OBRA",
                 "REVOGAR_VINCULO_COLABORADOR_OBRA",

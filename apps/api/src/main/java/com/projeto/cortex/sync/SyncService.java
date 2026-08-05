@@ -141,6 +141,7 @@ public class SyncService {
             Map.entry("CRIAR_EQUIPE", "CREATE"),
             Map.entry("ATUALIZAR_EQUIPE", "UPDATE"),
             Map.entry("ARQUIVAR_EQUIPE", "TRANSITION"),
+            Map.entry("DESARQUIVAR_EQUIPE", "TRANSITION"),
             Map.entry("ALTERAR_VINCULO_EQUIPE", "UPDATE"),
             Map.entry("VINCULAR_COLABORADOR_OBRA", "CREATE"),
             Map.entry("REVOGAR_VINCULO_COLABORADOR_OBRA", "DELETE"),

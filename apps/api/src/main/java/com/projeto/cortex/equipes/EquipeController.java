@@ -101,6 +101,19 @@ public class EquipeController {
         );
     }
 
+    @PostMapping("/{id}/desarquivar")
+    public EquipeResponse desarquivar(
+            @PathVariable String id,
+            @RequestBody EquipeUnarchiveRequest request
+    ) {
+        currentUserService.requireAlfa();
+        return service.desarquivar(
+                id,
+                request == null ? null : request.baseVersao(),
+                request == null ? null : request.desarquivadaEm()
+        );
+    }
+
     @PostMapping("/{id}/membros")
     public EquipeMemberResponse adicionarMembro(
             @PathVariable String id,

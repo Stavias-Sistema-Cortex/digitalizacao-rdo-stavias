@@ -28,6 +28,15 @@ vi.mock("../../components/workspace/OperationalWorkspace", () => ({
 
 vi.mock("../auth/authSession", () => ({
   getSession: () => null,
+  isAlfa: () => false,
+  AUTH_SESSION_CHANGED_EVENT: "cortex:auth-session-changed",
+}));
+
+// A aba lê as equipes cadastradas do cache local; sem sessão não há nada.
+vi.mock("../equipes/teamLocalRepository", () => ({
+  listLocalTeams: vi.fn().mockResolvedValue([]),
+  queueArchiveTeam: vi.fn(),
+  queueUnarchiveTeam: vi.fn(),
 }));
 
 vi.mock("../../lib/db/obraLocalRepository", () => ({

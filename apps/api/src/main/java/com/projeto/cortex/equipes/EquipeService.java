@@ -24,6 +24,8 @@ public class EquipeService {
 
     private static final int DEFAULT_PAGE_SIZE = 25;
     private static final int MAX_PAGE_SIZE = 100;
+    private static final String MOTIVO_PADRAO_DO_ARQUIVAMENTO =
+            "Equipe arquivada.";
 
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserService currentUserService;
@@ -633,7 +635,17 @@ public class EquipeService {
         if (before.versaoEntidade() != baseVersion) {
             throw teamVersionConflict();
         }
-        String reason = requireText(motivo, "motivo", 500);
+        /*
+         * Arquivar não pede justificativa.
+         *
+         * Exigir um texto obrigava o Alfa a inventar uma frase para concluir um
+         * gesto que já se explica sozinho, e o campo virava "arquivada", "não
+         * usa mais", "ok" — ruído que ocupa a coluna de motivo dos vínculos sem
+         * informar ninguém. Quando não vem justificativa, o motivo do
+         * encerramento dos vínculos é o próprio arquivamento, dito assim.
+         */
+        String reason = optionalText(motivo, "motivo", 500);
+        String linkReason = reason == null ? MOTIVO_PADRAO_DO_ARQUIVAMENTO : reason;
         LocalDateTime archivedAt = arquivadaEm == null ? LocalDateTime.now() : arquivadaEm;
         if (archivedAt.isBefore(before.inicioValidadeEm())) {
             throw new ResponseStatusException(
@@ -675,7 +687,7 @@ public class EquipeService {
                   AND status = 'ATIVO'
                 """,
                 archivedAt,
-                reason,
+                linkReason,
                 actorId,
                 before.id()
         );
@@ -694,7 +706,7 @@ public class EquipeService {
                   AND status = 'ATIVO'
                 """,
                 archivedAt,
-                reason,
+                linkReason,
                 archivedAt,
                 actorId,
                 actorId,
@@ -711,7 +723,7 @@ public class EquipeService {
                     endedLink,
                     actorId,
                     link.versaoEntidade(),
-                    reason
+                    linkReason
             );
         }
         for (EquipeMemberResponse member : before.membros()) {
@@ -731,7 +743,7 @@ public class EquipeService {
                     "ENCERRADO",
                     member.inicioEm(),
                     archivedAt,
-                    reason,
+                    linkReason,
                     member.versaoEntidade() + 1,
                     member.criadoEm(),
                     archivedAt
@@ -742,7 +754,7 @@ public class EquipeService {
                     ended,
                     actorId,
                     member.versaoEntidade(),
-                    reason
+                    linkReason
             );
         }
         memoryPublisher.equipeArquivada(
@@ -751,6 +763,72 @@ public class EquipeService {
                 actorId,
                 baseVersion,
                 reason
+        );
+        return after;
+    }
+
+    /**
+     * Devolve ao trabalho uma equipe arquivada.
+     *
+     * <p>Só o status da equipe volta. Os membros e as associações a obras
+     * continuam encerrados, com as datas e os motivos que o arquivamento
+     * gravou: quem participava foi desligado, e reconstituir essas
+     * participações sem ninguém declarar quem volta seria fabricar registro
+     * de mão de obra. Quem desarquiva recompõe a equipe adicionando as
+     * pessoas de novo.
+     */
+    @Transactional
+    public EquipeResponse desarquivar(
+            String equipeId,
+            Long baseVersao,
+            LocalDateTime reabertaEm
+    ) {
+        currentUserService.requireAlfa();
+        String actorId = currentUserService.requireUserId();
+        EquipeResponse before = buscarPorId(equipeId);
+        if (!EquipeStatus.ARQUIVADA.name().equals(before.status())) {
+            return before;
+        }
+
+        long baseVersion = requireBaseVersion(baseVersao);
+        if (before.versaoEntidade() != baseVersion) {
+            throw teamVersionConflict();
+        }
+        LocalDateTime reopenedAt =
+                reabertaEm == null ? LocalDateTime.now() : reabertaEm;
+        if (reopenedAt.isBefore(before.inicioValidadeEm())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O desarquivamento não pode ser anterior ao início da equipe."
+            );
+        }
+
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE equipe
+                SET status = 'ATIVA',
+                    fim_validade_em = NULL,
+                    arquivada_em = NULL,
+                    atualizado_por = ?,
+                    versao_linha = versao_linha + 1
+                WHERE id = ?
+                  AND versao_linha = ?
+                  AND status = 'ARQUIVADA'
+                """,
+                actorId,
+                before.id(),
+                baseVersion
+        );
+        if (updated != 1) {
+            throw teamVersionConflict();
+        }
+
+        EquipeResponse after = buscarPorId(before.id());
+        memoryPublisher.equipeDesarquivada(
+                before,
+                after,
+                actorId,
+                baseVersion
         );
         return after;
     }
@@ -1331,6 +1409,21 @@ public class EquipeService {
 
     private String trimToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    /** Texto que pode faltar, mas que ainda respeita o limite da coluna. */
+    private String optionalText(String value, String field, int maxLength) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        if (normalized.length() > maxLength) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    field + " excede o limite de " + maxLength + " caracteres."
+            );
+        }
+        return normalized;
     }
 
     private String placeholders(int count) {

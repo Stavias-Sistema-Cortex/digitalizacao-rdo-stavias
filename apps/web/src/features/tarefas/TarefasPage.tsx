@@ -9,7 +9,21 @@ import {
 
 import { CortexShell } from "../../components/shell/CortexShell";
 import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
-import { getSession } from "../auth/authSession";
+import { getSession, isAlfa } from "../auth/authSession";
+import type { TeamDto } from "../equipes/teamApi";
+import {
+  listLocalTeams,
+  queueArchiveTeam,
+  queueUnarchiveTeam,
+} from "../equipes/teamLocalRepository";
+import {
+  abasDeEquipe,
+  chaveDaEquipe,
+  contagemPorFiltro,
+  filtrarAbas,
+  type EquipeNaAba,
+  type FiltroDeEquipe,
+} from "./abasDeEquipe";
 import {
   listObrasLocais,
 } from "../../lib/db/obraLocalRepository";
@@ -167,6 +181,21 @@ export function TarefasPage() {
     useState(false);
   const [novaEquipeNome, setNovaEquipeNome] =
     useState("");
+
+  // As equipes cadastradas vêm do cache local: a aba abre e arquiva sem rede.
+  const [equipesCadastradas, setEquipesCadastradas] =
+    useState<TeamDto[]>([]);
+  const [filtroEquipe, setFiltroEquipe] =
+    useState<FiltroDeEquipe>("ATIVAS");
+  const [equipeEmArquivamento, setEquipeEmArquivamento] =
+    useState<string | null>(null);
+  const [erroDoArquivamento, setErroDoArquivamento] =
+    useState("");
+  const [confirmacaoDeArquivamento, setConfirmacaoDeArquivamento] =
+    useState<EquipeNaAba | null>(null);
+  // Arquivar e desarquivar são atos de Alfa. O servidor impõe o mesmo em
+  // EquipeService; aqui só se evita oferecer um botão que voltaria 403.
+  const podeArquivarEquipe = isAlfa(session);
 
   const [statusFilter, setStatusFilter] =
     useState<StatusFilter>("TODAS");
@@ -402,7 +431,28 @@ export function TarefasPage() {
     [equipesManuaisPorObra, focusedObraId],
   );
 
-  const equipes = useMemo(() => {
+  /*
+   * As equipes cadastradas saem do cache local, não da API.
+   *
+   * A aba precisa listar, filtrar e arquivar sem rede — é a mesma tela que se
+   * usa em campo. O store `teams` já é preenchido pela sincronização e pelas
+   * próprias mutações otimistas desta página.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    listLocalTeams()
+      .then((teams) => {
+        if (!cancelled) {
+          setEquipesCadastradas(teams);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadTick]);
+
+  const abasDaObra = useMemo(() => {
     const derivadas = equipesDaObra(obraRdos, tarefas);
     const existentes = new Set(
       derivadas.map((equipe) => equipeKey(equipe)),
@@ -411,10 +461,34 @@ export function TarefasPage() {
       (equipe) => !existentes.has(equipeKey(equipe)),
     );
 
-    return [...derivadas, ...manuais].sort((a, b) =>
-      a.localeCompare(b, "pt-BR"),
+    return abasDeEquipe(
+      [...derivadas, ...manuais],
+      equipesCadastradas.filter(
+        (equipe) => equipe.obraPrincipalId === focusedObraId,
+      ),
     );
-  }, [obraRdos, tarefas, equipesManuais]);
+  }, [
+    obraRdos,
+    tarefas,
+    equipesManuais,
+    equipesCadastradas,
+    focusedObraId,
+  ]);
+
+  const contagemDeEquipes = useMemo(
+    () => contagemPorFiltro(abasDaObra),
+    [abasDaObra],
+  );
+
+  const abasVisiveis = useMemo(
+    () => filtrarAbas(abasDaObra, filtroEquipe),
+    [abasDaObra, filtroEquipe],
+  );
+
+  const equipes = useMemo(
+    () => abasVisiveis.map((aba) => aba.nome),
+    [abasVisiveis],
+  );
 
   const selectedEquipe = useMemo(() => {
     const escolha = focusedObraId
@@ -433,6 +507,7 @@ export function TarefasPage() {
 
     return equipes[0] ?? "";
   }, [equipeEscolhidaPorObra, equipes, focusedObraId]);
+
 
   const selectEquipe = useCallback(
     (equipe: string) => {
@@ -576,6 +651,38 @@ export function TarefasPage() {
       ? `Período: ${first}`
       : `Período: ${first} – ${last}`;
   }, [serie]);
+
+  async function confirmarArquivamento() {
+    const aba = confirmacaoDeArquivamento;
+    if (!aba?.equipe || !podeArquivarEquipe) {
+      return;
+    }
+
+    setEquipeEmArquivamento(aba.equipe.id);
+    setErroDoArquivamento("");
+    try {
+      const atualizada = aba.arquivada
+        ? await queueUnarchiveTeam(aba.equipe)
+        : await queueArchiveTeam(aba.equipe);
+      setEquipesCadastradas((current) =>
+        current.map((equipe) =>
+          equipe.id === atualizada.id ? atualizada : equipe,
+        ),
+      );
+      setConfirmacaoDeArquivamento(null);
+    } catch (error) {
+      // O erro fica no diálogo, junto da mão de quem clicou.
+      setErroDoArquivamento(
+        error instanceof Error
+          ? error.message
+          : aba.arquivada
+            ? "Não foi possível desarquivar a equipe."
+            : "Não foi possível arquivar a equipe.",
+      );
+    } finally {
+      setEquipeEmArquivamento(null);
+    }
+  }
 
   function handleAddEquipe() {
     const nome = novaEquipeNome.trim();
@@ -837,31 +944,100 @@ export function TarefasPage() {
           <div className="tarefas-layout">
             <section className="tarefas-card">
               <div
+                className="tarefas-equipe-filtro"
+                role="group"
+                aria-label="Mostrar equipes"
+              >
+                {(
+                  [
+                    ["ATIVAS", "Ativas"],
+                    ["ARQUIVADAS", "Arquivadas"],
+                    ["TODAS", "Todas"],
+                  ] as [FiltroDeEquipe, string][]
+                ).map(([valor, rotulo]) => (
+                  <button
+                    key={valor}
+                    type="button"
+                    aria-pressed={filtroEquipe === valor}
+                    className={
+                      filtroEquipe === valor
+                        ? "tarefas-equipe-filtro-opcao tarefas-equipe-filtro-opcao--ativa"
+                        : "tarefas-equipe-filtro-opcao"
+                    }
+                    onClick={() => setFiltroEquipe(valor)}
+                  >
+                    {rotulo}
+                    <span className="tarefas-equipe-filtro-contagem">
+                      {contagemDeEquipes[valor]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div
                 className="tarefas-equipe-tabs"
                 role="tablist"
                 aria-label={`Equipes da obra ${focusedObra?.nome ?? ""}`}
               >
-                {equipes.map((equipe) => (
-                  <button
-                    key={equipeKey(equipe)}
-                    type="button"
-                    role="tab"
-                    aria-selected={
-                      equipeKey(equipe) ===
-                      equipeKey(selectedEquipe)
-                    }
-                    className={
-                      equipeKey(equipe) ===
-                      equipeKey(selectedEquipe)
-                        ? "tarefas-equipe-tab tarefas-equipe-tab--active"
-                        : "tarefas-equipe-tab"
-                    }
-                    onClick={() =>
-                      selectEquipe(equipe)
-                    }
+                {abasVisiveis.map((aba) => (
+                  <span
+                    key={chaveDaEquipe(aba.nome)}
+                    className="tarefas-equipe-aba"
                   >
-                    {equipe}
-                  </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={
+                        equipeKey(aba.nome) ===
+                        equipeKey(selectedEquipe)
+                      }
+                      className={[
+                        "tarefas-equipe-tab",
+                        equipeKey(aba.nome) ===
+                        equipeKey(selectedEquipe)
+                          ? "tarefas-equipe-tab--active"
+                          : "",
+                        aba.arquivada
+                          ? "tarefas-equipe-tab--arquivada"
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onClick={() => selectEquipe(aba.nome)}
+                    >
+                      {aba.nome}
+                      {aba.arquivada && (
+                        <span className="tarefas-equipe-selo">
+                          arquivada
+                        </span>
+                      )}
+                    </button>
+                    {podeArquivarEquipe && aba.equipe && (
+                      <button
+                        type="button"
+                        className="tarefas-equipe-acao"
+                        title={
+                          aba.arquivada
+                            ? `Desarquivar ${aba.nome}`
+                            : `Arquivar ${aba.nome}`
+                        }
+                        aria-label={
+                          aba.arquivada
+                            ? `Desarquivar ${aba.nome}`
+                            : `Arquivar ${aba.nome}`
+                        }
+                        disabled={
+                          equipeEmArquivamento === aba.equipe.id
+                        }
+                        onClick={() => {
+                          setErroDoArquivamento("");
+                          setConfirmacaoDeArquivamento(aba);
+                        }}
+                      >
+                        {aba.arquivada ? "↺" : "🗄"}
+                      </button>
+                    )}
+                  </span>
                 ))}
 
                 {isAddingEquipe ? (
@@ -907,14 +1083,75 @@ export function TarefasPage() {
                 )}
               </div>
 
+              {confirmacaoDeArquivamento && (
+                <div
+                  className="tarefas-confirma"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={
+                    confirmacaoDeArquivamento.arquivada
+                      ? "Desarquivar equipe"
+                      : "Arquivar equipe"
+                  }
+                >
+                  <div className="tarefas-confirma-caixa">
+                    <p className="tarefas-confirma-pergunta">
+                      Tem certeza?
+                    </p>
+                    <p className="tarefas-confirma-detalhe">
+                      {confirmacaoDeArquivamento.arquivada
+                        ? `${confirmacaoDeArquivamento.nome} volta para as equipes ativas. Os membros continuam desligados — recomponha a equipe depois.`
+                        : `${confirmacaoDeArquivamento.nome} sai das equipes ativas e os membros são desligados. As tarefas já registradas continuam no histórico.`}
+                    </p>
+                    {erroDoArquivamento && (
+                      <p
+                        className="tarefas-confirma-erro"
+                        role="alert"
+                      >
+                        {erroDoArquivamento}
+                      </p>
+                    )}
+                    <div className="tarefas-confirma-acoes">
+                      <button
+                        type="button"
+                        className="tarefas-confirma-cancelar"
+                        onClick={() => {
+                          setConfirmacaoDeArquivamento(null);
+                          setErroDoArquivamento("");
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        className="tarefas-confirma-confirmar"
+                        disabled={equipeEmArquivamento !== null}
+                        onClick={() => {
+                          void confirmarArquivamento();
+                        }}
+                      >
+                        {erroDoArquivamento
+                          ? "Tentar de novo"
+                          : confirmacaoDeArquivamento.arquivada
+                            ? "Desarquivar"
+                            : "Arquivar"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {isDetalhesLoading ? (
                 <p className="tarefas-vazio">
                   Carregando tarefas da obra…
                 </p>
-              ) : equipes.length === 0 ? (
+              ) : abasVisiveis.length === 0 ? (
                 <p className="tarefas-vazio">
-                  Nenhuma equipe nesta obra. Elas aparecem após alocações de
-                  RDO; use “+ Nova equipe” para criar uma.
+                  {filtroEquipe === "ARQUIVADAS"
+                    ? "Nenhuma equipe arquivada nesta obra."
+                    : contagemDeEquipes.ARQUIVADAS > 0
+                      ? "Nenhuma equipe ativa nesta obra. Veja as arquivadas no filtro acima."
+                      : "Nenhuma equipe nesta obra. Elas aparecem após alocações de RDO; use “+ Nova equipe” para criar uma."}
                 </p>
               ) : (
                 <>

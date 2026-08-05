@@ -440,6 +440,60 @@ public class EquipeMemoryPublisher {
         );
     }
 
+    /**
+     * Registra a volta da equipe ao trabalho.
+     *
+     * <p>A aresta {@code ATUA_EM} é reaberta porque a equipe volta a atuar na
+     * obra principal. Os vínculos de membro e as associações a outras obras
+     * continuam encerrados: quem participava foi desligado no arquivamento, e
+     * reabrir essas arestas sozinho inventaria participação que ninguém
+     * declarou.
+     */
+    public void equipeDesarquivada(
+            EquipeResponse before,
+            EquipeResponse after,
+            String actorId,
+            long baseVersion
+    ) {
+        memoryService.registrarObjeto(
+                "EQUIPE",
+                after.id(),
+                after.id(),
+                after.nome(),
+                after.status(),
+                SOURCE,
+                "equipe",
+                Map.of("obraPrincipalId", after.obraPrincipalId())
+        );
+        memoryService.registrarRelacaoAtiva(
+                "EQUIPE",
+                after.id(),
+                "OBRA",
+                after.obraPrincipalId(),
+                "ATUA_EM",
+                SOURCE,
+                "Equipe desarquivada e de volta à obra."
+        );
+        Map<String, Object> beforeState = teamState(before);
+        Map<String, Object> afterState = teamState(after);
+        publishEvent(
+                "EQUIPE",
+                after.id(),
+                "EQUIPE_DESARQUIVADA",
+                after.obraPrincipalId(),
+                null,
+                actorId,
+                "DESARQUIVAR",
+                beforeState,
+                afterState,
+                changedFields(beforeState, afterState),
+                baseVersion,
+                after.versaoEntidade(),
+                null,
+                List.of(Map.of("tipo", "OBRA", "id", after.obraPrincipalId()))
+        );
+    }
+
     public void funcaoCriada(FuncaoOperacionalResponse function, String actorId) {
         memoryService.registrarObjeto(
                 "FUNCAO_OPERACIONAL",

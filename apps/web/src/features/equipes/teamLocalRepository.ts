@@ -219,9 +219,17 @@ export async function queueUpdateTeam(
   return updated;
 }
 
+/**
+ * Arquiva a equipe sem exigir justificativa.
+ *
+ * O `motivo` continua aceito porque a tela de Equipes ainda oferece o campo a
+ * quem quiser explicar; o que deixou de existir é a obrigação. Quando não vem,
+ * o servidor grava o próprio arquivamento como motivo do encerramento dos
+ * vínculos, que é o que de fato aconteceu.
+ */
 export async function queueArchiveTeam(
   existing: TeamDto,
-  motivo: string,
+  motivo?: string | null,
 ): Promise<TeamDto> {
   const identity = await teamMutationIdentity();
   const pending = await activeTeamMutations(existing.id);
@@ -251,7 +259,7 @@ export async function queueArchiveTeam(
     occurredAt: timestamp,
     previousSnapshot: teamTransportSnapshot(existing),
     nextSnapshot: teamTransportSnapshot(archived, {
-      motivo: motivo.trim(),
+      motivo: motivo?.trim() ? motivo.trim() : null,
       arquivadaEm: timestamp,
     }),
     principalSnapshot: { ...archived },
@@ -269,6 +277,64 @@ export async function queueArchiveTeam(
     write: () => [{ store: "teams", value: archived, principal: true }],
   });
   return archived;
+}
+
+/**
+ * Devolve a equipe ao trabalho.
+ *
+ * Só o status volta. Os membros e as associações a obras continuam encerrados
+ * — o arquivamento desligou quem participava, e reconstituir isso sozinho
+ * inventaria mão de obra que ninguém declarou. Quem desarquiva recompõe a
+ * equipe adicionando as pessoas de novo.
+ */
+export async function queueUnarchiveTeam(
+  existing: TeamDto,
+): Promise<TeamDto> {
+  const identity = await teamMutationIdentity();
+  const pending = await activeTeamMutations(existing.id);
+  const timestamp = new Date().toISOString();
+  const clientMutationId = crypto.randomUUID();
+  const restored: TeamDto = {
+    ...existing,
+    status: "ATIVA",
+    fimValidadeEm: null,
+    atualizadoEm: timestamp,
+    syncStatus: "PENDING_SYNC",
+    ultimoErro: null,
+    pendingMutationId: clientMutationId,
+  };
+  const tail = pending.at(-1) ?? null;
+
+  await commitLocalMutation({
+    ...identity,
+    clientMutationId,
+    obraId: existing.obraPrincipalId,
+    entityType: "EQUIPE",
+    entityId: existing.id,
+    entityName: existing.nome,
+    operation: "TRANSITION",
+    transportOperation: "DESARQUIVAR_EQUIPE",
+    baseVersion: existing.versaoEntidade + pending.length,
+    occurredAt: timestamp,
+    previousSnapshot: teamTransportSnapshot(existing),
+    nextSnapshot: teamTransportSnapshot(restored, {
+      desarquivadaEm: timestamp,
+    }),
+    principalSnapshot: { ...restored },
+    expectedPrincipalSnapshot: { ...existing },
+    expectedActiveMutationIds: pending.map((mutation) => mutation.clientMutationId),
+    eventType: "EQUIPE_DESARQUIVADA",
+    colaboradorId: identity.userId,
+    causationId: tail?.clientMutationId ?? null,
+    dependsOnMutationIds: tail ? [tail.clientMutationId] : [],
+    relatedEntities: [{
+      tipo: "OBRA",
+      id: existing.obraPrincipalId,
+      nome: existing.obraNome,
+    }],
+    write: () => [{ store: "teams", value: restored, principal: true }],
+  });
+  return restored;
 }
 
 export async function queueTeamLinkChange(

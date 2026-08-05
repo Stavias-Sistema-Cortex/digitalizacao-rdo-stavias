@@ -81,6 +81,70 @@ class EquipeControllerMockMvcTest {
         verify(service).criar(any(EquipeCreateRequest.class));
     }
 
+    /** Arquivar deixou de exigir justificativa: o corpo pode vir sem motivo. */
+    @Test
+    void alfaArchivesTeamWithoutStatingAReason() throws Exception {
+        LocalDateTime now = LocalDateTime.of(2026, 8, 4, 8, 0);
+        when(service.arquivar(any(), any(), any(), any())).thenReturn(
+                new EquipeResponse(
+                        "equipe-1", "obra-1", "Obra Norte", "Equipe Norte",
+                        null, "ARQUIVADA", now, now, 1, now, now, List.of()
+                )
+        );
+
+        mockMvc.perform(post("/api/equipes/equipe-1/arquivar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"baseVersao": 0}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ARQUIVADA"));
+
+        verify(currentUserService).requireAlfa();
+        verify(service).arquivar("equipe-1", 0L, null, null);
+    }
+
+    @Test
+    void alfaUnarchivesTeam() throws Exception {
+        LocalDateTime now = LocalDateTime.of(2026, 8, 4, 8, 0);
+        when(service.desarquivar(any(), any(), any())).thenReturn(
+                new EquipeResponse(
+                        "equipe-1", "obra-1", "Obra Norte", "Equipe Norte",
+                        null, "ATIVA", now, null, 2, now, now, List.of()
+                )
+        );
+
+        mockMvc.perform(post("/api/equipes/equipe-1/desarquivar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"baseVersao": 1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ATIVA"))
+                .andExpect(jsonPath("$.fimValidadeEm").doesNotExist());
+
+        verify(currentUserService).requireAlfa();
+        verify(service).desarquivar("equipe-1", 1L, null);
+    }
+
+    /** Desarquivar é ato de Alfa, como arquivar. */
+    @Test
+    void betaReceives403WithoutCallingUnarchiveService() throws Exception {
+        doThrow(new ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "A operação exige perfil administrativo (Alfa)."
+        )).when(currentUserService).requireAlfa();
+
+        mockMvc.perform(post("/api/equipes/equipe-1/desarquivar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"baseVersao": 1}
+                                """))
+                .andExpect(status().isForbidden());
+
+        verify(service, never()).desarquivar(any(), any(), any());
+    }
+
     @Test
     void betaReceives403WithoutCallingCreateService() throws Exception {
         doThrow(new ResponseStatusException(

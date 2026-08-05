@@ -181,11 +181,24 @@ export async function updateTeam(teamId: string, input: {
 export async function archiveTeam(
   teamId: string,
   baseVersao: number,
-  motivo: string,
+  motivo?: string | null,
 ): Promise<TeamDto> {
   return requireOkJson<TeamDto>(
     `/equipes/${encodeURIComponent(teamId)}/arquivar`,
-    jsonOptions("POST", { baseVersao, motivo }),
+    jsonOptions("POST", {
+      baseVersao,
+      motivo: motivo?.trim() ? motivo.trim() : null,
+    }),
+  );
+}
+
+export async function unarchiveTeam(
+  teamId: string,
+  baseVersao: number,
+): Promise<TeamDto> {
+  return requireOkJson<TeamDto>(
+    `/equipes/${encodeURIComponent(teamId)}/desarquivar`,
+    jsonOptions("POST", { baseVersao }),
   );
 }
 
