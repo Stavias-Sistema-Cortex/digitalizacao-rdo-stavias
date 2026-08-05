@@ -477,6 +477,10 @@ const RDO_SYNC_TRANSACTION_STORES = [
   "service_price_versions",
   "obras",
   "obra_geometrias",
+  // A equipe faltava aqui, e a ausência era a causa raiz de uma enxurrada de
+  // conflitos: fora da transação, a versão devolvida pelo servidor não tinha
+  // onde ser gravada, então o registro local nunca saía do zero com que nasce.
+  "teams",
   ...RDO_CHILD_STORE_NAMES,
 ] as const;
 
@@ -528,6 +532,10 @@ function isObraMutation(mutation: OutboxMutationRecord): boolean {
 
 function isGeometriaMutation(mutation: OutboxMutationRecord): boolean {
   return mutation.entidadeTipo === "GEOMETRIA_OBRA";
+}
+
+function isTeamMutation(mutation: OutboxMutationRecord): boolean {
+  return (mutation.entidadeTipo as string) === "EQUIPE";
 }
 
 /**
@@ -626,6 +634,22 @@ async function markGeometriaMutationFailed(
     return;
   }
   await store.put({ ...local, syncStatus, updatedAt: timestamp });
+}
+
+/**
+ * O estado de sincronização de uma equipe, somado a partir do que resta na
+ * fila. Espelha o de obra de propósito: quem decide o estado é o conjunto de
+ * mutações pendentes, não a última que voltou.
+ */
+async function teamSyncStatusFromOutbox(
+  store: OutboxEntityMutationStore,
+  teamId: string,
+): Promise<LocalSyncStatus> {
+  return localSyncStatusFromMutations(
+    (await store.index("by-entity-id").getAll(teamId)).filter(
+      (mutation) => (mutation.entidadeTipo as string) === "EQUIPE",
+    ),
+  );
 }
 
 async function obraSyncStatusFromOutbox(
@@ -3214,6 +3238,7 @@ export async function applyPushResultAtomically(
   const taskStore = transaction.objectStore("tarefas");
   const messageStore = transaction.objectStore("mensagens");
   const obraStore = transaction.objectStore("obras");
+  const teamStore = transaction.objectStore("teams");
 
   const mutation = await outboxStore.get(
     result.clientMutationId,
@@ -3245,6 +3270,9 @@ export async function applyPushResultAtomically(
   const obra = isObraMutation(mutation)
     ? await obraStore.get(mutation.entidadeId)
     : undefined;
+  const team = isTeamMutation(mutation)
+    ? await teamStore.get(mutation.entidadeId)
+    : undefined;
   const timestamp = nowUtc();
   const canonicalEvent = isCanonicalOutboxMutation(mutation)
     ? await exactCanonicalEvent(transaction, mutation.clientMutationId)
@@ -3260,6 +3288,7 @@ export async function applyPushResultAtomically(
       : rdo?.versaoEntidade ??
         task?.versaoEntidade ??
         obra?.versaoEntidade ??
+        team?.versaoEntidade ??
         canonicalEvent?.entityVersion ??
         null;
   const authoritativeRdoNumber =
@@ -3424,6 +3453,50 @@ export async function applyPushResultAtomically(
               updatedAt: timestamp,
             },
       );
+    }
+    if (isTeamMutation(mutation) && team) {
+      /*
+       * A equipe aprende a versão que o servidor devolveu.
+       *
+       * Sem esta gravação — e a loja `teams` nem entrava na transação, então
+       * ela era impossível — o registro local ficava para sempre no zero com
+       * que nasce. Como toda mutação de equipe sobe com
+       * `baseVersion = versaoEntidade + pendentes`, o servidor recebia zero
+       * enquanto já estava em três, recusava por versão, e a recusa virava um
+       * cartão na tela de conflitos. Repetir o gesto repetia o cartão: era um
+       * laço que só terminava quando alguém desistia.
+       *
+       * `pendingMutationId` é limpo junto, e por um motivo próprio: ele é o que
+       * diz à tela que há escrita em voo. Deixá-lo apontando para uma mutação já
+       * aplicada manteria a equipe eternamente "sincronizando".
+       */
+      /*
+       * A equipe tem um vocabulário de estado mais estreito que o genérico —
+       * não conhece LOCAL_ONLY, LOCAL_PENDING, SYNCING nem ERROR. Traduzir aqui
+       * é melhor que alargar o tipo dela: são estados que a tela de equipes não
+       * sabe desenhar, e alargar só empurraria o problema para lá.
+       */
+      const agregado = await teamSyncStatusFromOutbox(
+        outboxStore,
+        mutation.entidadeId,
+      );
+      const teamSyncStatus =
+        agregado === "SYNCED"
+          ? "SYNCED"
+          : agregado === "CONFLICT"
+            ? "CONFLICT"
+            : agregado === "ERROR"
+              ? "REJECTED"
+              : "PENDING_SYNC";
+      await teamStore.put({
+        ...team,
+        versaoEntidade: resultVersion ?? team.versaoEntidade,
+        syncStatus: teamSyncStatus,
+        ultimoErro: null,
+        pendingMutationId:
+          teamSyncStatus === "SYNCED" ? null : team.pendingMutationId,
+        atualizadoEm: timestamp,
+      });
     }
     if (isGeometriaMutation(mutation)) {
       await applyGeometriaPushResult(
