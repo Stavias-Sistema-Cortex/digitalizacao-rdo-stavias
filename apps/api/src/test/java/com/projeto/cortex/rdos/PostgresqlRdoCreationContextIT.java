@@ -2597,12 +2597,16 @@ class PostgresqlRdoCreationContextIT {
             String autorId,
             String status
     ) {
+        // inicio_em explícito: o default é o agora, e chk_equipe_membro_periodo
+        // exige fim_em >= inicio_em. Encerrar em julho com início hoje viola a
+        // restrição — o banco recusa antes de o teste chegar à asserção.
         jdbc.update("""
                 INSERT INTO equipe_membro (
-                    id, equipe_id, colaborador_id, status, fim_em,
+                    id, equipe_id, colaborador_id, status, inicio_em, fim_em,
                     adicionado_por, atribuido_por, atualizado_por
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, id(), equipeId, colaboradorId, status,
+                LocalDateTime.of(2026, 7, 1, 8, 0),
                 "ATIVO".equals(status)
                         ? null
                         : LocalDateTime.of(2026, 7, 15, 8, 0),
