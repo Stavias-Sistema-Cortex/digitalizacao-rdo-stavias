@@ -2437,6 +2437,178 @@ class PostgresqlRdoCreationContextIT {
         }
     }
 
+    /*
+     * O defeito que o campo cobrou: o catálogo lia apenas
+     * vinculo_colaborador_obra, então numa obra com equipe montada e gente
+     * dentro dela a busca do RDO respondia "nenhum colaborador autorizado
+     * encontrado". Vincular pessoa a pessoa era a única forma de fazer o
+     * apontamento enxergar alguém — trabalho à mão sobre informação que a
+     * equipe já continha.
+     *
+     * O caso é montado com duas equipes na mesma obra de propósito, porque é
+     * assim que a obra real funciona, e com uma pessoa nas duas: se a união
+     * fosse por equipe em vez de por colaborador, ela viraria duas linhas
+     * iguais na lista de escolha.
+     */
+    @Test
+    void catalogoUneVinculoDiretoEMembrosDeTodasAsEquipesVigentesDaObra() {
+        String obra = id();
+        inserirObra(obra, "Uniao");
+        String autor = inserirColaborador(
+                "Autor", "autor@fixture.invalid", "***.900.***-**");
+
+        String porVinculo = inserirColaborador(
+                "Ana Vinculo", "ana@fixture.invalid", "***.901.***-**");
+        String soNaEquipeA = inserirColaborador(
+                "Bruno Equipe A", "bruno@fixture.invalid", "***.902.***-**");
+        String soNaEquipeB = inserirColaborador(
+                "Carla Equipe B", "carla@fixture.invalid", "***.903.***-**");
+        String nasDuasEquipes = inserirColaborador(
+                "Duda Nas Duas", "duda@fixture.invalid", "***.904.***-**");
+        String deEquipeArquivada = inserirColaborador(
+                "Elis Arquivada", "elis@fixture.invalid", "***.905.***-**");
+        String removidoDaEquipe = inserirColaborador(
+                "Fabio Removido", "fabio@fixture.invalid", "***.906.***-**");
+        String deEquipeQueSaiuDaObra = inserirColaborador(
+                "Gil Encerrada", "gil@fixture.invalid", "***.907.***-**");
+
+        vincular(porVinculo, obra, "APONTADOR", "ATIVO");
+
+        String equipeA = inserirEquipe(obra, "Frente A", "ATIVA", autor);
+        String equipeB = inserirEquipe(obra, "Frente B", "ATIVA", autor);
+        String equipeArquivada =
+                inserirEquipe(obra, "Frente Velha", "ARQUIVADA", autor);
+        String equipeForaDaObra =
+                inserirEquipe(obra, "Frente Que Saiu", "ATIVA", autor);
+
+        alocarEquipeNaObra(equipeA, obra, "ATIVO");
+        alocarEquipeNaObra(equipeB, obra, "ATIVO");
+        alocarEquipeNaObra(equipeArquivada, obra, "ATIVO");
+        alocarEquipeNaObra(equipeForaDaObra, obra, "ENCERRADO");
+
+        inserirMembro(equipeA, soNaEquipeA, autor, "ATIVO");
+        inserirMembro(equipeA, nasDuasEquipes, autor, "ATIVO");
+        inserirMembro(equipeB, nasDuasEquipes, autor, "ATIVO");
+        inserirMembro(equipeB, soNaEquipeB, autor, "ATIVO");
+        inserirMembro(equipeA, removidoDaEquipe, autor, "REMOVIDO");
+        inserirMembro(equipeArquivada, deEquipeArquivada, autor, "ATIVO");
+        inserirMembro(equipeForaDaObra, deEquipeQueSaiuDaObra, autor, "ATIVO");
+
+        RdoContextResponse response = new RdoContextService(jdbc)
+                .buscarContexto(obra, SELECTED_DATE);
+
+        assertThat(response.colaboradores())
+                .extracting(RdoContextResponse.ColaboradorContexto::id)
+                .containsExactlyInAnyOrder(
+                        porVinculo, soNaEquipeA, soNaEquipeB, nasDuasEquipes);
+
+        // Quem está em duas frentes é uma pessoa, não duas escolhas iguais.
+        assertThat(response.colaboradores())
+                .filteredOn(item -> item.id().equals(nasDuasEquipes))
+                .hasSize(1);
+
+        // Vigência dos dois lados: equipe arquivada, alocação encerrada e
+        // membro removido não autorizam mais ninguém a ser apontado.
+        assertThat(response.colaboradores())
+                .extracting(RdoContextResponse.ColaboradorContexto::id)
+                .doesNotContain(
+                        deEquipeArquivada, removidoDaEquipe, deEquipeQueSaiuDaObra);
+    }
+
+    /*
+     * O mesmo furo aparecia disfarçado no RDO anterior: quem entrou na obra por
+     * equipe voltava marcado como indisponível, como se tivesse saído da obra.
+     */
+    @Test
+    void equipeDoRdoAnteriorFicaDisponivelParaQuemEntrouPorEquipe() {
+        String obra = id();
+        inserirObra(obra, "Disponibilidade");
+        String autor = inserirColaborador(
+                "Autor D", "autord@fixture.invalid", "***.910.***-**");
+        String soNaEquipe = inserirColaborador(
+                "Helena Equipe", "helena@fixture.invalid", "***.911.***-**");
+        String semNada = inserirColaborador(
+                "Ivo Sem Nada", "ivo@fixture.invalid", "***.912.***-**");
+
+        String equipe = inserirEquipe(obra, "Frente Unica", "ATIVA", autor);
+        alocarEquipeNaObra(equipe, obra, "ATIVO");
+        inserirMembro(equipe, soNaEquipe, autor, "ATIVO");
+
+        LocalDateTime quando = LocalDateTime.of(2026, 7, 21, 18, 0);
+        String anterior = id();
+        inserirRdo(anterior, obra, "RDO-0100",
+                SELECTED_DATE.minusDays(1), "ENVIADO", quando, quando);
+        inserirMaoObra("item-equipe-" + id().substring(0, 12),
+                anterior, soNaEquipe, "Operadora");
+        inserirMaoObra("item-sem-" + id().substring(0, 12),
+                anterior, semNada, "Operador");
+
+        RdoContextResponse response = new RdoContextService(jdbc)
+                .buscarContexto(obra, SELECTED_DATE);
+
+        assertThat(response.previousWorkforce())
+                .filteredOn(item -> item.collaboratorId().equals(soNaEquipe))
+                .singleElement()
+                .extracting(RdoContextResponse.PreviousWorkforceItem::availability)
+                .isEqualTo("AVAILABLE");
+        assertThat(response.previousWorkforce())
+                .filteredOn(item -> item.collaboratorId().equals(semNada))
+                .singleElement()
+                .extracting(RdoContextResponse.PreviousWorkforceItem::availability)
+                .isEqualTo("UNAVAILABLE");
+    }
+
+    private String inserirEquipe(
+            String obraId,
+            String nome,
+            String status,
+            String autorId
+    ) {
+        String equipeId = id();
+        jdbc.update("""
+                INSERT INTO equipe (
+                    id, obra_id, obra_principal_id, nome, status,
+                    criado_por, atualizado_por
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, equipeId, obraId, obraId, nome, status, autorId, autorId);
+        return equipeId;
+    }
+
+    private void alocarEquipeNaObra(
+            String equipeId,
+            String obraId,
+            String status
+    ) {
+        jdbc.update("""
+                INSERT INTO equipe_obra (
+                    id, equipe_id, obra_id, status, inicio_em, fim_em,
+                    atribuido_por
+                ) VALUES (?, ?, ?, ?, ?, ?, 'fixture')
+                """, id(), equipeId, obraId, status,
+                LocalDateTime.of(2026, 7, 1, 8, 0),
+                "ENCERRADO".equals(status)
+                        ? LocalDateTime.of(2026, 7, 10, 8, 0)
+                        : null);
+    }
+
+    private void inserirMembro(
+            String equipeId,
+            String colaboradorId,
+            String autorId,
+            String status
+    ) {
+        jdbc.update("""
+                INSERT INTO equipe_membro (
+                    id, equipe_id, colaborador_id, status, fim_em,
+                    adicionado_por, atribuido_por, atualizado_por
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, id(), equipeId, colaboradorId, status,
+                "ATIVO".equals(status)
+                        ? null
+                        : LocalDateTime.of(2026, 7, 15, 8, 0),
+                autorId, autorId, autorId);
+    }
+
     private record ContextSnapshotTuple(
             String xmin,
             String ctid,

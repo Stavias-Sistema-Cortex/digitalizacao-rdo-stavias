@@ -619,11 +619,34 @@ public class RdoContextService {
                     item.hora_inicio,
                     item.hora_fim,
                     item.observacoes,
+                    -- A equipe autoriza tanto quanto o vínculo direto. Sem este
+                    -- segundo caminho, quem entrou na obra por equipe voltava do
+                    -- RDO anterior marcado como indisponível — o mesmo furo que
+                    -- esvaziava a busca, aqui disfarçado de "saiu da obra".
                     CASE WHEN item.colaborador_id IS NULL
                               AND NULLIF(BTRIM(item.nome_colaborador), '') IS NOT NULL
                          THEN 'AVAILABLE'
                          WHEN collaborator.id IS NOT NULL
-                              AND link.status = 'ATIVO'
+                              AND (
+                                  link.status = 'ATIVO'
+                                  OR EXISTS (
+                                      SELECT 1
+                                      FROM equipe_obra alocacao
+                                      JOIN equipe
+                                        ON equipe.id = alocacao.equipe_id
+                                       AND equipe.status = 'ATIVA'
+                                       AND equipe.deletado_em IS NULL
+                                      JOIN equipe_membro membro
+                                        ON membro.equipe_id = equipe.id
+                                       AND membro.colaborador_id = collaborator.id
+                                       AND membro.status = 'ATIVO'
+                                       AND membro.fim_em IS NULL
+                                       AND membro.deletado_em IS NULL
+                                      WHERE alocacao.obra_id = source_rdo.obra_id
+                                        AND alocacao.status = 'ATIVO'
+                                        AND alocacao.fim_em IS NULL
+                                  )
+                              )
                          THEN 'AVAILABLE'
                          ELSE 'UNAVAILABLE'
                     END AS availability
@@ -722,6 +745,33 @@ public class RdoContextService {
         );
     }
 
+    /**
+     * Quem o RDO pode apontar nesta obra, vindo das duas portas de entrada.
+     *
+     * <p>Lia apenas {@code vinculo_colaborador_obra}, e por isso quem entrou na
+     * obra por equipe não existia para o RDO: a busca de colaborador respondia
+     * "nenhum colaborador autorizado encontrado" numa obra com equipe montada e
+     * gente dentro dela. Vincular pessoa a pessoa era a única forma de fazer o
+     * apontamento enxergar alguém — trabalho duplicado, feito à mão, sobre uma
+     * informação que a equipe já continha.
+     *
+     * <p>A união é por colaborador, não por equipe, e é isso que sustenta várias
+     * equipes na mesma obra: quem está em duas aparece uma vez só. Sem o
+     * agrupamento, a pessoa em três frentes viraria três linhas iguais na lista
+     * de escolha, e escolher uma delas não diria nada além das outras.
+     *
+     * <p>O papel exibido vem de {@code MIN} sobre as origens, o que é uma
+     * escolha assumida e não um acaso: o vínculo direto e cada equipe podem
+     * descrever a mesma pessoa de formas diferentes, e a lista precisa de um
+     * rótulo estável entre recargas. Estável importa mais que preciso aqui,
+     * porque o campo é dica de identificação — quem responde pela função do dia
+     * é o próprio RDO, no cargo de cada linha de mão de obra.
+     *
+     * <p>Vigência entra nos dois lados: equipe arquivada, alocação encerrada e
+     * membro removido saem da lista. Uma equipe que saiu da obra não autoriza
+     * mais ninguém, e continuar oferecendo seus integrantes seria autorizar
+     * apontamento por um vínculo que acabou.
+     */
     private List<RdoContextResponse.ColaboradorContexto> listarColaboradoresAtivosDaObra(
             String obraId
     ) {
@@ -731,15 +781,46 @@ public class RdoContextService {
                     collaborator.id,
                     collaborator.codigo_colaborador,
                     collaborator.nome,
-                    link.papel_na_obra,
+                    MIN(origem.papel_na_obra) AS papel_na_obra,
                     collaborator.nome_perfil
-                FROM vinculo_colaborador_obra link
+                FROM (
+                    SELECT
+                        link.colaborador_id,
+                        link.papel_na_obra
+                    FROM vinculo_colaborador_obra link
+                    WHERE link.obra_id = ?
+                      AND link.status = 'ATIVO'
+
+                    UNION ALL
+
+                    SELECT
+                        membro.colaborador_id,
+                        COALESCE(funcao.nome, equipe.nome)
+                    FROM equipe_obra alocacao
+                    JOIN equipe
+                      ON equipe.id = alocacao.equipe_id
+                     AND equipe.status = 'ATIVA'
+                     AND equipe.deletado_em IS NULL
+                    JOIN equipe_membro membro
+                      ON membro.equipe_id = equipe.id
+                     AND membro.status = 'ATIVO'
+                     AND membro.fim_em IS NULL
+                     AND membro.deletado_em IS NULL
+                    LEFT JOIN funcao_operacional funcao
+                      ON funcao.id = membro.funcao_operacional_id
+                    WHERE alocacao.obra_id = ?
+                      AND alocacao.status = 'ATIVO'
+                      AND alocacao.fim_em IS NULL
+                ) AS origem
                 JOIN colaborador collaborator
-                  ON collaborator.id = link.colaborador_id
+                  ON collaborator.id = origem.colaborador_id
                  AND collaborator.ativo = TRUE
                  AND collaborator.deletado_em IS NULL
-                WHERE link.obra_id = ?
-                  AND link.status = 'ATIVO'
+                GROUP BY
+                    collaborator.id,
+                    collaborator.codigo_colaborador,
+                    collaborator.nome,
+                    collaborator.nome_perfil
                 ORDER BY collaborator.nome, collaborator.id
                 """,
                 (rs, rowNum) -> new RdoContextResponse.ColaboradorContexto(
@@ -749,6 +830,7 @@ public class RdoContextService {
                         rs.getString("papel_na_obra"),
                         rs.getString("nome_perfil")
                 ),
+                obraId,
                 obraId
         );
     }
