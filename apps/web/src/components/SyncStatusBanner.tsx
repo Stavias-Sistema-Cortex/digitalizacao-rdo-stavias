@@ -486,23 +486,41 @@ export function SyncStatusBanner() {
 
           {snapshot.reviewCount > 0 ? (
             <>
-              <button
-                type="button"
-                className="sync-chip__action sync-chip__action--secondary"
-                onClick={() => {
-                  void handleReleaseReview();
-                }}
-                disabled={isManualSyncing}
-              >
-                {`Reenviar ${pluralize(
-                  snapshot.reviewCount,
-                  "registro em revisão",
-                  "registros em revisão",
-                )}`}
-              </button>
-              <p className="sync-chip__hint">
-                Nada se perde: o que não subir volta para revisão.
-              </p>
+              {/*
+                O reenvio só aparece para quem ele pode resolver.
+                Oferecê-lo para conflito de versão era um laço com aparência de
+                conserto: 345 reenviados, 345 recusados, mesmo número de volta —
+                porque o reenvio troca a identidade e preserva a versão-base,
+                que é exatamente o que o servidor recusou. Ficava acima do
+                descarte, que é a saída real, e consumia a tentativa de quem
+                estava tentando resolver.
+              */}
+              {snapshot.reenviaveisCount > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    className="sync-chip__action sync-chip__action--secondary"
+                    onClick={() => {
+                      void handleReleaseReview();
+                    }}
+                    disabled={isManualSyncing}
+                  >
+                    {`Reenviar ${pluralize(
+                      snapshot.reenviaveisCount,
+                      "registro em revisão",
+                      "registros em revisão",
+                    )}`}
+                  </button>
+                  <p className="sync-chip__hint">
+                    Nada se perde: o que não subir volta para revisão.
+                  </p>
+                </>
+              ) : (
+                <p className="sync-chip__hint">
+                  Reenviar não resolveria: o servidor recusou pela versão, e o
+                  reenvio manda a mesma versão de novo.
+                </p>
+              )}
               {/*
                 Reenviar não resolve recusa por versão — o reenvio troca a
                 identidade da mutação, não a versão-base que o servidor recusou.

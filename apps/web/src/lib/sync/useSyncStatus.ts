@@ -8,7 +8,10 @@ import { getSyncState } from "../db/syncStateRepository";
 import { listOutboxMutations } from "../db/outboxRepository";
 import type { OutboxMutationRecord } from "../db/db.types";
 import { insistindoHaMuitoTempo } from "./automaticSyncRetryStorage";
-import { foiSubstituida } from "./superacaoDeMutacao";
+import {
+  foiSubstituida,
+  vaiAdiantarReenviar,
+} from "./superacaoDeMutacao";
 
 export type SyncUiStatus =
   | "OFFLINE"
@@ -28,6 +31,7 @@ export interface SyncStatusSnapshot {
   conflictCount: number;
   reviewCount: number;
   insistindoCount: number;
+  reenviaveisCount: number;
   reviewReason: string | null;
   lastSyncCompletedAt: string | null;
   lastSyncError: string | null;
@@ -45,6 +49,7 @@ const INITIAL_STATUS: SyncStatusSnapshot = {
   conflictCount: 0,
   reviewCount: 0,
   insistindoCount: 0,
+  reenviaveisCount: 0,
   reviewReason: null,
   lastSyncCompletedAt: null,
   lastSyncError: null,
@@ -123,6 +128,7 @@ export interface ContagemDaFila {
   conflictCount: number;
   reviewCount: number;
   insistindoCount: number;
+  reenviaveisCount: number;
 }
 
 /**
@@ -166,6 +172,15 @@ export function contarPendenciasDaFila(
      * sobre a espera.
      */
     insistindoCount: mutations.filter(insistindoHaMuitoTempo).length,
+    /*
+     * Subconjunto de `reviewCount`: quantas das recusas o reenvio pode de fato
+     * mudar. Sem separá-las a tela oferecia "Reenviar" para uma pilha de
+     * conflitos de versão — que o reenvio nunca resolve, porque preserva a
+     * versão-base que o servidor recusou. Cada clique devolvia o mesmo número.
+     */
+    reenviaveisCount: mutations.filter(
+      (mutation) => vaiAdiantarReenviar(mutation, mutations),
+    ).length,
   };
 }
 
@@ -213,6 +228,7 @@ export function useSyncStatus(): {
         conflictCount,
         reviewCount,
         insistindoCount,
+        reenviaveisCount,
       } = contarPendenciasDaFila(mutations);
 
       const isOnline = navigator.onLine;
@@ -242,6 +258,7 @@ export function useSyncStatus(): {
         conflictCount,
         reviewCount,
         insistindoCount,
+        reenviaveisCount,
         reviewReason,
         lastSyncCompletedAt:
           syncState.lastSyncCompletedAt,

@@ -2,6 +2,7 @@ import { getCortexDb } from "../db/cortexDb";
 import {
   foiSubstituida,
   MARCA_DE_SUPERACAO,
+  vaiAdiantarReenviar,
 } from "./superacaoDeMutacao";
 import type {
   CanonicalOperationalEventRecord,
@@ -1731,13 +1732,21 @@ export async function requeueMutationsInReview(): Promise<number> {
   const identidadesTrocadas = new Map<string, string>();
   let devolvidas = 0;
 
+  // A regra de superação precisa enxergar a fila inteira, não só as recusadas:
+  // a substituta que salva uma original está justamente fora deste conjunto.
+  const emRevisao = await outboxStore.getAll();
+
   for (const mutation of await outboxStore.index("by-status").getAll(
     "REJECTED",
   )) {
     if (
       !isCanonicalOutboxMutation(mutation) ||
       (mutation.blockedReason !== null &&
-        SUPERSEDIDA_POR.test(mutation.blockedReason.trim()))
+        SUPERSEDIDA_POR.test(mutation.blockedReason.trim())) ||
+      // Recusa sobre a versão-base não muda com reenvio, porque o reenvio
+      // preserva a versão-base. Reapresentá-la só devolveria a mesma recusa e
+      // recontaria a mesma pilha — o laço que prendia a tela.
+      !vaiAdiantarReenviar(mutation, emRevisao)
     ) {
       continue;
     }
