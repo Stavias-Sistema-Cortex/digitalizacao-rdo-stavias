@@ -148,8 +148,29 @@ function resolveDependency(
     path.push(currentId);
     const current = byId.get(currentId);
     if (!current) {
+      /*
+       * Dependência ausente da fila está satisfeita, e tratá-la como bloqueio
+       * foi o defeito mais caro desta área.
+       *
+       * A outbox é fila, não arquivo: quem aplica sai dela. Uma dependência que
+       * não está mais ali já teve desfecho — aplicou, ou foi descartada. Nos
+       * dois casos prender o filho é errado, e de formas diferentes. No
+       * primeiro, o bloqueio é falso: o pai já subiu e o filho podia ter ido
+       * junto. No segundo, troca uma recusa do servidor — visível, com saída
+       * pela tela — por um congelamento mudo, sem status, sem erro, sem nada
+       * que a pessoa possa apertar.
+       *
+       * Foi assim que três adições de membro ficaram paradas: dependiam de
+       * mutações que uma limpeza de fila removeu, e ninguém tinha como saber.
+       * A tela dizia "3 alterações pendentes. O sistema tentará sincronizar
+       * automaticamente" enquanto o motor nem as considerava.
+       *
+       * `missingId` continua sendo devolvido porque a análise informa quem
+       * ficou órfão — o que se removeu foi o poder de vetar o envio. Se o
+       * servidor precisar do pai, ele recusa e a recusa aparece.
+       */
       return {
-        satisfied: false,
+        satisfied: true,
         missingId: currentId,
         cycle: [],
         invalidAliasId: null,
@@ -303,10 +324,6 @@ export function selectReadyOutboxMutations(
   );
   const analysis = analyzeOutboxDependencies(mutations);
   const cycles = new Set(analysis.cycles);
-  const missingByMutation = new Set(
-    analysis.missingDependencies.map((item) => item.mutationId),
-  );
-
   return mutations
     .filter((mutation) => {
       if (
@@ -316,8 +333,7 @@ export function selectReadyOutboxMutations(
         (typeof mutation.nextAttemptAt === "string" &&
           Number.isFinite(Date.parse(mutation.nextAttemptAt)) &&
           Date.parse(mutation.nextAttemptAt) > now) ||
-        cycles.has(mutation.clientMutationId) ||
-        missingByMutation.has(mutation.clientMutationId)
+        cycles.has(mutation.clientMutationId)
       ) {
         return false;
       }

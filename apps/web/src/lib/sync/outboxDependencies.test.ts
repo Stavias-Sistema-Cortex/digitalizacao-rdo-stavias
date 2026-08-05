@@ -88,14 +88,25 @@ describe("selectReadyOutboxMutations", () => {
       .toEqual([message]);
   });
 
+  /*
+   * O bloqueio aqui é real e continua valendo: a mensagem espera o anexo que
+   * ainda está na fila, e mandá-la antes criaria mensagem apontando para um
+   * arquivo que o servidor não tem. Antes esta prova usava uma dependência
+   * ausente, que hoje não bloqueia mais — ausente quer dizer resolvida, e o que
+   * segura é dependência viva e ainda não aplicada.
+   */
   it("keeps independent mutations moving around a blocked dependency", () => {
+    const upload = mutation("upload-1", "PENDING");
+    upload.transport = "OBJECT_UPLOAD";
     const blocked = mutation("message-1", "PENDING", ["upload-1"]);
     const independent = mutation("rdo-1", "PENDING");
     independent.entidadeTipo = "RDO";
     independent.operacao = "CRIAR_RDO";
 
-    expect(selectReadyOutboxMutations([blocked, independent], 100))
-      .toEqual([independent]);
+    expect(
+      selectReadyOutboxMutations([upload, blocked, independent], 100)
+        .map((item) => item.clientMutationId),
+    ).toEqual(["rdo-1"]);
   });
 
   it("treats legacy records without dependency fields as sync push", () => {
@@ -276,25 +287,34 @@ describe("selectReadyOutboxMutations", () => {
 });
 
 describe("analyzeOutboxDependencies", () => {
-  it("reports missing dependencies and cycles without sending them", () => {
+  /*
+   * O ciclo continua barrado — duas mutações que esperam uma pela outra nunca
+   * ficam prontas, e enviar qualquer uma quebraria a ordem que elas declaram.
+   *
+   * A dependência ausente, não. A outbox é fila, não arquivo: quem aplica sai
+   * dela. Uma dependência que não está mais ali já teve desfecho, e prender o
+   * filho troca uma recusa visível do servidor por um congelamento mudo. Foi
+   * assim que três adições de membro ficaram paradas depois de uma limpeza de
+   * fila remover as mutações de que dependiam, com a tela prometendo que o
+   * sistema tentaria sincronizar enquanto o motor nem as considerava.
+   */
+  it("reporta a órfã mas deixa ela subir, e continua barrando o ciclo", () => {
     const first = mutation("first", "PENDING", ["second"]);
     const second = mutation("second", "PENDING", ["first"]);
-    const missing = mutation("missing", "PENDING", ["gone"]);
+    const orfa = mutation("orfa", "PENDING", ["gone"]);
 
-    const analysis = analyzeOutboxDependencies([
-      first,
-      second,
-      missing,
-    ]);
+    const analysis = analyzeOutboxDependencies([first, second, orfa]);
 
     expect(analysis.cycles).toEqual(
       expect.arrayContaining(["first", "second"]),
     );
+    // A análise continua dizendo quem ficou órfão: o que saiu foi o veto.
     expect(analysis.missingDependencies).toEqual([
-      { mutationId: "missing", dependencyId: "gone" },
+      { mutationId: "orfa", dependencyId: "gone" },
     ]);
     expect(
-      selectReadyOutboxMutations([first, second, missing], 100),
-    ).toEqual([]);
+      selectReadyOutboxMutations([first, second, orfa], 100)
+        .map((item) => item.clientMutationId),
+    ).toEqual(["orfa"]);
   });
 });
