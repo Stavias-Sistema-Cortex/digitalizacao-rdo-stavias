@@ -785,7 +785,20 @@ export function EquipesPage() {
 
               {formerMembers.length > 0 && <section className="teams-section"><header><h3>Participações encerradas <span className="teams-section-count">{formerMembers.length}</span></h3></header><div className="teams-history-table" role="table"><div role="row"><span>Pessoa</span><span>Função</span><span>Período</span><span>Motivo</span></div>{formerMembers.map((member) => <button type="button" role="row" key={member.id} onClick={() => setSelectedMember(member)}><strong>{member.colaboradorNome}</strong><span>{member.funcaoNome}</span><span>{formatDate(member.inicioEm)} — {formatDate(member.fimEm)}</span><span>{member.motivoEncerramento || "Não informado"}</span></button>)}</div></section>}
 
-              {alfa && <section className="teams-section teams-audit"><header><h3>Registro de alterações <span className="teams-section-count">{history.length}</span></h3></header>{history.length === 0 ? <div className="teams-section-empty">Nenhum evento disponível no cache atual.</div> : <ol>{[...history].reverse().map((event) => <li key={event.eventId}><strong>{teamHistoryLabel(event)}</strong>{changedFields(event).length ? <p>Campos: {changedFields(event).join(", ")}</p> : null}<span>{formatDateTime(event.occurredAt)} · {event.source} · ator {event.collaboratorId ?? "sistema"}</span><code>commit {event.commitSeq}</code></li>)}</ol>}</section>}
+              {alfa && <section className="teams-section teams-audit"><header><h3>Registro de alterações <span className="teams-section-count">{history.length}</span></h3></header>{history.length === 0 ? <div className="teams-section-empty">Nenhum evento disponível no cache atual.</div> : <ol>{[...history].reverse().map((event) => <li
+                  key={event.eventId}
+                  /* commit, origem e id do ator são vocabulário de máquina:
+                     não dizem nada a quem gerencia a equipe e davam ao registro
+                     cara de saída de depuração. Continuam recuperáveis ao pousar
+                     o cursor, que preserva a auditoria sem poluir a leitura. */
+                  title={`commit ${event.commitSeq} · ${event.source} · ator ${event.collaboratorId ?? "sistema"}`}
+                >
+                  <strong>{teamHistoryLabel(event)}</strong>
+                  {changedFields(event).length ? (
+                    <p>Campos: {changedFields(event).join(", ")}</p>
+                  ) : null}
+                  <span>{formatDateTime(event.occurredAt)}</span>
+                </li>)}</ol>}</section>}
 
               {alfa && (
                 <div className="teams-archive-row">

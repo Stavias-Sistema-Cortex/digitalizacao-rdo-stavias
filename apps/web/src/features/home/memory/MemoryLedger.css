@@ -34,7 +34,7 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  padding: 18px 20px;
+  padding: 18px 16px;
   border-top: 4px solid var(--memory-asphalt);
 }
 
@@ -143,12 +143,19 @@
 
 .memory-query {
   display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  align-items: start;
+  /* A busca é o controle principal e ficava na trilha estreita, com o resumo
+     recolhido dos filtros ocupando a larga. */
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  /* Alinhar pelo fim, e não pelo início, é o que endireita a linha: a busca é
+     um <label> que empilha o texto "Pesquisa integral" sobre o campo, enquanto
+     os filtros são um <details> sem rótulo. Alinhados pelo topo, o resumo dos
+     filtros subia à altura do rótulo em vez de ficar à altura do campo — e a
+     diferença era exatamente a altura de uma linha de texto. */
+  align-items: end;
   gap: 12px;
   width: 100%;
   min-width: 0;
-  padding: 12px;
+  padding: 12px 16px;
 }
 
 .memory-query__view {
@@ -368,11 +375,15 @@
 .memory-query__pendencias {
   grid-column: 1 / -1;
   justify-self: start;
-  min-height: 32px;
+  /* Mesma altura e mesmo raio dos botões do alternador ao lado: os três são
+     chips da mesma faixa, e três geometrias diferentes na mesma linha é o que
+     dava o aspecto torto. O tracejado permanece — ele distingue "atalho" de
+     "estado", e essa distinção tem função. */
+  min-height: 34px;
   border: 1px dashed var(--color-border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: transparent;
-  padding: 0 12px;
+  padding: 0 14px;
   color: var(--color-danger);
   font-size: 0.72rem;
   font-weight: 600;

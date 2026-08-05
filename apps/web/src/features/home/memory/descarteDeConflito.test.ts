@@ -67,7 +67,16 @@ describe("descarte da edição em conflito", () => {
    * pesquisa virava uma caixa de trezentos pixels.
    */
   it("mantém a pesquisa na altura de um campo", () => {
-    expect(rule(ledgerCss, ".memory-query")).toContain("align-items: start;");
+    /*
+     * O que precisa ser garantido é a ausência de esticamento: `stretch` é o
+     * padrão do grid, e era ele que transformava o input numa caixa de
+     * trezentos pixels. Qualquer alinhamento explícito resolve — `start` e
+     * `end` igualmente —, e qual deles usar é decisão de layout, não contrato.
+     * A asserção fixava a palavra e não o efeito, e por isso quebrou numa
+     * mudança que preservava exatamente aquilo que ela existe para proteger.
+     */
+    expect(rule(ledgerCss, ".memory-query"))
+      .toMatch(/align-items:\s*(?:start|end|center|baseline);/);
     const busca = rule(ledgerCss, ".memory-query__search input");
     expect(busca).toContain("height: 38px;");
     expect(busca).not.toContain("min-height: 44px;");

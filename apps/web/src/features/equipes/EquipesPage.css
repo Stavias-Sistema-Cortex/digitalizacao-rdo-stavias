@@ -114,7 +114,13 @@
 .teams-list-item {
   position: relative;
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  /* Duas colunas porque o item tem dois filhos: o bloco de texto e o crachá.
+     Havia uma terceira trilha fixa de 42px, resto de um avatar removido, e o
+     bloco de texto caía nela — por isso nome, obra e contagem apareciam como
+     "FR C…", "Quart…" e "0 me…" mesmo com o painel largo. A trilha sai em vez
+     de ser preenchida de volta: a política visual desta tela proíbe repor
+     enfeite sem função. */
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 11px;
   align-items: center;
   width: 100%;
@@ -155,7 +161,9 @@
 }
 
 
-.teams-list-item > span:nth-child(2) {
+/* O bloco de texto é o primeiro filho, não o segundo — a guarda de
+   `min-width` também apontava para a trilha errada e nunca surtia efeito. */
+.teams-list-item > span {
   min-width: 0;
 }
 
@@ -223,13 +231,18 @@
   align-items: center;
   gap: 13px;
   min-height: 93px;
-  padding: 17px 90px 17px 24px;
+  /* O padding-right de 90px era folga para um elemento que já saiu da tela.
+     Sem ele o cabeçalho para de ter um vazio inexplicável à direita. */
+  padding: 17px 24px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
 }
 
 
-.teams-detail-header > div:nth-child(3) {
+/* O bloco de título é o segundo filho, não o terceiro: o `min-width: 0` estava
+   no container de ações, e por isso um nome longo empurrava os botões para fora
+   em vez de ser ele mesmo a encolher. */
+.teams-detail-header > div:nth-child(2) {
   min-width: 0;
 }
 
@@ -548,10 +561,14 @@
   list-style: none;
 }
 
+/* Em linha, `strong`, `p` e `span` ficavam lado a lado com três pixels de
+   desnível entre si — o desalinhamento que dava ao registro cara de saída de
+   depuração. Empilhados, cada evento lê como uma frase e a data como legenda. */
 .teams-audit li {
   display: flex;
-  gap: 12px;
-  padding: 13px 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 11px 0;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -592,8 +609,17 @@
   font-size: 0.7rem;
 }
 
+/* Só a cor era declarada, então este botão caía no estilo nativo do navegador:
+   1rem ao lado de botões de 0.67rem, com raio e altura do sistema. Herda agora
+   a mesma base dos demais botões da tela. */
 .teams-archive-row button,
 .teams-modal .is-danger {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-danger);
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
   border-color: var(--color-danger);
   background: var(--color-surface);
   color: var(--color-danger);
