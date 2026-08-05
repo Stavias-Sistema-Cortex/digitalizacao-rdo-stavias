@@ -55,6 +55,7 @@ interface RdoLocalListProps {
   onImportRdoFile: (file: File) => void;
   isImporting: boolean;
   onOpen: (record: LocalRdoRecord) => void;
+  onClone?: (record: LocalRdoRecord) => void;
   onDiscardRejected?: (record: LocalRdoRecord) => void;
   discardingRdoId?: string | null;
   onCancelRdo?: (record: LocalRdoRecord) => void;
@@ -405,6 +406,7 @@ export function RdoLocalList({
   onOpen,
   onDiscardRejected,
   discardingRdoId = null,
+  onClone,
   onCancelRdo,
   onRestoreRdo,
   lifecycleRdoId = null,
@@ -1114,6 +1116,16 @@ export function RdoLocalList({
                         : "Continuar RDO"}
                     </button>
                   )}
+                  {onClone && !record.canceladoEm ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => onClone(record)}
+                      title="Cria um RDO novo com o que se repete deste. Serviços e quantidades ficam em branco."
+                    >
+                      Clonar para outra data
+                    </button>
+                  ) : null}
                   {onCancelRdo && !record.canceladoEm ? (
                     <button
                       type="button"

@@ -24,6 +24,16 @@ export interface CreateRdoDraftOptions {
   occurredAt?: string;
   workforceIdFactory?: () => string;
   baseDraft?: RdoDraft;
+  /**
+   * De onde veio o rascunho-base.
+   *
+   * <p>`IMPORTACAO` é o único que existia, e por isso é o padrão: o rascunho
+   * nasceu de um documento lido, e a criação carimba a evidência dessa origem.
+   * `CLONE` nasceu de outro RDO deste mesmo Córtex, e carimbá-lo como importado
+   * mentiria sobre a procedência — o RDO passaria a alegar um documento que
+   * nunca existiu, numa trilha que existe justamente para ser confiável.
+   */
+  baseDraftOrigin?: "IMPORTACAO" | "CLONE";
 }
 
 export interface CreatedRdoDraft {
@@ -116,8 +126,12 @@ export async function createAndPersistRdoDraft(
     context,
     options.workforceIdFactory,
   );
+  // O clone não passa pela fusão de evidência: applyRdoCreationContext já
+  // espalhou o rascunho-base sobre o contextual, então tudo o que o clone
+  // trazia já está aqui — e a fusão, além de redundante, carimbaria uma
+  // evidência de importação que não corresponde a documento nenhum.
   const draft = comPreenchidoPor(
-    options.baseDraft
+    options.baseDraft && options.baseDraftOrigin !== "CLONE"
       ? mergeImportedEvidence(contextualDraft, options.baseDraft)
       : contextualDraft,
   );
@@ -146,8 +160,10 @@ export async function createAndPersistLocalPendingRdoDraft(
     context,
     options.workforceIdFactory,
   );
+  // Mesma razão do caminho online: clone não é importação, e o contexto local
+  // pendente já espalhou o rascunho-base.
   const draft = comPreenchidoPor(
-    options.baseDraft
+    options.baseDraft && options.baseDraftOrigin !== "CLONE"
       ? mergeLocalPendingImportedEvidence(contextualDraft, options.baseDraft)
       : contextualDraft,
   );

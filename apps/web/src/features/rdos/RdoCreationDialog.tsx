@@ -34,6 +34,14 @@ import "./RdoCreationDialog.css";
 interface RdoCreationDialogProps {
   returnFocusRef: RefObject<HTMLElement | null>;
   initialDraft?: RdoDraft;
+  /**
+   * De onde veio `initialDraft`. Só a importação existia, e por isso ela é o
+   * padrão. O clone precisa se distinguir porque a criação carimba evidência de
+   * documento importado, e um clone não veio de documento nenhum.
+   */
+  initialDraftOrigin?: "IMPORTACAO" | "CLONE";
+  /** Resumo do que o clone traz, para a tela dizer antes de criar. */
+  cloneResumo?: string;
   onClose: () => void;
   onCreated: (
     draft: RdoDraft,
@@ -65,6 +73,8 @@ function focusableElements(element: HTMLElement): HTMLElement[] {
 export function RdoCreationDialog({
   returnFocusRef,
   initialDraft,
+  initialDraftOrigin = "IMPORTACAO",
+  cloneResumo,
   onClose,
   onCreated,
 }: RdoCreationDialogProps) {
@@ -269,7 +279,9 @@ export function RdoCreationDialog({
       }
       void motivoParaNaoCriarRdo(
         contextResult.context,
-        initialDraft ? { baseDraft: initialDraft } : {},
+        initialDraft
+          ? { baseDraft: initialDraft, baseDraftOrigin: initialDraftOrigin }
+          : {},
       )
         .then((motivo) => {
           if (!cancelado) setImpedimento(motivo);
@@ -284,7 +296,7 @@ export function RdoCreationDialog({
       cancelado = true;
       window.clearTimeout(id);
     };
-  }, [contextResult, initialDraft]);
+  }, [contextResult, initialDraft, initialDraftOrigin]);
 
   const canCreate = Boolean(
     selectedWorksiteId &&
@@ -332,7 +344,10 @@ export function RdoCreationDialog({
         const created = initialDraft
           ? await createAndPersistLocalPendingRdoDraft(
               contextResult.context,
-              { baseDraft: initialDraft },
+              {
+                baseDraft: initialDraft,
+                baseDraftOrigin: initialDraftOrigin,
+              },
             )
           : await createAndPersistLocalPendingRdoDraft(
               contextResult.context,
@@ -342,6 +357,7 @@ export function RdoCreationDialog({
         const created = initialDraft
           ? await createAndPersistRdoDraft(contextResult.context, {
               baseDraft: initialDraft,
+              baseDraftOrigin: initialDraftOrigin,
             })
           : await createAndPersistRdoDraft(contextResult.context);
         onCreated(created.draft, contextResult.context);
@@ -371,12 +387,19 @@ export function RdoCreationDialog({
           <div>
             <p className="rdo-creation-kicker">Córtex · RDO</p>
             <h2 id={titleId}>
-              {initialDraft ? "Vincular RDO importado" : "Criar RDO"}
+              {!initialDraft
+                ? "Criar RDO"
+                : initialDraftOrigin === "CLONE"
+                  ? "Clonar RDO"
+                  : "Vincular RDO importado"}
             </h2>
             <p>
-              {initialDraft
-                ? "Selecione a obra autorizada sem alterar os dados importados."
-                : "Selecione a obra que dará origem ao relatório."}
+              {!initialDraft
+                ? "Selecione a obra que dará origem ao relatório."
+                : initialDraftOrigin === "CLONE"
+                  ? cloneResumo ??
+                    "Escolha a data do novo RDO. Serviços e quantidades ficam em branco."
+                  : "Selecione a obra autorizada sem alterar os dados importados."}
             </p>
           </div>
           <button

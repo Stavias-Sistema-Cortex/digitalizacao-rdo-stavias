@@ -25,6 +25,10 @@ import { RdoCreatePage } from "./RdoCreatePage";
 import { RdoCreationDialog } from "./RdoCreationDialog";
 import { RdoLocalList } from "./RdoLocalList";
 import {
+  rascunhoClonadoDe,
+  resumoDoQueOCloneTraz,
+} from "./rascunhoClonado";
+import {
   descartarRdoLocalNaoSincronizado,
   queueCancelRdo,
   queueRestoreRdo,
@@ -78,6 +82,10 @@ export function RdoWorkspacePage() {
   const [pendingImport, setPendingImport] = useState<{
     draft: RdoDraft;
     notice: string;
+  } | null>(null);
+  const [pendingClone, setPendingClone] = useState<{
+    draft: RdoDraft;
+    resumo: string;
   } | null>(null);
 
   const [loadError, setLoadError] =
@@ -168,6 +176,21 @@ export function RdoWorkspacePage() {
 
   function handleCreate() {
     setPendingImport(null);
+    setIsCreationDialogOpen(true);
+  }
+
+  /**
+   * Clonar não cria nada sozinho: monta o rascunho-base e entrega ao mesmo
+   * diálogo de criação, porque é ele quem sabe pedir obra, data e contexto
+   * versionado. O clone só decide o que se repete — quem decide se pode criar
+   * continua sendo um só.
+   */
+  function handleClone(record: LocalRdoRecord) {
+    const origem = localRecordToDraft(record);
+    setPendingClone({
+      draft: rascunhoClonadoDe(origem),
+      resumo: resumoDoQueOCloneTraz(origem),
+    });
     setIsCreationDialogOpen(true);
   }
 
@@ -343,6 +366,7 @@ export function RdoWorkspacePage() {
         }}
         isImporting={isImporting}
         onOpen={handleOpen}
+        onClone={handleClone}
         onCancelRdo={(record) => {
           void handleCancelRdo(record);
         }}
@@ -358,13 +382,17 @@ export function RdoWorkspacePage() {
       {isCreationDialogOpen ? (
         <RdoCreationDialog
           returnFocusRef={createButtonRef}
-          initialDraft={pendingImport?.draft}
+          initialDraft={pendingClone?.draft ?? pendingImport?.draft}
+          initialDraftOrigin={pendingClone ? "CLONE" : "IMPORTACAO"}
+          cloneResumo={pendingClone?.resumo}
           onClose={() => {
             setIsCreationDialogOpen(false);
             setPendingImport(null);
+            setPendingClone(null);
           }}
           onCreated={(draft, creationContext) => {
             setIsCreationDialogOpen(false);
+            setPendingClone(null);
             setMode({
               type: "FORM",
               draft,
@@ -372,6 +400,9 @@ export function RdoWorkspacePage() {
               initialNotice:
                 [
                   pendingImport?.notice,
+                  pendingClone
+                    ? "Clonado: confira o trecho e preencha os serviços do dia."
+                    : undefined,
                   draft.syncStatus === "LOCAL_PENDING"
                     ? "Rascunho local persistido; a sincronização aguardará o contexto canônico da obra."
                     : "Rascunho local persistido e incluído na fila de sincronização.",
