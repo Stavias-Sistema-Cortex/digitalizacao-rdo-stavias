@@ -23,8 +23,8 @@ import static org.mockito.Mockito.when;
 class PostgresqlSchemaReadinessGuardTest {
 
     @Test
-    void configuredGuardRequiresTheCompleteV70Chain() throws Exception {
-        assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("70");
+    void configuredGuardRequiresTheCompleteV71Chain() throws Exception {
+        assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("71");
     }
 
     @Test
@@ -80,27 +80,27 @@ class PostgresqlSchemaReadinessGuardTest {
                 .thenThrow(new DataAccessResourceFailureException("flyway_schema_history ausente"));
 
         PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(
-                jdbcTemplate, "70"
+                jdbcTemplate, "71"
         );
 
         assertThatThrownBy(guard::verifyReadiness)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V70")
+                .hasMessageContaining("cadeia de migrações até V71")
                 .hasCauseInstanceOf(DataAccessResourceFailureException.class);
     }
 
     @Test
-    void refusesWhenTheExplicitV70RowIsAbsent() {
+    void refusesWhenTheExplicitV71RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(
-                jdbcTemplate, "70"
+                jdbcTemplate, "71"
         );
 
         assertThatThrownBy(guard::verifyReadiness)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V70");
+                .hasMessageContaining("cadeia de migrações até V71");
         verify(jdbcTemplate).queryForObject(
                 contains("FROM public.flyway_schema_history"),
                 eq(Integer.class)
@@ -108,12 +108,12 @@ class PostgresqlSchemaReadinessGuardTest {
     }
 
     @Test
-    void acceptsACompletedV70MigrationChain() {
+    void acceptsACompletedV71MigrationChain() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1);
 
         PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(
-                jdbcTemplate, "70"
+                jdbcTemplate, "71"
         );
 
         assertThatCode(guard::verifyReadiness).doesNotThrowAnyException();
