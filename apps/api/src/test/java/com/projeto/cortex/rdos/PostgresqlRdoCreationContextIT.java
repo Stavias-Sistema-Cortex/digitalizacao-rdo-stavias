@@ -2579,8 +2579,8 @@ class PostgresqlRdoCreationContextIT {
 
         String fresagem = inserirEquipe(obra, "Frente de fresagem", "ATIVA", autor);
         alocarEquipeNaObra(fresagem, obra, "ATIVO");
-        inserirMembro(fresagem, pedro, "ATIVO", autor);
-        inserirMembro(fresagem, paula, "ATIVO", autor);
+        inserirMembro(fresagem, pedro, autor, "ATIVO");
+        inserirMembro(fresagem, paula, autor, "ATIVO");
 
         String pintura = inserirEquipe(obra, "Frente de pintura", "ATIVA", autor);
         alocarEquipeNaObra(pintura, obra, "ATIVO");
@@ -2651,6 +2651,19 @@ class PostgresqlRdoCreationContextIT {
             String autorId,
             String status
     ) {
+        /*
+         * Quatro Strings seguidas, e o compilador não vê troca entre elas.
+         * Trocar autor e status manda um UUID para uma coluna de 20 caracteres,
+         * e o desfecho é DataIntegrityViolation seis minutos depois, no CI —
+         * duas vezes até aqui. A verificação custa uma linha e falha na hora,
+         * com o nome do que está errado.
+         */
+        if (!List.of("ATIVO", "REMOVIDO", "ENCERRADO").contains(status)) {
+            throw new IllegalArgumentException(
+                    "status de membro inválido: " + status
+                            + " (a ordem é equipe, colaborador, autor, status)"
+            );
+        }
         // inicio_em explícito: o default é o agora, e chk_equipe_membro_periodo
         // exige fim_em >= inicio_em. Encerrar em julho com início hoje viola a
         // restrição — o banco recusa antes de o teste chegar à asserção.
