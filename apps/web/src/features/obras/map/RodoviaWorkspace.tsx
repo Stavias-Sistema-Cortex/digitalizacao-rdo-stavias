@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CameraDaObra } from "./cameraDaObra";
 
 import { SYNC_COMPLETED_EVENT } from "../../../lib/sync/syncEvents";
+import { getSession, isAlfa } from "../../auth/authSession";
 import { CampoDeExtremo } from "./CampoDeExtremo";
 import { LeafletTrechoMap } from "./LeafletTrechoMap";
 import {
@@ -358,6 +359,17 @@ export function RodoviaWorkspace({
         : null,
     [colecaoCompleta.features, pontoParaRemover],
   );
+
+  /*
+   * A lixeira só existe para quem pode usá-la.
+   *
+   * `ObraMapaService.encerrar` começa com `requireAlfa()`, então o pedido de
+   * quem não é Alfa volta 403 — recusa terminal, que a fila não reenvia. O
+   * ponto sumia da tela pela máscara otimista e voltava na primeira releitura,
+   * para sempre, sem nada explicando por quê. Não oferecer o botão é a única
+   * resposta honesta: a autorização de verdade continua sendo a do servidor.
+   */
+  const podeRemoverPonto = isAlfa(getSession());
 
   const pedirRemocaoDoPonto = useCallback((id: string) => {
     setPontoParaRemover(id);
@@ -1116,7 +1128,7 @@ export function RodoviaWorkspace({
             obra={worksite}
             leitura={leituraVisivel}
             filtro={filtro}
-            onRemoverPonto={pedirRemocaoDoPonto}
+            onRemoverPonto={podeRemoverPonto ? pedirRemocaoDoPonto : undefined}
             carregando={estado.fase === "carregando"}
             erroLeitura={estado.fase === "erro" ? estado.mensagem : null}
             camera={
@@ -1134,7 +1146,7 @@ export function RodoviaWorkspace({
               rascunho={rascunho}
               marcando={podeDesenhar ? marcando : null}
               onPontoMarcado={aoMarcarPonto}
-              onRemoverPonto={pedirRemocaoDoPonto}
+              onRemoverPonto={podeRemoverPonto ? pedirRemocaoDoPonto : undefined}
               camera={
                 travado && camera?.origem === "vetorial" ? camera.valor : null
               }

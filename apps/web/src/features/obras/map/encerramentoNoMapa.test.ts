@@ -122,4 +122,40 @@ describe("ponto encerrado no mapa", () => {
 
     expect(await database.get("obra_geometrias", "ponto-1")).toBeUndefined();
   });
+
+  /**
+   * A recusa por versão defasada é o caso que ficava preso.
+   *
+   * O encerramento volta recusado, o registro fica ENCERRADA + CONFLICT, e a
+   * única saída é refazer o pedido com a versão que o servidor tem agora. Ela
+   * chega justamente na releitura — que antes preservava o registro inteiro,
+   * versão velha inclusive, e por isso a retentativa nascia condenada a ser
+   * recusada de novo, para sempre.
+   */
+  it("aceita a versão nova do servidor sem desfazer o encerramento recusado", async () => {
+    const database = await getCortexDb();
+    await database.put("obra_geometrias", {
+      ...(await database.get("obra_geometrias", "ponto-1"))!,
+      status: "ENCERRADA",
+      syncStatus: "CONFLICT",
+      updatedAt: "2026-08-04T13:10:00.000Z",
+    });
+
+    const maisNovo = { ...pontoDoServidor("ponto-1"), versao: 9 };
+    await reconciliarGeometriasDoServidor(
+      OBRA,
+      [maisNovo, pontoDoServidor("ponto-2")],
+      "2026-08-04T13:20:00.000Z",
+    );
+
+    const registro = await database.get("obra_geometrias", "ponto-1");
+    // O ponto continua fora do mapa…
+    expect(registro?.status).toBe("ENCERRADA");
+    expect(registro?.syncStatus).toBe("CONFLICT");
+    // …e a próxima tentativa já nasce com a base que o servidor aceita.
+    expect(registro?.versao).toBe(9);
+    expect(
+      (await listarGeometriasLocais(OBRA)).map((item) => item.id),
+    ).toEqual(["ponto-2"]);
+  });
 });

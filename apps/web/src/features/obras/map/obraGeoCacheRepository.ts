@@ -28,6 +28,27 @@ export async function listarGeometriasLocais(
   return registros.filter((registro) => registro.status === "ATIVA");
 }
 
+/**
+ * Quantas geometrias desta obra o dispositivo conhece, encerradas inclusive.
+ *
+ * Serve para distinguir "este aparelho nunca leu esta obra" de "este aparelho
+ * leu e o que havia foi encerrado". As duas situações produzem uma lista de
+ * ativas vazia, e tratá-las igual fazia a leitura cair na resposta crua do
+ * servidor, ressuscitando na tela exatamente o que acabara de ser removido.
+ */
+export async function contarGeometriasDaObra(
+  obraId: string,
+): Promise<number> {
+  const { ownerId } = requireDataScope();
+  const database = await getCortexDb();
+  const registros = await database.getAllFromIndex(
+    "obra_geometrias",
+    "by-owner-worksite",
+    [ownerId, obraId],
+  );
+  return registros.length;
+}
+
 export async function lerGeometriaLocal(
   featureId: string,
 ): Promise<ObraGeometriaLocalRecord | null> {
@@ -67,9 +88,39 @@ export async function reconciliarGeometriasDoServidor(
 
   for (const feature of features) {
     const local = existentes.find((registro) => registro.id === feature.id);
+
+    /*
+     * O encerramento que o servidor recusou fica de pé, mas com a versão nova.
+     *
+     * O servidor só devolve geometria ATIVA, então ele lista de volta tudo o
+     * que foi encerrado aqui e ele ainda não aceitou. Preservar o registro
+     * inteiro mantinha o ponto fora do mapa, mas travava a retentativa: a
+     * recusa por versão defasada só se resolve com a versão atual, e ela chega
+     * justamente aqui. Guardar o estado local e aceitar os campos do servidor
+     * deixa o próximo pedido nascer com a base certa, sem apagar o que a
+     * pessoa pediu.
+     */
+    if (
+      local &&
+      (local.syncStatus === "CONFLICT" || local.syncStatus === "ERROR")
+    ) {
+      await store.put({
+        ...local,
+        geometry: feature.geometry,
+        properties: feature.properties,
+        fonte: feature.fonte,
+        validoDesde: feature.validoDesde,
+        versao: feature.versao,
+        fetchedAt,
+        updatedAt: fetchedAt,
+      });
+      continue;
+    }
+
     if (local && local.syncStatus !== "SYNCED") {
       continue;
     }
+
     await store.put({
       id: feature.id,
       ownerId,

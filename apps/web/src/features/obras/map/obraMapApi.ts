@@ -6,6 +6,7 @@ import {
 import { falhaEhAusenciaDeRede } from "./leituraOffline";
 import {
   featureDoRegistro,
+  contarGeometriasDaObra,
   listarGeometriasLocais,
   reconciliarGeometriasDoServidor,
 } from "./obraGeoCacheRepository";
@@ -152,11 +153,30 @@ export async function carregarMapaObra(
     const dados = await buscarMapaObra(obra.id);
     await reconciliarGeometriasDoServidor(obra.id, dados.features, agora)
       .catch(() => undefined);
-    const locais = await listarGeometriasLocais(obra.id).catch(() => []);
+    /*
+     * O que o dispositivo sabe manda, e "não sei nada" é diferente de "o que
+     * havia foi encerrado".
+     *
+     * Antes bastava a lista de ativas vir vazia para a leitura entregar a
+     * resposta crua do servidor. Só que ela vinha vazia justamente depois de
+     * remover o último ponto — e o servidor, que ainda não aceitou o
+     * encerramento, devolvia o ponto de volta. A remoção era desfeita na tela
+     * a cada releitura e a cada F5. Contar os registros, e não só os ativos,
+     * separa os dois casos: sem registro nenhum, o aparelho nunca leu esta
+     * obra e a resposta do servidor é tudo o que existe.
+     */
+    const conhecidas = await contarGeometriasDaObra(obra.id).catch(() => 0);
+    const locais = conhecidas > 0
+      ? await listarGeometriasLocais(obra.id).catch(() => null)
+      : [];
     return {
       dados: {
         obra: dados.obra,
-        features: locais.length > 0 ? locais.map(featureDoRegistro) : dados.features,
+        features: locais === null
+          ? dados.features
+          : conhecidas > 0
+            ? locais.map(featureDoRegistro)
+            : dados.features,
       },
       origem: "REDE",
       obtidoEm: agora,

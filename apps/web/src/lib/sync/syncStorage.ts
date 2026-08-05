@@ -3532,25 +3532,28 @@ export async function applyPushResultAtomically(
       );
     }
     if (isGeometriaMutation(mutation)) {
-      // DESCARTADA é o servidor dizendo que já aplicou esta mutação — a
-      // reentrega de um push cujo retorno se perdeu. Marcar isso como conflito
-      // travaria a geometria para sempre, porque encerrar exige um registro
-      // confirmado. Só CONFLITO é conflito de verdade.
-      if (result.status === "CONFLITO") {
-        await markGeometriaMutationFailed(
-          transaction,
-          mutation,
-          "CONFLICT",
-          timestamp,
-        );
-      } else {
-        await applyGeometriaPushResult(
-          transaction,
-          mutation,
-          result,
-          timestamp,
-        );
-      }
+      /*
+       * DESCARTADA é conflito de versão, não reentrega bem-sucedida.
+       *
+       * O comentário anterior aqui dizia o contrário, e por isso todo
+       * encerramento recusado era gravado como aplicado. A API só emite
+       * DESCARTADA em `registrarConflitoEmNovaTransacao`, com resultado vazio;
+       * a reentrega idempotente devolve o recibo guardado, que para uma
+       * mutação aplicada tem status APLICADA. E "CONFLITO" nunca é emitido
+       * como status de push — o ramo que o testava era inalcançável, então o
+       * caminho abaixo recebia 100% dos conflitos e os chamava de sucesso.
+       *
+       * O efeito era duplo: a remoção sumia da fila sem nunca ter acontecido,
+       * e o registro local, agora marcado SYNCED, era sobrescrito pela leitura
+       * seguinte — o ponto voltava ao mapa como ativo, e nada explicava por
+       * quê.
+       */
+      await markGeometriaMutationFailed(
+        transaction,
+        mutation,
+        "CONFLICT",
+        timestamp,
+      );
     }
   } else {
     const messageText = result.erro ?? "Erro informado pelo servidor.";

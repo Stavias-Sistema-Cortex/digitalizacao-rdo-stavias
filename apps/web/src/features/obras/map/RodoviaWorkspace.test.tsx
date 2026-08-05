@@ -41,6 +41,28 @@ function clicarNaLixeira(id: string) {
   });
 }
 
+/*
+ * A lixeira do ponto só existe para o Alfa — o servidor recusa o encerramento
+ * de qualquer outro perfil. Os testes de remoção falam do Alfa; o do Beta
+ * troca a sessão para provar que o botão nem aparece.
+ */
+const sessao = vi.hoisted(() => ({
+  papelAcesso: "ALFA" as "ALFA" | "BETA",
+}));
+
+vi.mock("../../auth/authSession", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../auth/authSession")>()),
+  getSession: () => ({
+    colaboradorId: "10000000-0000-4000-8000-000000000001",
+    papelAcesso: sessao.papelAcesso,
+    escopoGlobal: sessao.papelAcesso === "ALFA",
+    obraIds: [] as string[],
+    expiraEm: "2099-01-01T00:00:00.000Z",
+  }),
+  isAlfa: (perfil: { papelAcesso?: string } | null) =>
+    perfil?.papelAcesso === "ALFA",
+}));
+
 vi.mock("./obraMapApi", () => ({ carregarMapaObra }));
 vi.mock("./obraGeometriaMutations", () => ({
   encerrarGeometria,
@@ -123,6 +145,7 @@ function leitura(overrides: Partial<LeituraMapaObra> = {}): LeituraMapaObra {
 }
 
 beforeEach(() => {
+  sessao.papelAcesso = "ALFA";
   carregarMapaObra.mockReset();
   registrarTrechoDesenhado.mockReset();
   encerrarGeometria.mockReset();
@@ -336,6 +359,23 @@ describe("RodoviaWorkspace", () => {
     await waitFor(() => expect(encerrarGeometria).toHaveBeenCalled());
     const motivo = encerrarGeometria.mock.calls.at(-1)?.[1] as string;
     expect(motivo.trim().length).toBeGreaterThan(0);
+  });
+
+  /**
+   * `ObraMapaService.encerrar` começa com `requireAlfa()`, então o pedido de
+   * quem não é Alfa volta 403 — recusa terminal, que a fila não reenvia. O
+   * ponto sumia da tela pela máscara otimista e voltava na primeira releitura,
+   * para sempre, sem nada explicando por quê. Sem lixeira não há promessa.
+   */
+  it("não oferece a lixeira a quem não é Alfa", async () => {
+    sessao.papelAcesso = "BETA";
+    carregarMapaObra.mockResolvedValue(
+      leitura({ dados: { obra, features: [pontoOperacional("ponto-1")] } }),
+    );
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    expect(leaflet.removerPonto).toBeFalsy();
   });
 
   it("mostra os dois painéis lado a lado quando há coordenada", async () => {

@@ -310,9 +310,19 @@ export async function encerrarGeometria(
   if (!existing) {
     throw new Error("Geometria não encontrada neste dispositivo.");
   }
-  if (existing.status === "ENCERRADA") {
-    // Já saiu do mapa: repetir o pedido criaria uma segunda mutação que o
-    // servidor recusaria, e a recusa ficaria travando a fila.
+  /*
+   * Já saiu do mapa e o servidor confirmou — ou ainda vai confirmar.
+   *
+   * Repetir o pedido criaria uma segunda mutação que o servidor recusaria, e a
+   * recusa ficaria travando a fila. A exceção é o encerramento que já voltou
+   * recusado: aí não há nada em voo, a versão local acabou de ser atualizada
+   * pela leitura, e refazer o pedido é justamente o que resolve.
+   */
+  if (
+    existing.status === "ENCERRADA" &&
+    existing.syncStatus !== "CONFLICT" &&
+    existing.syncStatus !== "ERROR"
+  ) {
     return existing;
   }
   if (existing.versao <= 0) {

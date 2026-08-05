@@ -17,6 +17,11 @@ import {
 } from "./execucaoDoTrecho";
 import { mapboxAccessToken, type MapProvider } from "./mapProvider";
 import { lixeiraDoBalao } from "./popupDoMapa";
+import {
+  idDaFeicao,
+  rastreadorDeBalao,
+  type RastreadorDeBalao,
+} from "./balaoDoPainel";
 
 import type { CameraDaObra } from "./cameraDaObra";
 
@@ -400,6 +405,7 @@ interface GlPopupCompativel {
   setLngLat(lngLat: { lng: number; lat: number }): GlPopupCompativel;
   setDOMContent(node: Node): GlPopupCompativel;
   addTo(map: never): unknown;
+  remove?(): unknown;
 }
 
 function addOperationalLayers(
@@ -407,7 +413,7 @@ function addOperationalLayers(
   features: OperationalFeatureCollection,
   criarPopup: () => GlPopupCompativel,
   aoRemoverPonto: ((id: string) => void) | null,
-): void {
+): RastreadorDeBalao {
   map.addSource(SOURCE_ID, {
     type: "geojson",
     data: features,
@@ -534,6 +540,8 @@ function addOperationalLayers(
     } as never);
   }
 
+  const balao = rastreadorDeBalao();
+
   for (const layerId of [
     "cortex-polygons",
     "cortex-lines",
@@ -542,10 +550,11 @@ function addOperationalLayers(
   ]) {
     map.on("click", layerId, (event) => {
       const properties = event.features?.[0]?.properties ?? {};
-      criarPopup()
+      const popup = criarPopup()
         .setLngLat(event.lngLat)
-        .setDOMContent(popupContent(properties, aoRemoverPonto))
-        .addTo(map as never);
+        .setDOMContent(popupContent(properties, aoRemoverPonto));
+      popup.addTo(map as never);
+      balao.abrir(popup, idDaFeicao(properties));
     });
     map.on("mouseenter", layerId, () => {
       map.getCanvas().style.cursor = "pointer";
@@ -554,6 +563,8 @@ function addOperationalLayers(
       map.getCanvas().style.cursor = "";
     });
   }
+
+  return balao;
 }
 
 /** O que cada runtime acrescenta ao ciclo comum de montagem. */
@@ -701,7 +712,7 @@ function prepararMapa(
       } catch {
         volume = false;
       }
-      addOperationalLayers(
+      const balao = addOperationalLayers(
         map,
         options.features,
         extensao.criarPopup,
@@ -732,6 +743,9 @@ function prepararMapa(
         },
         setFeatures: (features) => {
           if (destruido) return;
+          // Antes de trocar os dados: o balão da feição que saiu ficaria
+          // ancorado no vazio, e é ele que a pessoa lê como "o ponto continua".
+          balao.fecharSeSumiu(features);
           map.getSource(SOURCE_ID)?.setData(features);
           // O enquadramento acontece uma vez, quando existe extensão para
           // enquadrar. Refazê-lo a cada leitura arrancaria a câmera de onde o

@@ -274,6 +274,24 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
   ];
   const transaction = database.transaction(storeNames, "readwrite");
   const transactionDone = transaction.done;
+  /*
+   * A causa real da falha, guardada antes de a transação abortar.
+   *
+   * Cada request precisa de um `catch` próprio para não virar rejeição não
+   * tratada, mas descartar o motivo trocava a causa pela consequência: um
+   * request que falha aborta a transação, e o que chega à tela era o abort
+   * genérico. Quem via "não foi possível remover o ponto" não tinha como saber
+   * se a chave colidiu, se a cota acabou ou se o banco fechou. Guardar a
+   * primeira falha e preferi-la ao abort devolve o diagnóstico a quem precisa
+   * dele.
+   */
+  let causaDaFalha: { motivo: unknown } | null = null;
+  const guardarCausa = (motivo: unknown) => {
+    causaDaFalha = causaDaFalha ?? { motivo };
+  };
+  // Lido por função: atribuído só dentro de callbacks, o compilador o estreita
+  // para `never` no `catch` se for lido direto.
+  const causaGuardada = () => causaDaFalha;
   void transactionDone.catch(() => undefined);
   let sessionInvalidated = false;
   const abortOnSessionChange = () => {
@@ -405,18 +423,18 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
     for (const write of prepared.writes) {
       const store = transaction.objectStore(write.store);
       if ("deleteKey" in write) {
-        void store.delete(write.deleteKey as never).catch(() => undefined);
+        void store.delete(write.deleteKey as never).catch(guardarCausa);
       } else {
         void (write.insertOnly
           ? store.add(write.value as never)
           : store.put(write.value as never)
-        ).catch(() => undefined);
+        ).catch(guardarCausa);
       }
     }
     void transaction
       .objectStore("outbox_mutations")
       .add(built.mutation)
-      .catch(() => undefined);
+      .catch(guardarCausa);
     await transaction
       .objectStore("operational_events")
       .add(event);
@@ -435,7 +453,8 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
         { cause: error },
       );
     }
-    throw error;
+    const causa = causaGuardada();
+    throw causa ? causa.motivo : error;
   } finally {
     if (typeof window !== "undefined") {
       window.removeEventListener(
