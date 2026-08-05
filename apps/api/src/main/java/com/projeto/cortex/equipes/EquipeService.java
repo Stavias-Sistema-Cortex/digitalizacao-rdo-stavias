@@ -14,10 +14,13 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class EquipeService {
@@ -128,7 +131,47 @@ public class EquipeService {
         int totalPages = totalElements == 0
                 ? 0
                 : (int) Math.ceil((double) totalElements / size);
-        return new EquipePageResponse(items, totalElements, page, size, totalPages);
+        return new EquipePageResponse(
+                comMembros(items), totalElements, page, size, totalPages
+        );
+    }
+
+    /**
+     * A lista precisa dos membros tanto quanto o detalhe.
+     *
+     * <p>Sem isto toda equipe da lista aparecia com "0 membros ativos" enquanto
+     * o detalhe da mesma equipe mostrava três — a lista devolvia a equipe sem
+     * membro nenhum e a tela contava esse vazio. Quem estava com a fila de
+     * sincronização entupida lia isso como trabalho perdido, e não era: as
+     * pessoas estavam lá.
+     *
+     * <p>Uma consulta só para a página inteira. Uma por equipe seria o mesmo
+     * número de idas ao banco que a tela faz hoje ao abrir cada detalhe, só que
+     * todas de uma vez, no caminho mais quente da tela.
+     */
+    private List<EquipeResponse> comMembros(List<EquipeResponse> equipes) {
+        if (equipes.isEmpty()) {
+            return equipes;
+        }
+        List<Object> ids = equipes.stream()
+                .map(EquipeResponse::id)
+                .collect(Collectors.toList());
+        Map<String, List<EquipeMemberResponse>> porEquipe = new HashMap<>();
+        jdbcTemplate.query(
+                memberSelect()
+                        + " WHERE em.equipe_id IN (" + placeholders(ids.size()) + ")"
+                        + " ORDER BY (em.status = 'ATIVO') DESC, em.inicio_em, c.nome, em.id",
+                memberMapper(),
+                ids.toArray()
+        ).forEach(membro -> porEquipe
+                .computeIfAbsent(membro.equipeId(), chave -> new ArrayList<>())
+                .add(membro));
+
+        return equipes.stream()
+                .map(equipe -> equipe.withMembros(
+                        porEquipe.getOrDefault(equipe.id(), List.of())
+                ))
+                .collect(Collectors.toList());
     }
 
     public EquipeResponse buscarPorId(String equipeId) {

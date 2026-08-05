@@ -72,6 +72,95 @@ class EquipeServiceTest {
         verify(jdbcTemplate, never()).query(any(String.class), any(RowMapper.class), any(Object[].class));
     }
 
+    /*
+     * A lista mostrava "0 membros ativos" em toda equipe enquanto o detalhe da
+     * mesma equipe mostrava três: só o detalhe hidratava os membros, e a tela
+     * contava o vazio que a lista devolvia. Quem estava com a fila de
+     * sincronização entupida lia isso como trabalho perdido — e não era.
+     */
+    @Test
+    void listaDevolveOsMembrosComoODetalhe() {
+        LocalDateTime agora = LocalDateTime.of(2026, 8, 5, 7, 0);
+        EquipeResponse semMembros = new EquipeResponse(
+                "equipe-1", "obra-1", "Duplicação SP-000", "FR Carlos",
+                "Equipe de fresagem.", "ATIVA", agora, null, 3, agora, agora,
+                List.of()
+        );
+        when(jdbcTemplate.queryForObject(
+                contains("SELECT COUNT(*) FROM equipe e"),
+                eq(Long.class),
+                any(Object[].class)
+        )).thenReturn(1L);
+        when(jdbcTemplate.query(
+                contains("FROM equipe e"),
+                any(RowMapper.class),
+                any(Object[].class)
+        )).thenReturn(List.of(semMembros));
+        when(jdbcTemplate.query(
+                contains("em.equipe_id IN"),
+                any(RowMapper.class),
+                any(Object[].class)
+        )).thenReturn(List.of(
+                membro("m-1", "equipe-1", "CARLOS ALBERTO", "ATIVO"),
+                membro("m-2", "equipe-1", "PAULO CESAR", "ATIVO"),
+                membro("m-3", "equipe-1", "ADAO LEITE", "ATIVO"),
+                membro("m-4", "equipe-1", "QUEM SAIU", "ENCERRADO")
+        ));
+
+        EquipePageResponse resposta = service.listar(new EquipeFilter(
+                null, null, null, null, null, 0, 25
+        ));
+
+        assertThat(resposta.items()).hasSize(1);
+        assertThat(resposta.items().getFirst().membros())
+                .extracting(EquipeMemberResponse::colaboradorNome)
+                .containsExactly(
+                        "CARLOS ALBERTO", "PAULO CESAR", "ADAO LEITE", "QUEM SAIU"
+                );
+        assertThat(resposta.items().getFirst().membros())
+                .filteredOn(membro -> "ATIVO".equals(membro.status()))
+                .hasSize(3);
+    }
+
+    /** Página vazia não vai ao banco atrás de membro de ninguém. */
+    @Test
+    void paginaVaziaNaoBuscaMembros() {
+        when(jdbcTemplate.queryForObject(
+                contains("SELECT COUNT(*) FROM equipe e"),
+                eq(Long.class),
+                any(Object[].class)
+        )).thenReturn(0L);
+        when(jdbcTemplate.query(
+                contains("FROM equipe e"),
+                any(RowMapper.class),
+                any(Object[].class)
+        )).thenReturn(List.of());
+
+        assertThat(service.listar(new EquipeFilter(
+                null, null, null, null, null, 0, 25
+        )).items()).isEmpty();
+
+        verify(jdbcTemplate, never()).query(
+                contains("em.equipe_id IN"),
+                any(RowMapper.class),
+                any(Object[].class)
+        );
+    }
+
+    private EquipeMemberResponse membro(
+            String id,
+            String equipeId,
+            String nome,
+            String status
+    ) {
+        LocalDateTime agora = LocalDateTime.of(2026, 8, 5, 7, 0);
+        return new EquipeMemberResponse(
+                id, equipeId, "colaborador-" + id, nome, "BETA",
+                null, null, null, false, status, agora, null, null, 1,
+                agora, agora
+        );
+    }
+
     @Test
     void alfaCreatesTeamAndInitialWorksiteLinkAtomically() {
         LocalDateTime startedAt = LocalDateTime.of(2026, 7, 15, 7, 30);
