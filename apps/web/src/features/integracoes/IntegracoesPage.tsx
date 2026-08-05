@@ -72,6 +72,10 @@ function statusLabel(status: string) {
       return "Sincronizando";
     case "DISABLED":
       return "Desativada";
+    // Respondeu bem, mas há tempo demais. Antes isso não tinha nome na tela:
+    // derrubava a API inteira.
+    case "ATRASADA":
+      return "Atrasada";
     case "SEM_SINCRONIZACAO":
       return "Sem sincronização";
     default:

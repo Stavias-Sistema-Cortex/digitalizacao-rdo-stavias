@@ -4,17 +4,22 @@ import com.projeto.cortex.assets.AssetImportResult;
 import com.projeto.cortex.assets.AssetImportService;
 import com.projeto.cortex.colaboradores.ColaboradorImportResult;
 import com.projeto.cortex.colaboradores.ColaboradorImportService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 
 @Service
 public class IntegracaoAdminService {
+
+    private static final long DEFAULT_ACADEMY_MAX_AGE_MS = 900_000L;
 
     private static final String ACADEMY_STATUS_FAILURE =
             "Sincronizacao Academy falhou. "
@@ -25,6 +30,8 @@ public class IntegracaoAdminService {
     private final ZeladoriaSourceAdapter zeladoriaSourceAdapter;
     private final ColaboradorImportService colaboradorImportService;
     private final AssetImportService assetImportService;
+    private final boolean academySyncEnabled;
+    private final long academyMaxAgeMs;
 
     public IntegracaoAdminService(
             JdbcTemplate jdbcTemplate,
@@ -33,11 +40,36 @@ public class IntegracaoAdminService {
             ColaboradorImportService colaboradorImportService,
             AssetImportService assetImportService
     ) {
+        this(
+                jdbcTemplate,
+                academySourceAdapter,
+                zeladoriaSourceAdapter,
+                colaboradorImportService,
+                assetImportService,
+                false,
+                DEFAULT_ACADEMY_MAX_AGE_MS
+        );
+    }
+
+    @Autowired
+    public IntegracaoAdminService(
+            JdbcTemplate jdbcTemplate,
+            AcademySourceAdapter academySourceAdapter,
+            ZeladoriaSourceAdapter zeladoriaSourceAdapter,
+            ColaboradorImportService colaboradorImportService,
+            AssetImportService assetImportService,
+            @Value("${cortex.sync.academy.enabled:false}")
+            boolean academySyncEnabled,
+            @Value("${cortex.sync.academy.readiness-max-age-ms:900000}")
+            long academyMaxAgeMs
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.academySourceAdapter = academySourceAdapter;
         this.zeladoriaSourceAdapter = zeladoriaSourceAdapter;
         this.colaboradorImportService = colaboradorImportService;
         this.assetImportService = assetImportService;
+        this.academySyncEnabled = academySyncEnabled;
+        this.academyMaxAgeMs = academyMaxAgeMs;
     }
 
     public List<IntegracaoStatusResponse> listStatus() {
@@ -196,6 +228,14 @@ public class IntegracaoAdminService {
                 latestRun == null
                         ? "SEM_SINCRONIZACAO"
                         : latestRun.status();
+        state = estadoComAtraso(
+                id,
+                state,
+                lastSuccess,
+                academySyncEnabled,
+                academyMaxAgeMs,
+                LocalDateTime.now()
+        );
 
         String error =
                 latestRun != null && latestRun.errorMessage() != null
@@ -219,6 +259,43 @@ public class IntegracaoAdminService {
                 "Manual ou automática",
                 defasagem(lastSuccess)
         );
+    }
+
+    /**
+     * Marca como ATRASADA a Academy que responde bem, mas há tempo demais.
+     *
+     * Esta é a metade útil da verificação que antes vivia na readiness do
+     * runtime: lá, passar da janela deixava a API inteira indisponível, o que
+     * dava a um MySQL legado poder de veto sobre RDO, mapa e mensagens — que
+     * não dependem dele. Aqui a mesma janela vira o que sempre deveria ter
+     * sido: um estado da integração, visível para quem administra.
+     *
+     * Só vale com o agendador ligado. Com ele desligado ninguém prometeu
+     * atualização periódica, e chamar de atrasado o que não tem hora marcada
+     * seria inventar um defeito.
+     */
+    static String estadoComAtraso(
+            String integrationId,
+            String state,
+            LocalDateTime lastSuccess,
+            boolean academySyncEnabled,
+            long academyMaxAgeMs,
+            LocalDateTime now
+    ) {
+        if (!"academy".equals(integrationId)
+                || !academySyncEnabled
+                || academyMaxAgeMs <= 0
+                || !"SUCCESS".equals(state)) {
+            return state;
+        }
+        if (lastSuccess == null) {
+            return "ATRASADA";
+        }
+        LocalDateTime cutoff = now.minus(
+                academyMaxAgeMs,
+                ChronoUnit.MILLIS
+        );
+        return lastSuccess.isBefore(cutoff) ? "ATRASADA" : state;
     }
 
     static String safeStatusError(

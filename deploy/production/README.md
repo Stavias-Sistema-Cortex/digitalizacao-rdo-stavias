@@ -74,9 +74,16 @@ contrato que esse host deve executar.
 a outbox offline da PWA. Habilite uma fonte por vez, somente depois de validar
 o usuário MySQL `SELECT`-only e uma importação QA registrada em
 `source_sync_run`. A Academy usa senha montada em arquivo e JDBC MySQL com
-`sslMode=VERIFY_IDENTITY`. Quando habilitada, readiness exige que o último
-`acad_colaborador_import` esteja `SUCCESS`, finalizado e dentro de
-`CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS` (padrão `900000`).
+`sslMode=VERIFY_IDENTITY`.
+
+Com o agendador ligado, `CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS` (padrão
+`900000`) define quando o último `acad_colaborador_import` bem-sucedido passa a
+ser relatado como `ATRASADA` em Administração → Integrações. **Não** derruba a
+readiness do runtime: a Academy é um MySQL legado externo, e uma
+indisponibilidade dela não pode levar junto RDO, mapa, mensagens e financeiro,
+que não dependem dela. O que a readiness ainda exige é estrutural — ao menos
+uma identidade Academy ativa com HMAC atual de CPF, isto é, que exista alguém
+capaz de entrar.
 
 No Render, o único fallback para um servidor sem identidade de hostname é
 `sslMode=VERIFY_CA` com `/etc/secrets/cortex-academy-truststore.p12`: PKCS12,

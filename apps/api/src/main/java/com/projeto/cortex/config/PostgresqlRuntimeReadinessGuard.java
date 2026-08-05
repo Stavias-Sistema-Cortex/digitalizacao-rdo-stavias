@@ -2,9 +2,7 @@ package com.projeto.cortex.config;
 
 import com.projeto.cortex.common.RuntimeReleaseEvidence;
 import com.projeto.cortex.common.RuntimeReadiness;
-import java.sql.Timestamp;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -33,12 +31,10 @@ public final class PostgresqlRuntimeReadinessGuard implements
         PriorityOrdered,
         RuntimeReadiness {
 
-    static final long DEFAULT_ACADEMY_READINESS_MAX_AGE_MS = 900_000L;
     static final long RUNTIME_SNAPSHOT_TTL_NANOS =
             TimeUnit.SECONDS.toNanos(1L);
     static final long RUNTIME_FAILURE_BACKOFF_NANOS =
             TimeUnit.MILLISECONDS.toNanos(250L);
-    private static final String ACADEMY_CONNECTOR_NAME = "acad_colaborador_import";
     private static final Pattern FULL_GIT_REVISION = Pattern.compile("[0-9a-f]{40}");
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
@@ -61,17 +57,6 @@ public final class PostgresqlRuntimeReadinessGuard implements
               AND ai.cpf_lookup_hmac IS NOT NULL
             """;
 
-    private static final String LATEST_ACADEMY_SYNC_RUN_SQL = """
-            SELECT
-                status,
-                finished_at,
-                LOCALTIMESTAMP AS database_now
-            FROM public.source_sync_run
-            WHERE connector_name = ?
-            ORDER BY started_at DESC, id DESC
-            LIMIT 1
-            """;
-
     private static final String RELEASE_EVIDENCE_SQL = """
             SELECT revision, marker
             FROM public.cortex_release_marker
@@ -82,8 +67,6 @@ public final class PostgresqlRuntimeReadinessGuard implements
     private final String testRequiredSchemaVersion;
     private final Boolean testRuntimeReady;
     private final PostgresqlRuntimeSurfaceRegistry testSurfaceRegistry;
-    private final Boolean testAcademySyncEnabled;
-    private final Long testAcademyReadinessMaxAgeMs;
     private final LongSupplier nanoTime;
     private final ReentrantLock runtimeEvaluationLock = new ReentrantLock();
     private Environment environment;
@@ -97,8 +80,6 @@ public final class PostgresqlRuntimeReadinessGuard implements
         this.testRequiredSchemaVersion = null;
         this.testRuntimeReady = null;
         this.testSurfaceRegistry = null;
-        this.testAcademySyncEnabled = null;
-        this.testAcademyReadinessMaxAgeMs = null;
         this.nanoTime = System::nanoTime;
     }
 
@@ -113,8 +94,6 @@ public final class PostgresqlRuntimeReadinessGuard implements
                 requiredSchemaVersion,
                 runtimeReady,
                 surfaceRegistry,
-                false,
-                DEFAULT_ACADEMY_READINESS_MAX_AGE_MS,
                 System::nanoTime
         );
     }
@@ -124,35 +103,12 @@ public final class PostgresqlRuntimeReadinessGuard implements
             String requiredSchemaVersion,
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry surfaceRegistry,
-            boolean academySyncEnabled,
-            long academyReadinessMaxAgeMs
-    ) {
-        this(
-                jdbcTemplate,
-                requiredSchemaVersion,
-                runtimeReady,
-                surfaceRegistry,
-                academySyncEnabled,
-                academyReadinessMaxAgeMs,
-                System::nanoTime
-        );
-    }
-
-    PostgresqlRuntimeReadinessGuard(
-            JdbcTemplate jdbcTemplate,
-            String requiredSchemaVersion,
-            boolean runtimeReady,
-            PostgresqlRuntimeSurfaceRegistry surfaceRegistry,
-            boolean academySyncEnabled,
-            long academyReadinessMaxAgeMs,
             LongSupplier nanoTime
     ) {
         this.testJdbcTemplate = jdbcTemplate;
         this.testRequiredSchemaVersion = requiredSchemaVersion;
         this.testRuntimeReady = runtimeReady;
         this.testSurfaceRegistry = surfaceRegistry;
-        this.testAcademySyncEnabled = academySyncEnabled;
-        this.testAcademyReadinessMaxAgeMs = academyReadinessMaxAgeMs;
         this.nanoTime = Objects.requireNonNull(nanoTime);
     }
 
@@ -191,21 +147,28 @@ public final class PostgresqlRuntimeReadinessGuard implements
         verifyReleaseEvidenceIfRequired(jdbcTemplate);
     }
 
+    /*
+     * A pontualidade da sincronização Academy não decide mais se o Córtex serve.
+     *
+     * A verificação aqui exigia uma sincronização bem-sucedida nos últimos
+     * quinze minutos sempre que o agendador estivesse ligado. Como a Academy é
+     * um MySQL legado externo, isso dava a ele poder de veto sobre a API
+     * inteira: uma indisponibilidade dele de dezesseis minutos derrubava RDO,
+     * mapa, mensagens e financeiro, que não dependem da Academy para nada.
+     *
+     * O que a readiness ainda exige é estrutural, e continua acima: pelo menos
+     * uma identidade Academy ativa com HMAC atual de CPF, isto é, que exista
+     * alguém capaz de entrar. Ter alguém capaz de entrar é propriedade do
+     * Córtex; a origem ter respondido há pouco é desempenho de terceiro, e vira
+     * estado relatado da integração — visível em Administração → Integrações,
+     * não uma queda geral.
+     */
     private void verifyConfiguredRuntimeReadiness(JdbcTemplate jdbcTemplate) {
         verifyReadiness(
                 jdbcTemplate,
                 PostgresqlSchemaVersion.REQUIRED,
                 environment.getProperty("cortex.postgresql.runtime-ready", Boolean.class, false),
                 new PostgresqlRuntimeSurfaceRegistry()
-        );
-        verifyAcademySyncReadiness(
-                jdbcTemplate,
-                environment.getProperty("cortex.sync.academy.enabled", Boolean.class, false),
-                environment.getProperty(
-                        "cortex.sync.academy.readiness-max-age-ms",
-                        Long.class,
-                        DEFAULT_ACADEMY_READINESS_MAX_AGE_MS
-                )
         );
     }
 
@@ -214,8 +177,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
                 || testRequiredSchemaVersion == null
                 || testRuntimeReady == null
                 || testSurfaceRegistry == null
-                || testAcademySyncEnabled == null
-                || testAcademyReadinessMaxAgeMs == null) {
+                ) {
             throw new IllegalStateException(
                     "A verificação de runtime PostgreSQL exige o perfil postgresql."
             );
@@ -321,11 +283,6 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
         if (testJdbcTemplate != null) {
             verifyReadiness();
-            verifyAcademySyncReadiness(
-                    testJdbcTemplate,
-                    testAcademySyncEnabled,
-                    testAcademyReadinessMaxAgeMs
-            );
         } else {
             verifyConfiguredRuntimeReadiness(jdbcTemplate);
         }
@@ -558,93 +515,4 @@ public final class PostgresqlRuntimeReadinessGuard implements
         }
     }
 
-    private static void verifyAcademySyncReadiness(
-            JdbcTemplate jdbcTemplate,
-            boolean academySyncEnabled,
-            long academyReadinessMaxAgeMs
-    ) {
-        if (!academySyncEnabled) {
-            return;
-        }
-        if (academyReadinessMaxAgeMs <= 0) {
-            throw new IllegalStateException(
-                    "Runtime PostgreSQL exige cortex.sync.academy.readiness-max-age-ms "
-                            + "maior que zero."
-            );
-        }
-
-        List<Map<String, Object>> rows;
-        try {
-            rows = jdbcTemplate.queryForList(
-                    LATEST_ACADEMY_SYNC_RUN_SQL,
-                    ACADEMY_CONNECTOR_NAME
-            );
-        } catch (DataAccessException exception) {
-            throw redactedAcademyReadinessFailure();
-        }
-
-        if (rows.isEmpty()) {
-            throw academySyncNotReady();
-        }
-
-        AcademySyncRun latestRun;
-        try {
-            Map<String, Object> row = rows.getFirst();
-            latestRun = new AcademySyncRun(
-                    String.valueOf(row.get("status")),
-                    toLocalDateTime(row.get("finished_at")),
-                    toLocalDateTime(row.get("database_now"))
-            );
-        } catch (RuntimeException exception) {
-            throw redactedAcademyReadinessFailure();
-        }
-        if (latestRun.databaseNow() == null) {
-            throw redactedAcademyReadinessFailure();
-        }
-
-        LocalDateTime cutoff = latestRun.databaseNow().minus(
-                academyReadinessMaxAgeMs,
-                ChronoUnit.MILLIS
-        );
-        if (!"SUCCESS".equals(latestRun.status())
-                || latestRun.finishedAt() == null
-                || latestRun.finishedAt().isAfter(
-                        latestRun.databaseNow()
-                )
-                || latestRun.finishedAt().isBefore(cutoff)) {
-            throw academySyncNotReady();
-        }
-    }
-
-    private static LocalDateTime toLocalDateTime(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof LocalDateTime localDateTime) {
-            return localDateTime;
-        }
-        if (value instanceof Timestamp timestamp) {
-            return timestamp.toLocalDateTime();
-        }
-        throw new IllegalArgumentException("Tipo temporal inesperado.");
-    }
-
-    private static IllegalStateException academySyncNotReady() {
-        return new IllegalStateException(
-                "Runtime PostgreSQL exige uma sincronização Academy recente e bem-sucedida."
-        );
-    }
-
-    private static IllegalStateException redactedAcademyReadinessFailure() {
-        return new IllegalStateException(
-                "PostgreSQL Córtex não está pronto para validar a sincronização Academy."
-        );
-    }
-
-    private record AcademySyncRun(
-            String status,
-            LocalDateTime finishedAt,
-            LocalDateTime databaseNow
-    ) {
-    }
 }

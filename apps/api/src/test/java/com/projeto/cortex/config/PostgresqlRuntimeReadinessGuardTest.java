@@ -395,9 +395,6 @@ class PostgresqlRuntimeReadinessGuardTest {
                         "67",
                         true,
                         released(),
-                        false,
-                        PostgresqlRuntimeReadinessGuard
-                                .DEFAULT_ACADEMY_READINESS_MAX_AGE_MS,
                         nanoTime::get
                 );
         readinessGuard.setEnvironment(releaseEnvironment(revision));
@@ -453,9 +450,6 @@ class PostgresqlRuntimeReadinessGuardTest {
                         "67",
                         true,
                         released(),
-                        false,
-                        PostgresqlRuntimeReadinessGuard
-                                .DEFAULT_ACADEMY_READINESS_MAX_AGE_MS,
                         nanoTime::get
                 );
         readinessGuard.setEnvironment(releaseEnvironment(revision));
@@ -661,15 +655,25 @@ class PostgresqlRuntimeReadinessGuardTest {
         );
     }
 
+    /*
+     * A pontualidade da Academy saiu da readiness.
+     *
+     * Estes testes afirmavam o contrário: com o agendador ligado, uma
+     * sincronização ausente, falha, futura ou com mais de quinze minutos
+     * derrubava a readiness — e com ela a API inteira, RDO, mapa e mensagens
+     * incluídos, que não dependem da Academy. A janela não sumiu; virou estado
+     * relatado da integração, coberto em IntegracaoAdminServiceTest.
+     *
+     * O que continua exigido aqui é estrutural, e tem teste próprio acima:
+     * pelo menos uma identidade Academy ativa com HMAC atual de CPF.
+     */
     @Test
-    void disabledAcademySchedulerDoesNotRequireOrQuerySyncFreshness() {
+    void readinessNaoConsultaAPontualidadeDaSincronizacaoAcademy() {
         JdbcTemplate jdbcTemplate = readyPostgresql();
 
-        assertThatCode(() -> guardWithAcademySync(
-                jdbcTemplate,
-                false,
-                900_000L
-        ).verifyRuntimeReadiness()).doesNotThrowAnyException();
+        assertThatCode(
+                guardWithAcademySync(jdbcTemplate)::verifyRuntimeReadiness
+        ).doesNotThrowAnyException();
 
         verify(jdbcTemplate, never()).queryForList(
                 contains("source_sync_run"),
@@ -678,90 +682,20 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void enabledAcademySchedulerMayStartBeforeItsFirstCompletedRun() {
-        JdbcTemplate jdbcTemplate = readyPostgresql();
-
-        assertThatCode(() -> guardWithAcademySync(
-                jdbcTemplate,
-                true,
-                900_000L
-        ).verifyReadiness()).doesNotThrowAnyException();
-
-        verify(jdbcTemplate, never()).queryForList(
-                contains("source_sync_run"),
-                eq("acad_colaborador_import")
-        );
-    }
-
-    @Test
-    void endpointReadinessRefusesWhenThereIsNoCompletedRun() {
+    void academySemNenhumaSincronizacaoConcluidaNaoDerrubaMaisORuntime() {
         JdbcTemplate jdbcTemplate = readyPostgresql();
         when(jdbcTemplate.queryForList(
                 contains("source_sync_run"),
                 eq("acad_colaborador_import")
         )).thenReturn(List.of());
 
-        assertThatThrownBy(() -> guardWithAcademySync(
-                jdbcTemplate,
-                true,
-                900_000L
-        ).verifyRuntimeReadiness())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("sincronização Academy")
-                .hasMessageContaining("recente")
-                .hasMessageContaining("bem-sucedida");
+        assertThatCode(
+                guardWithAcademySync(jdbcTemplate)::verifyRuntimeReadiness
+        ).doesNotThrowAnyException();
     }
 
     @Test
-    void enabledAcademySchedulerRefusesAStaleSuccessfulRun() {
-        JdbcTemplate jdbcTemplate = readyPostgresql();
-        LocalDateTime databaseNow = LocalDateTime.of(2026, 7, 28, 12, 0);
-        when(jdbcTemplate.queryForList(
-                contains("FROM public.source_sync_run"),
-                eq("acad_colaborador_import")
-        )).thenReturn(List.of(academyRun(
-                "SUCCESS",
-                databaseNow.minusMinutes(16),
-                databaseNow
-        )));
-
-        assertThatThrownBy(() -> guardWithAcademySync(
-                jdbcTemplate,
-                true,
-                900_000L
-        ).verifyRuntimeReadiness())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("sincronização Academy")
-                .hasMessageContaining("recente");
-    }
-
-    @Test
-    void enabledAcademySchedulerAcceptsAFreshSuccessfulRun() {
-        JdbcTemplate jdbcTemplate = readyPostgresql();
-        LocalDateTime databaseNow = LocalDateTime.of(2026, 7, 28, 12, 0);
-        when(jdbcTemplate.queryForList(
-                contains("source_sync_run"),
-                eq("acad_colaborador_import")
-        )).thenReturn(List.of(academyRun(
-                "SUCCESS",
-                databaseNow.minusMinutes(5),
-                databaseNow
-        )));
-
-        assertThatCode(() -> guardWithAcademySync(
-                jdbcTemplate,
-                true,
-                900_000L
-        ).verifyRuntimeReadiness()).doesNotThrowAnyException();
-
-        verify(jdbcTemplate).queryForList(
-                contains("ORDER BY started_at DESC, id DESC"),
-                eq("acad_colaborador_import")
-        );
-    }
-
-    @Test
-    void enabledAcademySchedulerFailsClosedAndRedactsQueryErrors() {
+    void academyIndisponivelNaoDerrubaMaisORuntime() {
         JdbcTemplate jdbcTemplate = readyPostgresql();
         when(jdbcTemplate.queryForList(
                 contains("source_sync_run"),
@@ -770,39 +704,9 @@ class PostgresqlRuntimeReadinessGuardTest {
                 "jdbc:mysql://academy.invalid/db?password=do-not-leak"
         ));
 
-        assertThatThrownBy(() -> guardWithAcademySync(
-                jdbcTemplate,
-                true,
-                900_000L
-        ).verifyRuntimeReadiness())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("PostgreSQL Córtex não está pronto para validar a sincronização Academy.")
-                .hasMessageNotContaining("jdbc:mysql")
-                .hasMessageNotContaining("do-not-leak")
-                .hasNoCause();
-    }
-
-    @Test
-    void endpointReadinessRefusesAFutureSuccessfulRun() {
-        JdbcTemplate jdbcTemplate = readyPostgresql();
-        LocalDateTime databaseNow = LocalDateTime.of(2026, 7, 28, 12, 0);
-        when(jdbcTemplate.queryForList(
-                contains("source_sync_run"),
-                eq("acad_colaborador_import")
-        )).thenReturn(List.of(academyRun(
-                "SUCCESS",
-                databaseNow.plusSeconds(1),
-                databaseNow
-        )));
-
-        assertThatThrownBy(() -> guardWithAcademySync(
-                jdbcTemplate,
-                true,
-                900_000L
-        ).verifyRuntimeReadiness())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("sincronização Academy")
-                .hasMessageContaining("recente");
+        assertThatCode(
+                guardWithAcademySync(jdbcTemplate)::verifyRuntimeReadiness
+        ).doesNotThrowAnyException();
     }
 
     private PostgresqlRuntimeReadinessGuard guard(
@@ -816,17 +720,13 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     private PostgresqlRuntimeReadinessGuard guardWithAcademySync(
-            JdbcTemplate jdbcTemplate,
-            boolean academySyncEnabled,
-            long readinessMaxAgeMs
+            JdbcTemplate jdbcTemplate
     ) {
         return new PostgresqlRuntimeReadinessGuard(
                 jdbcTemplate,
                 "67",
                 true,
-                released(),
-                academySyncEnabled,
-                readinessMaxAgeMs
+                released()
         );
     }
 
@@ -857,18 +757,6 @@ class PostgresqlRuntimeReadinessGuardTest {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(exception);
         }
-    }
-
-    private Map<String, Object> academyRun(
-            String status,
-            LocalDateTime finishedAt,
-            LocalDateTime databaseNow
-    ) {
-        return Map.of(
-                "status", status,
-                "finished_at", Timestamp.valueOf(finishedAt),
-                "database_now", Timestamp.valueOf(databaseNow)
-        );
     }
 
     private static void await(CountDownLatch latch) {
