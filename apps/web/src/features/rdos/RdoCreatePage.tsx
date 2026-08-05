@@ -65,6 +65,7 @@ import { useRdoLocalPersistence } from "./useRdoLocalPersistence";
 import { UNIDADES_RDO, normalizarUnidade } from "./unidades";
 import { requireRdoCreationContext } from "./rdoCreationContextRepository";
 import { RdoWorkforceEditor } from "./RdoWorkforceEditor";
+import { RdoEquipmentPicker } from "./RdoEquipmentPicker";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
 import { RDO_WORKFORCE_CATALOG_OFFLINE_UNAVAILABLE } from "./rdoCreationContext";
 import { localRecordToDraft } from "./localRecordToDraft";
@@ -682,6 +683,7 @@ export function RdoCreatePage({
    * corresponde a uma equipe cadastrada.
    */
   const equipesDaObra = activeCreationContext?.equipes ?? [];
+  const parqueDaObra = activeCreationContext?.equipamentos ?? [];
   const buscarEquipesDaObra = (
     query: string,
   ): Promise<RdoContextTeam[]> => {
@@ -2585,6 +2587,14 @@ export function RdoCreatePage({
                 createEmptyEquipamento(),
               ],
             }))
+          }
+        />
+
+        <RdoEquipmentPicker
+          parque={parqueDaObra}
+          equipamentos={draft.equipamentos}
+          onChange={(equipamentos) =>
+            setDraft((current) => ({ ...current, equipamentos }))
           }
         />
 
