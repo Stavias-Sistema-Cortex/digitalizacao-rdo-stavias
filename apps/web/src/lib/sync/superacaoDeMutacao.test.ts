@@ -83,6 +83,50 @@ describe("substituta só conta se estiver viva", () => {
 
     expect(foiSubstituida(original, [original, substituta])).toBe(true);
   });
+  /*
+   * A correção que a jornada offline cobrou. Editar um rascunho local várias
+   * vezes antes de subir produz uma corrente: A cede a B, B a C, C a D, e só D
+   * é enviada. Olhar um elo só faria A e B parecerem becos — duas pendências
+   * acusadas num cenário sem conflito nenhum — quando a corrente inteira
+   * terminou aplicada.
+   */
+  it("segue a corrente inteira até a substituta que subiu", () => {
+    const a = mutacao("m-a", "REJECTED", { blockedReason: "SUPERSEDED_BY:m-b" });
+    const b = mutacao("m-b", "REJECTED", { blockedReason: "SUPERSEDED_BY:m-c" });
+    const c = mutacao("m-c", "REJECTED", { blockedReason: "SUPERSEDED_BY:m-d" });
+    const d = mutacao("m-d", "SYNCED");
+    const fila = [a, b, c, d];
+
+    expect(foiSubstituida(a, fila)).toBe(true);
+    expect(foiSubstituida(b, fila)).toBe(true);
+    expect(foiSubstituida(c, fila)).toBe(true);
+  });
+
+  /*
+   * A metade oposta: corrente que não termina em ninguém vivo. O último elo
+   * morreu sem sucessora, então nada responde pelo trabalho e todos os elos
+   * continuam sendo a única cópia dele.
+   */
+  it("não dá saída à corrente que termina em morta sem sucessora", () => {
+    const a = mutacao("m-a", "REJECTED", { blockedReason: "SUPERSEDED_BY:m-b" });
+    const b = mutacao("m-b", "REJECTED", { blockedReason: "SUPERSEDED_BY:m-c" });
+    const c = mutacao("m-c", "REJECTED");
+    const fila = [a, b, c];
+
+    expect(foiSubstituida(a, fila)).toBe(false);
+    expect(foiSubstituida(b, fila)).toBe(false);
+  });
+
+  /*
+   * Sem o corte de ciclo isto recursaria para sempre. Devolver `false` é o lado
+   * seguro: mantém o cartão na tela em vez de esconder o que não subiu.
+   */
+  it("não se perde quando duas mortas apontam uma para a outra", () => {
+    const a = mutacao("m-a", "REJECTED", { blockedReason: "SUPERSEDED_BY:m-b" });
+    const b = mutacao("m-b", "REJECTED", { blockedReason: "SUPERSEDED_BY:m-a" });
+
+    expect(foiSubstituida(a, [a, b])).toBe(false);
+  });
 });
 
 describe("o reenvio só vale onde pode mudar o desfecho", () => {

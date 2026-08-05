@@ -30,34 +30,66 @@ export function foiSubstituida(
   mutation: OutboxMutationRecord,
   todas: readonly OutboxMutationRecord[],
 ): boolean {
+  return temSaidaViva(mutation, todas, new Set());
+}
+
+/**
+ * Segue a corrente de substituições até saber se ela termina em algum lugar.
+ *
+ * <p>A pergunta não é "a substituta imediata está viva", e descobrir isso custou
+ * caro nos dois sentidos. Editar um rascunho local várias vezes antes de subir
+ * produz uma corrente — A cede a B, B a C, C a D — em que só a última é enviada
+ * e todas as anteriores ficam recusadas com a marca apontando para a seguinte.
+ * Olhar um elo só faria A e B parecerem becos, quando a corrente inteira
+ * terminou aplicada em D. Era isso que fazia a jornada offline acusar duas
+ * pendências num cenário sem conflito nenhum.
+ *
+ * <p>No sentido oposto está o defeito que motivou tudo: aceitar a mera
+ * existência de uma sucessora. Em campo isso deixou 246 recusas se sustentando
+ * aos pares — cada uma apontando para outra igualmente morta, corrente que não
+ * termina em lugar nenhum, sem saída pelo descarte nem pelo reenvio.
+ *
+ * <p>A resposta certa é a mesma nos dois casos: percorrer até o fim. Termina em
+ * alguém vivo, ou em referência ausente — a substituta que aplicou sai da fila,
+ * pela poda ou porque o ciclo a resolveu —, então tudo atrás dela cedeu lugar
+ * de verdade. Termina em morta sem sucessora, ou volta em círculo, então
+ * ninguém responde pelo trabalho e a original ainda é a única cópia dele.
+ *
+ * <p>`visitadas` corta o círculo. Sem ele, duas mortas apontando uma para a
+ * outra recursariam para sempre; com ele, o círculo devolve `false`, que é o
+ * lado seguro: mantém o cartão na tela em vez de esconder trabalho que não
+ * subiu.
+ */
+function temSaidaViva(
+  mutation: OutboxMutationRecord,
+  todas: readonly OutboxMutationRecord[],
+  visitadas: Set<string>,
+): boolean {
+  if (visitadas.has(mutation.clientMutationId)) {
+    return false;
+  }
+  visitadas.add(mutation.clientMutationId);
+
   const marca = mutation.blockedReason?.trim();
   const apelido = marca && MARCA_DE_SUPERACAO.test(marca)
     ? marca.slice(marca.indexOf(":") + 1).trim()
     : "";
+
   if (apelido) {
-    /*
-     * Ausente conta como substituída, e isso é deliberado. A substituta que
-     * aplicou some da fila — pela poda, ou porque o ciclo a resolveu — e a
-     * marca continua apontando para ela. Exigir presença faria toda original
-     * cuja substituta deu certo ressuscitar como pendência de revisão: o
-     * inverso do que aconteceu.
-     *
-     * O que se recusa é o caso oposto e verificável: a substituta está ali e
-     * está morta. Era assim que 246 recusas se sustentavam aos pares, cada uma
-     * segurando a outra, sem saída nem pelo descarte nem pelo reenvio.
-     */
     const nomeada = todas.find(
       (candidata) => candidata.clientMutationId === apelido,
     );
-    return !nomeada || estaViva(nomeada);
+    if (!nomeada) return true;
+    return estaViva(nomeada) || temSaidaViva(nomeada, todas, visitadas);
   }
+
   // Só o envelope canônico carrega causalidade; o legado não tem o campo, e
   // por isso nunca substitui ninguém — o que é o lado seguro do engano.
   return todas.some(
     (candidata) =>
       "causationId" in candidata &&
       candidata.causationId === mutation.clientMutationId &&
-      estaViva(candidata),
+      (estaViva(candidata) || temSaidaViva(candidata, todas, visitadas)),
   );
 }
 
