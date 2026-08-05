@@ -140,6 +140,9 @@
 }
 
 .tarefas-equipe-acao {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   border-radius: var(--radius-sm);

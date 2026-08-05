@@ -118,6 +118,55 @@ function prioridadeInfo(value: TarefaPrioridade) {
 }
 
 /** Bandeira colorida por grau: P1 azul, P2 amarela, P3 vermelha. */
+/*
+ * Traço, não desenho.
+ *
+ * Antes era o emoji 🗄, que cada sistema desenha do seu jeito, chega colorido
+ * numa barra que não tem cor nenhuma e ignora o peso de linha do resto da
+ * interface. Como SVG de contorno o ícone herda `currentColor` e acompanha o
+ * estado do botão.
+ */
+function IconeArquivar() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8Z" />
+      <path d="M3 4h18v4H3z" />
+      <path d="M10 12h4" />
+    </svg>
+  );
+}
+
+function IconeDesarquivar() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8Z" />
+      <path d="M3 4h18v4H3z" />
+      <path d="M12 16v-4" />
+      <path d="m9.5 14 2.5-2.5 2.5 2.5" />
+    </svg>
+  );
+}
+
 function BandeiraPrioridade({
   prioridade,
 }: {
@@ -1034,7 +1083,11 @@ export function TarefasPage() {
                           setConfirmacaoDeArquivamento(aba);
                         }}
                       >
-                        {aba.arquivada ? "↺" : "🗄"}
+                        {aba.arquivada ? (
+                          <IconeDesarquivar />
+                        ) : (
+                          <IconeArquivar />
+                        )}
                       </button>
                     )}
                   </span>

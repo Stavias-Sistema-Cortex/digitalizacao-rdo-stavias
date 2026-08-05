@@ -1103,9 +1103,30 @@ export function ObrasPage() {
                       setIsOntologyOpen((current) => !current)
                     }
                   >
-                    <span aria-hidden="true">
-                      {isOntologyOpen ? "▾" : "▸"}
-                    </span>
+                    {/*
+                      * O triângulo era caractere de texto colado na palavra: o
+                      * `width` no span não valia nada num botão sem flex, e a
+                      * seta encostava no "O" de Ontologia. Vira traço, gira ao
+                      * abrir e ganha o respiro que o alinhamento pede.
+                      */}
+                    <svg
+                      className={
+                        isOntologyOpen
+                          ? "obras-ontology-chevron obras-ontology-chevron--aberto"
+                          : "obras-ontology-chevron"
+                      }
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="m9 6 6 6-6 6" />
+                    </svg>
                     Ontologia da obra
                   </button>
                   {isOntologyOpen ? (

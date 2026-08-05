@@ -581,6 +581,9 @@
 }
 
 .obras-ontology-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   justify-content: flex-start;
   border-color: transparent;
@@ -588,9 +591,20 @@
   text-align: left;
 }
 
-.obras-ontology-toggle span {
-  width: 1rem;
+.obras-ontology-chevron {
+  flex: none;
   color: #0c2623;
+  transition: transform 140ms ease;
+}
+
+.obras-ontology-chevron--aberto {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .obras-ontology-chevron {
+    transition: none;
+  }
 }
 
 .obras-edit-dialog {

@@ -65,6 +65,31 @@ function comparisonText(pdor: ObraPdor): string | null {
   }
 }
 
+/**
+ * O que dizer quando o cálculo não saiu.
+ *
+ * A mensagem do servidor lista os campos pelo identificador interno —
+ * "Campos ausentes: contractValue, measuredRevenue, validatedRevenue..." —, que
+ * é diagnóstico de quem programa, não informação para quem administra a obra.
+ * Os mesmos campos já chegam em `dadosAusentes` com rótulo em português, e é
+ * essa lista, logo abaixo, que responde à pergunta útil: o que falta preencher.
+ *
+ * Sem a lista, a frase crua ainda é melhor que silêncio, e por isso continua
+ * sendo o último recurso.
+ */
+function mensagemDeExecucao(pdor: ObraPdor): string {
+  if (pdor.dadosAusentes.length > 0) {
+    const quantos = pdor.dadosAusentes.length;
+    return quantos === 1
+      ? "Falta um dado da obra para calcular a previsão."
+      : `Faltam ${quantos} dados da obra para calcular a previsão.`;
+  }
+  return (
+    pdor.erroExecucao ??
+    "O PDOR não pôde ser calculado com os dados atuais."
+  );
+}
+
 function ExplanationList({
   title,
   items,
@@ -123,13 +148,10 @@ export function PdorPanel({ pdor, loading, error }: PdorPanelProps) {
         <>
           <div className="obras-pdor-insufficient">
             <strong>{pdor.statusExecucaoLabel ?? pdor.statusExecucao}</strong>
-            <p>
-              {pdor.erroExecucao ??
-                "O PDOR não pôde ser calculado com os dados atuais."}
-            </p>
+            <p>{mensagemDeExecucao(pdor)}</p>
           </div>
           <div className="obras-pdor-explanation-grid">
-            <ExplanationList title="Dados ausentes" items={pdor.dadosAusentes} />
+            <ExplanationList title="Falta preencher" items={pdor.dadosAusentes} />
             <ExplanationList title="Limitações conhecidas" items={pdor.limitacoes} />
           </div>
         </>
