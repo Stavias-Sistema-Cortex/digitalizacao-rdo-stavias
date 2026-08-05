@@ -59,6 +59,7 @@ import {
   queueArchiveTeam,
   queueCreateTeam,
   queueTeamLinkChange,
+  queueUnarchiveTeam,
   queueUpdateTeam,
   replaceLocalOperationalRoles,
   replaceLocalTeamHistory,
@@ -398,6 +399,35 @@ export function EquipesPage() {
       setReloadTick((value) => value + 1);
     } catch (saveError: unknown) {
       setActionError(saveError instanceof Error ? saveError.message : "Não foi possível salvar a equipe.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  /**
+   * Desarquivar é gesto direto: não encerra nada nem pede justificativa, então
+   * não abre modal. Só o status volta — membros e vínculos seguem encerrados,
+   * porque recompô-los sozinho inventaria mão de obra que ninguém declarou.
+   */
+  async function desarquivar() {
+    if (!selectedTeam) {
+      return;
+    }
+    setIsSaving(true);
+    setActionError("");
+    try {
+      const restored = await queueUnarchiveTeam(selectedTeam);
+      setSelectedTeam(restored);
+      setTeams((current) => current.map((team) =>
+        team.id === restored.id ? restored : team
+      ));
+      setReloadTick((value) => value + 1);
+    } catch (saveError: unknown) {
+      setActionError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Não foi possível desarquivar a equipe.",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -757,7 +787,38 @@ export function EquipesPage() {
 
               {alfa && <section className="teams-section teams-audit"><header><h3>Registro de alterações <span className="teams-section-count">{history.length}</span></h3></header>{history.length === 0 ? <div className="teams-section-empty">Nenhum evento disponível no cache atual.</div> : <ol>{[...history].reverse().map((event) => <li key={event.eventId}><strong>{teamHistoryLabel(event)}</strong>{changedFields(event).length ? <p>Campos: {changedFields(event).join(", ")}</p> : null}<span>{formatDateTime(event.occurredAt)} · {event.source} · ator {event.collaboratorId ?? "sistema"}</span><code>commit {event.commitSeq}</code></li>)}</ol>}</section>}
 
-              {alfa && selectedTeam.status === "ATIVA" && <div className="teams-archive-row"><p>Arquivar encerra os vínculos ativos e preserva o histórico.</p><button type="button" onClick={() => { setTeamForm((current) => ({ ...current, motivo: "" })); setTeamModalMode("ARCHIVE"); }}>Arquivar equipe</button></div>}
+              {alfa && (
+                <div className="teams-archive-row">
+                  {selectedTeam.status === "ATIVA" ? (
+                    <>
+                      <p>Arquivar encerra os vínculos ativos e preserva o histórico.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTeamForm((current) => ({ ...current, motivo: "" }));
+                          setTeamModalMode("ARCHIVE");
+                        }}
+                      >
+                        Arquivar equipe
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        Desarquivar devolve a equipe ao trabalho. Os membros
+                        seguem encerrados e precisam ser adicionados de novo.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => void desarquivar()}
+                      >
+                        {isSaving ? "Desarquivando…" : "Desarquivar equipe"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </>}
         </section>

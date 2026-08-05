@@ -660,6 +660,40 @@ textarea:focus {
   font-size: 0.98rem;
 }
 
+/* Medidas calculadas de um serviço executado.
+ *
+ * Herdavam `.computed-grid`, que divide em quatro colunas, sendo filhas diretas
+ * do grid de três do formulário — os três valores eram espremidos num terço da
+ * linha, "Em branco" quebrava em duas e o texto vazava para fora do cartão.
+ * Ocupar a linha inteira resolve a largura; ser faixa em vez de três caixas
+ * resolve o resto, porque isto é resultado de conta, não campo a preencher, e
+ * não deve competir visualmente com os campos que estão logo acima. */
+.rdo-servico-medidas {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 32px;
+  margin-top: 2px;
+  padding: 10px 14px;
+  border: 1px solid #e6ece8;
+  border-radius: var(--radius-sm);
+  background: #fbfcfb;
+}
+
+.rdo-servico-medidas .calculated-metric {
+  min-height: 0;
+  min-width: 92px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.rdo-servico-medidas .calculated-metric strong {
+  margin-top: 2px;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
 .row-title {
   display: flex;
   justify-content: space-between;

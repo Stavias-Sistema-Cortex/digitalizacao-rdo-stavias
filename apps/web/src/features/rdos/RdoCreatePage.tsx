@@ -275,12 +275,12 @@ function MedidasDoServicoCalculadas({
 }) {
   const { comprimentoM, areaM2, volumeM3 } = medidasDoServico(item);
   return (
-    <div className="computed-grid rdo-servico-medidas">
+    <div className="rdo-servico-medidas">
       <CalculatedMetric
         label="Comprimento"
         value={
           comprimentoM === null
-            ? "Em branco"
+            ? "—"
             : `${formatCalculatedNumber(comprimentoM)} m`
         }
       />
@@ -288,7 +288,7 @@ function MedidasDoServicoCalculadas({
         label="Área"
         value={
           areaM2 === null
-            ? "Em branco"
+            ? "—"
             : `${formatCalculatedNumber(areaM2)} m²`
         }
       />
@@ -296,7 +296,7 @@ function MedidasDoServicoCalculadas({
         label="Volume"
         value={
           volumeM3 === null
-            ? "Em branco"
+            ? "—"
             : `${formatCalculatedNumber(volumeM3)} m³`
         }
       />
@@ -2037,23 +2037,11 @@ export function RdoCreatePage({
                   </select>
                 </label>
 
-                <label>
-                  Item contratual ID
-                  <input
-                    value={item.itemContratualId}
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          itemContratualId:
-                            event.target.value,
-                        },
-                      )
-                    }
-                    placeholder="UUID do item contratual"
-                  />
-                </label>
-
+                {/* Item contratual ID sai da tela pelo mesmo motivo que Obra ID
+                    e Programação ID saíram: pedir um UUID a quem aponta em
+                    campo é pedir o que ninguém tem à mão. O valor continua no
+                    rascunho e continua subindo — o que deixa de existir é a
+                    caixa que convidava a digitá-lo errado. */}
                 <NumericField
                   label="Quantidade executada"
                   value={item.quantidadeExecutada}
