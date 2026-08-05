@@ -1,5 +1,8 @@
 import { getCortexDb } from "../db/cortexDb";
-import { foiSubstituida } from "./superacaoDeMutacao";
+import {
+  foiSubstituida,
+  MARCA_DE_SUPERACAO,
+} from "./superacaoDeMutacao";
 import type {
   CanonicalOperationalEventRecord,
   CanonicalOutboxMutationRecord,
@@ -4745,6 +4748,110 @@ export async function descartarMutacoesMortas(): Promise<number> {
     }
   }
   return descartadas;
+}
+
+/**
+ * Todo identificador que alguma mutação cita, por qualquer um dos três laços.
+ *
+ * <p>Uma linha da outbox pode ser apontada de três maneiras, e as três contam:
+ * `dependsOnMutationIds` (a fila de dependências), `SUPERSEDED_BY:` em
+ * `blockedReason` (o apelido que liga a original à substituta) e `causationId`
+ * (a substituta que aponta para trás). Apagar quem é citado por qualquer uma
+ * delas transforma a citação em referência morta — e uma dependência que some
+ * não vira "satisfeita", vira `missingDependencies`, que bloqueia o dependente
+ * para sempre.
+ */
+function identificadoresCitadosPor(
+  mutations: readonly OutboxMutationRecord[],
+): Set<string> {
+  const citados = new Set<string>();
+  for (const mutation of mutations) {
+    if (Array.isArray(mutation.dependsOnMutationIds)) {
+      for (const id of mutation.dependsOnMutationIds) {
+        if (typeof id === "string" && id.trim()) citados.add(id.trim());
+      }
+    }
+    const marca = mutation.blockedReason?.trim();
+    if (marca && MARCA_DE_SUPERACAO.test(marca)) {
+      const apelido = marca.slice(marca.indexOf(":") + 1).trim();
+      if (apelido) citados.add(apelido);
+    }
+    if ("causationId" in mutation && typeof mutation.causationId === "string") {
+      const causa = mutation.causationId.trim();
+      if (causa) citados.add(causa);
+    }
+  }
+  return citados;
+}
+
+/**
+ * Apaga da outbox o que já subiu e não serve mais a ninguém.
+ *
+ * <p>A fila nunca podava: uma mutação aplicada virava `SYNCED` e ficava ali
+ * para sempre. Num aparelho em uso há semanas isso são centenas de linhas que
+ * só ocupam espaço e atrasam toda varredura da própria fila — e toda varredura
+ * da fila é `getAll`, então o custo é de cada ciclo de sincronização, não só do
+ * armazenamento.
+ *
+ * <p>Duas classes ficam, e as duas por motivo concreto:
+ *
+ * <p>A primeira é quem ainda é citado. Ver `identificadoresCitadosPor`.
+ *
+ * <p>A segunda é o recibo de integração. `listarDesfechosIntegracao` lê
+ * justamente as `SOLICITACAO_INTEGRACAO` já sincronizadas para mostrar o
+ * desfecho de cada pedido depois de recarregar a página — a linha da outbox é
+ * onde esse recibo mora. Podá-la apagaria a tela de desfechos, e o que essa
+ * classe faz crescer é o número de integrações executadas, não o de gestos do
+ * dia a dia.
+ *
+ * <p>Uma transação só para todas: diferente do descarte, aqui não se destrói
+ * trabalho de ninguém — o que se apaga já está no servidor. Tudo-ou-nada é
+ * então o lado seguro, porque uma poda parcial poderia deixar um citador vivo
+ * apontando para um citado já apagado.
+ *
+ * <p>Os eventos operacionais correspondentes <em>não</em> são tocados: são eles
+ * que sustentam a Memória, e sobreviver ao `SYNCED` é a razão de existirem.
+ *
+ * <p>Devolve quantas linhas saíram.
+ */
+export async function podarMutacoesJaAplicadas(): Promise<number> {
+  const database = await getCortexDb();
+  const todas = await database.getAll("outbox_mutations");
+
+  const candidatas = todas.filter(
+    (mutation) =>
+      mutation.status === "SYNCED" &&
+      !(
+        (mutation.entidadeTipo as string) === "SOLICITACAO_INTEGRACAO" &&
+        (mutation as { resultadoServidor?: unknown }).resultadoServidor != null
+      ),
+  );
+  if (candidatas.length === 0) return 0;
+
+  // As citações que importam são as de quem fica. Uma candidata citada só por
+  // outra candidata pode sair: as duas saem na mesma transação.
+  const identificadoresPodados = new Set(
+    candidatas.map((mutation) => mutation.clientMutationId),
+  );
+  const citadosPorQuemFica = identificadoresCitadosPor(
+    todas.filter(
+      (mutation) =>
+        !identificadoresPodados.has(mutation.clientMutationId),
+    ),
+  );
+
+  const podaveis = candidatas.filter(
+    (mutation) => !citadosPorQuemFica.has(mutation.clientMutationId),
+  );
+  if (podaveis.length === 0) return 0;
+
+  const transaction = database.transaction("outbox_mutations", "readwrite");
+  const store = transaction.objectStore("outbox_mutations");
+  for (const mutation of podaveis) {
+    await store.delete(mutation.clientMutationId);
+  }
+  await transaction.done;
+  return podaveis.length;
 }
 
 export async function returnMutationToPending(

@@ -44,6 +44,7 @@ const reviewSnapshot: SyncStatusSnapshot = {
   errorCount: 0,
   conflictCount: 0,
   reviewCount: 2,
+  insistindoCount: 0,
   reviewReason:
     "Vínculo da obra precisa ser revisado",
   lastSyncCompletedAt: null,

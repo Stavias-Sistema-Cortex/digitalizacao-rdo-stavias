@@ -80,6 +80,29 @@ const idleSyncState: SyncStateRecord = {
   syncExecutionLease: null,
 };
 
+function pendingMutation(
+  id: string,
+  retryAttempt: number,
+): OutboxMutationRecord {
+  return {
+    clientMutationId: id,
+    entidadeTipo: "GEOMETRIA_OBRA",
+    entidadeId: `geometria-${id}`,
+    operacao: "ATUALIZAR_GEOMETRIA_OBRA",
+    baseVersao: 1,
+    payload: {},
+    status: "PENDING",
+    tentativas: retryAttempt + 1,
+    retryAttempt,
+    ultimaTentativaEm: "2026-08-05T12:00:00.000Z",
+    ultimoErro: null,
+    conflito: null,
+    criadaNoClienteEm: "2026-08-05T12:00:00.000Z",
+    updatedAt: "2026-08-05T12:00:00.000Z",
+    blockedReason: null,
+  };
+}
+
 function rejectedMutation(
   id: string,
   updatedAt: string,
@@ -290,6 +313,58 @@ describe("useSyncStatus", () => {
       status: "SYNCED",
       reviewCount: 0,
       reviewReason: null,
+    });
+  });
+  /*
+   * A retentativa devolve a linha a PENDING, então quem insiste há horas era
+   * contado junto com o que entrou na fila há três segundos, e a tarja dizia a
+   * mesma frase tranquilizadora para os dois. Numa fila real havia geometrias
+   * com 261 tentativas, e a única maneira de descobrir isso foi despejar o
+   * IndexedDB no console.
+   */
+  it("separa quem insiste há muito de quem acabou de entrar na fila", async () => {
+    repositoryMocks.listOutboxMutations.mockResolvedValue([
+      pendingMutation("recem-chegada", 0),
+      pendingMutation("insistente", 12),
+      pendingMutation("insistindo-muito", 261),
+    ]);
+
+    const { result } = renderHook(() =>
+      syncStatusModule.useSyncStatus(),
+    );
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.snapshot).toMatchObject({
+      status: "PENDING",
+      pendingCount: 3,
+      insistindoCount: 2,
+    });
+  });
+
+  /*
+   * insistindoCount é subconjunto de pendingCount, não categoria à parte: quem
+   * insiste continua na fila e continua sendo enviado. Contá-lo duas vezes
+   * inflaria o total que a tarja mostra.
+   */
+  it("não conta como insistente quem ainda está dentro da espera normal", async () => {
+    repositoryMocks.listOutboxMutations.mockResolvedValue([
+      pendingMutation("quase-la", 11),
+    ]);
+
+    const { result } = renderHook(() =>
+      syncStatusModule.useSyncStatus(),
+    );
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.snapshot).toMatchObject({
+      pendingCount: 1,
+      insistindoCount: 0,
     });
   });
 });

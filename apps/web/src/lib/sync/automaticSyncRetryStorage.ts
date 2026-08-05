@@ -5,6 +5,34 @@ import type { SyncPushMutationResult } from "./sync.types";
 const INITIAL_RETRY_DELAY_MS = 1_000;
 const MAX_RETRY_DELAY_MS = 300_000;
 
+/**
+ * A partir de quantas tentativas a insistência deixa de ser espera normal.
+ *
+ * <p>Não existe teto de tentativas, e isso é deliberado: um aparelho pode ficar
+ * dias sem rede, e desistir apagaria trabalho que ainda vai subir. Só que a
+ * consequência era a insistência ficar invisível — `mutationAfterRetryScheduled`
+ * devolve a linha a `PENDING`, então a tela a contava junto com o que entrou na
+ * fila há três segundos e dizia "o sistema tentará sincronizar
+ * automaticamente". Numa fila real havia geometrias com 76, 239 e 261
+ * tentativas antes de aplicar, e nada na tela distinguia isso de uma espera de
+ * um minuto.
+ *
+ * <p>Doze porque o atraso satura em cinco minutos por volta da nona tentativa:
+ * quem chegou à décima segunda já está insistindo há mais de meia hora, o que
+ * ultrapassa com folga a queda de rede e a subida a frio do servidor — as duas
+ * causas transitórias legítimas. O número separa "esperando" de "empacado"; ele
+ * não interrompe nada.
+ */
+export const TENTATIVAS_ATE_A_INSISTENCIA_VIRAR_SINTOMA = 12;
+
+/** A mutação já insiste tempo suficiente para a tela ter de dizer isso. */
+export function insistindoHaMuitoTempo(
+  mutation: OutboxMutationRecord,
+): boolean {
+  return mutation.status === "PENDING" &&
+    (mutation.retryAttempt ?? 0) >= TENTATIVAS_ATE_A_INSISTENCIA_VIRAR_SINTOMA;
+}
+
 export interface RetryScheduleInput {
   safeCode: string;
   message: string;

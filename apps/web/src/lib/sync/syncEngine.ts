@@ -12,6 +12,7 @@ import { pullEvents } from "./pullEvents";
 import { pushOutbox } from "./pushOutbox";
 import { ensureRegisteredDevice } from "./registerDevice";
 import {
+  podarMutacoesJaAplicadas,
   queueErroredMutationsForRetry,
   recoverInterruptedMutations,
   recoverCanonicalConflictReconciliations,
@@ -174,6 +175,24 @@ async function executeSync(
     ].filter(([, replacementId]) =>
       retryHandledIds.has(replacementId)
     ).length;
+
+    /*
+     * A poda fecha o ciclo: o que subiu nesta janela já não precisa da linha na
+     * fila, e sem isso a outbox só cresce. Vai depois do push, do pull e do
+     * ack — antes de qualquer um deles, apagaria linha que o próprio ciclo
+     * ainda vai ler.
+     *
+     * Falha aqui não derruba a sincronização. Toda a escrita real já aconteceu
+     * e o resumo já está formado; deixar de podar custa espaço, enquanto
+     * propagar a exceção custaria o ciclo inteiro e acenderia a tarja vermelha
+     * por uma faxina.
+     */
+    try {
+      await podarMutacoesJaAplicadas();
+    } catch {
+      // Sobra para a próxima janela.
+    }
+    await assertSyncExecution(guard, lease);
 
     await updateSyncState({
       isSyncing: false,

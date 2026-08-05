@@ -39,6 +39,7 @@ function getStatusContent(
   errorCount: number,
   conflictCount: number,
   reviewCount: number,
+  insistindoCount: number,
 ): StatusContent {
   const localChangesCount =
     pendingCount +
@@ -73,7 +74,32 @@ function getStatusContent(
             : "Os dados continuam disponíveis e podem ser salvos neste dispositivo.",
       };
 
+    /*
+     * "O sistema tentará sincronizar automaticamente" é verdade e é inútil
+     * depois da centésima tentativa. A retentativa devolve a linha a PENDING,
+     * então quem insiste há horas era contado junto com o que entrou na fila há
+     * três segundos, e a tela dizia a mesma frase tranquilizadora para os dois.
+     * Numa fila real havia geometrias com 261 tentativas, e a única maneira de
+     * descobrir isso foi despejar o IndexedDB no console.
+     *
+     * Continua sem teto de tentativas — desistir apagaria trabalho que ainda
+     * vai subir. O que muda é a tela parar de chamar de espera o que já virou
+     * sintoma.
+     */
     case "PENDING":
+      if (insistindoCount > 0) {
+        return {
+          title: "Sincronização insistindo",
+          description: `${pluralize(
+            insistindoCount,
+            "alteração vem tentando subir",
+            "alterações vêm tentando subir",
+          )} há bastante tempo sem conseguir. Nada se perdeu: ${
+            insistindoCount === 1 ? "ela continua" : "elas continuam"
+          } salva${insistindoCount === 1 ? "" : "s"} aqui e o envio segue.`,
+        };
+      }
+
       return {
         title: "Aguardando sincronização",
         description: `${pluralize(
@@ -195,6 +221,7 @@ export function SyncStatusBanner() {
         snapshot.errorCount,
         snapshot.conflictCount,
         snapshot.reviewCount,
+        snapshot.insistindoCount,
       ),
     [
       displayedStatus,
@@ -203,6 +230,7 @@ export function SyncStatusBanner() {
       snapshot.errorCount,
       snapshot.conflictCount,
       snapshot.reviewCount,
+      snapshot.insistindoCount,
     ],
   );
 

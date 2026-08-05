@@ -7,6 +7,7 @@ import {
 import { getSyncState } from "../db/syncStateRepository";
 import { listOutboxMutations } from "../db/outboxRepository";
 import type { OutboxMutationRecord } from "../db/db.types";
+import { insistindoHaMuitoTempo } from "./automaticSyncRetryStorage";
 import { foiSubstituida } from "./superacaoDeMutacao";
 
 export type SyncUiStatus =
@@ -26,6 +27,7 @@ export interface SyncStatusSnapshot {
   errorCount: number;
   conflictCount: number;
   reviewCount: number;
+  insistindoCount: number;
   reviewReason: string | null;
   lastSyncCompletedAt: string | null;
   lastSyncError: string | null;
@@ -42,6 +44,7 @@ const INITIAL_STATUS: SyncStatusSnapshot = {
   errorCount: 0,
   conflictCount: 0,
   reviewCount: 0,
+  insistindoCount: 0,
   reviewReason: null,
   lastSyncCompletedAt: null,
   lastSyncError: null,
@@ -119,6 +122,7 @@ export interface ContagemDaFila {
   errorCount: number;
   conflictCount: number;
   reviewCount: number;
+  insistindoCount: number;
 }
 
 /**
@@ -155,6 +159,13 @@ export function contarPendenciasDaFila(
     errorCount: com("ERROR"),
     conflictCount: semSucessora("CONFLICT"),
     reviewCount: semSucessora("REJECTED"),
+    /*
+     * Subconjunto de `pendingCount`, não uma categoria à parte: quem insiste
+     * continua na fila e continua sendo enviado. Somá-lo ao total contaria a
+     * mesma linha duas vezes; o que ele muda é só o que a tarja tem a dizer
+     * sobre a espera.
+     */
+    insistindoCount: mutations.filter(insistindoHaMuitoTempo).length,
   };
 }
 
@@ -201,6 +212,7 @@ export function useSyncStatus(): {
         errorCount,
         conflictCount,
         reviewCount,
+        insistindoCount,
       } = contarPendenciasDaFila(mutations);
 
       const isOnline = navigator.onLine;
@@ -229,6 +241,7 @@ export function useSyncStatus(): {
         errorCount,
         conflictCount,
         reviewCount,
+        insistindoCount,
         reviewReason,
         lastSyncCompletedAt:
           syncState.lastSyncCompletedAt,
