@@ -6,12 +6,16 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.sync.EquipeSyncOperationHandler;
+import com.projeto.cortex.sync.SyncMutationContext;
+import com.projeto.cortex.sync.SyncPushRequest;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.VinculoColaboradorObraService;
 import java.time.LocalDateTime;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -51,6 +55,9 @@ class EquipeVersaoCanonicaIT {
     private static final PostgreSQLContainer<?> DATABASE =
             new PostgreSQLContainer<>("postgres:18")
                     .withDatabaseName("cortex_equipe_versao_it");
+
+    private static final ObjectMapper JSON =
+            new ObjectMapper().registerModule(new JavaTimeModule());
 
     private static JdbcTemplate jdbc;
     private static CortexOperationalMemoryService memoria;
@@ -100,32 +107,42 @@ class EquipeVersaoCanonicaIT {
         assertThat(versaoLida(service, equipeId)).isEqualTo(versaoCanonica(equipeId));
         assertThat(versaoDaLinha(equipeId)).isEqualTo(1L);
 
-        // Três encarregados, como na equipe real que travou.
+        /*
+         * Três encarregados pelo caminho de verdade: o handler de sync, não uma
+         * imitação dele.
+         *
+         * A versão anterior deste laço chamava o serviço e registrava o evento
+         * de vínculo à mão, replicando o que eu achava que o handler fazia. Um
+         * teste que reimplementa o alvo só confirma a minha leitura dele — se o
+         * handler contasse dois eventos por mutação, este teste continuaria
+         * verde e a fila continuaria travando. Medir exige passar por dentro.
+         */
+        EquipeSyncOperationHandler handler = handler(service, actorId);
         for (String nome : new String[] {"CARLOS", "PAULO", "ADAO"}) {
             long antes = versaoLida(service, equipeId);
 
-            EquipeMemberResponse membro = service.adicionarMembro(
-                    equipeId, new EquipeMemberRequest(
-                            null, inserirColaborador(nome), funcaoAtiva(),
-                            false, LocalDateTime.now(), null, "Escalação.", false
-                    )
+            handler.apply(
+                    adicionarMembro(equipeId, inserirColaborador(nome)),
+                    new SyncMutationContext(actorId, "dispositivo-1")
             );
+
+            /*
+             * Exatamente um. O aparelho monta a base da próxima mutação somando
+             * um por mutação já enfileirada; se uma delas movesse a versão em
+             * dois, tudo o que estivesse atrás na fila nasceria condenado — e
+             * da cadeira do usuário isso é "o primeiro colaborador entra e o
+             * segundo não".
+             */
+            assertThat(versaoLida(service, equipeId)).isEqualTo(antes + 1);
+            assertThat(versaoLida(service, equipeId))
+                    .isEqualTo(versaoCanonica(equipeId));
 
             /*
              * A tela projeta a participação recém-criada antes de qualquer
              * recarga, e precisa projetá-la com a versão que o servidor dá.
-             * Projetava 0, que nenhuma linha jamais tem — quem editasse a
-             * participação antes de recarregar levava recusa certa. Este
-             * número é o contrato de onde a projeção tira o dela.
+             * Projetava 0, que nenhuma linha jamais tem.
              */
-            assertThat(membro.versaoEntidade()).isEqualTo(1L);
-            registrarVinculoAlterado(equipeId, obraId, actorId);
-
-            // Exatamente um: o aparelho soma um por mutação enfileirada, e
-            // errar o passo aqui condenaria toda a fila atrás dela.
-            assertThat(versaoLida(service, equipeId)).isEqualTo(antes + 1);
-            assertThat(versaoLida(service, equipeId))
-                    .isEqualTo(versaoCanonica(equipeId));
+            assertThat(versaoDoUltimoMembro(equipeId)).isEqualTo(1L);
         }
 
         // A prova de que são dois números: a linha nunca saiu de 1.
@@ -150,12 +167,10 @@ class EquipeVersaoCanonicaIT {
         service.criar(new EquipeCreateRequest(
                 equipeId, obraId, "FR Antiga", null, LocalDateTime.now()
         ));
-        service.adicionarMembro(equipeId, new EquipeMemberRequest(
-                null, inserirColaborador("PEDRO"), funcaoAtiva(),
-                false, LocalDateTime.now(), null, "Escalação.", false
-        ));
-        registrarVinculoAlterado(equipeId, obraId, actorId);
-
+        handler(service, actorId).apply(
+                adicionarMembro(equipeId, inserirColaborador("PEDRO")),
+                new SyncMutationContext(actorId, "dispositivo-1")
+        );
         long base = versaoLida(service, equipeId);
         EquipeResponse renomeada = service.atualizar(equipeId, new EquipeUpdateRequest(
                 "FR Nova", null, "ATIVA", LocalDateTime.now(), null, base, "Correção."
@@ -205,15 +220,54 @@ class EquipeVersaoCanonicaIT {
         return versao == null ? 0L : versao;
     }
 
-    /* O mesmo evento que o EquipeSyncOperationHandler publica por vínculo. */
-    private void registrarVinculoAlterado(
-            String equipeId,
-            String obraId,
+    private long versaoDoUltimoMembro(String equipeId) {
+        Long versao = jdbc.queryForObject(
+                """
+                SELECT versao_linha FROM equipe_membro
+                WHERE equipe_id = ? ORDER BY criado_em DESC, id DESC LIMIT 1
+                """,
+                Long.class, equipeId
+        );
+        return versao == null ? 0L : versao;
+    }
+
+    private EquipeSyncOperationHandler handler(
+            EquipeService service,
             String actorId
     ) {
-        memoria.registrarEvento(
-                "EQUIPE", equipeId, "EQUIPE_VINCULO_ALTERADO", "SYNC", obraId,
-                Map.of("teamId", equipeId, "actorId", actorId)
+        CurrentUserService usuario = mock(CurrentUserService.class);
+        when(usuario.requireUserId()).thenReturn(actorId);
+        return new EquipeSyncOperationHandler(
+                service, memoria, usuario, JSON
+        );
+    }
+
+    /* O envelope que o aparelho manda ao adicionar alguém à equipe. */
+    private SyncPushRequest.MutacaoCliente adicionarMembro(
+            String equipeId,
+            String colaboradorId
+    ) {
+        ObjectNode vinculo = JSON.createObjectNode();
+        vinculo.put("colaboradorId", colaboradorId);
+        vinculo.put("funcaoOperacionalId", funcaoAtiva());
+        vinculo.put("responsavel", false);
+        vinculo.put("motivo", "Escalação.");
+        vinculo.put("concederAcessoObra", false);
+
+        ObjectNode payload = JSON.createObjectNode();
+        payload.put("id", equipeId);
+        payload.put("vinculoAcao", "ADICIONAR_MEMBRO");
+        payload.set("vinculo", vinculo);
+
+        return new SyncPushRequest.MutacaoCliente(
+                UUID.randomUUID().toString(),
+                "EQUIPE",
+                equipeId,
+                "ALTERAR_VINCULO_EQUIPE",
+                null,
+                payload,
+                LocalDateTime.now(),
+                UUID.randomUUID().toString()
         );
     }
 

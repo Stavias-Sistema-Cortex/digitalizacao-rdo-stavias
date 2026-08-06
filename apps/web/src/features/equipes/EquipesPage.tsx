@@ -818,8 +818,27 @@ export function EquipesPage() {
                * levou "1 membro ativo" a aparecer ao lado de três pessoas
                * escritas na tela.
                */
-              const naoSubiu = team.syncStatus && team.syncStatus !== "SYNCED";
-              return <button type="button" className={`teams-list-item ${team.id === selectedTeamId ? "is-active" : ""}`} key={team.id} onClick={() => setSearchParams({ equipe: team.id })}><span><strong>{team.nome}</strong><small>{team.obraNome}</small><em>{members.length} {members.length === 1 ? "membro ativo" : "membros ativos"}{naoSubiu ? " · não sincronizado" : ""}</em></span><b className={`teams-status teams-status--${team.status.toLowerCase()}`}>{team.status === "ATIVA" ? "Ativa" : "Arquivada"}</b></button>;
+              /*
+               * "Não sincronizado" e "esperando decisão" não são a mesma
+               * coisa, e dizer as duas com a mesma frase tornava a marca
+               * inútil: um conflito antigo, já resolvido em outro lugar,
+               * carimbava a equipe para sempre. Quem via isso ao lado de uma
+               * equipe que acabara de salvar bem aprendia a não acreditar na
+               * marca — e uma marca em que não se acredita é pior que
+               * nenhuma, porque ainda ocupa a linha.
+               *
+               * Pendente é trabalho ainda tentando subir. Conflito e recusa já
+               * têm cartão próprio na tela de revisão; aqui a marca só aponta
+               * para lá.
+               */
+              const emRevisao = team.syncStatus === "CONFLICT" ||
+                team.syncStatus === "REJECTED";
+              const marca = emRevisao
+                ? " · revisão pendente"
+                : team.syncStatus === "PENDING_SYNC"
+                  ? " · não sincronizado"
+                  : "";
+              return <button type="button" className={`teams-list-item ${team.id === selectedTeamId ? "is-active" : ""}`} key={team.id} onClick={() => setSearchParams({ equipe: team.id })}><span><strong>{team.nome}</strong><small>{team.obraNome}</small><em>{members.length} {members.length === 1 ? "membro ativo" : "membros ativos"}{marca}</em></span><b className={`teams-status teams-status--${team.status.toLowerCase()}`}>{team.status === "ATIVA" ? "Ativa" : "Arquivada"}</b></button>;
             })}
           </div>
         </aside>
