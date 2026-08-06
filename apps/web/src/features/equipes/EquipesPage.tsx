@@ -572,7 +572,17 @@ export function EquipesPage() {
           status: "ATIVO",
           fimEm: null,
           motivoEncerramento: null,
-          versaoEntidade: 0,
+          /*
+           * 1 é a versão com que o servidor cria a participação, literalmente:
+           * o INSERT de `equipe_membro` grava `versao_linha` = 1.
+           *
+           * Estava 0, que nenhuma linha jamais tem. Quem editasse ou
+           * encerrasse a participação antes de uma recarga mandava base 0
+           * contra uma linha em 1, e a recusa era certa — o mesmo defeito que
+           * travava a equipe, um nível abaixo. Depois da hidratação o número
+           * de verdade substitui este; até lá, 1 é o que o servidor tem.
+           */
+          versaoEntidade: 1,
           criadoEm: timestamp,
           atualizadoEm: timestamp,
         };

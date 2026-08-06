@@ -104,10 +104,21 @@ class EquipeVersaoCanonicaIT {
         for (String nome : new String[] {"CARLOS", "PAULO", "ADAO"}) {
             long antes = versaoLida(service, equipeId);
 
-            service.adicionarMembro(equipeId, new EquipeMemberRequest(
-                    null, inserirColaborador(nome), funcaoAtiva(),
-                    false, LocalDateTime.now(), null, "Escalação.", false
-            ));
+            EquipeMemberResponse membro = service.adicionarMembro(
+                    equipeId, new EquipeMemberRequest(
+                            null, inserirColaborador(nome), funcaoAtiva(),
+                            false, LocalDateTime.now(), null, "Escalação.", false
+                    )
+            );
+
+            /*
+             * A tela projeta a participação recém-criada antes de qualquer
+             * recarga, e precisa projetá-la com a versão que o servidor dá.
+             * Projetava 0, que nenhuma linha jamais tem — quem editasse a
+             * participação antes de recarregar levava recusa certa. Este
+             * número é o contrato de onde a projeção tira o dela.
+             */
+            assertThat(membro.versaoEntidade()).isEqualTo(1L);
             registrarVinculoAlterado(equipeId, obraId, actorId);
 
             // Exatamente um: o aparelho soma um por mutação enfileirada, e
