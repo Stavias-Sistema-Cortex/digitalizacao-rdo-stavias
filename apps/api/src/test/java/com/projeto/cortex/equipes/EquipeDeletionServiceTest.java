@@ -69,8 +69,10 @@ class EquipeDeletionServiceTest {
         assertThat(resposta.nome()).isEqualTo("FR Carlos");
 
         InOrder ordem = inOrder(jdbcTemplate);
+        // A conversa vira GRUPO em vez de só perder a chave: o CHECK de escopo
+        // exige que conversa de tipo EQUIPE tenha equipe_id preenchido.
         ordem.verify(jdbcTemplate).update(
-                contains("UPDATE conversa SET equipe_id = NULL"), eq(EQUIPE_ID)
+                contains("SET tipo = 'GRUPO'"), eq(EQUIPE_ID)
         );
         ordem.verify(jdbcTemplate).update(
                 contains("DELETE FROM equipe_membro"), eq(EQUIPE_ID)

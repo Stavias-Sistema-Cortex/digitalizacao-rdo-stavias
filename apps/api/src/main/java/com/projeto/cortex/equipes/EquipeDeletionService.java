@@ -1,6 +1,7 @@
 package com.projeto.cortex.equipes;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -56,9 +57,23 @@ public class EquipeDeletionService {
         // Carrega antes de apagar: o registro na Memória precisa do retrato.
         EquipeResponse antes = equipeService.buscarPorId(id);
 
-        // A conversa fica; só se desamarra. As mensagens são das pessoas.
+        /*
+         * A conversa fica — as mensagens são das pessoas que as escreveram —,
+         * mas não basta soltar a chave: `chk_conversa_tipo_escopo` exige que
+         * conversa de tipo EQUIPE tenha equipe_id preenchido. Anular sozinho
+         * viola a restrição, e foi assim que o primeiro apagar falhou em obra
+         * com conversa de equipe.
+         *
+         * Ela vira GRUPO, que é o tipo de quem conversa sem estar amarrado a
+         * equipe nem a obra — exatamente o que ela passa a ser. Participantes,
+         * mensagens e título continuam.
+         */
         jdbcTemplate.update(
-                "UPDATE conversa SET equipe_id = NULL WHERE equipe_id = ?",
+                """
+                UPDATE conversa
+                SET tipo = 'GRUPO', equipe_id = NULL, obra_id = NULL
+                WHERE equipe_id = ?
+                """,
                 id
         );
 
@@ -69,9 +84,24 @@ public class EquipeDeletionService {
                 "DELETE FROM equipe_obra WHERE equipe_id = ?", id
         );
 
-        int apagadas = jdbcTemplate.update(
-                "DELETE FROM equipe WHERE id = ?", id
-        );
+        /*
+         * Se sobrar alguma amarra que este método não conhece, a pessoa lê o
+         * que prendeu em vez de "não foi possível". Um 500 mudo manda tentar
+         * de novo, e tentar de novo nunca vai funcionar.
+         */
+        int apagadas;
+        try {
+            apagadas = jdbcTemplate.update(
+                    "DELETE FROM equipe WHERE id = ?", id
+            );
+        } catch (DataIntegrityViolationException prendeu) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A equipe ainda está presa a outro registro e não pôde ser"
+                            + " apagada. Avise o suporte com o id " + id + ".",
+                    prendeu
+            );
+        }
         if (apagadas != 1) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
