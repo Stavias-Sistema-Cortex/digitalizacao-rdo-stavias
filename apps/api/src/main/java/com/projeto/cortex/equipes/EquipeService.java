@@ -359,6 +359,7 @@ public class EquipeService {
         }
 
         String normalizedId = requireId(equipeId, "equipeId");
+        travarEquipe(normalizedId);
         TeamIdentity identity = requireIdentity(normalizedId);
         currentUserService.requireWorksiteAccess(identity.worksiteId());
         long baseVersion = requireBaseVersion(request.baseVersao());
@@ -402,7 +403,6 @@ public class EquipeService {
                     atualizado_por = ?,
                     versao_linha = versao_linha + 1
                 WHERE id = ?
-                  AND versao_linha = ?
                 """,
                 name,
                 description,
@@ -410,8 +410,7 @@ public class EquipeService {
                 start,
                 request.fimValidadeEm(),
                 actorId,
-                normalizedId,
-                baseVersion
+                normalizedId
         );
         if (updated != 1) {
             throw teamVersionConflict();
@@ -668,6 +667,7 @@ public class EquipeService {
     ) {
         currentUserService.requireAlfa();
         String actorId = currentUserService.requireUserId();
+        travarEquipe(requireId(equipeId, "equipeId"));
         EquipeResponse before = buscarPorId(equipeId);
         if (EquipeStatus.ARQUIVADA.name().equals(before.status())) {
             return before;
@@ -706,13 +706,11 @@ public class EquipeService {
                     atualizado_por = ?,
                     versao_linha = versao_linha + 1
                 WHERE id = ?
-                  AND versao_linha = ?
                 """,
                 archivedAt,
                 archivedAt,
                 actorId,
-                before.id(),
-                baseVersion
+                before.id()
         );
         if (updated != 1) {
             throw teamVersionConflict();
@@ -828,6 +826,7 @@ public class EquipeService {
     ) {
         currentUserService.requireAlfa();
         String actorId = currentUserService.requireUserId();
+        travarEquipe(requireId(equipeId, "equipeId"));
         EquipeResponse before = buscarPorId(equipeId);
         if (!EquipeStatus.ARQUIVADA.name().equals(before.status())) {
             return before;
@@ -855,12 +854,10 @@ public class EquipeService {
                     atualizado_por = ?,
                     versao_linha = versao_linha + 1
                 WHERE id = ?
-                  AND versao_linha = ?
                   AND status = 'ARQUIVADA'
                 """,
                 actorId,
-                before.id(),
-                baseVersion
+                before.id()
         );
         if (updated != 1) {
             throw teamVersionConflict();
@@ -1078,19 +1075,44 @@ public class EquipeService {
         return created;
     }
 
+    /* Mesma versão que {@link #teamSelect()} entrega: a dos eventos. */
     private TeamIdentity findIdentity(String id) {
         List<TeamIdentity> rows = jdbcTemplate.query(
-                "SELECT id, obra_principal_id, nome, status, versao_linha FROM equipe WHERE id = ?",
+                """
+                SELECT id, obra_principal_id, nome, status,
+                       COALESCE((
+                           SELECT estado.versao_entidade
+                           FROM cortex_estado_entidade estado
+                           WHERE estado.tipo_entidade = 'EQUIPE'
+                             AND estado.entidade_id = equipe.id
+                       ), 0) AS versao_entidade
+                FROM equipe WHERE id = ?
+                """,
                 (rs, rowNum) -> new TeamIdentity(
                         rs.getString("id"),
                         rs.getString("obra_principal_id"),
                         rs.getString("nome"),
                         rs.getString("status"),
-                        rs.getLong("versao_linha")
+                        rs.getLong("versao_entidade")
                 ),
                 id
         );
         return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    /*
+     * Tranca a linha da equipe antes de ler a versão que decide o conflito.
+     *
+     * A conferência otimista antes era o próprio `WHERE versao_linha = ?`: o
+     * banco comparava e atualizava num gesto só. Agora que a versão que manda
+     * mora em outra tabela, a comparação acontece em Java, e sem esta tranca
+     * dois Alfas simultâneos leriam a mesma versão e os dois passariam. Com
+     * ela, o segundo espera o primeiro terminar e então lê o número novo.
+     */
+    private void travarEquipe(String id) {
+        jdbcTemplate.queryForList(
+                "SELECT 1 FROM equipe WHERE id = ? FOR UPDATE", Integer.class, id
+        );
     }
 
     private List<EquipeMemberResponse> listMembers(String teamId) {
@@ -1257,15 +1279,37 @@ public class EquipeService {
         return rows.getFirst();
     }
 
+    /*
+     * A versão que sai daqui é a que o sync confere — e não era.
+     *
+     * `equipe.versao_linha` conta alterações na LINHA da equipe;
+     * `cortex_estado_entidade.versao_entidade` conta EVENTOS da equipe, e é
+     * contra esse segundo número que toda mutação é validada. Os dois nasciam
+     * iguais e se separavam no primeiro vínculo: adicionar um membro registra
+     * evento sem tocar na linha, então o servidor ia para 2 e a leitura
+     * continuava dizendo 1.
+     *
+     * O aparelho monta a base da próxima mutação com o que leu aqui. Lendo o
+     * contador errado, toda operação seguinte naquela equipe nascia condenada,
+     * e cada recarga da lista reenvenenava o registro local: era o "não
+     * sincroniza de jeito nenhum" que nenhum gesto do usuário desfazia.
+     *
+     * Dois números com o mesmo nome eram um erro de nome antes de serem um
+     * erro de sincronização.
+     */
     private String teamSelect() {
         return """
                 SELECT
                     e.id, e.obra_principal_id, o.nome AS obra_nome,
                     e.nome, e.descricao, e.status,
                     e.inicio_validade_em, e.fim_validade_em,
-                    e.versao_linha, e.criado_em, e.atualizado_em
+                    COALESCE(estado.versao_entidade, 0) AS versao_entidade,
+                    e.criado_em, e.atualizado_em
                 FROM equipe e
                 JOIN obra o ON o.id = e.obra_principal_id
+                LEFT JOIN cortex_estado_entidade estado
+                    ON estado.tipo_entidade = 'EQUIPE'
+                    AND estado.entidade_id = e.id
                 """;
     }
 
@@ -1279,7 +1323,7 @@ public class EquipeService {
                 rs.getString("status"),
                 toLocalDateTime(rs.getTimestamp("inicio_validade_em")),
                 toLocalDateTime(rs.getTimestamp("fim_validade_em")),
-                rs.getLong("versao_linha"),
+                rs.getLong("versao_entidade"),
                 toLocalDateTime(rs.getTimestamp("criado_em")),
                 toLocalDateTime(rs.getTimestamp("atualizado_em")),
                 List.of()
