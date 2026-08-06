@@ -404,35 +404,53 @@
 
 .teams-members-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
 }
 
+/*
+ * A ficha tinha quatro tamanhos de letra em três linhas, todos abaixo de
+ * 0,8rem, e nenhum deles mandava. Tudo encolhido junto não é densidade: é
+ * ausência de hierarquia, e é o que fazia a ficha parecer preenchimento.
+ *
+ * Agora o nome manda — é o dado pelo qual se procura alguém —, a função vem
+ * logo abaixo em segundo plano e o resto é rodapé. Três degraus, não quatro
+ * empates.
+ */
 .teams-member-card {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
-  padding: 12px;
+  padding: 13px 14px;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: var(--radius-container);
   background: var(--color-surface);
   color: var(--color-ink);
   text-align: left;
+  transition: border-color 120ms ease, background 120ms ease;
 }
 
 .teams-member-card:hover {
   border-color: var(--color-border-strong);
-  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-brand-teal) 4%, var(--color-surface));
 }
 
-.teams-member-avatar {
+/*
+ * O avatar era cinza de borda sobre fundo de superfície — sumia. Um tom da
+ * marca dá a ele a única função que tem: ancorar a linha e dizer, de longe,
+ * que ali começa uma pessoa.
+ */
+.teams-member-card .teams-member-avatar {
   flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  font-size: 0.68rem;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-brand-teal) 10%, var(--color-surface));
+  color: var(--color-brand-teal);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
 }
 
 .teams-member-card > span:nth-child(2) {
@@ -454,28 +472,56 @@
 
 .teams-member-card strong {
   display: block;
-  font-size: 0.75rem;
-  line-height: 1.35;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
 .teams-member-card small {
-  margin-top: 2px;
+  margin-top: 3px;
   color: var(--color-muted);
-  font-size: 0.66rem;
+  font-size: 0.7rem;
 }
 
 .teams-member-card em {
-  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
   color: var(--color-muted);
-  font-size: 0.59rem;
+  font-size: 0.64rem;
   font-style: normal;
 }
 
+/* Quem lidera se reconhece sem ler: era texto igual ao resto da linha. */
+.teams-member-lead {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-brand-yellow) 34%, var(--color-surface));
+  color: color-mix(in srgb, var(--color-brand-yellow) 24%, var(--color-ink));
+  font-size: 0.6rem;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* O selo não encolhe; quem cede largura é a data. */
+.teams-member-card em > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .teams-access {
-  padding: 3px 6px;
-  border-radius: 5px;
-  font-size: 0.56rem;
+  align-self: start;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .teams-access--alfa {

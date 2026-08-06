@@ -865,9 +865,18 @@ export function EquipesPage() {
                     <span>
                       <strong>{member.colaboradorNome}</strong>
                       <small>{member.funcaoNome}</small>
+                      {/*
+                        "Responsável · 01/08/2026" juntava duas coisas de
+                        naturezas diferentes numa linha só, e a data sozinha
+                        não dizia data de quê. São dois dados: quem lidera —
+                        que merece ser visto sem ler — e desde quando a pessoa
+                        está na equipe, dito por extenso.
+                      */}
                       <em>
-                        {member.responsavel ? "Responsável · " : ""}
-                        {formatDate(member.inicioEm)}
+                        {member.responsavel && (
+                          <i className="teams-member-lead">Responsável</i>
+                        )}
+                        <span>desde {formatDate(member.inicioEm)}</span>
                       </em>
                     </span>
                     {/*

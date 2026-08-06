@@ -1846,24 +1846,61 @@ textarea:focus {
   font-size: 0.72rem;
 }
 
+/*
+ * Os valores apareciam recuados e desalinhados dos próprios rótulos: `dd`
+ * carrega `margin-inline-start: 40px` do navegador e ninguém tinha zerado.
+ * Cada número flutuava deslocado do que ele mede — três legendas numa linha e
+ * três valores em outra, sem correspondência visível entre elas.
+ *
+ * Em colunas de largura própria, cada rótulo fica sobre o seu número. É o que
+ * uma faixa de indicadores tem de fazer para ser lida de relance.
+ */
 .home-obra-metrics {
-  display: flex;
-  gap: 16px;
-  padding-top: 8px;
-  border-top: 1px dashed #e2e6e8;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px 22px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.home-obra-metrics dt {
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+
+.home-obra-metrics dd {
+  margin: 3px 0 0;
+  font-size: 0.86rem;
 }
 
 .metric-value {
-  font-size: 1.05rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .metric-value--brand {
   color: #0e857a;
 }
 
+/*
+ * "Atualização local05/08/2026" — rótulo e valor colados, porque dois inlines
+ * vizinhos sem espaço no fonte também não têm espaço na tela.
+ */
 .home-updated-at {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 12px;
   color: var(--color-muted);
   font-size: 0.66rem;
+}
+
+.home-updated-at time {
+  color: var(--color-ink);
 }
 
 .home-obra-chart {
