@@ -73,7 +73,9 @@ class EquipeVersaoCanonicaIT {
         ));
         memoria = new CortexOperationalMemoryService(
                 jdbc,
-                new ObjectMapper(),
+                // Sem os módulos de data o estado da equipe não serializa:
+                // `inicioValidadeEm` é LocalDateTime e vai inteiro no evento.
+                new ObjectMapper().findAndRegisterModules(),
                 mock(ApplicationEventPublisher.class)
         );
     }
@@ -149,8 +151,17 @@ class EquipeVersaoCanonicaIT {
         ));
 
         assertThat(renomeada.nome()).isEqualTo("FR Nova");
-        assertThat(renomeada.versaoEntidade()).isEqualTo(versaoCanonica(equipeId));
-        assertThat(renomeada.versaoEntidade()).isGreaterThan(base);
+
+        /*
+         * A conferência é numa leitura NOVA, não na resposta: `atualizar`
+         * monta o retorno antes de publicar o evento, então o número que ele
+         * carrega é o de antes. Quem importa aqui é a releitura — é o que a
+         * lista faz ao recarregar, e é justamente essa releitura que
+         * envenenava o registro local antes desta correção.
+         */
+        assertThat(versaoLida(service, equipeId))
+                .isEqualTo(versaoCanonica(equipeId));
+        assertThat(versaoLida(service, equipeId)).isGreaterThan(base);
 
         // E a versão velha continua sendo recusada: a trava não afrouxou.
         assertThatThrownBy(() -> service.atualizar(equipeId, new EquipeUpdateRequest(
