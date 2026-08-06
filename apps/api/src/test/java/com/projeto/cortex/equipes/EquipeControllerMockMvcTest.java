@@ -35,6 +35,9 @@ class EquipeControllerMockMvcTest {
     private EquipeService service;
 
     @MockBean
+    private EquipeDeletionService deletionService;
+
+    @MockBean
     private EquipeHistoryService historyService;
 
     @MockBean

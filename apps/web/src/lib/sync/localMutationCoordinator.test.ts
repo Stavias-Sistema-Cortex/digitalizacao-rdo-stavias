@@ -102,6 +102,124 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+describe("pré-condição contra a própria sincronização", () => {
+  /*
+   * O caso da captura real: criar uma equipe e agir em seguida falhava sempre
+   * que a criação subia no intervalo — o registro aprendia a versão do
+   * servidor, a mutação saía da fila ativa, e as duas guardas liam isso como
+   * "a entidade mudou". A fila ter ANDADO não é a fila ter MUDADO.
+   */
+  async function semearMutacao(id: string, status: string) {
+    const database = await getCortexDb();
+    await database.put("outbox_mutations", {
+      clientMutationId: id,
+      entidadeTipo: "RDO",
+      entidadeId: RDO_ID,
+      obraId: OBRA_ID,
+      operacao: "ATUALIZAR_RDO_RASCUNHO",
+      status,
+      baseVersao: 0,
+      tentativas: 0,
+      createdAt: OCCURRED_AT,
+      updatedAt: OCCURRED_AT,
+      payload: {},
+    } as never);
+  }
+
+  it("não barra quando a esperada aplicou e o registro aprendeu a versão", async () => {
+    const aplicada = "00000000-0000-4000-8000-00000000a001";
+    await semearMutacao(aplicada, "SYNCED");
+    const noBanco = { ...rdo(), versaoEntidade: 1, syncStatus: "SYNCED" };
+    await (await getCortexDb()).put("rdos", noBanco as never);
+
+    // O chamador leu o registro ANTES de a criação aplicar: versão nula,
+    // pendência viva. Nada disso pode barrar o gesto dele.
+    const leituraAntiga = { ...rdo() };
+    await expect(commitLocalMutation({
+      ...command(noBanco),
+      operation: "UPDATE",
+      transportOperation: "ATUALIZAR_RDO_RASCUNHO",
+      baseVersion: 1,
+      eventType: "RDO_EDITADO",
+      previousSnapshot: { ...leituraAntiga.payload },
+      expectedPrincipalSnapshot: leituraAntiga,
+      expectedActiveMutationIds: [aplicada],
+    })).resolves.toBeDefined();
+  });
+
+  it("não barra quando a esperada aplicou e a poda já a levou", async () => {
+    const noBanco = { ...rdo(), versaoEntidade: 1, syncStatus: "SYNCED" };
+    await (await getCortexDb()).put("rdos", noBanco as never);
+
+    await expect(commitLocalMutation({
+      ...command(noBanco),
+      operation: "UPDATE",
+      transportOperation: "ATUALIZAR_RDO_RASCUNHO",
+      baseVersion: 1,
+      eventType: "RDO_EDITADO",
+      expectedPrincipalSnapshot: { ...rdo() },
+      expectedActiveMutationIds: ["00000000-0000-4000-8000-00000000a002"],
+    })).resolves.toBeDefined();
+  });
+
+  /*
+   * Morrer no meio é diferente de aplicar: a recusada não somou versão, então
+   * a versão-base calculada em cima dela está errada. Barrar é o certo.
+   */
+  it("barra quando a esperada morreu sem aplicar", async () => {
+    const recusada = "00000000-0000-4000-8000-00000000a003";
+    await semearMutacao(recusada, "REJECTED");
+    const noBanco = { ...rdo() };
+    await (await getCortexDb()).put("rdos", noBanco as never);
+
+    await expect(commitLocalMutation({
+      ...command(noBanco),
+      operation: "UPDATE",
+      transportOperation: "ATUALIZAR_RDO_RASCUNHO",
+      baseVersion: 1,
+      eventType: "RDO_EDITADO",
+      expectedPrincipalSnapshot: { ...rdo() },
+      expectedActiveMutationIds: [recusada],
+    })).rejects.toThrow("A fila local da entidade mudou");
+  });
+
+  it("barra a intrusa que outro fluxo enfileirou no meio", async () => {
+    const intrusa = "00000000-0000-4000-8000-00000000a004";
+    await semearMutacao(intrusa, "PENDING");
+    const noBanco = { ...rdo() };
+    await (await getCortexDb()).put("rdos", noBanco as never);
+
+    await expect(commitLocalMutation({
+      ...command(noBanco),
+      operation: "UPDATE",
+      transportOperation: "ATUALIZAR_RDO_RASCUNHO",
+      baseVersion: 1,
+      eventType: "RDO_EDITADO",
+      expectedPrincipalSnapshot: { ...rdo() },
+      expectedActiveMutationIds: [],
+    })).rejects.toThrow("A fila local da entidade mudou");
+  });
+
+  /* O que a guarda existe para pegar continua pego: conteúdo diferente. */
+  it("continua barrando mudança de conteúdo de verdade", async () => {
+    const noBanco = {
+      ...rdo(),
+      payload: { observacoes: "Outra pessoa mexeu" },
+    };
+    await (await getCortexDb()).put("rdos", noBanco as never);
+
+    await expect(commitLocalMutation({
+      ...command(noBanco),
+      operation: "UPDATE",
+      transportOperation: "ATUALIZAR_RDO_RASCUNHO",
+      baseVersion: 1,
+      eventType: "RDO_EDITADO",
+      expectedPrincipalSnapshot: { ...rdo() },
+      expectedActiveMutationIds: [],
+    })).rejects.toThrow("A entidade local mudou");
+  });
+});
+
 describe("canonical local mutation coordinator", () => {
   it("commits an OBRA snapshot and lifecycle event only in the obras store", async () => {
     setSession({

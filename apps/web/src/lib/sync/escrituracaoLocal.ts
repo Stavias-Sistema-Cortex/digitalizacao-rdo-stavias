@@ -15,10 +15,27 @@
  * aviso de que a fila estava atolada.
  */
 
+/*
+ * `versaoEntidade`, `pendingMutationId` e `atualizadoEm` entraram pela mesma
+ * porta dos três originais: quando uma mutação da própria fila é aplicada, o
+ * motor grava a versão aprendida do servidor no registro — e qualquer ação que
+ * o usuário tivesse aberto antes disso perdia a corrida com "a entidade local
+ * mudou". Criar uma equipe e adicionar alguém em seguida falhava sempre que a
+ * criação subia no intervalo, que é o caso bom.
+ *
+ * Ignorá-los não cega a pré-condição: uma mudança vinda de outra pessoa chega
+ * junto com mudança de conteúdo — nome, membros, status —, e o conteúdo
+ * continua comparado campo a campo. Versão que avança com conteúdo idêntico
+ * significa que o servidor convergiu para exatamente o que o usuário está
+ * olhando.
+ */
 const CAMPOS_DE_ESCRITURACAO: ReadonlySet<string> = new Set([
   "syncStatus",
   "ultimoErro",
   "updatedAt",
+  "versaoEntidade",
+  "pendingMutationId",
+  "atualizadoEm",
 ]);
 
 /**

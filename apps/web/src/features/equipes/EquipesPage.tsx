@@ -9,6 +9,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { CortexShell } from "../../components/shell/CortexShell";
 import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import { SeletorDePessoa } from "./SeletorDePessoa";
+import { apagarEquipeDefinitivamente } from "./apagarEquipe";
 import { camposQueFaltam, mensagemDoQueFalta } from "./camposQueFaltam";
 import type {
   ColaboradorLocalRecord,
@@ -308,6 +309,39 @@ export function EquipesPage() {
       cancelled = true;
     };
   }, [alfa, hasAuthenticatedConnection, reloadTick, selectedTeamId]);
+
+  /*
+   * Apagar não é arquivar, e existe porque arquivar não resolvia o caso que
+   * doeu: uma equipe com a fila de sincronização doente pendurada nela
+   * continuava gerando reenvio, porque arquivar é só mais uma mutação naquela
+   * mesma fila. Apagar remove a causa — no servidor, neste aparelho e na fila.
+   */
+  async function handleDeleteTeam() {
+    if (!selectedTeam) return;
+    if (
+      !window.confirm(
+        `Apagar a equipe ${selectedTeam.nome}? Ela sai do servidor e deste dispositivo, junto com os membros, as associações a obras e o que estiver na fila de sincronização dela. A conversa fica. Não há recuperação.`,
+      )
+    ) {
+      return;
+    }
+    setDetailLoading(true);
+    setActionError(null);
+    try {
+      await apagarEquipeDefinitivamente(selectedTeam);
+      setSelectedTeam(null);
+      setSearchParams({});
+      setReloadTick((value) => value + 1);
+    } catch (error: unknown) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível apagar a equipe.",
+      );
+    } finally {
+      setDetailLoading(false);
+    }
+  }
 
   const visibleTeams = useMemo(() => filterTeams(teams, filters), [filters, teams]);
   const activeMembers = selectedTeam?.membros.filter((member) => member.status === "ATIVO") ?? [];
@@ -786,7 +820,7 @@ export function EquipesPage() {
               <button className="teams-mobile-back" type="button" onClick={() => setSearchParams({})} aria-label="Voltar às equipes">‹</button>
               
               <div><p>{selectedTeam.obraNome}</p><h2>{selectedTeam.nome}</h2><span>ID {selectedTeam.id} · versão {selectedTeam.versaoEntidade}</span></div>
-              <div className="teams-detail-actions"><button type="button" onClick={() => navigate(`/obras?obra=${encodeURIComponent(selectedTeam.obraPrincipalId)}`)}>Ver obra</button><button type="button" className="is-primary" onClick={() => void openTeamConversation()}>Abrir conversa</button>{alfa && selectedTeam.status === "ATIVA" && <button type="button" onClick={openEditTeam}>Editar</button>}</div>
+              <div className="teams-detail-actions"><button type="button" onClick={() => navigate(`/obras?obra=${encodeURIComponent(selectedTeam.obraPrincipalId)}`)}>Ver obra</button><button type="button" className="is-primary" onClick={() => void openTeamConversation()}>Abrir conversa</button>{alfa && selectedTeam.status === "ATIVA" && <button type="button" onClick={openEditTeam}>Editar</button>}{alfa && <button type="button" className="teams-danger-action" onClick={() => void handleDeleteTeam()}>Apagar equipe</button>}</div>
             </header>
             {actionError && <div className="teams-action-error" role="alert">{actionError}<button type="button" onClick={() => setActionError(null)}>×</button></div>}
             <div className="teams-detail-scroll">

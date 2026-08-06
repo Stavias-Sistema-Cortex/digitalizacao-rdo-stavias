@@ -441,6 +441,35 @@ public class EquipeMemoryPublisher {
     }
 
     /**
+     * A equipe some da operação, mas o fato de ter existido não some da
+     * Memória: quem procurar amanhã por que a frente sumiu encontra aqui quem
+     * a apagou e quando.
+     */
+    public void equipeApagada(EquipeResponse before, String actorId) {
+        memoryService.encerrarRelacaoAtiva(
+                "EQUIPE", before.id(),
+                "OBRA", before.obraPrincipalId(), "ATUA_EM"
+        );
+        Map<String, Object> beforeState = teamState(before);
+        publishEvent(
+                "EQUIPE",
+                before.id(),
+                "EQUIPE_APAGADA",
+                before.obraPrincipalId(),
+                null,
+                actorId,
+                "DELETE",
+                beforeState,
+                Map.of(),
+                changedFields(beforeState, Map.of()),
+                before.versaoEntidade(),
+                before.versaoEntidade(),
+                "Equipe apagada definitivamente.",
+                List.of(Map.of("tipo", "OBRA", "id", before.obraPrincipalId()))
+        );
+    }
+
+    /**
      * Registra a volta da equipe ao trabalho.
      *
      * <p>A aresta {@code ATUA_EM} é reaberta porque a equipe volta a atuar na

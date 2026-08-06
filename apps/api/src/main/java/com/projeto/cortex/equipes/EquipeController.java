@@ -1,6 +1,7 @@
 package com.projeto.cortex.equipes;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,15 +19,18 @@ import java.util.List;
 public class EquipeController {
 
     private final EquipeService service;
+    private final EquipeDeletionService deletionService;
     private final EquipeHistoryService historyService;
     private final CurrentUserService currentUserService;
 
     public EquipeController(
             EquipeService service,
+            EquipeDeletionService deletionService,
             EquipeHistoryService historyService,
             CurrentUserService currentUserService
     ) {
         this.service = service;
+        this.deletionService = deletionService;
         this.historyService = historyService;
         this.currentUserService = currentUserService;
     }
@@ -55,6 +59,17 @@ public class EquipeController {
     @GetMapping("/{id}")
     public EquipeResponse buscar(@PathVariable String id) {
         return service.buscarPorId(id);
+    }
+
+    /**
+     * Apagar não é arquivar. Arquivar preserva e volta; apagar remove a equipe,
+     * as participações e as associações a obras — e existe para que a equipe de
+     * teste ou a criada por engano não precise do console do banco, que é o
+     * caminho que quebra a sincronização de quem ainda a cita.
+     */
+    @DeleteMapping("/{id}")
+    public EquipeDeletionResponse apagar(@PathVariable String id) {
+        return deletionService.apagar(id);
     }
 
     @GetMapping("/{id}/historico")

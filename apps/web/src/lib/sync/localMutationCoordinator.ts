@@ -344,23 +344,47 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
       }
     }
     if (prepared.expectedActiveMutationIds !== undefined) {
-      const currentActiveMutationIds = (
+      const daEntidade = (
         await transaction
           .objectStore("outbox_mutations")
           .index("by-entity-id")
           .getAll(prepared.envelope.entityId)
-      )
-        .filter(
-          (mutation) =>
-            mutation.entidadeTipo === prepared.envelope.entityType &&
+      ).filter(
+        (mutation) =>
+          mutation.entidadeTipo === prepared.envelope.entityType,
+      );
+      const statusPorId = new Map(
+        daEntidade.map((mutation) => [mutation.clientMutationId, mutation.status]),
+      );
+      const ativas = new Set(
+        daEntidade
+          .filter((mutation) =>
             ["PENDING", "ERROR", "SYNCING"].includes(mutation.status),
-        )
-        .map((mutation) => mutation.clientMutationId)
-        .sort();
-      if (
-        canonicalMutationJson(currentActiveMutationIds) !==
-          canonicalMutationJson(prepared.expectedActiveMutationIds)
-      ) {
+          )
+          .map((mutation) => mutation.clientMutationId),
+      );
+      const esperadas = new Set(prepared.expectedActiveMutationIds);
+
+      /*
+       * A fila ter ANDADO não é a fila ter MUDADO. Uma esperada que aplicou
+       * (SYNCED) ou que aplicou e já foi podada é a sincronização fazendo o
+       * trabalho dela, e a aritmética da versão-base sobrevive: cada aplicação
+       * tira um da fila e soma um na versão. Barrar aqui era o que fazia
+       * "criar equipe e adicionar alguém" falhar sempre que a criação subia no
+       * intervalo — o caso bom punido.
+       *
+       * O que continua fatal é o que quebra a corrente: uma mutação nova que
+       * este chamador não conhecia (outra aba enfileirou no meio) e uma
+       * esperada que morreu sem aplicar (REJECTED/CONFLICT) — essa não somou
+       * versão, e a versão-base calculada em cima dela está errada.
+       */
+      const intrusa = [...ativas].some((id) => !esperadas.has(id));
+      const morreuNoMeio = [...esperadas].some((id) => {
+        if (ativas.has(id)) return false;
+        const statusAtual = statusPorId.get(id);
+        return statusAtual === "REJECTED" || statusAtual === "CONFLICT";
+      });
+      if (intrusa || morreuNoMeio) {
         transaction.abort();
         throw new Error(
           "A fila local da entidade mudou durante a preparação da mutação. Recarregue e tente novamente.",
