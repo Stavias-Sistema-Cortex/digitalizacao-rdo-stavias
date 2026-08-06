@@ -60,6 +60,7 @@ interface RdoLocalListProps {
   discardingRdoId?: string | null;
   onCancelRdo?: (record: LocalRdoRecord) => void;
   onRestoreRdo?: (record: LocalRdoRecord) => void;
+  onPurgeRdo?: (record: LocalRdoRecord) => void;
   lifecycleRdoId?: string | null;
   onRefresh: () => void;
   createButtonRef?: Ref<HTMLButtonElement>;
@@ -409,6 +410,7 @@ export function RdoLocalList({
   onClone,
   onCancelRdo,
   onRestoreRdo,
+  onPurgeRdo,
   lifecycleRdoId = null,
   onRefresh,
   createButtonRef,
@@ -1150,6 +1152,27 @@ export function RdoLocalList({
                       {lifecycleRdoId === record.id
                         ? "Recuperando..."
                         : "Recuperar RDO"}
+                    </button>
+                  ) : null}
+                  {/*
+                    A destruição definitiva mora em cima do que já foi
+                    cancelado, e não ao lado de "Apagar RDO". Dois botões
+                    chamados apagar na mesma linha, um reversível e o outro
+                    não, é a receita para a pessoa apertar o errado com
+                    pressa. Assim são dois passos: primeiro sai da operação e
+                    dá para voltar; depois some, e aí não dá.
+                  */}
+                  {onPurgeRdo && record.canceladoEm ? (
+                    <button
+                      type="button"
+                      className="secondary-button rdo-discard-button"
+                      onClick={() => onPurgeRdo(record)}
+                      disabled={lifecycleRdoId === record.id}
+                      title="Remove o RDO do servidor e deste dispositivo, com a fila de sincronização junto. Não há recuperação."
+                    >
+                      {lifecycleRdoId === record.id
+                        ? "Apagando..."
+                        : "Apagar definitivamente"}
                     </button>
                   ) : null}
                   {record.syncStatus === "ERROR" &&

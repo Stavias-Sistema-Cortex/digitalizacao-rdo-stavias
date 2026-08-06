@@ -29,6 +29,7 @@ import {
   resumoDoQueOCloneTraz,
 } from "./rascunhoClonado";
 import {
+  apagarRdoDefinitivamente,
   descartarRdoLocalNaoSincronizado,
   queueCancelRdo,
   queueRestoreRdo,
@@ -290,6 +291,42 @@ export function RdoWorkspacePage() {
     await runRdoLifecycle(record, queueRestoreRdo);
   }
 
+  /*
+   * A destruição definitiva. Existe para que ninguém precise abrir o console
+   * do banco — apagar por fora deixa a fila daqui apontando para linhas que
+   * sumiram, e cada mutação órfã vira um conflito novo no ciclo seguinte.
+   *
+   * O aviso diz as três coisas que a pessoa precisa saber antes: que some do
+   * servidor, que some daqui, e que a fila vai junto. Sem a terceira, quem
+   * está tentando destravar a sincronização não teria como saber que é
+   * justamente isso que este botão faz.
+   */
+  async function handlePurgeRdo(record: LocalRdoRecord) {
+    const rotulo = record.numeroRdo.trim() || record.dataRdo;
+    if (
+      !window.confirm(
+        `Apagar definitivamente o RDO ${rotulo}? Ele sai do servidor e deste dispositivo, junto com o que estiver na fila de sincronização dele. Não há recuperação.`,
+      )
+    ) {
+      return;
+    }
+
+    setLifecycleRdoId(record.id);
+    setLoadError("");
+    try {
+      await apagarRdoDefinitivamente(record);
+      await loadRecords();
+    } catch (error: unknown) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível apagar este RDO.",
+      );
+    } finally {
+      setLifecycleRdoId("");
+    }
+  }
+
   async function runRdoLifecycle(
     record: LocalRdoRecord,
     operacao: (rdo: LocalRdoRecord) => Promise<LocalRdoRecord>,
@@ -372,6 +409,9 @@ export function RdoWorkspacePage() {
         }}
         onRestoreRdo={(record) => {
           void handleRestoreRdo(record);
+        }}
+        onPurgeRdo={(record) => {
+          void handlePurgeRdo(record);
         }}
         lifecycleRdoId={lifecycleRdoId}
         onRefresh={() => {

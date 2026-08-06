@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/api/apiClient";
 import { getCortexDb } from "../../lib/db/cortexDb";
 import type {
   CanonicalOutboxMutationRecord,
@@ -244,7 +245,22 @@ export async function descartarRdoLocalNaoSincronizado(
       "Este RDO já foi aceito pelo servidor. Use apagar, que o mantém recuperável.",
     );
   }
+  await limparRastroLocalDoRdo(existing.id);
+}
 
+/**
+ * Tira do aparelho tudo que pertence a um RDO: a fila, os eventos, os anexos,
+ * as lojas filhas e o próprio registro.
+ *
+ * <p>É a metade que o console do banco não faz. Apagar só no servidor deixa a
+ * fila daqui apontando para linhas que não existem mais, e no ciclo seguinte
+ * cada mutação órfã vira um conflito novo — trocar um problema por outro.
+ *
+ * <p>Recusa enquanto houver mutação `SYNCING`: apagar o registro debaixo de um
+ * envio em curso deixaria a resposta do servidor chegando para um RDO que já
+ * não existe aqui.
+ */
+export async function limparRastroLocalDoRdo(rdoId: string): Promise<void> {
   const database = await getCortexDb();
   const transaction = database.transaction(
     [
@@ -259,7 +275,7 @@ export async function descartarRdoLocalNaoSincronizado(
 
   const outbox = transaction.objectStore("outbox_mutations");
   const mutacoes = (
-    await outbox.index("by-entity-id").getAll(existing.id)
+    await outbox.index("by-entity-id").getAll(rdoId)
   ).filter(isRdoMutation);
   if (mutacoes.some((mutacao) => mutacao.status === "SYNCING")) {
     // Abortar rejeita `done`; sem este consumo a rejeição vaza como erro não
@@ -275,23 +291,23 @@ export async function descartarRdoLocalNaoSincronizado(
   }
 
   const eventos = transaction.objectStore("operational_events");
-  for (const evento of await eventos.index("by-rdo-id").getAll(existing.id)) {
+  for (const evento of await eventos.index("by-rdo-id").getAll(rdoId)) {
     await eventos.delete(evento.id);
   }
 
   const anexos = transaction.objectStore("rdo_attachments");
-  for (const anexo of await anexos.index("by-rdo-id").getAll(existing.id)) {
+  for (const anexo of await anexos.index("by-rdo-id").getAll(rdoId)) {
     await anexos.delete(anexo.id);
   }
 
   for (const nome of LOJAS_FILHAS_DO_RDO) {
     const loja = transaction.objectStore(nome);
-    for (const filho of await loja.index("by-rdo-id").getAll(existing.id)) {
+    for (const filho of await loja.index("by-rdo-id").getAll(rdoId)) {
       await loja.delete(filho.id);
     }
   }
 
-  await transaction.objectStore("rdos").delete(existing.id);
+  await transaction.objectStore("rdos").delete(rdoId);
   await transaction.done;
 }
 
@@ -456,4 +472,44 @@ export async function queueRestoreRdo(
       eventType: "RDO_RESTAURADO",
     },
   );
+}
+
+/**
+ * Apaga o RDO no servidor e limpa o rastro deste aparelho, nessa ordem.
+ *
+ * <p>A ordem é a única que não deixa lixo: primeiro o servidor, que pode
+ * recusar — RDO que serve de base para outro, ou com medição já virada em
+ * dinheiro —, e só depois o local. Ao contrário, uma recusa do servidor
+ * deixaria o RDO apagado aqui e vivo lá, e a próxima hidratação o traria de
+ * volta sem explicação.
+ *
+ * <p>Existe porque a alternativa que estava sendo cogitada era abrir o console
+ * do banco, e apagar por fora quebra a sincronização: o servidor perde linhas
+ * que a fila daqui ainda referencia.
+ */
+export async function apagarRdoDefinitivamente(
+  existing: LocalRdoRecord,
+): Promise<void> {
+  if (rdoConhecidoPeloServidor(existing)) {
+    const response = await apiFetch(
+      `/rdos/${encodeURIComponent(existing.id)}`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) {
+      // A mensagem do servidor é a que explica o motivo — base de outro RDO,
+      // serviço já medido. Trocá-la por uma genérica apagaria a razão.
+      const corpo = await response.text().catch(() => "");
+      let motivo = "";
+      try {
+        motivo = String(JSON.parse(corpo)?.message ?? "");
+      } catch {
+        motivo = corpo.trim();
+      }
+      throw new Error(
+        motivo || "Não foi possível apagar este RDO no servidor.",
+      );
+    }
+  }
+
+  await limparRastroLocalDoRdo(existing.id);
 }

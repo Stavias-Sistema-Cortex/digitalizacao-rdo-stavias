@@ -184,6 +184,27 @@ public class RdoMemoryPublisher {
         );
     }
 
+    /**
+     * O RDO some da operação, mas o fato de ter existido não some da Memória.
+     * Quem procurar amanhã por que o relatório do dia 12 não está mais lá
+     * encontra aqui quem apagou e quando.
+     */
+    public void registrarRdoApagado(
+            String rdoId,
+            String obraId,
+            String programacaoId,
+            String numeroRdo
+    ) {
+        registrarCicloDeVida(
+                rdoId,
+                obraId,
+                programacaoId,
+                numeroRdo,
+                "APAGADO",
+                "RDO_APAGADO"
+        );
+    }
+
     private void registrarCicloDeVida(
             String rdoId,
             String obraId,

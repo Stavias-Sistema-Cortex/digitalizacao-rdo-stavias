@@ -12,6 +12,7 @@ import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.auth.PapelAcesso;
 import com.projeto.cortex.rdos.RdoController;
 import com.projeto.cortex.rdos.RdoCreateRequest;
+import com.projeto.cortex.rdos.RdoDeletionService;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
 import com.projeto.cortex.rdos.RdoService;
@@ -76,6 +77,7 @@ class Cortex3ObjectAuthorizationTest {
                 mock(RdoQueryService.class),
                 draftUpdate,
                 mock(RdoWorkflowService.class),
+                mock(RdoDeletionService.class),
                 currentUser
         );
 

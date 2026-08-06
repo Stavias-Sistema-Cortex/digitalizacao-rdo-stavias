@@ -21,6 +21,7 @@ import com.projeto.cortex.pdor.PdorApplicationService;
 import com.projeto.cortex.pdor.PdorController;
 import com.projeto.cortex.rdos.RdoController;
 import com.projeto.cortex.rdos.RdoCreateRequest;
+import com.projeto.cortex.rdos.RdoDeletionService;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
 import com.projeto.cortex.rdos.RdoResponse;
@@ -123,6 +124,7 @@ class Cortex3ResourceLimitTest {
                 mock(RdoQueryService.class),
                 mock(RdoDraftUpdateService.class),
                 mock(RdoWorkflowService.class),
+                mock(RdoDeletionService.class),
                 mock(CurrentUserService.class)
         )).build();
 

@@ -3,6 +3,7 @@ package com.projeto.cortex.rdos;
 import com.projeto.cortex.auth.CurrentUserService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,6 +23,7 @@ public class RdoController {
     private final RdoQueryService queryService;
     private final RdoDraftUpdateService draftUpdateService;
     private final RdoWorkflowService workflowService;
+    private final RdoDeletionService deletionService;
     private final CurrentUserService currentUserService;
 
     public RdoController(
@@ -29,12 +31,14 @@ public class RdoController {
             RdoQueryService queryService,
             RdoDraftUpdateService draftUpdateService,
             RdoWorkflowService workflowService,
+            RdoDeletionService deletionService,
             CurrentUserService currentUserService
     ) {
         this.service = service;
         this.queryService = queryService;
         this.draftUpdateService = draftUpdateService;
         this.workflowService = workflowService;
+        this.deletionService = deletionService;
         this.currentUserService = currentUserService;
     }
 
@@ -82,6 +86,22 @@ public class RdoController {
     public RdoResponse enviar(@PathVariable String id) {
         currentUserService.requireRdoAccess(id);
         return workflowService.enviar(id);
+    }
+
+    /**
+     * Apagar existe para que ninguém precise abrir o console do banco.
+     *
+     * <p>Apagar por fora é o que quebra a sincronização: o servidor perde
+     * linhas que a fila do aparelho ainda referencia, e cada mutação órfã vira
+     * um conflito novo no ciclo seguinte. Por aqui o cliente fica sabendo e
+     * limpa a própria fila junto.
+     *
+     * <p>A autorização fina é do serviço, que precisa ler o status do RDO
+     * antes de decidir: rascunho quem alcança a obra apaga, enviado só o Alfa.
+     */
+    @DeleteMapping("/api/rdos/{id}")
+    public RdoDeletionResponse apagar(@PathVariable String id) {
+        return deletionService.apagar(id);
     }
 
 }
