@@ -190,6 +190,78 @@ describe("a equipe aprende a versão que o servidor devolve", () => {
   });
 
   /*
+   * O conflito também ensina. `versaoAtual` chega junto com a recusa e é a
+   * versão corrente do servidor; jogá-la fora deixava a equipe com a versão
+   * velha, e toda edição seguinte nascia condenada ao mesmo conflito — da
+   * cadeira do usuário, "não sincroniza de jeito nenhum".
+   */
+  it("aprende a versão do servidor também quando a resposta é conflito", async () => {
+    const mutation = await semearEquipeEMutacao(12);
+    await markMutationAsSyncing(mutation);
+
+    await applyPushResultAtomically({
+      clientMutationId: MUTATION_ID,
+      status: "DESCARTADA",
+      erro: "Conflito de versão.",
+      conflito: { versaoAtual: 19 },
+    } as never);
+
+    const database = await getCortexDb();
+    expect(await database.get("teams", EQUIPE_ID)).toMatchObject({
+      versaoEntidade: 19,
+      syncStatus: "CONFLICT",
+    });
+  });
+
+  /*
+   * E as irmãs pendentes reapoiam na mesma transação: elas foram enfileiradas
+   * sobre a versão velha, e esperar cada uma descobrir o conflito sozinha
+   * seria repetir a recusa uma vez por mutação.
+   */
+  it("no conflito, reapoia as irmãs pendentes na versão corrente", async () => {
+    const mutation = await semearEquipeEMutacao(12);
+    const database = await getCortexDb();
+    await database.put("outbox_mutations", {
+      ...(mutation as unknown as Record<string, unknown>),
+      clientMutationId: "00000000-0000-4000-8000-0000000004c1",
+      status: "PENDING",
+      baseVersao: 12,
+    } as never);
+    await markMutationAsSyncing(mutation);
+
+    await applyPushResultAtomically({
+      clientMutationId: MUTATION_ID,
+      status: "DESCARTADA",
+      erro: "Conflito de versão.",
+      conflito: { versaoAtual: 19 },
+    } as never);
+
+    expect(
+      (await database.get(
+        "outbox_mutations",
+        "00000000-0000-4000-8000-0000000004c1",
+      ))?.baseVersao,
+    ).toBe(19);
+  });
+
+  /* Conflito sem versaoAtual não apaga o número que a equipe já tinha. */
+  it("preserva a versão local quando o conflito não traz versaoAtual", async () => {
+    const mutation = await semearEquipeEMutacao(12);
+    await markMutationAsSyncing(mutation);
+
+    await applyPushResultAtomically({
+      clientMutationId: MUTATION_ID,
+      status: "DESCARTADA",
+      erro: "Conflito de versão.",
+      conflito: {},
+    } as never);
+
+    expect(
+      (await (await getCortexDb()).get("teams", EQUIPE_ID))?.versaoEntidade,
+    ).toBe(12);
+  });
+
+  /*
    * A irmã que já está adiante não retrocede. Reescrever cegamente devolveria
    * uma versão-base menor do que a que ela já tinha, e o servidor recusaria por
    * conta de um "conserto".

@@ -3698,6 +3698,55 @@ export async function applyPushResultAtomically(
         updatedAt: timestamp,
       });
     }
+    if (team) {
+      /*
+       * O conflito também ensina — e não ensinava. `versaoAtual` é a versão
+       * corrente do servidor, entregue junto com a recusa, e era jogada fora:
+       * a equipe local ficava com a versão velha e toda edição seguinte
+       * nascia condenada ao mesmo conflito. Da cadeira do usuário isso era
+       * "não sincroniza de jeito nenhum" — cada gesto novo herdava o veneno
+       * do anterior.
+       *
+       * As irmãs pendentes são rebaseadas na mesma transação, pelo mesmo
+       * motivo: elas foram enfileiradas sobre a versão velha, e esperar cada
+       * uma descobrir o conflito por conta própria seria repetir a recusa uma
+       * vez por mutação.
+       */
+      const versaoDoConflito =
+        result.conflito && typeof result.conflito === "object"
+          ? (result.conflito as Record<string, unknown>).versaoAtual
+          : null;
+      const aprendida =
+        typeof versaoDoConflito === "number" &&
+          Number.isFinite(versaoDoConflito)
+          ? versaoDoConflito
+          : null;
+      const agregadoAposConflito = await teamSyncStatusFromOutbox(
+        outboxStore,
+        mutation.entidadeId,
+      );
+      await teamStore.put({
+        ...team,
+        versaoEntidade: aprendida ?? team.versaoEntidade,
+        syncStatus:
+          agregadoAposConflito === "SYNCED"
+            ? "SYNCED"
+            : agregadoAposConflito === "CONFLICT"
+              ? "CONFLICT"
+              : agregadoAposConflito === "ERROR"
+                ? "REJECTED"
+                : "PENDING_SYNC",
+        atualizadoEm: timestamp,
+      });
+      if (aprendida !== null) {
+        await rebasePendingSiblings(
+          outboxStore,
+          mutation,
+          aprendida,
+          timestamp,
+        );
+      }
+    }
     if (obra) {
       await obraStore.put(
         obraAfterConflict(obra, result, timestamp),

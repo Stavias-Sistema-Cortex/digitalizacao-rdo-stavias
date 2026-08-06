@@ -150,8 +150,11 @@ function getStatusContent(
         title: "Conflito de versão",
         description: `${pluralize(
           conflictCount,
-          "RDO foi alterado",
-          "RDOs foram alterados",
+          // "Registro", não "RDO": conflito de versão acontece com equipe e
+          // com obra também, e chamar tudo de RDO mandava a pessoa procurar
+          // o problema na tela errada — aconteceu.
+          "registro foi alterado",
+          "registros foram alterados",
         )} no servidor depois da sua edição. ${
           conflictCount === 1
             ? "Nada se perdeu: a sua versão está guardada e precisa"
