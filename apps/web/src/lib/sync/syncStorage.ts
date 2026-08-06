@@ -4894,6 +4894,59 @@ function identificadoresCitadosPor(
  *
  * <p>Devolve quantas linhas saíram.
  */
+/**
+ * Tira das mutações vivas as citações a mutações que já não existem.
+ *
+ * <p>O servidor recusa qualquer mutação cujo `dependsOnMutationIds` cite algo
+ * que ele não tenha como APLICADA — e recusa para sempre, porque uma mutação
+ * descartada nunca vai ser aplicada. Foi assim que uma adição de membro chegou
+ * a 164 tentativas: ela citava uma mutação que um descarte levou embora, e
+ * cada reenvio repetia a mesma citação morta. O arquivado atrapalhando a fila
+ * dos vivos, do lado do servidor.
+ *
+ * <p>Tirar a citação é seguro nos dois casos possíveis. Se o citado subiu e
+ * foi podado, o servidor já o tem — a citação era redundante. Se foi
+ * descartado, a citação era uma sentença de reenvio eterno. Não há terceiro
+ * caso: enquanto o citado está na fila, ele existe, e a citação fica.
+ *
+ * <p>Só PENDING e ERROR. As citações de uma mutação morta são a memória de
+ * quem a substituiu, e mexer nelas mudaria o veredito de `foiSubstituida`.
+ *
+ * <p>As tentativas voltam a zero no que foi reparado: a mutação que vai subir
+ * não é mais a que falhou 164 vezes, e herdar o backoff dela adiaria à toa o
+ * primeiro envio que tem chance real.
+ */
+export async function desamarrarCitacoesFantasmas(): Promise<number> {
+  const database = await getCortexDb();
+  const transaction = database.transaction("outbox_mutations", "readwrite");
+  const store = transaction.objectStore("outbox_mutations");
+  const todas = await store.getAll();
+  const existentes = new Set(todas.map((m) => m.clientMutationId));
+  const agora = new Date().toISOString();
+
+  let reparadas = 0;
+  for (const mutation of todas) {
+    if (mutation.status !== "PENDING" && mutation.status !== "ERROR") continue;
+    const declaradas = Array.isArray(mutation.dependsOnMutationIds)
+      ? mutation.dependsOnMutationIds
+      : [];
+    const vivas = declaradas.filter((id) => existentes.has(id));
+    if (vivas.length === declaradas.length) continue;
+
+    await store.put({
+      ...mutation,
+      dependsOnMutationIds: vivas,
+      tentativas: 0,
+      ultimoErro: null,
+      lastSafeCode: null,
+      updatedAt: agora,
+    });
+    reparadas += 1;
+  }
+  await transaction.done;
+  return reparadas;
+}
+
 export async function podarMutacoesJaAplicadas(): Promise<number> {
   const database = await getCortexDb();
   const todas = await database.getAll("outbox_mutations");

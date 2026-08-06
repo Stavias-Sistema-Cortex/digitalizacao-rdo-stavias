@@ -12,6 +12,7 @@ import { pullEvents } from "./pullEvents";
 import { pushOutbox } from "./pushOutbox";
 import { ensureRegisteredDevice } from "./registerDevice";
 import {
+  desamarrarCitacoesFantasmas,
   podarMutacoesJaAplicadas,
   queueErroredMutationsForRetry,
   recoverInterruptedMutations,
@@ -100,6 +101,17 @@ async function executeSync(
     await assertSyncExecution(guard, lease);
     await recoverCanonicalConflictReconciliations(guard);
     await assertSyncExecution(guard, lease);
+    /*
+     * O reparo vem antes do push. Uma mutação que cita uma dependência já
+     * inexistente seria recusada pelo servidor em todo envio, para sempre —
+     * DEPENDENCY_NOT_APPLIED não prescreve. Reparar depois do push gastaria
+     * mais uma rodada inteira com uma recusa que já se sabia inevitável.
+     */
+    try {
+      await desamarrarCitacoesFantasmas();
+    } catch {
+      // Sem reparo o push ainda vale para as mutações sãs.
+    }
     const pushSummary = await pushOutbox(deviceId, guard);
     await assertSyncExecution(guard, lease);
     const recoveredReplacementIds = new Set<string>();
