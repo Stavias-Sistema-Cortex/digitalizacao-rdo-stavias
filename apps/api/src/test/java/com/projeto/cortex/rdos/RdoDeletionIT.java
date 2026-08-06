@@ -2,7 +2,6 @@ package com.projeto.cortex.rdos;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -31,8 +30,12 @@ import com.projeto.cortex.auth.CurrentUserService;
  * bloqueiam o DELETE e que só aparecem contra banco real: a auto-referência de
  * {@code rdo.previous_rdo_id}, a auto-referência de
  * {@code rdo_mao_obra.origem_item_id} e o laço circular entre {@code rdo} e o
- * recibo do contexto de criação. Mais o gatilho que protege medição já virada
- * em dinheiro.
+ * recibo do contexto de criação.
+ *
+ * <p>A recusa por medição já virada em dinheiro fica no teste unitário: plantar
+ * uma evidência de receita de verdade exigiria serviço, versão de preço vigente
+ * e evento — fixture fundo demais para provar algo que acontece antes de
+ * qualquer DELETE.
  */
 @Testcontainers(disabledWithoutDocker = true)
 class RdoDeletionIT {
