@@ -430,6 +430,19 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(globalCss).not.toMatch(/\.rdo-filter-grid\s*\{/);
   });
 
+  /*
+   * Cada um destes casos sobe um Chromium e mede sete cenários de layout. Só,
+   * isso leva ~14s; dentro da suíte inteira, disputando CPU com 245 arquivos
+   * em paralelo, passa disso com folga — e foi assim que a CI caiu com
+   * "Test timed out in 30000ms" num commit que não tocou em geometria alguma,
+   * enquanto o mesmo teste passava no portão de produção minutos depois.
+   *
+   * O orçamento agora cobre a contenção. Não é tolerância a teste lento: o
+   * limite existe para pegar processo pendurado, e 2 minutos ainda pega —
+   * o que ele deixa de pegar é uma máquina ocupada.
+   */
+  const TEMPO_DO_PORTAO_DE_GEOMETRIA = 120_000;
+
   it.runIf(Boolean(browser) || process.env.CI === "true")(
     "não cria overflow no strip ou nos seis filtros com sidebar máxima",
     () => {
@@ -451,7 +464,7 @@ describe("polimento visual da plataforma autenticada", () => {
         "Operational layout verified: 7 scenarios",
       );
     },
-    30_000,
+    TEMPO_DO_PORTAO_DE_GEOMETRIA,
   );
 
   it.runIf(Boolean(browser))(
@@ -475,7 +488,7 @@ describe("polimento visual da plataforma autenticada", () => {
       expect(result.stderr).toContain("sync ficou a");
       expect(result.stderr).toContain("profile ficou a");
     },
-    30_000,
+    TEMPO_DO_PORTAO_DE_GEOMETRIA,
   );
 
   it.runIf(Boolean(browser))(
@@ -498,7 +511,7 @@ describe("polimento visual da plataforma autenticada", () => {
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("sobreposição");
     },
-    30_000,
+    TEMPO_DO_PORTAO_DE_GEOMETRIA,
   );
 
   it.runIf(Boolean(browser))(
@@ -522,7 +535,7 @@ describe("polimento visual da plataforma autenticada", () => {
       expect(result.stderr).toContain("filtros ficaram");
       expect(result.stderr).toContain("status ficou");
     },
-    30_000,
+    TEMPO_DO_PORTAO_DE_GEOMETRIA,
   );
 
   it("mantém o verificador como gate explícito de CI e release", () => {
