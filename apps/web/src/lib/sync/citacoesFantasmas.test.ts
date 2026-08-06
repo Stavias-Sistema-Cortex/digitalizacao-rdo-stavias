@@ -93,7 +93,7 @@ describe("citações a mutações que já não existem", () => {
   });
 
   /* Enquanto o citado está na fila, ele existe — a citação fica. */
-  it("preserva citação a quem ainda está na fila, em qualquer estado", async () => {
+  it("preserva citação a quem está na fila e ainda pode ser aplicado", async () => {
     await semear("aplicada-citada", "SYNCED");
     await semear("pendente-citada", "PENDING");
     await semear("dependente", "PENDING", {
@@ -120,6 +120,27 @@ describe("citações a mutações que já não existem", () => {
     expect(await desamarrarCitacoesFantasmas()).toBe(1);
 
     expect((await carregar("mista")).dependsOnMutationIds).toEqual(["viva"]);
+  });
+
+  /*
+   * O segundo tipo de fantasma, e o que sobrou preso depois do primeiro
+   * conserto: o citado continua na fila, mas morto. O servidor nunca vai
+   * marcá-lo como aplicado, então a citação condena o dependente ao mesmo
+   * reenvio eterno de uma citação a quem já sumiu.
+   */
+  it("tira a citação a quem continua na fila, mas morto", async () => {
+    await semear("recusada", "REJECTED");
+    await semear("conflituosa", "CONFLICT");
+    await semear("presa-em-morto", "PENDING", {
+      dependsOnMutationIds: ["recusada", "conflituosa"],
+      tentativas: 87,
+    });
+
+    expect(await desamarrarCitacoesFantasmas()).toBe(1);
+
+    const solta = await carregar("presa-em-morto");
+    expect(solta.dependsOnMutationIds).toEqual([]);
+    expect(solta.tentativas).toBe(0);
   });
 
   /*

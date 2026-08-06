@@ -4904,10 +4904,16 @@ function identificadoresCitadosPor(
  * cada reenvio repetia a mesma citação morta. O arquivado atrapalhando a fila
  * dos vivos, do lado do servidor.
  *
- * <p>Tirar a citação é seguro nos dois casos possíveis. Se o citado subiu e
- * foi podado, o servidor já o tem — a citação era redundante. Se foi
- * descartado, a citação era uma sentença de reenvio eterno. Não há terceiro
- * caso: enquanto o citado está na fila, ele existe, e a citação fica.
+ * <p>Fantasma é toda citação que o servidor nunca vai poder satisfazer: a que
+ * aponta para uma mutação que já sumiu da fila, e a que aponta para uma que
+ * continua aqui mas está morta — recusada ou em conflito. As duas condenam o
+ * dependente ao mesmo reenvio eterno.
+ *
+ * <p>Tirar a citação é seguro em todos os casos. Se o citado subiu e foi
+ * podado, o servidor já o tem e a citação era redundante. Se foi descartado ou
+ * morreu, ela era só a sentença. E enquanto o citado está vivo na fila, a
+ * citação fica de pé — é o único caso em que ela ainda significa alguma
+ * coisa.
  *
  * <p>Só PENDING e ERROR. As citações de uma mutação morta são a memória de
  * quem a substituiu, e mexer nelas mudaria o veredito de `foiSubstituida`.
@@ -4921,7 +4927,18 @@ export async function desamarrarCitacoesFantasmas(): Promise<number> {
   const transaction = database.transaction("outbox_mutations", "readwrite");
   const store = transaction.objectStore("outbox_mutations");
   const todas = await store.getAll();
-  const existentes = new Set(todas.map((m) => m.clientMutationId));
+  /*
+   * O que conta é o que o servidor ainda pode marcar como APLICADA. Uma
+   * mutação recusada ou em conflito nunca mais vai ser — ela está aqui só
+   * como memória de quem a substituiu. Citá-la é a mesma sentença de reenvio
+   * eterno que citar uma que já sumiu, e foi por não ver isso na primeira
+   * passada que sobrou gente presa depois do conserto.
+   */
+  const aplicaveis = new Set(
+    todas
+      .filter((m) => m.status !== "REJECTED" && m.status !== "CONFLICT")
+      .map((m) => m.clientMutationId),
+  );
   const agora = new Date().toISOString();
 
   let reparadas = 0;
@@ -4930,7 +4947,7 @@ export async function desamarrarCitacoesFantasmas(): Promise<number> {
     const declaradas = Array.isArray(mutation.dependsOnMutationIds)
       ? mutation.dependsOnMutationIds
       : [];
-    const vivas = declaradas.filter((id) => existentes.has(id));
+    const vivas = declaradas.filter((id) => aplicaveis.has(id));
     if (vivas.length === declaradas.length) continue;
 
     await store.put({
