@@ -594,8 +594,11 @@
   color: var(--color-muted);
 }
 
+/* `label` global é `flex-direction: column`; sem declarar a direção aqui, ela
+   vencia e empilhava o que devia ficar lado a lado. */
 .finance-catalog-editor__toggle {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
   font-size: 0.78rem;

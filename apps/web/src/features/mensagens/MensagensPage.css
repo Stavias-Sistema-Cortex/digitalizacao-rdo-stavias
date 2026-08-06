@@ -1272,8 +1272,11 @@
   font-size: 0.78rem;
 }
 
+/* `label` global é `flex-direction: column`; sem declarar a direção aqui, ela
+   vencia e empilhava o que devia ficar lado a lado. */
 .mensagens-person {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 9px;
   padding: 8px 5px;
