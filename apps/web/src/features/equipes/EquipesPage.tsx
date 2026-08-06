@@ -226,8 +226,21 @@ export function EquipesPage() {
           replaceLocalTeams(remoteTeams),
           replaceLocalOperationalRoles(remoteRoles),
         ]);
+        /*
+         * Reler do armazenamento local, e não usar `remoteTeams` direto.
+         *
+         * `replaceLocalTeams` preserva de propósito a versão local de quem
+         * ainda não subiu — pendente, em conflito ou recusada. Usar a resposta
+         * do servidor aqui fazia a lista mostrar a verdade do servidor
+         * enquanto o detalhe, que relê do local, mostrava a versão da pessoa.
+         * Os dois painéis da mesma tela discordavam sobre a mesma equipe, sem
+         * nada na tela dizendo por quê: uma equipe com três membros escritos
+         * aqui e um só lá aparecia como "1 membro ativo" ao lado de "Membros
+         * ativos 3".
+         */
+        const mesclados = await listLocalTeams();
         if (!cancelled) {
-          setTeams(remoteTeams);
+          setTeams(mesclados);
           setRoles(remoteRoles);
           setObras(
             filterOperationalObras(await listObrasLocais()),
@@ -754,7 +767,15 @@ export function EquipesPage() {
           <div className="teams-list">
             {isLoading && teams.length === 0 ? [1, 2, 3].map((item) => <div className="teams-list-skeleton" key={item}><span /><i /><i /></div>) : error ? <div className="teams-empty-state"><strong>Equipes indisponíveis</strong><p>{error}</p></div> : visibleTeams.length === 0 ? <div className="teams-empty-state"><strong>Nenhuma equipe encontrada</strong><p>Revise os filtros ou crie a primeira equipe desta obra.</p></div> : visibleTeams.map((team) => {
               const members = team.membros.filter((member) => member.status === "ATIVO");
-              return <button type="button" className={`teams-list-item ${team.id === selectedTeamId ? "is-active" : ""}`} key={team.id} onClick={() => setSearchParams({ equipe: team.id })}><span><strong>{team.nome}</strong><small>{team.obraNome}</small><em>{members.length} {members.length === 1 ? "membro ativo" : "membros ativos"}</em></span><b className={`teams-status teams-status--${team.status.toLowerCase()}`}>{team.status === "ATIVA" ? "Ativa" : "Arquivada"}</b></button>;
+              /*
+               * Uma contagem que ainda não subiu não é a mesma coisa que uma
+               * contagem confirmada, e a tela precisa dizer qual das duas está
+               * mostrando. Sem isso o número vira adivinhação — foi o que
+               * levou "1 membro ativo" a aparecer ao lado de três pessoas
+               * escritas na tela.
+               */
+              const naoSubiu = team.syncStatus && team.syncStatus !== "SYNCED";
+              return <button type="button" className={`teams-list-item ${team.id === selectedTeamId ? "is-active" : ""}`} key={team.id} onClick={() => setSearchParams({ equipe: team.id })}><span><strong>{team.nome}</strong><small>{team.obraNome}</small><em>{members.length} {members.length === 1 ? "membro ativo" : "membros ativos"}{naoSubiu ? " · não sincronizado" : ""}</em></span><b className={`teams-status teams-status--${team.status.toLowerCase()}`}>{team.status === "ATIVA" ? "Ativa" : "Arquivada"}</b></button>;
             })}
           </div>
         </aside>
