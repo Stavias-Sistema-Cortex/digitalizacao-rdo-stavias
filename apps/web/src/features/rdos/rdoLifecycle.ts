@@ -475,6 +475,21 @@ export async function queueRestoreRdo(
 }
 
 /**
+ * A frase que o servidor mandou, quando ela existe.
+ *
+ * <p>O corpo vem como JSON de erro do Spring na maioria dos casos e como texto
+ * cru em alguns; as duas formas carregam a explicação, e é a explicação que
+ * diz à pessoa o que fazer diferente.
+ */
+function motivoDaRecusa(corpo: string): string {
+  try {
+    return String(JSON.parse(corpo)?.message ?? "").trim();
+  } catch {
+    return corpo.trim();
+  }
+}
+
+/**
  * Apaga o RDO no servidor e limpa o rastro deste aparelho, nessa ordem.
  *
  * <p>A ordem é a única que não deixa lixo: primeiro o servidor, que pode
@@ -496,17 +511,11 @@ export async function apagarRdoDefinitivamente(
       { method: "DELETE" },
     );
     if (!response.ok) {
-      // A mensagem do servidor é a que explica o motivo — base de outro RDO,
-      // serviço já medido. Trocá-la por uma genérica apagaria a razão.
-      const corpo = await response.text().catch(() => "");
-      let motivo = "";
-      try {
-        motivo = String(JSON.parse(corpo)?.message ?? "");
-      } catch {
-        motivo = corpo.trim();
-      }
       throw new Error(
-        motivo || "Não foi possível apagar este RDO no servidor.",
+        // A mensagem do servidor é a que explica o motivo — base de outro RDO,
+        // serviço já medido. Trocá-la por uma genérica apagaria a razão.
+        motivoDaRecusa(await response.text().catch(() => "")) ||
+          "Não foi possível apagar este RDO no servidor.",
       );
     }
   }
