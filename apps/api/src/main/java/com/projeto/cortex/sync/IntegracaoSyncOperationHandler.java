@@ -65,6 +65,16 @@ public class IntegracaoSyncOperationHandler implements SyncOperationHandler {
         return false;
     }
 
+    /*
+     * A solicitação de integração é identificada pelo `entityId()` do envelope,
+     * do começo ao fim: confere o payload, nomeia o recibo e vira evidência na
+     * memória operacional. Sem o apelido canônico não há o que executar.
+     */
+    @Override
+    public boolean requiresCanonicalEnvelope() {
+        return true;
+    }
+
     @Override
     public AppliedSyncMutation apply(
             SyncPushRequest.MutacaoCliente mutation,

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { OutboxMutationRecord } from "../db/db.types";
 import {
   analyzeOutboxDependencies,
+  explicarPendenciasQueNaoSobem,
   selectReadyOutboxMutations,
 } from "./outboxDependencies";
 
@@ -316,5 +317,76 @@ describe("analyzeOutboxDependencies", () => {
       selectReadyOutboxMutations([first, second, orfa], 100)
         .map((item) => item.clientMutationId),
     ).toEqual(["orfa"]);
+  });
+});
+
+/*
+ * O silêncio que custou uma investigação inteira: um RDO com a fila local
+ * marcando 1, a tarja prometendo envio automático, e nenhuma requisição de
+ * push na aba de rede — porque `selectReadyOutboxMutations` descartava a linha
+ * antes de existir requisição alguma. O motivo estava só no IndexedDB.
+ */
+describe("explicarPendenciasQueNaoSobem", () => {
+  it("nomeia a linha bloqueada que a fila conta como pendente", () => {
+    const bloqueada = mutation("bloqueada", "PENDING");
+    bloqueada.blockedReason = "RDO_CREATION_CONTEXT_REQUIRED";
+
+    expect(
+      selectReadyOutboxMutations([bloqueada], 100),
+    ).toHaveLength(0);
+    expect(explicarPendenciasQueNaoSobem([bloqueada])).toEqual([
+      {
+        mutationId: "bloqueada",
+        entidadeTipo: "MENSAGEM",
+        entidadeId: "bloqueada",
+        operacao: "CRIAR_MENSAGEM",
+        motivo: "BLOQUEADA",
+        detalhe: "RDO_CREATION_CONTEXT_REQUIRED",
+      },
+    ]);
+  });
+
+  it("nomeia o ciclo e a dependência que ainda não subiu", () => {
+    const first = mutation("first", "PENDING", ["second"]);
+    const second = mutation("second", "PENDING", ["first"]);
+    const presa = mutation("presa", "PENDING", ["parada"]);
+    const parada = mutation("parada", "ERROR");
+
+    expect(
+      explicarPendenciasQueNaoSobem([first, second, presa, parada])
+        .map((item) => [item.mutationId, item.motivo]),
+    ).toEqual([
+      ["first", "CICLO"],
+      ["presa", "DEPENDENCIA_PENDENTE"],
+      ["second", "CICLO"],
+    ]);
+  });
+
+  /*
+   * Espera que vence sozinha não é impasse. Chamar de travado o que volta na
+   * próxima janela gastaria o alarme justamente no caso que não precisa dele.
+   */
+  it("não chama de travada a espera que se resolve sozinha", () => {
+    const agora = Date.parse("2026-08-07T12:00:00.000Z");
+    const emEspera = mutation("em-espera", "PENDING");
+    emEspera.nextAttemptAt = "2026-08-07T12:00:30.000Z";
+    const anexo = mutation("anexo", "PENDING");
+    anexo.transport = "OBJECT_UPLOAD";
+
+    expect(
+      selectReadyOutboxMutations([emEspera, anexo], 100, agora),
+    ).toHaveLength(0);
+    expect(
+      explicarPendenciasQueNaoSobem([emEspera, anexo], agora),
+    ).toEqual([]);
+  });
+
+  it("ignora a linha pronta e a que já saiu da fila", () => {
+    const pronta = mutation("pronta", "PENDING");
+    const aplicada = mutation("aplicada", "SYNCED");
+
+    expect(
+      explicarPendenciasQueNaoSobem([pronta, aplicada]),
+    ).toEqual([]);
   });
 });

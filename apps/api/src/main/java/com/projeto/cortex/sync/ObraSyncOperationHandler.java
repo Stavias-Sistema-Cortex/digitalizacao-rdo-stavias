@@ -55,6 +55,17 @@ public class ObraSyncOperationHandler implements SyncOperationHandler {
         return OPERATIONS.contains(operation);
     }
 
+    /*
+     * O ciclo de vida da obra já era canônico-só, mas por uma lista de
+     * operações mantida em `SyncService`. Declarar aqui põe a exigência ao lado
+     * do `entityId()` que a torna necessária, em vez de depender de alguém
+     * lembrar de editar a lista distante ao acrescentar uma operação.
+     */
+    @Override
+    public boolean requiresCanonicalEnvelope() {
+        return true;
+    }
+
     @Override
     public AppliedSyncMutation apply(
             SyncPushRequest.MutacaoCliente mutation,

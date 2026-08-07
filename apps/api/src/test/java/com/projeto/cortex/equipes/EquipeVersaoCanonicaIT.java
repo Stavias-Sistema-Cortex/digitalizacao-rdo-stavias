@@ -264,15 +264,18 @@ class EquipeVersaoCanonicaIT {
          *
          * O envelope carrega o mesmo dado em português e em inglês
          * (`entidadeId` e `entityId`), e o handler lê o inglês. O construtor
-         * curto só preenche o português e deixa o resto nulo — quem o usasse
-         * aqui entregaria ao handler um envelope que o `SyncService` jamais
-         * deixaria passar: ele exige `entityId` presente (MALFORMED_ENTITY_ID)
-         * e idêntico a `entidadeId` (ENTITY_ALIAS_MISMATCH) antes de despachar.
+         * curto só preenche o português e deixa o resto nulo.
          *
          * Medir o handler por dentro só vale se a entrada for uma que ele possa
-         * mesmo receber em produção. Com o construtor curto, o teste morria de
-         * NullPointerException dentro do handler — um estouro que a fila real
-         * nunca veria, porque a requisição teria sido recusada com 400 antes.
+         * mesmo receber em produção, e o construtor curto não produz uma:
+         * `SyncService` recusa com 400 todo envelope sem `schemaVersion` cuja
+         * operação pertença a um handler que declara
+         * `requiresCanonicalEnvelope()` — e o de equipe declara, justamente
+         * porque lê `entityId()` e `baseVersion()`.
+         *
+         * Essa recusa é recente. Antes dela o envelope curto chegava ao handler
+         * e morria de NullPointerException lá dentro, que virava 500 para o
+         * aparelho; era esse estouro que este teste reproduzia sem querer.
          */
         return new SyncPushRequest.MutacaoCliente(
                 UUID.randomUUID().toString(),

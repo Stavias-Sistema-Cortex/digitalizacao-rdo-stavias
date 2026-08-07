@@ -306,6 +306,70 @@ export function analyzeOutboxDependencies(
   };
 }
 
+/**
+ * Por que uma linha PENDING não entra no envio desta janela.
+ *
+ * `AGUARDANDO_RETENTATIVA` e `OUTRO_TRANSPORTE` são espera legítima: a primeira
+ * volta sozinha quando a espera vence, a segunda sobe pelo caminho dos anexos.
+ * Os outros três são impasse — ninguém os desfaz sem alguém saber deles.
+ */
+export type MotivoDeTrava =
+  | "BLOQUEADA"
+  | "CICLO"
+  | "DEPENDENCIA_PENDENTE";
+
+export type MotivoDeNaoEnvio =
+  | MotivoDeTrava
+  | "OUTRO_TRANSPORTE"
+  | "AGUARDANDO_RETENTATIVA";
+
+export interface PendenciaQueNaoSobe {
+  mutationId: string;
+  entidadeTipo: string;
+  entidadeId: string;
+  operacao: string;
+  motivo: MotivoDeTrava;
+  /** O código do bloqueio, quando o motivo é `BLOQUEADA`. */
+  detalhe: string | null;
+}
+
+/**
+ * A regra única de quem sobe, expressa como o motivo de não subir.
+ *
+ * Estava escrita só dentro do filtro do envio, e por isso a tela não tinha como
+ * repeti-la: a tarja contava toda linha PENDING e prometia envio automático
+ * para todas, inclusive as que este filtro descarta em silêncio. Uma segunda
+ * cópia da regra na camada de exibição envelheceria diferente, e os dois lugares
+ * passariam a discordar sobre o mesmo aparelho — que é justamente o defeito.
+ */
+function motivoDeNaoEnvio(
+  mutation: OutboxMutationRecord,
+  byId: ReadonlyMap<string, OutboxMutationRecord>,
+  cycles: ReadonlySet<string>,
+  now: number,
+): MotivoDeNaoEnvio | null {
+  if (mutation.blockedReason) {
+    return "BLOQUEADA";
+  }
+  if (!isSyncPush(mutation)) {
+    return "OUTRO_TRANSPORTE";
+  }
+  if (
+    typeof mutation.nextAttemptAt === "string" &&
+    Number.isFinite(Date.parse(mutation.nextAttemptAt)) &&
+    Date.parse(mutation.nextAttemptAt) > now
+  ) {
+    return "AGUARDANDO_RETENTATIVA";
+  }
+  if (cycles.has(mutation.clientMutationId)) {
+    return "CICLO";
+  }
+  const temDependenciaPendente = dependencyIds(mutation).some(
+    (dependencyId) => !resolveDependency(byId, dependencyId).satisfied,
+  );
+  return temDependenciaPendente ? "DEPENDENCIA_PENDENTE" : null;
+}
+
 export function selectReadyOutboxMutations(
   mutations: OutboxMutationRecord[],
   limit: number,
@@ -322,28 +386,71 @@ export function selectReadyOutboxMutations(
       mutation,
     ]),
   );
-  const analysis = analyzeOutboxDependencies(mutations);
-  const cycles = new Set(analysis.cycles);
+  const cycles = new Set(analyzeOutboxDependencies(mutations).cycles);
   return mutations
-    .filter((mutation) => {
-      if (
-        mutation.status !== "PENDING" ||
-        Boolean(mutation.blockedReason) ||
-        !isSyncPush(mutation) ||
-        (typeof mutation.nextAttemptAt === "string" &&
-          Number.isFinite(Date.parse(mutation.nextAttemptAt)) &&
-          Date.parse(mutation.nextAttemptAt) > now) ||
-        cycles.has(mutation.clientMutationId)
-      ) {
-        return false;
-      }
-
-      return dependencyIds(mutation).every(
-        (dependencyId) => resolveDependency(byId, dependencyId).satisfied,
-      );
-    })
+    .filter(
+      (mutation) =>
+        mutation.status === "PENDING" &&
+        motivoDeNaoEnvio(mutation, byId, cycles, now) === null,
+    )
     .sort((left, right) =>
       left.criadaNoClienteEm.localeCompare(right.criadaNoClienteEm),
     )
     .slice(0, safeLimit);
+}
+
+/**
+ * As linhas que a fila conta como pendentes e que o envio nunca vai buscar.
+ *
+ * Sem isto, o impasse não tinha como aparecer: a tela dizia "aguardando
+ * sincronização, o sistema tentará automaticamente" para uma linha que o motor
+ * sequer considera, e o único jeito de descobrir o motivo era despejar o
+ * IndexedDB no console.
+ *
+ * A espera legítima fica de fora de propósito. Chamar de travado o que volta
+ * sozinho em um minuto gastaria o alarme com o caso que não precisa dele.
+ */
+export function explicarPendenciasQueNaoSobem(
+  mutations: OutboxMutationRecord[],
+  now = Date.now(),
+): PendenciaQueNaoSobe[] {
+  const byId = new Map(
+    mutations.map((mutation) => [
+      mutation.clientMutationId,
+      mutation,
+    ]),
+  );
+  const cycles = new Set(analyzeOutboxDependencies(mutations).cycles);
+  const travantes: ReadonlySet<string> = new Set<MotivoDeTrava>([
+    "BLOQUEADA",
+    "CICLO",
+    "DEPENDENCIA_PENDENTE",
+  ]);
+
+  return mutations
+    .filter((mutation) => mutation.status === "PENDING")
+    .map((mutation) => ({
+      mutation,
+      motivo: motivoDeNaoEnvio(mutation, byId, cycles, now),
+    }))
+    .filter(
+      (item): item is {
+        mutation: OutboxMutationRecord;
+        motivo: MotivoDeTrava;
+      } => item.motivo !== null && travantes.has(item.motivo),
+    )
+    .map(({ mutation, motivo }) => ({
+      mutationId: mutation.clientMutationId,
+      entidadeTipo: mutation.entidadeTipo,
+      entidadeId: mutation.entidadeId,
+      operacao: mutation.operacao,
+      motivo,
+      detalhe:
+        motivo === "BLOQUEADA" && typeof mutation.blockedReason === "string"
+          ? mutation.blockedReason.trim()
+          : null,
+    }))
+    .sort((left, right) =>
+      left.mutationId.localeCompare(right.mutationId),
+    );
 }

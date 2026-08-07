@@ -50,6 +50,15 @@ public class VinculoObraSyncOperationHandler implements SyncOperationHandler {
         return "REVOGAR_VINCULO_COLABORADOR_OBRA".equals(operation);
     }
 
+    /*
+     * Mesma história do handler de geometria: `requireText` já rejeitava o
+     * apelido nulo, e agora a exigência está dita em vez de deduzida.
+     */
+    @Override
+    public boolean requiresCanonicalEnvelope() {
+        return true;
+    }
+
     @Override
     public AppliedSyncMutation apply(
             SyncPushRequest.MutacaoCliente mutation,
