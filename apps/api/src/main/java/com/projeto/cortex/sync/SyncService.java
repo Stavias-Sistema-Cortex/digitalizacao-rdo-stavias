@@ -1590,6 +1590,24 @@ public class SyncService {
                     "entidadeTipo não corresponde à operação informada."
             );
         }
+        /*
+         * A recusa vem antes do despacho porque depois dele já é tarde: o
+         * handler que só sabe ler o envelope canônico desreferencia
+         * `entityId()`, que o envelope legado não traz, e o estouro virava 500
+         * — erro interno para o aparelho, sem dizer o que estava errado.
+         *
+         * Aqui a recusa é nomeada e cabe numa mutação só: `ResponseStatusException`
+         * é capturada por mutação em `processarMutacaoComSeguranca`, então um
+         * envelope antigo preso na fila de um aparelho não derruba o lote
+         * inteiro de quem sincroniza junto com ele.
+         */
+        if (handler.requiresCanonicalEnvelope() && !isCanonical(mutacao)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A operação " + mutacao.operacao()
+                            + " exige o envelope canônico schemaVersion 13."
+            );
+        }
     }
 
     private void validarRastroCanonicoParaAplicacao(

@@ -67,6 +67,16 @@ public class EquipeSyncOperationHandler implements SyncOperationHandler {
         return !"CRIAR_EQUIPE".equals(operation);
     }
 
+    /*
+     * Este handler lê `entityId()` e `baseVersion()` — os apelidos que só o
+     * envelope canônico traz. Num envelope legado os dois chegam nulos, e o
+     * primeiro estourava dentro de `requireText`.
+     */
+    @Override
+    public boolean requiresCanonicalEnvelope() {
+        return true;
+    }
+
     @Override
     public AppliedSyncMutation apply(
             SyncPushRequest.MutacaoCliente mutation,

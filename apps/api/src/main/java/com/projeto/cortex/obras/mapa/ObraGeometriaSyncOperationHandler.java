@@ -67,6 +67,16 @@ public class ObraGeometriaSyncOperationHandler implements SyncOperationHandler {
         return VERSIONED_OPERATIONS.contains(operation);
     }
 
+    /*
+     * A recusa já acontecia, mas por acaso: `requireFeatureId` checa nulo e
+     * devolve 400. Declarada, ela para de depender de esse cuidado sobreviver a
+     * cada refatoração — e passa a valer antes do handler ser chamado.
+     */
+    @Override
+    public boolean requiresCanonicalEnvelope() {
+        return true;
+    }
+
     @Override
     public AppliedSyncMutation apply(
             SyncPushRequest.MutacaoCliente mutation,

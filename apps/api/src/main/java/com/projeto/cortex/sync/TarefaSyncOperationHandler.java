@@ -76,6 +76,16 @@ public class TarefaSyncOperationHandler implements SyncOperationHandler {
         return !"CRIAR_TAREFA".equals(operation);
     }
 
+    /*
+     * `requireEnvelopeAndPayload` já exige schemaVersion 13 por conta própria, e
+     * continua exigindo — ele confere bem mais do que a versão. O que muda é o
+     * envelope antigo parar na porta, sem chegar a este handler.
+     */
+    @Override
+    public boolean requiresCanonicalEnvelope() {
+        return true;
+    }
+
     @Override
     public AppliedSyncMutation apply(
             SyncPushRequest.MutacaoCliente mutation,
