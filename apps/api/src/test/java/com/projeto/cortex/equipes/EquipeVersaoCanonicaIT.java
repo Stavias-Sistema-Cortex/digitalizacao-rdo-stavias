@@ -259,6 +259,21 @@ class EquipeVersaoCanonicaIT {
         payload.put("vinculoAcao", "ADICIONAR_MEMBRO");
         payload.set("vinculo", vinculo);
 
+        /*
+         * Os dois apelidos, preenchidos juntos.
+         *
+         * O envelope carrega o mesmo dado em português e em inglês
+         * (`entidadeId` e `entityId`), e o handler lê o inglês. O construtor
+         * curto só preenche o português e deixa o resto nulo — quem o usasse
+         * aqui entregaria ao handler um envelope que o `SyncService` jamais
+         * deixaria passar: ele exige `entityId` presente (MALFORMED_ENTITY_ID)
+         * e idêntico a `entidadeId` (ENTITY_ALIAS_MISMATCH) antes de despachar.
+         *
+         * Medir o handler por dentro só vale se a entrada for uma que ele possa
+         * mesmo receber em produção. Com o construtor curto, o teste morria de
+         * NullPointerException dentro do handler — um estouro que a fila real
+         * nunca veria, porque a requisição teria sido recusada com 400 antes.
+         */
         return new SyncPushRequest.MutacaoCliente(
                 UUID.randomUUID().toString(),
                 "EQUIPE",
@@ -267,7 +282,21 @@ class EquipeVersaoCanonicaIT {
                 null,
                 payload,
                 LocalDateTime.now(),
-                UUID.randomUUID().toString()
+                UUID.randomUUID().toString(),
+                null,
+                null,
+                null,
+                null,
+                "EQUIPE",
+                equipeId,
+                "UPDATE",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
         );
     }
 
