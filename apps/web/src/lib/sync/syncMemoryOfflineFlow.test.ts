@@ -26,6 +26,7 @@ vi.mock("../../features/mensagens/mensagensHydration", () => ({
 }));
 vi.mock("../db/localRdoService", () => ({
   hydrateBlockedRdoCreationContextsForSync: vi.fn(async () => 0),
+  hydrateBlockedRdoUpdateContextsForSync: vi.fn(async () => 0),
   repairRdoCreateMutationsForSync: vi.fn(async () => 0),
   recoverErroredWorkforceRdoMutationsForSync: vi.fn(async () => 0),
   recoverRejectedRdoMutationsForSync: vi.fn(async () => 0),

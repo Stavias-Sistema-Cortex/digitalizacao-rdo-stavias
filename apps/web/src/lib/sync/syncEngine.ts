@@ -2,6 +2,7 @@ import { processObjectUploads } from "../../features/mensagens/objectUploadSync"
 import { refreshMessagingAfterPull } from "../../features/mensagens/mensagensHydration";
 import {
   hydrateBlockedRdoCreationContextsForSync,
+  hydrateBlockedRdoUpdateContextsForSync,
   recoverErroredWorkforceRdoMutationsForSync,
   recoverRejectedRdoMutationsForSync,
   repairRdoCreateMutationsForSync,
@@ -73,6 +74,14 @@ async function executeSync(
     await reidentificarObrasInexistentesForSync(guard);
     await assertSyncExecution(guard, lease);
     await hydrateBlockedRdoCreationContextsForSync(guard);
+    await assertSyncExecution(guard, lease);
+    /*
+     * Logo depois da criação, e pelo mesmo motivo: a edição de rascunho também
+     * nasce presa pelo recibo de contexto, e até aqui ninguém a destravava.
+     * Sem esta passagem a linha fica PENDING com `blockedReason` e o envio a
+     * descarta em silêncio — o RDO some da fila real sem sair do aparelho.
+     */
+    await hydrateBlockedRdoUpdateContextsForSync(guard);
     await assertSyncExecution(guard, lease);
     await repairRdoCreateMutationsForSync(guard);
     await assertSyncExecution(guard, lease);

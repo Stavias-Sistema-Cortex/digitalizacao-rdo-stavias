@@ -2003,7 +2003,10 @@ async function keepRdoContextHydrationRetryable(
   const current = await store.get(clientMutationId);
   if (current &&
       current.entidadeTipo === "RDO" &&
-      current.operacao === "CRIAR_RDO" &&
+      (
+        current.operacao === "CRIAR_RDO" ||
+        current.operacao === "ATUALIZAR_RDO_RASCUNHO"
+      ) &&
       current.status !== "SYNCED" &&
       (
         !isCanonicalOutboxMutation(current) ||
@@ -2167,6 +2170,174 @@ export async function hydrateBlockedRdoCreationContextsForSync(
   }
 
   return hydrated;
+}
+
+/**
+ * Destrava a edição de rascunho presa pelo recibo de contexto.
+ *
+ * <p>O bloqueio nasce em `atualizarRdoLocal`, que decide por
+ * `rdoUpdateCreationContextBlockReason(draft, existingRdo)` — e a regra que ela
+ * aplica é sobre o RDO **antes** da escrita: um RDO criado com recibo exige que
+ * a edição também o carregue; um RDO antigo, gravado quando o recibo nem
+ * existia, pode omiti-lo.
+ *
+ * O problema é que a mesma transação que grava o bloqueio grava também o
+ * registro novo, com `creationContextVersion` vindo do rascunho — nulo, que foi
+ * o motivo do bloqueio. A prova em que o veredito se apoiou deixa de existir no
+ * instante em que ele é escrito, e nenhuma passagem o revisita: a hidratação de
+ * contexto só olha `CRIAR_RDO`. A linha fica PENDING com `blockedReason`, e
+ * `selectReadyOutboxMutations` a descarta em silêncio, para sempre.
+ *
+ * Foi assim que um RDO com sete eventos e dois colaboradores ficou parado por
+ * um dia: `CRIAR_RDO` aplicado no servidor, a edição seguinte nunca enviada, a
+ * tela dizendo "aguardando sincronização" e a aba de rede sem um único `push`,
+ * porque nunca houve requisição a fazer.
+ *
+ * O conserto busca o recibo e o carimba no registro e no envelope, em vez de
+ * simplesmente apagar o bloqueio: assim a edição sobe cumprindo a regra, e não
+ * driblando-a. Sem recibo utilizável, a linha volta com espera — visível e
+ * retentável — em vez de morrer calada.
+ */
+export async function hydrateBlockedRdoUpdateContextsForSync(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<number> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+  const candidates = [
+    ...(await database.getAllFromIndex(
+      "outbox_mutations",
+      "by-status",
+      "PENDING",
+    )),
+    ...(await database.getAllFromIndex(
+      "outbox_mutations",
+      "by-status",
+      "ERROR",
+    )),
+  ].filter((mutation) =>
+    mutation.entidadeTipo === "RDO" &&
+    mutation.operacao === "ATUALIZAR_RDO_RASCUNHO" &&
+    mutation.blockedReason === "RDO_CREATION_CONTEXT_REQUIRED"
+  );
+
+  let destravadas = 0;
+
+  for (const mutation of candidates) {
+    assertSyncSession(guard);
+    const rdo = await database.get("rdos", mutation.entidadeId);
+    if (!rdo || rdo.syncStatus === "SYNCED") {
+      continue;
+    }
+
+    const timestamp = nowUtc();
+    let context: RdoCreationContextLookup;
+    try {
+      context = await buscarContextoDeCriacaoRdo(rdo.obraId, rdo.dataRdo);
+    } catch {
+      assertSyncSession(guard);
+      await keepRdoContextHydrationRetryable(
+        mutation.clientMutationId,
+        guard,
+        timestamp,
+      );
+      continue;
+    }
+    assertSyncSession(guard);
+
+    const cache = durableCreationContextCache(context, rdo, timestamp);
+    if (!cache) {
+      await keepRdoContextHydrationRetryable(
+        mutation.clientMutationId,
+        guard,
+        timestamp,
+      );
+      continue;
+    }
+
+    const pendingOperationalEvents = (
+      await queryOperationalEvents({
+        rdoId: rdo.id,
+        limit: 500,
+      })
+    ).filter((event) => event.syncStatus !== "SYNCED");
+    assertSyncSession(guard);
+
+    const guardedTransaction = guardSyncTransaction(
+      database.transaction(["rdos", "outbox_mutations"], "readwrite"),
+      guard,
+    );
+    const transaction = guardedTransaction.transaction;
+    const rdoStore = transaction.objectStore("rdos");
+    const outboxStore = transaction.objectStore("outbox_mutations");
+    const currentRdo = await rdoStore.get(rdo.id);
+    const currentMutation = await outboxStore.get(
+      mutation.clientMutationId,
+    );
+
+    if (!currentRdo ||
+        currentRdo.obraId !== cache.worksiteId ||
+        currentRdo.dataRdo !== cache.selectedDate ||
+        currentRdo.syncStatus === "SYNCED" ||
+        !currentMutation ||
+        currentMutation.entidadeId !== currentRdo.id ||
+        currentMutation.operacao !== "ATUALIZAR_RDO_RASCUNHO" ||
+        currentMutation.blockedReason !== "RDO_CREATION_CONTEXT_REQUIRED" ||
+        !["PENDING", "ERROR"].includes(currentMutation.status)) {
+      await guardedTransaction.complete();
+      continue;
+    }
+
+    const hydratedRdo: LocalRdoRecord = {
+      ...currentRdo,
+      payload: {
+        ...currentRdo.payload,
+        previousRdoId: cache.previousRdoId,
+        creationContextVersion: cache.receiptVersion,
+        creationContextCache: cache,
+      },
+      updatedAt: timestamp,
+    };
+    /*
+     * O rascunho sai do registro já hidratado, e não do envelope: é o registro
+     * que guarda a edição de quem estava em campo. Reconstruir dali preserva o
+     * que a pessoa escreveu e acrescenta só o recibo que faltava.
+     */
+    const draft = rdoDraftFromLocalRecord(hydratedRdo);
+    const aindaBloqueada = rdoUpdateCreationContextBlockReason(
+      draft,
+      hydratedRdo,
+    );
+    if (aindaBloqueada) {
+      /*
+       * O recibo veio, mas não satisfez a regra. Liberar assim mesmo entregaria
+       * ao servidor um envelope que ele recusaria — e trocaria um impasse mudo
+       * por uma recusa em laço.
+       */
+      await guardedTransaction.complete();
+      await keepRdoContextHydrationRetryable(
+        mutation.clientMutationId,
+        guard,
+        timestamp,
+      );
+      continue;
+    }
+
+    await rdoStore.put(hydratedRdo);
+    await outboxStore.put({
+      ...currentMutation,
+      payload: buildRdoSyncPayload(draft, pendingOperationalEvents),
+      status: "PENDING",
+      blockedReason: null,
+      nextAttemptAt: null,
+      ultimoErro: null,
+      updatedAt: timestamp,
+    });
+    await guardedTransaction.complete();
+    destravadas += 1;
+  }
+
+  return destravadas;
 }
 
 export async function repairRdoCreateMutationsForSync(
