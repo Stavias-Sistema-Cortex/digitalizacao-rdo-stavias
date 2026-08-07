@@ -37,15 +37,29 @@ function pluralize(
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-function getStatusContent(
-  status: SyncUiStatus,
-  pendingCount: number,
-  syncingCount: number,
-  errorCount: number,
-  conflictCount: number,
-  reviewCount: number,
-  insistindoCount: number,
-): StatusContent {
+interface StatusInput {
+  status: SyncUiStatus;
+  pendingCount: number;
+  syncingCount: number;
+  errorCount: number;
+  conflictCount: number;
+  reviewCount: number;
+  insistindoCount: number;
+  travadasCount: number;
+  travaMotivo: string | null;
+}
+
+function getStatusContent({
+  status,
+  pendingCount,
+  syncingCount,
+  errorCount,
+  conflictCount,
+  reviewCount,
+  insistindoCount,
+  travadasCount,
+  travaMotivo,
+}: StatusInput): StatusContent {
   const localChangesCount =
     pendingCount +
     syncingCount +
@@ -91,7 +105,28 @@ function getStatusContent(
      * vai subir. O que muda é a tela parar de chamar de espera o que já virou
      * sintoma.
      */
+    /*
+     * Antes de "insistindo", porque é pior: insistir é tentar e falhar, e o
+     * motor de envio nem chega a pegar estas linhas. Um RDO ficou assim — a
+     * fila local marcava 1, a tarja prometia envio automático, e a aba de rede
+     * não registrava um único `push`, porque `selectReadyOutboxMutations` já o
+     * havia descartado antes de qualquer requisição existir. Sem nome e sem
+     * motivo na tela, o único caminho até a causa era abrir o IndexedDB.
+     */
     case "PENDING":
+      if (travadasCount > 0) {
+        return {
+          title: "Sincronização parada",
+          description: `${pluralize(
+            travadasCount,
+            "alteração não vai subir",
+            "alterações não vão subir",
+          )} sozinha${travadasCount === 1 ? "" : "s"}. Nada se perdeu: ${
+            travadasCount === 1 ? "ela continua salva" : "elas continuam salvas"
+          } aqui.${travaMotivo ? ` ${travaMotivo}` : ""}`,
+        };
+      }
+
       if (insistindoCount > 0) {
         return {
           title: "Sincronização insistindo",
@@ -225,15 +260,17 @@ export function SyncStatusBanner() {
 
   const content = useMemo(
     () =>
-      getStatusContent(
-        displayedStatus,
-        snapshot.pendingCount,
-        snapshot.syncingCount,
-        snapshot.errorCount,
-        snapshot.conflictCount,
-        snapshot.reviewCount,
-        snapshot.insistindoCount,
-      ),
+      getStatusContent({
+        status: displayedStatus,
+        pendingCount: snapshot.pendingCount,
+        syncingCount: snapshot.syncingCount,
+        errorCount: snapshot.errorCount,
+        conflictCount: snapshot.conflictCount,
+        reviewCount: snapshot.reviewCount,
+        insistindoCount: snapshot.insistindoCount,
+        travadasCount: snapshot.travadasCount,
+        travaMotivo: snapshot.travaMotivo,
+      }),
     [
       displayedStatus,
       snapshot.pendingCount,
@@ -242,6 +279,8 @@ export function SyncStatusBanner() {
       snapshot.conflictCount,
       snapshot.reviewCount,
       snapshot.insistindoCount,
+      snapshot.travadasCount,
+      snapshot.travaMotivo,
     ],
   );
 

@@ -9,6 +9,10 @@ import { listOutboxMutations } from "../db/outboxRepository";
 import type { OutboxMutationRecord } from "../db/db.types";
 import { insistindoHaMuitoTempo } from "./automaticSyncRetryStorage";
 import {
+  explicarPendenciasQueNaoSobem,
+  type PendenciaQueNaoSobe,
+} from "./outboxDependencies";
+import {
   foiSubstituida,
   vaiAdiantarReenviar,
 } from "./superacaoDeMutacao";
@@ -32,6 +36,8 @@ export interface SyncStatusSnapshot {
   reviewCount: number;
   insistindoCount: number;
   reenviaveisCount: number;
+  travadasCount: number;
+  travaMotivo: string | null;
   reviewReason: string | null;
   lastSyncCompletedAt: string | null;
   lastSyncError: string | null;
@@ -50,6 +56,8 @@ const INITIAL_STATUS: SyncStatusSnapshot = {
   reviewCount: 0,
   insistindoCount: 0,
   reenviaveisCount: 0,
+  travadasCount: 0,
+  travaMotivo: null,
   reviewReason: null,
   lastSyncCompletedAt: null,
   lastSyncError: null,
@@ -129,6 +137,36 @@ export interface ContagemDaFila {
   reviewCount: number;
   insistindoCount: number;
   reenviaveisCount: number;
+  travadasCount: number;
+  travaMotivo: string | null;
+}
+
+/**
+ * O impasse dito em português, para quem está em campo e não abre o console.
+ *
+ * O código do bloqueio aparece no fim porque é ele que resolve o chamado — o
+ * texto explica, o código identifica.
+ */
+export function descreverTrava(
+  pendencias: readonly PendenciaQueNaoSobe[],
+): string | null {
+  const primeira = pendencias[0];
+  if (!primeira) {
+    return null;
+  }
+
+  switch (primeira.motivo) {
+    case "CICLO":
+      return "Duas alterações esperam uma pela outra, e nenhuma consegue subir primeiro.";
+    case "DEPENDENCIA_PENDENTE":
+      return "Esta alteração espera outra que ainda não subiu.";
+    case "BLOQUEADA":
+      return primeira.detalhe === "RDO_CREATION_CONTEXT_REQUIRED"
+        ? "Um RDO espera o contexto da obra, que o servidor ainda não devolveu."
+        : `Esta alteração está retida no aparelho${
+            primeira.detalhe ? ` (${primeira.detalhe})` : ""
+          } e não será enviada até isso ser resolvido.`;
+  }
 }
 
 /**
@@ -142,6 +180,7 @@ export interface ContagemDaFila {
  */
 export function contarPendenciasDaFila(
   mutations: OutboxMutationRecord[],
+  now = Date.now(),
 ): ContagemDaFila {
   const com = (status: OutboxMutationRecord["status"]) =>
     mutations.filter((mutation) => mutation.status === status).length;
@@ -158,6 +197,8 @@ export function contarPendenciasDaFila(
         mutation.status === status &&
         !foiSubstituida(mutation, mutations),
     ).length;
+
+  const travadas = explicarPendenciasQueNaoSobem(mutations, now);
 
   return {
     pendingCount: com("PENDING"),
@@ -181,6 +222,14 @@ export function contarPendenciasDaFila(
     reenviaveisCount: mutations.filter(
       (mutation) => vaiAdiantarReenviar(mutation, mutations),
     ).length,
+    /*
+     * Também subconjunto de `pendingCount`, e o mais caro de todos enquanto
+     * ficou invisível: a linha que o motor de envio descarta em silêncio. Ela
+     * era contada como pendente e recebia a mesma promessa de envio automático
+     * das demais — promessa que, para ela, nenhuma janela cumpre.
+     */
+    travadasCount: travadas.length,
+    travaMotivo: descreverTrava(travadas),
   };
 }
 
@@ -229,6 +278,8 @@ export function useSyncStatus(): {
         reviewCount,
         insistindoCount,
         reenviaveisCount,
+        travadasCount,
+        travaMotivo,
       } = contarPendenciasDaFila(mutations);
 
       const isOnline = navigator.onLine;
@@ -259,6 +310,8 @@ export function useSyncStatus(): {
         reviewCount,
         insistindoCount,
         reenviaveisCount,
+        travadasCount,
+        travaMotivo,
         reviewReason,
         lastSyncCompletedAt:
           syncState.lastSyncCompletedAt,

@@ -556,6 +556,8 @@ describe("jornada offline do Córtex", () => {
       reviewCount: 0,
       insistindoCount: 0,
       reenviaveisCount: 0,
+      travadasCount: 0,
+      travaMotivo: null,
     });
 
     // O servidor guarda cada entidade sob a identidade que o aparelho cunhou.
