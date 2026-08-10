@@ -16,6 +16,6 @@ spring:
 
 cortex:
   postgresql:
-    required-schema-version: 74
+    required-schema-version: 75
     release-marker:
       required: ${CORTEX_POSTGRES_RELEASE_MARKER_REQUIRED:false}

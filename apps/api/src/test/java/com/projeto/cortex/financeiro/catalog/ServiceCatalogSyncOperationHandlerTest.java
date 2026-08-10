@@ -71,6 +71,53 @@ class ServiceCatalogSyncOperationHandlerTest {
         assertThat(handler.requiresBaseVersion("CRIAR_SERVICO_CATALOGO")).isFalse();
     }
 
+    /*
+     * Corrigir o cadastro chega pelo mesmo identificador do serviço — é ele que
+     * os RDOs, os preços e as medições já citam. Se esta operação caísse no
+     * ramo de criação, cada conserto de nome viraria um serviço novo e o
+     * anterior ficaria órfão com o nome errado.
+     */
+    @Test
+    void correctsTheServiceInPlaceInsteadOfCreatingAnother() {
+        ServicePriceCatalogService service = mock(ServicePriceCatalogService.class);
+        FinancialAccessService access = mock(FinancialAccessService.class);
+        when(service.atualizarServico(eq(WORKSITE), eq(ACTOR), eq(SERVICE), any()))
+                .thenReturn(new ServiceCatalogEntry(
+                        SERVICE, "FRESAGEM", "Fresagem", "Revestimento asfáltico",
+                        "ACTIVE", Instant.parse("2026-07-22T12:00:00Z")
+                ));
+        ServiceCatalogSyncOperationHandler handler =
+                new ServiceCatalogSyncOperationHandler(service, access, mapper);
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("id", SERVICE);
+        payload.put("obraId", WORKSITE);
+        payload.put("code", "FRESAGEM");
+        payload.put("name", "Fresagem");
+        payload.put("description", "Revestimento asfáltico");
+
+        AppliedSyncMutation applied = handler.apply(
+                mutation(payload, SERVICE, "ATUALIZAR_SERVICO_CATALOGO"),
+                new SyncMutationContext(ACTOR, DEVICE)
+        );
+
+        verify(access).requirePermission(
+                WORKSITE,
+                FinancialPermission.FINANCEIRO_ADMINISTRAR
+        );
+        verify(service, never()).createService(any(), any(), any());
+        ArgumentCaptor<UpdateServiceCommand> command =
+                ArgumentCaptor.forClass(UpdateServiceCommand.class);
+        verify(service).atualizarServico(
+                eq(WORKSITE), eq(ACTOR), eq(SERVICE), command.capture()
+        );
+        assertThat(command.getValue().clientMutationId()).isEqualTo(MUTATION);
+        assertThat(command.getValue().code()).isEqualTo("FRESAGEM");
+        assertThat(command.getValue().name()).isEqualTo("Fresagem");
+        assertThat(applied.entityId()).isEqualTo(SERVICE);
+        assertThat(handler.requiresBaseVersion("ATUALIZAR_SERVICO_CATALOGO"))
+                .isFalse();
+    }
+
     @Test
     void rejectsPayloadIdentityMismatchBeforeCallingCatalog() {
         ServicePriceCatalogService service = mock(ServicePriceCatalogService.class);
@@ -94,10 +141,20 @@ class ServiceCatalogSyncOperationHandlerTest {
     }
 
     private SyncPushRequest.MutacaoCliente mutation(ObjectNode payload, String entityId) {
+        return mutation(payload, entityId, "CRIAR_SERVICO_CATALOGO");
+    }
+
+    private SyncPushRequest.MutacaoCliente mutation(
+            ObjectNode payload,
+            String entityId,
+            String operation
+    ) {
         return new SyncPushRequest.MutacaoCliente(
-                MUTATION, "SERVICE", entityId, "CRIAR_SERVICO_CATALOGO", null,
+                MUTATION, "SERVICE", entityId, operation, null,
                 payload, LocalDateTime.now(), MUTATION,
-                13, DEVICE, ACTOR, WORKSITE, "SERVICE", entityId, "CREATE", null,
+                13, DEVICE, ACTOR, WORKSITE, "SERVICE", entityId,
+                "CRIAR_SERVICO_CATALOGO".equals(operation) ? "CREATE" : "UPDATE",
+                null,
                 List.of("code", "id", "name", "obraId"),
                 "2026-07-22T12:00:00Z", null, null, List.of(), List.of()
         );

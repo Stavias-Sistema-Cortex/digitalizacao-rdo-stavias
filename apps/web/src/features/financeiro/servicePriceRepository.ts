@@ -42,6 +42,20 @@ export interface CreateLocalServiceInput {
   description?: string | null;
 }
 
+export interface UpdateLocalServiceInput {
+  code: string;
+  name: string;
+  description?: string | null;
+}
+
+export interface UpdateLocalPriceInput {
+  unitPrice: string;
+  contractedQuantity: string;
+  validFrom: string;
+  validTo?: string | null;
+  source: string;
+}
+
 export interface CreateLocalPriceInput {
   unit: string;
   currency: string;
@@ -395,6 +409,88 @@ export async function queueCreateService(
 }
 
 /**
+ * Corrige o que foi escrito no cadastro do serviço.
+ *
+ * <p>Um serviço cadastrado com o nome trocado não tinha conserto: sobrava
+ * excluir e cadastrar de novo, o que troca o identificador que os RDOs, os
+ * preços e as medições já citam. Aqui o identificador fica e o texto muda.
+ *
+ * <p>Corrigir não é versionar. O catálogo versiona preço, porque a fronteira
+ * entre um valor e o seguinte é um fato do contrato. O nome do serviço não é:
+ * escrever errado nunca foi um estado anterior verdadeiro.
+ */
+export async function queueUpdateService(
+  obraId: string,
+  serviceId: string,
+  input: UpdateLocalServiceInput,
+): Promise<QueuedCatalogMutation> {
+  const identity = await localMutationIdentity(obraId);
+  const entityId = requiredUuid(serviceId, "serviceId");
+  const database = await getCortexDb();
+  const atual = await database.get("service_catalog", entityId);
+  if (!atual) {
+    throw new Error("Serviço não encontrado neste dispositivo.");
+  }
+  const payload = {
+    id: entityId,
+    obraId: identity.obraId,
+    code: requiredText(input.code, "Código", 80).toUpperCase(),
+    name: requiredText(input.name, "Nome", 160),
+    description: optionalText(input.description, 500),
+  };
+  if (
+    payload.code === atual.code &&
+    payload.name === atual.name &&
+    payload.description === (atual.description ?? null)
+  ) {
+    return { entityId, clientMutationId: "" };
+  }
+
+  const occurredAt = nowUtc();
+  const local: ServiceCatalogLocalRecord = {
+    ...atual,
+    code: payload.code,
+    name: payload.name,
+    description: payload.description,
+    syncStatus: "PENDING_SYNC",
+    updatedAt: occurredAt,
+    lastError: null,
+  };
+  const committed = await commitLocalMutation({
+    ...identity,
+    entityType: "SERVICE",
+    entityId,
+    entityName: payload.name,
+    operation: "UPDATE",
+    transportOperation: "ATUALIZAR_SERVICO_CATALOGO",
+    /*
+     * O serviço do catálogo não tem versão de linha, e o servidor não pede uma
+     * para esta entidade: a repetição é resolvida pelo recibo da mutação. O
+     * envelope exige um número em toda atualização, então vai zero — inerte do
+     * outro lado, e explícito aqui para ninguém o ler como "estava na versão
+     * zero".
+     */
+    baseVersion: 0,
+    occurredAt,
+    previousSnapshot: {
+      id: entityId,
+      obraId: identity.obraId,
+      code: atual.code,
+      name: atual.name,
+      description: atual.description ?? null,
+    },
+    nextSnapshot: payload,
+    principalSnapshot: { ...local },
+    eventType: "SERVICE_UPDATED",
+    // O serviço criado offline e ainda não aceito sobe antes: corrigir o que o
+    // servidor não conhece não tem o que encontrar do outro lado.
+    dependsOnMutationIds: await pendingCreateDependency(entityId),
+    write: () => [{ store: "service_catalog", value: local, principal: true }],
+  });
+  return { entityId, clientMutationId: committed.mutation.clientMutationId };
+}
+
+/**
  * Tira o serviço de circulação, ou o traz de volta.
  *
  * <p>Uma função só para os dois sentidos: é a mesma transição, e separá-la
@@ -466,6 +562,74 @@ async function enfileirarTransicaoDeExclusao(
   return { entityId: serviceId, clientMutationId: committed.mutation.clientMutationId };
 }
 
+/**
+ * O serviço que o servidor nunca conheceu sai do aparelho de vez.
+ *
+ * <p>A lixeira enfileirava sempre a mesma transição de exclusão, e para o
+ * serviço cuja criação foi recusada isso é um beco: o servidor não tem o que
+ * excluir, a transição volta recusada, e o serviço fica marcado como pendente —
+ * o que faz a reconciliação preservá-lo justamente por estar pendente. Cada
+ * clique na lixeira aprofundava o buraco em vez de sair dele.
+ *
+ * <p>Quando a criação nunca foi aceita, não há nada do outro lado a que uma
+ * exclusão se refira. O certo é apagar aqui: o registro, os preços que nasceram
+ * com ele e as mutações mortas que os descrevem. Nada disso existiu para o
+ * servidor, então nada disso precisa ser contado a ele.
+ *
+ * @returns `true` quando apagou de vez; `false` quando o serviço existe do lado
+ *          do servidor e a exclusão precisa seguir o caminho normal.
+ */
+export async function apagarServicoNuncaAceito(
+  serviceId: string,
+): Promise<boolean> {
+  const database = await getCortexDb();
+  const mutacoesDoServico = await database.getAllFromIndex(
+    "outbox_mutations",
+    "by-entity-id",
+    serviceId,
+  );
+  const criacaoAceita = mutacoesDoServico.some(
+    (mutation) =>
+      mutation.operacao === "CRIAR_SERVICO_CATALOGO" &&
+      mutation.status === "SYNCED",
+  );
+  const criacaoLocal = mutacoesDoServico.some(
+    (mutation) => mutation.operacao === "CRIAR_SERVICO_CATALOGO",
+  );
+  // Sem criação nenhuma no histórico local, o serviço veio do servidor: ele
+  // existe lá e a exclusão é uma transição de verdade.
+  if (criacaoAceita || !criacaoLocal) return false;
+
+  const transaction = database.transaction(
+    ["service_catalog", "service_price_versions", "outbox_mutations"],
+    "readwrite",
+  );
+  const catalogo = transaction.objectStore("service_catalog");
+  const precos = transaction.objectStore("service_price_versions");
+  const fila = transaction.objectStore("outbox_mutations");
+
+  // Varredura em vez de índice: o índice de preço é composto por obra e
+  // serviço, e a obra do preço local pode não ser a que está aberta. A loja é
+  // pequena e local, e apagar de menos aqui deixaria preço órfão.
+  const precosDoServico = (await precos.getAll()).filter(
+    (preco) => preco.serviceId === serviceId,
+  );
+  for (const preco of precosDoServico) {
+    for (const mutation of await fila
+      .index("by-entity-id")
+      .getAll(preco.id)) {
+      await fila.delete(mutation.clientMutationId);
+    }
+    await precos.delete(preco.id);
+  }
+  for (const mutation of await fila.index("by-entity-id").getAll(serviceId)) {
+    await fila.delete(mutation.clientMutationId);
+  }
+  await catalogo.delete(serviceId);
+  await transaction.done;
+  return true;
+}
+
 export async function queueExcluirServico(
   obraId: string,
   serviceId: string,
@@ -481,7 +645,20 @@ export async function queueRestaurarServico(
   return enfileirarTransicaoDeExclusao(obraId, serviceId, false);
 }
 
-async function pendingCreateDependency(entityId: string): Promise<string[]> {
+/**
+ * A criação ainda na fila da qual esta mutação depende.
+ *
+ * <p>Excluir, restaurar ou corrigir o que o servidor ainda não conhece não tem
+ * o que encontrar do outro lado. A operação diz qual criação procurar: a do
+ * serviço e a do preço são entidades diferentes, e passar a errada devolveria
+ * lista vazia — a dependência sumiria em silêncio e a fila mandaria a correção
+ * antes do registro existir.
+ */
+async function pendingCreateDependency(
+  entityId: string,
+  operation: "CRIAR_SERVICO_CATALOGO" | "CRIAR_PRECO_SERVICO" =
+    "CRIAR_SERVICO_CATALOGO",
+): Promise<string[]> {
   const database = await getCortexDb();
   const mutations = await database.getAllFromIndex(
     "outbox_mutations",
@@ -490,7 +667,7 @@ async function pendingCreateDependency(entityId: string): Promise<string[]> {
   );
   const pending = mutations.find((mutation) =>
     mutation.status !== "SYNCED" && mutation.status !== "REJECTED" &&
-    mutation.operacao === "CRIAR_SERVICO_CATALOGO");
+    mutation.operacao === operation);
   return pending ? [pending.clientMutationId] : [];
 }
 
@@ -566,6 +743,111 @@ export async function queueCreatePrice(
       value: local,
       principal: true,
       insertOnly: true,
+    }],
+  });
+  return { entityId, clientMutationId: committed.mutation.clientMutationId };
+}
+
+/**
+ * Corrige um preço já registrado, no lugar, sem criar versão nova.
+ *
+ * <p>Substituir era o único caminho para trocar um valor, e ele grava no
+ * histórico uma revisão contratual: a versão 1 valeu até tal dia, a versão 2
+ * vale de lá em diante. Para um zero a mais digitado ontem, isso inventa um
+ * aditivo que nunca existiu, e a receita passa a medir dois períodos com preços
+ * diferentes por causa de um erro de digitação.
+ *
+ * <p>Quem decide se a correção ainda cabe é o servidor, dentro da mesma escrita:
+ * preço já citado por uma execução, já substituído ou já cancelado é recusado.
+ * Aqui só se recusa o que dá para saber sem rede — versão que este aparelho já
+ * sabe encerrada. A unidade e a moeda não entram: elas são endereço da versão, e
+ * trocá-las apontaria para outro preço.
+ */
+export async function queueUpdatePrice(
+  obraId: string,
+  priceId: string,
+  input: UpdateLocalPriceInput,
+): Promise<QueuedCatalogMutation> {
+  const identity = await localMutationIdentity(obraId);
+  const entityId = requiredUuid(priceId, "priceId");
+  const unitPrice = decimalText(input.unitPrice);
+  const contractedQuantity = input.contractedQuantity.trim()
+    ? contractedQuantityText(input.contractedQuantity)
+    : null;
+  const validFrom = dateText(input.validFrom, "Início da vigência");
+  const validTo = input.validTo ? dateText(input.validTo, "Fim da vigência") : null;
+  if (validTo && validTo < validFrom) {
+    throw new Error("O fim da vigência não pode ser anterior ao início.");
+  }
+  const source = sourceText(input.source);
+  const database = await getCortexDb();
+  const previous = await database.get("service_price_versions", entityId);
+  if (!previous || previous.obraId !== identity.obraId) {
+    throw new Error("A versão de preço não pertence a esta obra.");
+  }
+  if (previous.status !== "ACTIVE") {
+    throw new Error(
+      "Esta versão já foi substituída ou cancelada. Publique uma nova em vez de corrigi-la.",
+    );
+  }
+
+  const occurredAt = nowUtc();
+  const payload = {
+    id: entityId,
+    obraId: identity.obraId,
+    unitPrice,
+    contractedQuantity,
+    validFrom,
+    validTo,
+    source,
+  };
+  const local: ServicePriceVersionLocalRecord = {
+    ...previous,
+    unitPrice,
+    contractedQuantity,
+    validFrom,
+    validTo,
+    source,
+    effectiveValidTo: validTo,
+    syncStatus: "PENDING_SYNC",
+    updatedAt: occurredAt,
+    lastError: null,
+  };
+  const committed = await commitLocalMutation({
+    ...identity,
+    entityType: "SERVICE_PRICE_VERSION",
+    entityId,
+    entityName: `Versão ${previous.version}`,
+    operation: "UPDATE",
+    transportOperation: "ATUALIZAR_PRECO_SERVICO",
+    /*
+     * A versão de linha vai como está: o servidor não a exige nesta operação —
+     * a repetição é resolvida pelo recibo da mutação —, e um preço criado
+     * offline ainda está em zero. Exigir um número maior aqui travaria a
+     * correção justamente de quem acabou de digitar errado.
+     */
+    baseVersion: previous.entityVersion,
+    occurredAt,
+    previousSnapshot: {
+      id: entityId,
+      obraId: identity.obraId,
+      unitPrice: previous.unitPrice,
+      contractedQuantity: previous.contractedQuantity,
+      validFrom: previous.validFrom,
+      validTo: previous.validTo,
+      source: previous.source,
+    },
+    nextSnapshot: payload,
+    principalSnapshot: { ...local },
+    eventType: "SERVICE_PRICE_VERSION_UPDATED",
+    dependsOnMutationIds: await pendingCreateDependency(
+      entityId,
+      "CRIAR_PRECO_SERVICO",
+    ),
+    write: () => [{
+      store: "service_price_versions",
+      value: local,
+      principal: true,
     }],
   });
   return { entityId, clientMutationId: committed.mutation.clientMutationId };

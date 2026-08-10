@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class ServiceCatalogSyncOperationHandler implements SyncOperationHandler {
 
     private static final String OPERATION = "CRIAR_SERVICO_CATALOGO";
+    private static final String ATUALIZAR = "ATUALIZAR_SERVICO_CATALOGO";
     private static final String EXCLUIR = "EXCLUIR_SERVICO_CATALOGO";
     private static final String RESTAURAR = "RESTAURAR_SERVICO_CATALOGO";
 
@@ -42,7 +43,7 @@ public class ServiceCatalogSyncOperationHandler implements SyncOperationHandler 
 
     @Override
     public Set<String> operations() {
-        return Set.of(OPERATION, EXCLUIR, RESTAURAR);
+        return Set.of(OPERATION, ATUALIZAR, EXCLUIR, RESTAURAR);
     }
 
     @Override
@@ -66,6 +67,33 @@ public class ServiceCatalogSyncOperationHandler implements SyncOperationHandler 
                 worksiteId,
                 FinancialPermission.FINANCEIRO_ADMINISTRAR
         );
+
+        /*
+         * Corrigir o cadastro não é criar de novo: o identificador é o mesmo, e
+         * é ele que os RDOs, os preços e as medições já citam. O que muda é o
+         * texto — código, nome e descrição —, e o recibo do outro lado confere o
+         * conteúdo, não só o identificador, para que reenviar a mesma correção
+         * devolva o resultado da primeira em vez de sobrescrever uma segunda.
+         */
+        if (ATUALIZAR.equals(mutation.operacao())) {
+            ServiceCatalogEntry corrigido = service.atualizarServico(
+                    worksiteId,
+                    context.actorId(),
+                    entityId,
+                    new UpdateServiceCommand(
+                            mutation.clientMutationId(),
+                            text(payload, "code", true),
+                            text(payload, "name", true),
+                            text(payload, "description", false)
+                    )
+            );
+            requireAppliedId(corrigido.id(), entityId);
+            return new AppliedSyncMutation(
+                    entityType(),
+                    entityId,
+                    mapper.valueToTree(corrigido)
+            );
+        }
 
         /*
          * Tirar de circulação e trazer de volta são estados, não criação: o

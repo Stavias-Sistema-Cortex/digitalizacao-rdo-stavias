@@ -208,7 +208,7 @@ export function RdoWorkforceEditor({
         mensagemVazia={
           catalogUnavailableMessage
             ? "Nenhum colaborador autorizado carregado."
-            : "Nenhum colaborador carregado ainda. Use “Somar alguém à mão” para lançar quem trabalhou hoje."
+            : "Nenhum colaborador carregado ainda. Use “Adicionar colaborador” para lançar quem trabalhou hoje."
         }
       />
 
@@ -249,7 +249,7 @@ export function RdoWorkforceEditor({
           }}
         >
           <label htmlFor={newCollaboratorId}>
-            Nome de quem não está na lista
+            Nome do colaborador
           </label>
           <input
             id={newCollaboratorId}
@@ -282,7 +282,7 @@ export function RdoWorkforceEditor({
           className="add-button rdo-workforce-manual-toggle"
           onClick={() => setSomandoAMao(true)}
         >
-          Somar alguém à mão
+          Adicionar colaborador
         </button>
       )}
     </section>

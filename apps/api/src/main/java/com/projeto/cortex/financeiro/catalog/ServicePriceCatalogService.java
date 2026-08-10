@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -110,6 +111,95 @@ public class ServicePriceCatalogService {
                 created, worksite, actor, normalized.clientMutationId()
         );
         return created;
+    }
+
+    /**
+     * Corrige o que foi escrito no cadastro do serviço.
+     *
+     * <p>Um serviço cadastrado com o nome trocado não tinha conserto: sobrava
+     * excluir e cadastrar de novo, o que troca o identificador que os RDOs, as
+     * versões de preço e as medições já citam. O identificador fica; o texto
+     * muda.
+     *
+     * <p>Corrigir não é versionar. O catálogo versiona preço, porque o preço é
+     * cláusula de contrato e a fronteira entre um valor e o seguinte é um fato
+     * do mundo. O nome do serviço não é: escrever "Freasgem" nunca foi um
+     * estado anterior verdadeiro, foi um dedo errado no teclado.
+     *
+     * <p>Repetível pelo recibo, como todo o resto do catálogo — e o recibo
+     * confere o conteúdo, não só o identificador: reenviar a mesma correção
+     * devolve o resultado da primeira, enquanto duas correções diferentes com o
+     * mesmo identificador de mutação são recusadas em vez de se sobrescreverem.
+     */
+    @Transactional
+    public ServiceCatalogEntry atualizarServico(
+            String obraId,
+            String actorId,
+            String serviceId,
+            UpdateServiceCommand command
+    ) {
+        String worksite = uuid(obraId, "obraId");
+        requireWorksite(worksite);
+        String actor = uuid(actorId, "actorId");
+        String service = uuid(serviceId, "serviceId");
+        UpdateServiceCommand normalized = normalize(command);
+        String hash = requestHash(worksite, service, normalized);
+
+        Optional<CatalogMutation> replay = repository.findMutation(
+                actor, normalized.clientMutationId()
+        );
+        if (replay.isPresent()) {
+            CatalogMutation receipt = replay.orElseThrow();
+            requireReplay(receipt, "SERVICE_UPDATED", hash);
+            return repository.findService(receipt.entityId())
+                    .orElseThrow(() -> conflict("SERVICE_CATALOG_REPLAY_MISSING"));
+        }
+
+        ServiceCatalogEntry atual = repository.findService(service)
+                .orElseThrow(() -> notFound("SERVICE_CATALOG_NOT_FOUND"));
+        /*
+         * Nada mudou. Devolver o estado atual em vez de gravar um recibo vazio
+         * mantém o gesto repetível na tela: quem abre a correção, olha e fecha
+         * sem trocar nada não deveria gerar revisão de catálogo nenhuma.
+         */
+        if (normalized.code().equals(atual.code())
+                && normalized.name().equals(atual.name())
+                && Objects.equals(
+                        normalized.description(), atual.description())) {
+            return atual;
+        }
+        operabilityGuard.requireWritable(worksite);
+
+        ServiceCatalogEntry corrigido;
+        try {
+            corrigido = repository.updateService(
+                    new ServicePriceCatalogRepository.UpdateServiceRecord(
+                            service, actor, normalized.clientMutationId(), hash,
+                            normalized.code(), normalized.name(),
+                            normalized.description(), clock.instant()
+                    )
+            );
+        } catch (CatalogMutationReplayException concurrentReplay) {
+            CatalogMutation receipt = concurrentReplay.receipt();
+            requireReplay(receipt, "SERVICE_UPDATED", hash);
+            return repository.findService(receipt.entityId())
+                    .orElseThrow(() -> conflict("SERVICE_CATALOG_REPLAY_MISSING"));
+        } catch (ServiceCatalogCodeConflictException duplicateCode) {
+            throw conflict("SERVICE_CATALOG_CODE_EXISTS");
+        } catch (DataIntegrityViolationException race) {
+            return repository.findMutation(actor, normalized.clientMutationId())
+                    .map(receipt -> {
+                        requireReplay(receipt, "SERVICE_UPDATED", hash);
+                        return repository.findService(receipt.entityId())
+                                .orElseThrow(() ->
+                                        conflict("SERVICE_CATALOG_REPLAY_MISSING"));
+                    })
+                    .orElseThrow(() -> race);
+        }
+        ontology.serviceUpdated(
+                corrigido, worksite, actor, normalized.clientMutationId()
+        );
+        return corrigido;
     }
 
     /**
@@ -249,6 +339,78 @@ public class ServicePriceCatalogService {
                 created, service, actor, normalized.clientMutationId()
         );
         return created;
+    }
+
+    /**
+     * Corrige um preço já registrado, no lugar, sem criar versão nova.
+     *
+     * <p>Substituir era o único caminho para trocar um valor, e ele grava no
+     * histórico uma revisão contratual: a versão 1 valeu até tal dia, a versão
+     * 2 vale de lá em diante. Para um zero a mais digitado ontem, isso é
+     * inventar um aditivo que nunca existiu — e a receita passaria a medir dois
+     * períodos com preços diferentes por causa de um erro de digitação.
+     *
+     * <p>A correção só vale enquanto o registro não produziu consequência. Quem
+     * decide isso é o banco, dentro da mesma transação da escrita: preço já
+     * citado por uma execução, já substituído ou já cancelado é recusado. Entre
+     * ler "ninguém usou" e escrever há uma janela em que outro aparelho pode ter
+     * validado a execução que usa este preço, e essa janela não existe lá.
+     *
+     * <p>Depois disso, o caminho continua sendo {@link #supersedePrice}, que é o
+     * certo para o que de fato mudou no contrato.
+     */
+    @Transactional
+    public ServicePriceVersion atualizarPreco(
+            String obraId,
+            String actorId,
+            String priceId,
+            UpdateServicePriceCommand command
+    ) {
+        String worksite = uuid(obraId, "obraId");
+        requireWorksite(worksite);
+        String actor = uuid(actorId, "actorId");
+        String normalizedPriceId = uuid(priceId, "priceId");
+        UpdateServicePriceCommand normalized = normalize(command);
+        String hash = requestHash(worksite, normalizedPriceId, normalized);
+
+        Optional<CatalogMutation> replay = repository.findMutation(
+                actor, normalized.clientMutationId()
+        );
+        if (replay.isPresent()) {
+            return replayPrice(worksite, replay.orElseThrow(), hash);
+        }
+
+        ServicePriceVersion atual = repository.findPrice(worksite, normalizedPriceId)
+                .orElseThrow(() -> notFound("SERVICE_PRICE_VERSION_NOT_FOUND"));
+        operabilityGuard.requireWritable(worksite);
+        ServiceCatalogEntry catalogService = repository.findService(atual.serviceId())
+                .orElseThrow(() -> notFound("SERVICE_CATALOG_NOT_FOUND"));
+
+        ServicePriceVersion corrigido;
+        try {
+            corrigido = repository.updatePrice(
+                    new ServicePriceCatalogRepository.UpdatePriceRecord(
+                            normalizedPriceId, worksite, actor,
+                            normalized.clientMutationId(), hash,
+                            normalized.unitPrice(),
+                            normalized.contractedQuantity(),
+                            normalized.validFrom(), normalized.validTo(),
+                            normalized.source(), clock.instant()
+                    )
+            );
+        } catch (CatalogMutationReplayException concurrentReplay) {
+            return replayPrice(worksite, concurrentReplay.receipt(), hash);
+        } catch (ServicePriceValidityOverlapException overlap) {
+            throw conflict("SERVICE_PRICE_VALIDITY_OVERLAP");
+        } catch (ServicePriceCancellationException terminal) {
+            throw conflict(terminal.getMessage());
+        } catch (DataIntegrityViolationException race) {
+            throw conflict("SERVICE_PRICE_WRITE_CONFLICT");
+        }
+        ontology.priceVersionCorrected(
+                corrigido, catalogService, actor, normalized.clientMutationId()
+        );
+        return corrigido;
     }
 
     @Transactional
@@ -415,6 +577,40 @@ public class ServicePriceCatalogService {
 
     private static String requestHash(
             String obraId,
+            String serviceId,
+            UpdateServiceCommand command
+    ) {
+        return hash(Map.of(
+                "operation", "SERVICE_UPDATED",
+                "obraId", obraId,
+                "serviceId", serviceId,
+                "code", command.code(),
+                "name", command.name(),
+                "description", nullText(command.description())
+        ));
+    }
+
+    private static String requestHash(
+            String obraId,
+            String priceId,
+            UpdateServicePriceCommand command
+    ) {
+        return hash(Map.of(
+                "operation", "SERVICE_PRICE_VERSION_UPDATED",
+                "obraId", obraId,
+                "priceId", priceId,
+                "unitPrice", command.unitPrice().toPlainString(),
+                "contractedQuantity", command.contractedQuantity() == null
+                        ? ""
+                        : command.contractedQuantity().toPlainString(),
+                "validFrom", command.validFrom().toString(),
+                "validTo", nullText(command.validTo()),
+                "source", command.source()
+        ));
+    }
+
+    private static String requestHash(
+            String obraId,
             String previousId,
             SupersedeServicePriceCommand command
     ) {
@@ -495,6 +691,57 @@ public class ServicePriceCatalogService {
                 code,
                 FinanceValidation.requiredText(command.name(), "nome", 160),
                 FinanceValidation.optionalText(command.description(), "descricao", 500)
+        );
+    }
+
+    private static UpdateServiceCommand normalize(UpdateServiceCommand command) {
+        if (command == null) {
+            throw FinanceValidation.badRequest(
+                    "Dados da correção do serviço são obrigatórios."
+            );
+        }
+        String code = FinanceValidation.requiredText(command.code(), "codigo", 80)
+                .toUpperCase(Locale.ROOT);
+        if (!SERVICE_CODE.matcher(code).matches()) {
+            throw FinanceValidation.badRequest("codigo de serviço inválido.");
+        }
+        return new UpdateServiceCommand(
+                FinanceValidation.mutationId(command.clientMutationId()),
+                code,
+                FinanceValidation.requiredText(command.name(), "nome", 160),
+                FinanceValidation.optionalText(command.description(), "descricao", 500)
+        );
+    }
+
+    private static UpdateServicePriceCommand normalize(
+            UpdateServicePriceCommand command
+    ) {
+        if (command == null) {
+            throw FinanceValidation.badRequest(
+                    "Dados da correção do preço são obrigatórios."
+            );
+        }
+        LocalDate from = requiredDate(command.validFrom(), "vigenciaInicio");
+        LocalDate to = command.validTo();
+        if (to != null && to.isBefore(from)) {
+            throw FinanceValidation.badRequest(
+                    "vigenciaFim não pode ser anterior à vigenciaInicio."
+            );
+        }
+        return new UpdateServicePriceCommand(
+                FinanceValidation.mutationId(command.clientMutationId()),
+                price(command.unitPrice()),
+                /*
+                 * Ausência continua sendo ausência. Versões anteriores à V60 não
+                 * têm quantidade contratada, e exigir uma aqui obrigaria quem só
+                 * quer corrigir o valor a inventar um número de contrato.
+                 */
+                command.contractedQuantity() == null
+                        ? null
+                        : contractedQuantity(command.contractedQuantity()),
+                from,
+                to,
+                source(command.source())
         );
     }
 

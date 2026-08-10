@@ -518,6 +518,42 @@ select {
   min-height: auto;
 }
 
+/*
+ * As duas marcas do serviço ficam lado a lado, e são só a caixa e a palavra.
+ *
+ * Elas tinham uma explicação de duas linhas cada, escrita para quem lê o campo
+ * pela primeira vez — e lida todo dia por quem já sabe o que é retrabalho. O
+ * texto empurrava as caixas para longe uma da outra e fazia a seção parecer
+ * um formulário dentro do formulário.
+ */
+.rdo-servico-marcas {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+}
+
+.rdo-servico-marca {
+  min-height: 0;
+  gap: 9px;
+  font-weight: 500;
+}
+
+/*
+ * Tamanho de caixa, não de botão. A regra global estica todo `input` para a
+ * largura inteira e 44px de altura — pensada para campo de texto —, e aplicada
+ * a uma caixa de marcar produzia um quadrado enorme e vazio no meio da linha.
+ */
+.checkbox-field input[type="checkbox"],
+.rdo-servico-marca input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: #34443b;
+  cursor: pointer;
+}
+
 textarea {
   padding: 12px;
   resize: vertical;

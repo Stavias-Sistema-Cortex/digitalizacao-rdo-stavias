@@ -50,6 +50,29 @@ public class PostgresqlServiceCatalogOntologyPublisher
     }
 
     @Override
+    public void serviceUpdated(
+            ServiceCatalogEntry service,
+            String obraId,
+            String actorId,
+            String clientMutationId
+    ) {
+        memory.registrarObjeto(
+                "SERVICE", service.id(), service.code(), service.name(),
+                service.status(), SOURCE, "catalogo_servico", Map.of()
+        );
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("serviceId", service.id());
+        state.put("serviceCode", service.code());
+        state.put("serviceName", service.name());
+        state.put("worksiteId", obraId);
+        state.put("status", service.status());
+        publish(
+                "SERVICE_UPDATED", "SERVICE", service.id(), obraId, actorId,
+                clientMutationId, List.of(), state
+        );
+    }
+
+    @Override
     public void priceVersionPublished(
             ServicePriceVersion price,
             ServiceCatalogEntry service,
@@ -237,6 +260,58 @@ public class PostgresqlServiceCatalogOntologyPublisher
                         )
                 ),
                 replacementState
+        );
+    }
+
+    @Override
+    public void priceVersionCorrected(
+            ServicePriceVersion price,
+            ServiceCatalogEntry service,
+            String actorId,
+            String clientMutationId
+    ) {
+        memory.registrarObjeto(
+                "SERVICE_PRICE_VERSION",
+                price.id(),
+                null,
+                priceName(service, price),
+                price.status(),
+                SOURCE,
+                "service_price_version",
+                Map.of()
+        );
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("priceVersionId", price.id());
+        state.put("serviceId", service.id());
+        state.put("serviceName", service.name());
+        state.put("worksiteId", price.obraId());
+        state.put("unit", price.unit());
+        state.put("currency", price.currency());
+        state.put("unitPrice", price.unitPrice().toPlainString());
+        if (price.contractedQuantity() != null) {
+            state.put(
+                    "contractedQuantity",
+                    price.contractedQuantity().toPlainString()
+            );
+        }
+        state.put("version", price.version());
+        state.put("validFrom", price.validFrom().toString());
+        if (price.validTo() != null) {
+            state.put("validTo", price.validTo().toString());
+        }
+        state.put("status", price.status());
+        publish(
+                "SERVICE_PRICE_VERSION_UPDATED",
+                "SERVICE_PRICE_VERSION",
+                price.id(),
+                price.obraId(),
+                actorId,
+                clientMutationId,
+                List.of(
+                        Map.of("tipo", "SERVICE", "id", service.id()),
+                        Map.of("tipo", "WORKSITE", "id", price.obraId())
+                ),
+                state
         );
     }
 
