@@ -292,7 +292,7 @@ export interface RdoContextSchedule {
   kmFinal: string | null;
   extensaoM: number | null;
   larguraM: number | null;
-  espessuraM: number | null;
+  espessuraCm: number | null;
   areaM2: number | null;
   volumeM3: number | null;
   status: string | null;
@@ -857,7 +857,7 @@ function legacySchedules(values: unknown[]): RdoContextSchedule[] {
       kmFinal: nullableText(value.kmFinal),
       extensaoM: nullableFiniteNumber(value.extensaoM),
       larguraM: nullableFiniteNumber(value.larguraM),
-      espessuraM: nullableFiniteNumber(value.espessuraM),
+      espessuraCm: nullableFiniteNumber(value.espessuraCm),
       areaM2: nullableFiniteNumber(value.areaM2),
       volumeM3: nullableFiniteNumber(value.volumeM3),
       status: nullableText(value.status),

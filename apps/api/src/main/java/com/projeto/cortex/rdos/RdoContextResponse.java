@@ -98,7 +98,7 @@ public record RdoContextResponse(
             String kmFinal,
             BigDecimal extensaoM,
             BigDecimal larguraM,
-            BigDecimal espessuraM,
+            BigDecimal espessuraCm,
             BigDecimal areaM2,
             BigDecimal volumeM3,
             String status
