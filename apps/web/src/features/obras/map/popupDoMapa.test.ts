@@ -31,22 +31,44 @@ describe("lixeira no balão do ponto", () => {
     expect(aoRemover).toHaveBeenCalledWith("ponto-7");
   });
 
-  /**
-   * Só o ponto operacional sai por aqui. Um trecho desenhado pertence ao RDO
-   * do dia e sai junto com ele; oferecer a lixeira na linha do trecho abriria
-   * um segundo jeito de apagar o mesmo trabalho, por fora do apontamento.
+  /*
+   * O trecho passou a sair por aqui. A justificativa antiga — "o desenho
+   * pertence ao RDO e sai junto com ele" — não se sustentava: o quilômetro
+   * mora só no apontamento, e a geometria guarda a forma. Apagar a linha não
+   * apaga medida nenhuma, e sem essa saída quem desenhava torto ficava com a
+   * linha errada no mapa para sempre.
    */
-  it("não oferece lixeira ao trecho nem à obra", () => {
+  it("oferece lixeira ao trecho desenhado", () => {
     const aoRemover = vi.fn();
 
-    expect(
-      lixeira(
-        popupElement(
-          { categoria: "TRECHO", geometriaId: "geo-1" },
-          aoRemover,
-        ),
+    const botao = lixeira(
+      popupElement({ categoria: "TRECHO", geometriaId: "geo-1" }, aoRemover),
+    );
+
+    expect(botao).not.toBeNull();
+    expect(botao?.getAttribute("aria-label")).toBe("Remover trecho desenhado");
+  });
+
+  it("nomeia o ponto operacional pelo que ele é", () => {
+    const aoRemover = vi.fn();
+
+    const botao = lixeira(
+      popupElement(
+        { categoria: "PONTO_OPERACIONAL", geometriaId: "geo-2" },
+        aoRemover,
       ),
-    ).toBeNull();
+    );
+
+    expect(botao?.getAttribute("aria-label")).toBe("Remover ponto operacional");
+  });
+
+  /*
+   * A localização da obra continua fora: ela não é geometria removível, é o
+   * cadastro da obra.
+   */
+  it("não oferece lixeira à localização da obra", () => {
+    const aoRemover = vi.fn();
+
     expect(
       lixeira(
         popupElement(

@@ -135,7 +135,8 @@ function formatarInstante(valor: string | null): string {
  * lugar errado é atrito onde não ajuda ninguém, e o registro já carrega quem
  * removeu, quando e qual ponto.
  */
-const MOTIVO_DA_REMOCAO_NO_MAPA = "Ponto removido do mapa por quem o revisou.";
+const MOTIVO_DA_REMOCAO_NO_MAPA =
+  "Geometria removida do mapa por quem a revisou.";
 
 /** O que o encerramento precisa saber da geometria que está na tela. */
 function geometriaVisivel(
@@ -371,6 +372,13 @@ export function RodoviaWorkspace({
    */
   const podeRemoverPonto = isAlfa(getSession());
 
+  /*
+   * O trecho também sai daqui. A medida do dia não vem com ele: o quilômetro
+   * mora no apontamento, e a geometria só guarda a forma. Apagar a linha
+   * errada não custa o RDO.
+   */
+  const ehTrecho = pontoEscolhido?.properties.categoria === "TRECHO";
+
   const pedirRemocaoDoPonto = useCallback((id: string) => {
     setPontoParaRemover(id);
     setErroDaRemocao(null);
@@ -401,7 +409,7 @@ export function RodoviaWorkspace({
       setErroDaRemocao(
         motivo instanceof Error
           ? motivo.message
-          : "Não foi possível encerrar o ponto.",
+          : "Não foi possível encerrar a geometria.",
       );
     } finally {
       setRemovendo(false);
@@ -1067,7 +1075,17 @@ export function RodoviaWorkspace({
             className="rodovia-confirma__caixa"
             onClick={(evento) => evento.stopPropagation()}
           >
-            <p id="rodovia-confirma-titulo">Remover este ponto do mapa?</p>
+            <p id="rodovia-confirma-titulo">
+              {ehTrecho
+                ? "Remover este trecho do mapa?"
+                : "Remover este ponto do mapa?"}
+            </p>
+            {ehTrecho ? (
+              <small>
+                O apontamento do RDO não é tocado: o quilômetro fica onde está,
+                e só o desenho sai do mapa.
+              </small>
+            ) : null}
             {pontoEscolhido &&
             typeof pontoEscolhido.properties.observadoEm === "string" ? (
               <small>
