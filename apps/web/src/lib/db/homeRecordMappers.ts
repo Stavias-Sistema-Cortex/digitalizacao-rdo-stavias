@@ -9,7 +9,7 @@ export function toNumberOrNull(value: unknown): number | null {
   }
 
   if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value.replace(",", "."));
+    const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
 

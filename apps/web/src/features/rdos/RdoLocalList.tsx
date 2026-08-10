@@ -43,6 +43,7 @@ import type { RdoExportDownloadPermit } from "./export/rdoExportDownload";
 import {
   preflightRdoImportFile,
 } from "../../lib/files/rdoImportResourcePolicy";
+import { extensaoDoRdoM, extremosDoTrecho, trechosDoRdo } from "./trechosDoRdo";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -168,19 +169,6 @@ function asText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function asNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value.replace(",", "."));
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-}
-
 function normalize(value: string): string {
   return value
     .normalize("NFD")
@@ -257,10 +245,6 @@ function equipmentLabels(record: LocalRdoRecord): string[] {
   );
 }
 
-function controls(record: LocalRdoRecord): Record<string, unknown>[] {
-  return asArray(payload(record).controlesGeometricos);
-}
-
 function services(record: LocalRdoRecord): Record<string, unknown>[] {
   return asArray(payload(record).servicosExecutados);
 }
@@ -280,11 +264,11 @@ function recordSearchText(record: LocalRdoRecord): string {
       asText(data.observacoes),
       ...collaborators(record).map((item) => item.label),
       ...equipmentLabels(record),
-      ...controls(record).flatMap((item) => [
+      ...trechosDoRdo(record).flatMap((item) => [
         asText(item.subtrecho),
         asText(item.numero),
-        asText(item.kmInicial),
-        asText(item.kmFinal),
+        extremosDoTrecho(item).inicio,
+        extremosDoTrecho(item).fim,
       ]),
     ].join(" "),
   );
@@ -315,23 +299,6 @@ function isInPeriod(record: LocalRdoRecord, period: PeriodFilter): boolean {
   }
 
   return diffDays >= 0 && diffDays <= 30;
-}
-
-function lengthMeters(record: LocalRdoRecord): number {
-  return controls(record).reduce((total, item) => {
-    const explicit = asNumber(item.comprimentoM);
-    if (explicit !== null) {
-      return total + explicit;
-    }
-
-    const start = asNumber(item.kmInicial);
-    const end = asNumber(item.kmFinal);
-    if (start === null || end === null || end < start) {
-      return total;
-    }
-
-    return total + (end - start) * 1000;
-  }, 0);
 }
 
 function hasOccurrence(
@@ -703,7 +670,7 @@ export function RdoLocalList({
 
       if (
         trechoNeedle &&
-        !controls(record).some((item) =>
+        !trechosDoRdo(record).some((item) =>
           normalize(
             [
               asText(item.subtrecho),
@@ -733,11 +700,11 @@ export function RdoLocalList({
 
   const metrics = {
     trechos: filteredRecords.reduce(
-      (total, record) => total + controls(record).length,
+      (total, record) => total + trechosDoRdo(record).length,
       0,
     ),
     metros: filteredRecords.reduce(
-      (total, record) => total + lengthMeters(record),
+      (total, record) => total + extensaoDoRdoM(record),
       0,
     ),
     emExecucao: filteredRecords.filter(
@@ -1023,12 +990,12 @@ export function RdoLocalList({
                 <div className="rdo-card-facts">
                   <div className="rdo-fact">
                     <small>Trechos</small>
-                    <strong>{controls(record).length}</strong>
+                    <strong>{trechosDoRdo(record).length}</strong>
                   </div>
                   <div className="rdo-fact">
                     <small>Extensão</small>
                     <strong>
-                      {Math.round(lengthMeters(record)).toLocaleString(
+                      {Math.round(extensaoDoRdoM(record)).toLocaleString(
                         "pt-BR",
                       )}{" "}
                       m

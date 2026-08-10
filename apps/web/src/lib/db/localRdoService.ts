@@ -72,6 +72,7 @@ import {
   commitLocalMutation,
   type LocalMutationDomainWrite,
 } from "../sync/localMutationCoordinator";
+import { numeroDigitado } from "../numeros/numeroDigitado";
 
 export interface SaveRdoDraftResult {
   rdo: LocalRdoRecord;
@@ -509,15 +510,15 @@ function entityName(value: string | null | undefined): string | null {
   return value.trim();
 }
 
+/*
+ * A quantidade executada é digitada em campo e vira receita do outro lado.
+ *
+ * Era lida com `replace(",", ".")`, que recusa "1.234,56" e — pior — aceita
+ * "1.234" como 1,234. Uma quantidade mil vezes menor não falha em lugar
+ * nenhum: multiplica pelo preço, fecha a medição e sai como receita medida.
+ */
 function numberFromText(value: string): number | null {
-  const normalized = value.trim().replace(",", ".");
-
-  if (!normalized) {
-    return null;
-  }
-
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
+  return numeroDigitado(value);
 }
 
 function numberFromInput(value: string | number): number | null {
@@ -619,7 +620,11 @@ function buildServicoExecutadoPayload(
     itemContratualId: nullIfEmpty(
       item.itemContratualId,
     ),
-    quantidadeExecutada: item.quantidadeExecutada,
+    // `""` não é número, e o envelope canônico o entregaria ao servidor como
+    // texto vazio. Ausência vira null, que é o que o servidor lê como "não
+    // medido" — e não como recusa.
+    quantidadeExecutada:
+      item.quantidadeExecutada === "" ? null : item.quantidadeExecutada,
     unidade: nullIfEmpty(item.unidade),
     trechoInicial: nullIfEmpty(item.trechoInicial),
     trechoFinal: nullIfEmpty(item.trechoFinal),
@@ -719,14 +724,23 @@ function isServicoExecutadoEmpty(
   );
 }
 
+/**
+ * A linha que sobe.
+ *
+ * <p>Só a linha em branco fica para trás. A que tem serviço mas não tem
+ * quantidade subia antes como se não existisse — o filtro exigia a quantidade,
+ * e a linha desaparecia do envio sem nada dizer a quem a preencheu. O trecho
+ * desenhado no mapa nascia exatamente assim, com nome e sem número, e nunca
+ * chegava ao servidor.
+ *
+ * <p>Perder a linha era pior do que gravá-la incompleta: quantidade ausente é
+ * "aconteceu, não medi", que é um fato registrável, e o servidor a lê como
+ * zero. Receita continua exigindo serviço do catálogo, preço e validação.
+ */
 function isServicoExecutadoSyncable(
   item: ServicoExecutadoDraft,
 ): boolean {
-  if (isServicoExecutadoEmpty(item)) {
-    return false;
-  }
-
-  return item.quantidadeExecutada !== "";
+  return !isServicoExecutadoEmpty(item);
 }
 
 function isAlocacaoEmpty(
