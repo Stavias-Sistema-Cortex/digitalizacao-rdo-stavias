@@ -219,6 +219,21 @@ class AcademySourceAdapterMysqlSnapshotIT {
             } finally {
                 sourceMutated.countDown();
                 executor.shutdownNow();
+                /*
+                 * shutdownNow interrompe, mas não espera. Fechar a lista com a
+                 * thread do adaptador ainda viva seria iterar enquanto ela
+                 * adiciona — e a ConcurrentModificationException nascida aqui
+                 * substituiria a asserção que derrubou o teste, exatamente o
+                 * que este finally existe para não fazer.
+                 */
+                try {
+                    if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+                        executor.shutdownNow();
+                    }
+                } catch (InterruptedException interrupted) {
+                    // Lançar do finally esconderia o erro original do teste.
+                    Thread.currentThread().interrupt();
+                }
                 closeQuietly(realStatements);
             }
         }
@@ -257,11 +272,15 @@ class AcademySourceAdapterMysqlSnapshotIT {
      * o erro da asserção que derrubou o teste.
      */
     private void closeQuietly(List<PreparedStatement> statements) {
-        for (PreparedStatement statement : statements) {
-            try {
-                statement.close();
-            } catch (SQLException ignored) {
-                // A fixture já cumpriu o papel; o desfecho do teste vale mais.
+        // Lista sincronizada exige lock manual para iterar; sem ele, uma
+        // thread retardatária adicionando durante o for seria CME daqui.
+        synchronized (statements) {
+            for (PreparedStatement statement : statements) {
+                try {
+                    statement.close();
+                } catch (SQLException ignored) {
+                    // A fixture já cumpriu o papel; o desfecho vale mais.
+                }
             }
         }
     }

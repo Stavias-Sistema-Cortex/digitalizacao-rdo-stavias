@@ -2213,23 +2213,34 @@ export async function releaseBlockedRdoUpdatesForSync(
     assertSyncSession(guard);
     const timestamp = nowUtc();
     const guardedTransaction = guardSyncTransaction(
-      database.transaction(["outbox_mutations"], "readwrite"),
+      database.transaction(["rdos", "outbox_mutations"], "readwrite"),
       guard,
     );
-    const outboxStore = guardedTransaction.transaction.objectStore(
-      "outbox_mutations",
-    );
+    const transaction = guardedTransaction.transaction;
+    const outboxStore = transaction.objectStore("outbox_mutations");
     const atual = await outboxStore.get(mutation.clientMutationId);
+    const rdo = await transaction.objectStore("rdos").get(
+      mutation.entidadeId,
+    );
 
     /*
      * A releitura dentro da transação é o que impede desfazer um bloqueio que
      * outra escrita pôs por outro motivo entre a varredura e aqui.
+     *
+     * E soltar exige um RDO local que ainda deva algo ao servidor. Uma linha
+     * bloqueada pode sobreviver ao desfecho do seu RDO — um descarte de
+     * conflito, por exemplo, marca o registro como SYNCED sem enxergá-la.
+     * Liberar essa órfã empurraria um rascunho velho por cima do estado que
+     * alguém já deu por resolvido, e o servidor aceitaria: a versão-base
+     * ainda bate.
      */
     if (!atual ||
         atual.entidadeTipo !== "RDO" ||
         atual.operacao !== "ATUALIZAR_RDO_RASCUNHO" ||
         atual.blockedReason !== "RDO_CREATION_CONTEXT_REQUIRED" ||
-        !["PENDING", "ERROR"].includes(atual.status)) {
+        !["PENDING", "ERROR"].includes(atual.status) ||
+        !rdo ||
+        rdo.syncStatus === "SYNCED") {
       await guardedTransaction.complete();
       continue;
     }
@@ -2239,6 +2250,8 @@ export async function releaseBlockedRdoUpdatesForSync(
       status: "PENDING",
       blockedReason: null,
       nextAttemptAt: null,
+      // O erro era do bloqueio; solto o bloqueio, o texto viraria pista falsa.
+      ultimoErro: null,
       updatedAt: timestamp,
     });
     await guardedTransaction.complete();

@@ -153,13 +153,49 @@ describe("edição de rascunho presa por um bloqueio que já não vale", () => {
   });
 
   it("recupera também a linha que já tinha ido para ERROR", async () => {
-    await semear(edicaoBloqueadaNaFilaAntiga({ status: "ERROR" }));
+    await semear(edicaoBloqueadaNaFilaAntiga({
+      status: "ERROR",
+      ultimoErro: "Contexto da obra indisponível; a sincronização tentará novamente.",
+    }));
 
     expect(await releaseBlockedRdoUpdatesForSync()).toBe(1);
 
     const database = await getCortexDb();
     expect(await database.get("outbox_mutations", MUTATION_ID))
-      .toMatchObject({ status: "PENDING", blockedReason: null });
+      .toMatchObject({
+        status: "PENDING",
+        blockedReason: null,
+        // O erro era do bloqueio. Mantê-lo faria a tela explicar a linha
+        // pendente com um motivo que já não existe.
+        ultimoErro: null,
+      });
+  });
+
+  /*
+   * Uma linha bloqueada pode sobreviver ao desfecho do seu RDO: o descarte de
+   * conflito marca o registro como SYNCED sem enxergá-la. Soltar essa órfã
+   * empurraria um rascunho velho por cima do estado que alguém já deu por
+   * resolvido — e o servidor aceitaria, porque a versão-base ainda bate.
+   */
+  it("não solta a linha cujo RDO já está resolvido", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", { ...rdoEditado(), syncStatus: "SYNCED" });
+    await database.put("outbox_mutations", edicaoBloqueadaNaFilaAntiga());
+
+    expect(await releaseBlockedRdoUpdatesForSync()).toBe(0);
+    expect(
+      (await database.get("outbox_mutations", MUTATION_ID))?.blockedReason,
+    ).toBe("RDO_CREATION_CONTEXT_REQUIRED");
+  });
+
+  it("não solta a linha órfã, sem RDO local", async () => {
+    const database = await getCortexDb();
+    await database.put("outbox_mutations", edicaoBloqueadaNaFilaAntiga());
+
+    expect(await releaseBlockedRdoUpdatesForSync()).toBe(0);
+    expect(
+      (await database.get("outbox_mutations", MUTATION_ID))?.blockedReason,
+    ).toBe("RDO_CREATION_CONTEXT_REQUIRED");
   });
 
   /*
