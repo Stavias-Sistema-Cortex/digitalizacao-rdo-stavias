@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { LOCAL_MUTATION_QUEUED_EVENT } from "../../lib/sync/localMutationCoordinator";
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
@@ -104,6 +104,17 @@ interface NovoServicoState {
   source: string;
 }
 
+/**
+ * As unidades que o contrato usa, oferecidas já no símbolo correto.
+ *
+ * <p>Elas continuam digitáveis à mão — a lista é conveniência, não restrição —
+ * mas M² e M³ deixam de depender de alguém acertar o expoente no teclado do
+ * celular.
+ */
+const UNIDADES_SUGERIDAS = [
+  "M", "M²", "M³", "KM", "T", "KG", "L", "H", "UN", "VB",
+] as const;
+
 const NOVO_SERVICO_VAZIO: NovoServicoState = {
   code: "",
   name: "",
@@ -134,6 +145,7 @@ export function ServicePriceCatalogPage({
   // ajuda quem não tem a convenção na cabeça e nunca sobrescreve uma decisão.
   const [codigoEditadoAMao, setCodigoEditadoAMao] = useState(false);
   const [comPrecoInicial, setComPrecoInicial] = useState(false);
+  const unidadesId = useId();
   const canAdmin = permissions.includes("FINANCEIRO_ADMINISTRAR");
 
   const loadLocal = useCallback(async (search = query) => {
@@ -307,6 +319,11 @@ export function ServicePriceCatalogPage({
 
   return (
     <section className="finance-service-catalog" aria-labelledby="service-catalog-title">
+      <datalist id={unidadesId}>
+        {UNIDADES_SUGERIDAS.map((unidade) => (
+          <option key={unidade} value={unidade} />
+        ))}
+      </datalist>
       <header className="finance-service-catalog__header">
         <div>
           <span>Catálogo operacional versionado</span>
@@ -461,6 +478,7 @@ export function ServicePriceCatalogPage({
                   required
                   maxLength={30}
                   value={novoServico.unit}
+                  list={unidadesId}
                   placeholder="m2, m3, ton, h"
                   onChange={(event) =>
                     setNovoServico((atual) => ({
@@ -498,8 +516,8 @@ export function ServicePriceCatalogPage({
                 Quantidade contratada
                 <input
                   name="contractedQuantity"
+                  aria-label="Quantidade contratada"
                   inputMode="decimal"
-                  required
                   value={novoServico.contractedQuantity}
                   onChange={(event) =>
                     setNovoServico((atual) => ({
@@ -568,7 +586,30 @@ export function ServicePriceCatalogPage({
             );
           }}
         >
-          <header><div><span>{selectedRow.service.code}</span><h3>Publicar primeiro preço</h3></div><button type="button" onClick={() => setEditor(null)}>Fechar</button></header>
+          {/* O título dizia "Publicar primeiro preço" mesmo quando o serviço já
+              tinha preço publicado. Quem acabara de cadastrar serviço e custo
+              juntos abria este formulário e lia que o primeiro preço ainda
+              estava por fazer — então cadastrava de novo, e o catálogo ficava
+              com duas versões do mesmo valor. */}
+          <header>
+            <div>
+              <span>{selectedRow.service.code}</span>
+              <h3>
+                {selectedRow.priceVersions.length === 0
+                  ? "Publicar primeiro preço"
+                  : `Novo preço para ${selectedRow.service.name}`}
+              </h3>
+            </div>
+            <button type="button" onClick={() => setEditor(null)}>Fechar</button>
+          </header>
+          {selectedRow.priceVersions.length > 0 ? (
+            <p className="finance-catalog-editor__aviso" role="status">
+              Este serviço já tem {selectedRow.priceVersions.length}{" "}
+              {selectedRow.priceVersions.length === 1 ? "preço" : "preços"} no
+              catálogo. Um preço novo não corrige o anterior — para trocar o
+              valor vigente use <strong>Substituir</strong> no histórico abaixo.
+            </p>
+          ) : null}
           <div className="finance-catalog-editor__grid">
             <label>
               Unidade
@@ -577,18 +618,27 @@ export function ServicePriceCatalogPage({
                 aria-label="Unidade"
                 required
                 maxLength={30}
+                list={unidadesId}
                 placeholder="m2, m3, ton, h"
               />
               <small>Escreva como preferir: m2 vira M², ton vira T.</small>
             </label>
             <label>Moeda<input name="currency" required value="BRL" readOnly /></label>
             <label>Valor unitário<input name="unitPrice" inputMode="decimal" required /></label>
-            <label>Quantidade contratada<input name="contractedQuantity" inputMode="decimal" required /></label>
+            <label>
+              Quantidade contratada
+              <input
+                name="contractedQuantity"
+                aria-label="Quantidade contratada"
+                inputMode="decimal"
+              />
+              <small>Opcional — o que o contrato prevê, quando se sabe.</small>
+            </label>
             <label>Início da vigência<input name="validFrom" type="date" required /></label>
             <label>Fim da vigência<input name="validTo" type="date" /></label>
             <label>
               Fonte do preço
-              <input name="source" required maxLength={80} placeholder="CONTRATO_MEDIDO" />
+              <input name="source" required maxLength={80} defaultValue="CONTRATO_MEDIDO" />
               <small>Use letras, números e apenas . _ : -</small>
             </label>
           </div>

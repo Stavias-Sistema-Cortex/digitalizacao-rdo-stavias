@@ -715,7 +715,7 @@ public class RdoContextService {
                     km_final,
                     extensao_m,
                     largura_m,
-                    espessura_cm,
+                    espessura_m,
                     area_m2,
                     volume_m3,
                     status
@@ -743,7 +743,7 @@ public class RdoContextService {
                         rs.getString("km_final"),
                         rs.getBigDecimal("extensao_m"),
                         rs.getBigDecimal("largura_m"),
-                        rs.getBigDecimal("espessura_cm"),
+                        rs.getBigDecimal("espessura_m"),
                         rs.getBigDecimal("area_m2"),
                         rs.getBigDecimal("volume_m3"),
                         rs.getString("status")

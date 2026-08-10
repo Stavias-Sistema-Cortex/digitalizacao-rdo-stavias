@@ -583,10 +583,80 @@
   color: var(--color-ink);
 }
 
+/* O cabeçalho do editor não tinha regra nenhuma: o título e o botão Fechar
+   eram dois blocos empilhados, e o "Fechar" caía no meio do formulário como se
+   fosse mais um campo. */
+.finance-catalog-editor > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.finance-catalog-editor > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.finance-catalog-editor > header span {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.finance-catalog-editor__aviso {
+  margin: 0;
+  border-left: 2px solid var(--color-border-strong);
+  padding-left: 10px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--color-muted);
+}
+
 .finance-catalog-editor__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
+  align-items: start;
+}
+
+/* A descrição pedia a largura inteira e nunca a recebia: `is-wide` não existia
+   nesta folha, então o textarea ficava espremido numa coluna de 180px. */
+.finance-catalog-editor__grid .is-wide {
+  grid-column: 1 / -1;
+}
+
+.finance-catalog-editor textarea {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 7px 10px;
+  resize: vertical;
+}
+
+/* O botão de salvar ficava colado à esquerda, do tamanho do texto, no meio do
+   fluxo dos campos. Ele é a ação da caixa e precisa ler como tal. */
+.finance-catalog-editor > button[type="submit"] {
+  justify-self: start;
+  padding: 9px 18px;
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: var(--color-surface);
+}
+
+.finance-catalog-editor > button[type="submit"]:hover:not(:disabled) {
+  background: var(--color-ink);
+  filter: brightness(1.15);
+}
+
+.finance-catalog-editor > button[type="submit"]:disabled {
+  cursor: progress;
+  opacity: 0.6;
 }
 
 .finance-catalog-editor label {

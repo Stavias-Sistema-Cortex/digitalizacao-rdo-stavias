@@ -200,7 +200,12 @@ describe("ServicePriceCatalogPage", () => {
     }));
     expect(screen.getByLabelText("Moeda")).toHaveValue("BRL");
     expect(screen.getByLabelText("Moeda")).toHaveAttribute("readonly");
-    expect(screen.getByPlaceholderText("CONTRATO_MEDIDO")).toBeInTheDocument();
+    // A fonte vem preenchida, e não apenas sugerida no placeholder: ela é
+    // obrigatória, é "CONTRATO_MEDIDO" em quase toda publicação, e digitá-la à
+    // mão só criava chance de errar o formato que o servidor exige.
+    expect(screen.getByLabelText(/Fonte do preço/)).toHaveValue(
+      "CONTRATO_MEDIDO",
+    );
     fireEvent.change(screen.getByLabelText("Unidade"), {
       target: { value: "M2" },
     });

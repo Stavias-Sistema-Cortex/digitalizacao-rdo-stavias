@@ -201,7 +201,7 @@ public record RdoResponse(
              * contrato de leitura parava aqui.
              */
             BigDecimal larguraM,
-            BigDecimal espessuraCm
+            BigDecimal espessuraM
     ) {
 
         /** Assinatura anterior às medidas do serviço criadas pela V69. */

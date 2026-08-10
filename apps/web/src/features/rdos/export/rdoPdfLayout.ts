@@ -490,7 +490,7 @@ function workedCells(
     numeric(value.width),
     value.thicknessMeters === null
       ? ""
-      : numeric(value.thicknessMeters * 100),
+      : numeric(value.thicknessMeters),
     userText(value.roadway),
     userText(value.lane),
     userText(value.serviceOrder),
@@ -515,7 +515,7 @@ function drawWorked(
       "Nº",
       "COMP.",
       "LARG.",
-      "ESP. cm",
+      "ESP. m",
       "PISTA",
       "FAIXA",
       "OS",

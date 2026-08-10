@@ -516,7 +516,7 @@ final class RdoPdfFormRenderer {
                 widths,
                 11f,
                 new String[] {
-                    "INÍCIO", "FIM", "Nº", "COMP.", "LARG.", "ESP. cm",
+                    "INÍCIO", "FIM", "Nº", "COMP.", "LARG.", "ESP. m",
                     "PISTA", "FAIXA", "OS", "ATIVIDADE / SERVIÇO"
                 },
                 bold,
@@ -996,7 +996,7 @@ final class RdoPdfFormRenderer {
             user(value.number()),
             decimal(value.length()),
             decimal(value.width()),
-            decimal(value.thicknessCm()),
+            decimal(value.thicknessMeters()),
             user(value.roadway()),
             user(value.lane()),
             user(value.serviceOrder()),

@@ -2,6 +2,7 @@ package com.projeto.cortex.rdos.export;
 
 import com.projeto.cortex.rdos.RdoResponse;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,7 +41,7 @@ record WorkedRow(
         String number,
         BigDecimal length,
         BigDecimal width,
-        BigDecimal thicknessCm,
+        BigDecimal thicknessMeters,
         String roadway,
         String lane,
         String serviceOrder,
@@ -58,12 +59,27 @@ record WorkedRow(
                 value.numero(),
                 value.comprimentoM(),
                 value.larguraM(),
-                value.espessuraMediaCm(),
+                // O controle geométrico é etapa aposentada e continua gravando
+                // a espessura média em centímetros; a linha exportada fala
+                // metros, como o serviço executado passou a falar.
+                centimetrosEmMetros(value.espessuraMediaCm()),
                 value.pista(),
                 value.faixa(),
                 value.ordemServico(),
                 firstNonBlank(value.atividadeObservacoes(), value.observacoes())
         );
+    }
+
+    /**
+     * Converte a espessura do controle geométrico, que ainda é gravada em
+     * centímetros, para os metros em que a linha exportada fala.
+     */
+    private static BigDecimal centimetrosEmMetros(BigDecimal centimetros) {
+        return centimetros == null
+                ? null
+                : centimetros
+                        .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)
+                        .stripTrailingZeros();
     }
 
     static WorkedRow fromService(RdoResponse.ServicoExecutadoItem value) {
@@ -92,7 +108,7 @@ record WorkedRow(
                 null,
                 length,
                 value.larguraM(),
-                value.espessuraCm(),
+                value.espessuraM(),
                 firstNonBlank(value.pista(), value.localizacao()),
                 value.faixa(),
                 null,

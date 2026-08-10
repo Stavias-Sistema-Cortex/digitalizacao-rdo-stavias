@@ -413,7 +413,7 @@ public class RdoXlsxExportService {
             text(sheet, "H" + row, value.number());
             number(workbook, sheet, "J" + row, value.length());
             number(workbook, sheet, "L" + row, value.width());
-            number(workbook, sheet, "N" + row, centimetersToMeters(value.thicknessCm()));
+            number(workbook, sheet, "N" + row, value.thicknessMeters());
             text(sheet, "P" + row, value.roadway());
             text(sheet, "R" + row, value.lane());
             text(sheet, "T" + row, value.serviceOrder());
