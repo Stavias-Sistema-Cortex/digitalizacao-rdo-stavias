@@ -104,6 +104,96 @@ public class ServicePriceCatalogService {
         return created;
     }
 
+    /**
+     * Tira o serviço do catálogo sem apagar o que ele já produziu.
+     *
+     * <p>O RDO que o executou, as versões de preço e as medições continuam
+     * existindo e legíveis: o que muda é que ele deixa de ser oferecido para
+     * lançamento novo. Restaurar é o mesmo movimento no sentido contrário.
+     *
+     * <p>Repetível pelo recibo, como todo o resto do catálogo — a fila offline
+     * reenvia o pedido quando a rede vacila, e o segundo envio precisa devolver
+     * o resultado do primeiro em vez de excluir de novo por cima de uma
+     * restauração que veio depois.
+     */
+    @Transactional
+    public ServiceCatalogEntry excluirServico(
+            String obraId,
+            String actorId,
+            String serviceId,
+            ExcludeServiceCommand command
+    ) {
+        return transicionarExclusao(obraId, actorId, serviceId, command, true);
+    }
+
+    @Transactional
+    public ServiceCatalogEntry restaurarServico(
+            String obraId,
+            String actorId,
+            String serviceId,
+            ExcludeServiceCommand command
+    ) {
+        return transicionarExclusao(obraId, actorId, serviceId, command, false);
+    }
+
+    private ServiceCatalogEntry transicionarExclusao(
+            String obraId,
+            String actorId,
+            String serviceId,
+            ExcludeServiceCommand command,
+            boolean excluir
+    ) {
+        String worksite = uuid(obraId, "obraId");
+        requireWorksite(worksite);
+        String actor = uuid(actorId, "actorId");
+        String service = uuid(serviceId, "serviceId");
+        String mutationId = FinanceValidation.mutationId(
+                command == null ? null : command.clientMutationId()
+        );
+        String operacao = excluir ? "SERVICE_EXCLUDED" : "SERVICE_RESTORED";
+        String hash = hash(Map.of(
+                "operation", operacao,
+                "obraId", worksite,
+                "serviceId", service
+        ));
+
+        Optional<CatalogMutation> replay = repository.findMutation(actor, mutationId);
+        if (replay.isPresent()) {
+            CatalogMutation receipt = replay.orElseThrow();
+            requireReplay(receipt, operacao, hash);
+            return repository.findService(receipt.entityId())
+                    .orElseThrow(() -> conflict("SERVICE_CATALOG_REPLAY_MISSING"));
+        }
+
+        ServiceCatalogEntry atual = repository.findService(service)
+                .orElseThrow(() -> notFound("SERVICE_CATALOG_NOT_FOUND"));
+        /*
+         * Já está onde o pedido quer levá-lo. Devolver o estado atual em vez de
+         * recusar mantém o gesto repetível na tela e na fila: excluir duas
+         * vezes é excluir uma, e não um erro que a pessoa precise entender.
+         */
+        if (atual.excluded() == excluir) {
+            return atual;
+        }
+        operabilityGuard.requireWritable(worksite);
+
+        try {
+            return repository.updateServiceExclusion(
+                    new ServicePriceCatalogRepository.ServiceExclusionRecord(
+                            service, actor, mutationId, hash, excluir, clock.instant()
+                    )
+            );
+        } catch (DataIntegrityViolationException race) {
+            return repository.findMutation(actor, mutationId)
+                    .map(receipt -> {
+                        requireReplay(receipt, operacao, hash);
+                        return repository.findService(receipt.entityId())
+                                .orElseThrow(() -> conflict("SERVICE_CATALOG_REPLAY_MISSING"));
+                    })
+                    .orElseThrow(() -> race);
+        }
+    }
+
     @Transactional
     public ServicePriceVersion createPrice(
             String obraId,

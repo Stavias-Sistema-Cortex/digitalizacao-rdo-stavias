@@ -18,6 +18,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class ServiceCatalogSyncOperationHandler implements SyncOperationHandler {
 
     private static final String OPERATION = "CRIAR_SERVICO_CATALOGO";
+    private static final String EXCLUIR = "EXCLUIR_SERVICO_CATALOGO";
+    private static final String RESTAURAR = "RESTAURAR_SERVICO_CATALOGO";
 
     private final ServicePriceCatalogService service;
     private final FinancialAccessService access;
@@ -40,7 +42,7 @@ public class ServiceCatalogSyncOperationHandler implements SyncOperationHandler 
 
     @Override
     public Set<String> operations() {
-        return Set.of(OPERATION);
+        return Set.of(OPERATION, EXCLUIR, RESTAURAR);
     }
 
     @Override
@@ -64,6 +66,33 @@ public class ServiceCatalogSyncOperationHandler implements SyncOperationHandler 
                 worksiteId,
                 FinancialPermission.FINANCEIRO_ADMINISTRAR
         );
+
+        /*
+         * Tirar de circulação e trazer de volta são estados, não criação: o
+         * serviço já existe e o que a fila carrega é a transição. Passam pela
+         * mesma permissão administrativa acima, e o serviço do outro lado é
+         * repetível pelo recibo — reenviar o mesmo pedido devolve o resultado
+         * do primeiro em vez de excluir por cima de uma restauração posterior.
+         */
+        if (EXCLUIR.equals(mutation.operacao())
+                || RESTAURAR.equals(mutation.operacao())) {
+            ExcludeServiceCommand comando = new ExcludeServiceCommand(
+                    mutation.clientMutationId(),
+                    text(payload, "motivo", false)
+            );
+            ServiceCatalogEntry alterado = EXCLUIR.equals(mutation.operacao())
+                    ? service.excluirServico(
+                            worksiteId, context.actorId(), entityId, comando)
+                    : service.restaurarServico(
+                            worksiteId, context.actorId(), entityId, comando);
+            requireAppliedId(alterado.id(), entityId);
+            return new AppliedSyncMutation(
+                    entityType(),
+                    entityId,
+                    mapper.valueToTree(alterado)
+            );
+        }
+
         ServiceCatalogEntry created = service.createService(
                 worksiteId,
                 context.actorId(),
@@ -85,7 +114,7 @@ public class ServiceCatalogSyncOperationHandler implements SyncOperationHandler 
 
     private void requireOperation(SyncPushRequest.MutacaoCliente mutation) {
         if (mutation == null
-                || !OPERATION.equals(mutation.operacao())
+                || !operations().contains(mutation.operacao())
                 || !entityType().equals(mutation.entidadeTipo())) {
             throw badRequest("Operação de catálogo de serviço não suportada.");
         }

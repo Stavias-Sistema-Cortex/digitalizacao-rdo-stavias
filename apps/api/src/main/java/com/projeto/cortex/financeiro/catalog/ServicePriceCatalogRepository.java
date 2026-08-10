@@ -17,6 +17,15 @@ public interface ServicePriceCatalogRepository {
 
     ServiceCatalogEntry createService(CreateServiceRecord record);
 
+    /**
+     * Move o serviço entre ativo e excluído, gravando o recibo da operação.
+     *
+     * <p>Uma transição só: excluir e restaurar são o mesmo movimento em
+     * sentidos opostos, e separá-los em dois métodos duplicaria o recibo, o
+     * carimbo de revisão e a checagem de estado — três lugares para divergir.
+     */
+    ServiceCatalogEntry updateServiceExclusion(ServiceExclusionRecord record);
+
     ServicePriceVersion createPrice(CreatePriceRecord record);
 
     ServicePriceVersion supersedePrice(CreatePriceRecord record);
@@ -24,6 +33,16 @@ public interface ServicePriceCatalogRepository {
     ServicePriceVersion cancelPrice(CancelPriceRecord record);
 
     ServiceCatalogPage list(String obraId, String query, String cursor, int limit);
+
+    record ServiceExclusionRecord(
+            String serviceId,
+            String actorId,
+            String clientMutationId,
+            String requestHash,
+            boolean excluded,
+            java.time.Instant occurredAt
+    ) {
+    }
 
     record CreateServiceRecord(
             String id,

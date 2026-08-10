@@ -135,6 +135,8 @@ public class SyncService {
             Map.entry("DECIDIR_APROVACAO_COMPRA", "TRANSITION"),
             Map.entry("ARQUIVAR_COMPRA", "TRANSITION"),
             Map.entry("CRIAR_SERVICO_CATALOGO", "CREATE"),
+            Map.entry("EXCLUIR_SERVICO_CATALOGO", "TRANSITION"),
+            Map.entry("RESTAURAR_SERVICO_CATALOGO", "TRANSITION"),
             Map.entry("CRIAR_PRECO_SERVICO", "CREATE"),
             Map.entry("SUBSTITUIR_PRECO_SERVICO", "CREATE"),
             Map.entry("CANCELAR_PRECO_SERVICO", "TRANSITION"),

@@ -146,7 +146,8 @@ public class PostgresqlServicePriceCatalogRepository
     @Override
     public Optional<ServiceCatalogEntry> findService(String serviceId) {
         return jdbc.query("""
-                SELECT id, codigo, nome, descricao, status, criado_em
+                SELECT id, codigo, nome, descricao, status, criado_em,
+                       excluido_em, excluido_por
                 FROM catalogo_servico
                 WHERE id = ?
                 """, resultSet -> resultSet.next()
@@ -204,6 +205,57 @@ public class PostgresqlServicePriceCatalogRepository
             throw exception;
         }
         return findService(record.id()).orElseThrow();
+    }
+
+    /*
+     * A transição de estado e o recibo entram na mesma escrita.
+     *
+     * O UPDATE só encontra a linha quando ela ainda está no estado de origem,
+     * e é isso que torna a operação segura sob repetição: o segundo envio da
+     * mesma exclusão não acha nada para mudar e cai no recibo já gravado, em
+     * vez de excluir de novo por cima de uma restauração posterior.
+     *
+     * O carimbo de revisão sobe junto porque a listagem do catálogo lê por
+     * snapshot: sem ele, quem já tinha a página aberta continuaria vendo o
+     * serviço como se nada tivesse acontecido.
+     */
+    @Override
+    public ServiceCatalogEntry updateServiceExclusion(ServiceExclusionRecord record) {
+        String estadoDeOrigem = record.excluded() ? "ACTIVE" : "EXCLUIDO";
+        int alteradas = record.excluded()
+                ? jdbc.update("""
+                        UPDATE catalogo_servico
+                        SET status = 'EXCLUIDO',
+                            excluido_em = ?,
+                            excluido_por = ?,
+                            commit_revision = cortex_next_service_catalog_revision()
+                        WHERE id = ? AND status = ?
+                        """,
+                        Timestamp.from(record.occurredAt()),
+                        record.actorId(),
+                        record.serviceId(),
+                        estadoDeOrigem)
+                : jdbc.update("""
+                        UPDATE catalogo_servico
+                        SET status = 'ACTIVE',
+                            excluido_em = NULL,
+                            excluido_por = NULL,
+                            commit_revision = cortex_next_service_catalog_revision()
+                        WHERE id = ? AND status = ?
+                        """,
+                        record.serviceId(),
+                        estadoDeOrigem);
+        if (alteradas == 1) {
+            insertMutation(
+                    record.actorId(),
+                    record.clientMutationId(),
+                    record.excluded() ? "SERVICE_EXCLUDED" : "SERVICE_RESTORED",
+                    record.serviceId(),
+                    record.requestHash(),
+                    record.occurredAt()
+            );
+        }
+        return findService(record.serviceId()).orElseThrow();
     }
 
     @Override
@@ -284,7 +336,8 @@ public class PostgresqlServicePriceCatalogRepository
                 obraId, normalizedQuery, snapshotRevision
         ).addValue("limit", limit + 1);
         StringBuilder pageSql = new StringBuilder("""
-                SELECT id, codigo, nome, descricao, status, criado_em
+                SELECT id, codigo, nome, descricao, status, criado_em,
+                       service.excluido_em, service.excluido_por
                 FROM catalogo_servico service
                 WHERE service.commit_revision <= :snapshotRevision
                 """).append(searchPredicate(normalizedQuery));
@@ -608,13 +661,16 @@ public class PostgresqlServicePriceCatalogRepository
 
     private static ServiceCatalogEntry mapService(java.sql.ResultSet resultSet)
             throws java.sql.SQLException {
+        java.sql.Timestamp excludedAt = resultSet.getTimestamp("excluido_em");
         return new ServiceCatalogEntry(
                 resultSet.getString("id"),
                 resultSet.getString("codigo"),
                 resultSet.getString("nome"),
                 resultSet.getString("descricao"),
                 resultSet.getString("status"),
-                resultSet.getTimestamp("criado_em").toInstant()
+                resultSet.getTimestamp("criado_em").toInstant(),
+                excludedAt == null ? null : excludedAt.toInstant(),
+                resultSet.getString("excluido_por")
         );
     }
 
