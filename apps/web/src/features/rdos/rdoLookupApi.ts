@@ -251,6 +251,17 @@ export interface RdoContextCollaborator {
   nome: string | null;
   papelNaObra: string | null;
   nomePerfil: string | null;
+  /**
+   * Se a pessoa está ligada a esta obra, por vínculo direto ou por equipe.
+   *
+   * <p>Deixou de decidir quem aparece e passou a decidir a ordem: a lista traz
+   * o quadro inteiro da empresa, e quem está na obra vem primeiro.
+   *
+   * <p>Opcional de propósito: contexto guardado antes desta versão não tem o
+   * campo, e exigi-lo faria toda leitura em cache ser recusada como
+   * incompatível — quem está offline perderia o contexto que já tinha.
+   */
+  naObra?: boolean;
 }
 
 /**
@@ -893,6 +904,7 @@ function scopedCollaborators(values: unknown): RdoContextCollaborator[] {
       nome: nullableText(value.nome),
       papelNaObra: null,
       nomePerfil: nullableText(value.nomePerfil),
+      naObra: typeof value.naObra === "boolean" ? value.naObra : undefined,
     };
   });
 }

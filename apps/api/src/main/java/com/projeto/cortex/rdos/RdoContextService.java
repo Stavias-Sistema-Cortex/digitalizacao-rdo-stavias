@@ -119,7 +119,7 @@ public class RdoContextService {
                 buscarProgramacoesDaObraNaData(obraId, data);
 
         List<RdoContextResponse.ColaboradorContexto> colaboradores =
-                listarColaboradoresAtivosDaObra(obraId);
+                listarColaboradoresApontaveis(obraId);
 
         List<RdoContextResponse.EquipamentoContexto> equipamentos =
                 listarEquipamentosAtivosDaObra(obraId);
@@ -803,19 +803,27 @@ public class RdoContextService {
     }
 
     /**
-     * Quem o RDO pode apontar nesta obra, vindo das duas portas de entrada.
+     * Quem o RDO pode apontar: qualquer pessoa do quadro, com quem está na
+     * obra em primeiro lugar.
      *
-     * <p>Lia apenas {@code vinculo_colaborador_obra}, e por isso quem entrou na
-     * obra por equipe não existia para o RDO: a busca de colaborador respondia
-     * "nenhum colaborador autorizado encontrado" numa obra com equipe montada e
-     * gente dentro dela. Vincular pessoa a pessoa era a única forma de fazer o
-     * apontamento enxergar alguém — trabalho duplicado, feito à mão, sobre uma
-     * informação que a equipe já continha.
+     * <p>A lista já foi mais estreita duas vezes. Primeiro só lia
+     * {@code vinculo_colaborador_obra}, e quem entrou na obra por equipe não
+     * existia para o RDO. Depois passou a somar as duas portas — e continuava
+     * respondendo "nenhum colaborador autorizado" na obra que ainda não tinha
+     * nenhuma das duas montadas, que é justamente a obra que está começando e
+     * mais precisa apontar.
      *
-     * <p>A união é por colaborador, não por equipe, e é isso que sustenta várias
-     * equipes na mesma obra: quem está em duas aparece uma vez só. Sem o
-     * agrupamento, a pessoa em três frentes viraria três linhas iguais na lista
-     * de escolha, e escolher uma delas não diria nada além das outras.
+     * <p>Agora a fonte é o cadastro de pessoas, alimentado pelo Academy. Quem
+     * trabalhou naquele dia trabalhou, e o RDO é o registro do que aconteceu —
+     * não o lugar onde se decide quem podia ter estado lá. O apontamento
+     * declara o fato; o vínculo formal é assunto de outra tela, e exigi-lo aqui
+     * fazia o Córtex recusar a verdade por falta de cadastro.
+     *
+     * <p>Estar na obra deixou de decidir quem aparece e passou a decidir a
+     * ordem, que é o que a lista precisa quando a empresa inteira cabe nela:
+     * quem tem vínculo direto ou equipe alocada vem primeiro, o resto vem
+     * depois, e a busca alcança os dois. Sem essa separação, encontrar o
+     * ajudante da própria frente custaria rolar por gente de outra obra.
      *
      * <p>O papel exibido vem de {@code MIN} sobre as origens, o que é uma
      * escolha assumida e não um acaso: o vínculo direto e cada equipe podem
@@ -824,12 +832,20 @@ public class RdoContextService {
      * porque o campo é dica de identificação — quem responde pela função do dia
      * é o próprio RDO, no cargo de cada linha de mão de obra.
      *
-     * <p>Vigência entra nos dois lados: equipe arquivada, alocação encerrada e
-     * membro removido saem da lista. Uma equipe que saiu da obra não autoriza
-     * mais ninguém, e continuar oferecendo seus integrantes seria autorizar
-     * apontamento por um vínculo que acabou.
+     * <p>Vigência continua valendo para a marca de obra: equipe arquivada,
+     * alocação encerrada e membro removido deixam de contar como "na obra". A
+     * pessoa não some da lista por isso — ela desce.
+     *
+     * <p>Desligado da empresa continua fora, e essa é a única exclusão que
+     * restou: {@code ativo} falso ou {@code deletado_em} preenchido tiram a
+     * pessoa de circulação em todo o Córtex.
      */
-    private List<RdoContextResponse.ColaboradorContexto> listarColaboradoresAtivosDaObra(
+    /*
+     * Visível ao pacote para que o teste de integração possa exercitá-la contra
+     * um PostgreSQL de verdade sem montar o contexto inteiro. É SQL cru sobre
+     * cinco tabelas, e SQL cru só erra onde há banco.
+     */
+    List<RdoContextResponse.ColaboradorContexto> listarColaboradoresApontaveis(
             String obraId
     ) {
         return jdbcTemplate.query(
@@ -839,8 +855,10 @@ public class RdoContextService {
                     collaborator.codigo_colaborador,
                     collaborator.nome,
                     MIN(origem.papel_na_obra) AS papel_na_obra,
-                    collaborator.nome_perfil
-                FROM (
+                    collaborator.nome_perfil,
+                    bool_or(origem.colaborador_id IS NOT NULL) AS na_obra
+                FROM colaborador collaborator
+                LEFT JOIN (
                     SELECT
                         link.colaborador_id,
                         link.papel_na_obra
@@ -869,23 +887,23 @@ public class RdoContextService {
                       AND alocacao.status = 'ATIVO'
                       AND alocacao.fim_em IS NULL
                 ) AS origem
-                JOIN colaborador collaborator
-                  ON collaborator.id = origem.colaborador_id
-                 AND collaborator.ativo = TRUE
-                 AND collaborator.deletado_em IS NULL
+                  ON origem.colaborador_id = collaborator.id
+                WHERE collaborator.ativo = TRUE
+                  AND collaborator.deletado_em IS NULL
                 GROUP BY
                     collaborator.id,
                     collaborator.codigo_colaborador,
                     collaborator.nome,
                     collaborator.nome_perfil
-                ORDER BY collaborator.nome, collaborator.id
+                ORDER BY na_obra DESC, collaborator.nome, collaborator.id
                 """,
                 (rs, rowNum) -> new RdoContextResponse.ColaboradorContexto(
                         rs.getString("id"),
                         rs.getString("codigo_colaborador"),
                         rs.getString("nome"),
                         rs.getString("papel_na_obra"),
-                        rs.getString("nome_perfil")
+                        rs.getString("nome_perfil"),
+                        rs.getBoolean("na_obra")
                 ),
                 obraId,
                 obraId
@@ -941,11 +959,17 @@ public class RdoContextService {
                             FROM vinculo_colaborador_obra
                             WHERE obra_id = ?
                             UNION ALL
+                            -- A lista de quem se pode apontar passou a ser a
+                            -- quadro inteiro, então a versão do contexto
+                            -- precisa acompanhar o cadastro inteiro. Ligada
+                            -- só ao vínculo com a obra, uma admissão vinda do
+                            -- Academy não mexia na versão, e o contexto em
+                            -- cache seguia servindo uma lista sem a pessoa
+                            -- nova — sem nada que denunciasse a defasagem.
                             SELECT collaborator.atualizado_em
                             FROM colaborador collaborator
-                            JOIN vinculo_colaborador_obra link
-                              ON link.colaborador_id = collaborator.id
-                            WHERE link.obra_id = ?
+                            WHERE collaborator.ativo = TRUE
+                              AND collaborator.deletado_em IS NULL
                             UNION ALL
                             SELECT item.atualizado_em
                             FROM rdo_equipamento item
@@ -966,7 +990,6 @@ public class RdoContextService {
                 )
                 """,
                 Long.class,
-                obraId,
                 obraId,
                 obraId,
                 obraId,

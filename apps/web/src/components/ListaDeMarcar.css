@@ -50,6 +50,31 @@
   gap: 2px;
 }
 
+/*
+ * Separador de grupo. É `li` porque vive dentro da `ul` e um `div` ali quebra a
+ * semântica da lista; `aria-hidden` porque o leitor de tela já anuncia cada
+ * item pelo próprio rótulo, e repetir o grupo a cada linha atrapalharia mais
+ * que ajudaria.
+ */
+.lista-de-marcar__grupo {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 8px 4px;
+  background: var(--surface, #fff);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.lista-de-marcar__grupo:not(:first-child) {
+  margin-top: 6px;
+  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.1));
+  padding-top: 10px;
+}
+
 .lista-de-marcar__item {
   display: flex;
   align-items: center;

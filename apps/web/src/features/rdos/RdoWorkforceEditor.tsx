@@ -89,9 +89,10 @@ export function RdoWorkforceEditor({
         id: row.localId,
         titulo: nomeDaPessoa(row),
         detalhe: row.cargo.trim() || null,
+        grupo: "Neste RDO",
         marcado: row.selected && !indisponivel,
         impedimento: indisponivel
-          ? "Indisponível nesta obra"
+          ? "Sem cadastro ativo"
           : null,
         aviso: avisoDeApontamentoRepetido(
           jaApontados?.get(row.colaboradorId.trim()),
@@ -103,6 +104,16 @@ export function RdoWorkforceEditor({
       };
     });
 
+    /*
+     * A lista traz o quadro inteiro da empresa, vindo do cadastro que o
+     * Academy alimenta. Quem está ligado a esta obra vem primeiro; o resto vem
+     * depois, atrás de um cabeçalho que diz o que é. Sem essa separação, achar
+     * o ajudante da própria frente custaria rolar por gente de outra obra.
+     *
+     * <p>Contexto guardado antes desta versão não tem `naObra`. Ler a ausência
+     * como "está na obra" é o que preserva o significado antigo: naquele
+     * contexto, todo mundo que aparecia estava mesmo vinculado.
+     */
     const doCatalogo = collaborators
       .filter((collaborator) => !noRascunho.has(collaborator.id))
       .map((collaborator) => ({
@@ -116,11 +127,19 @@ export function RdoWorkforceEditor({
           ]
             .filter(Boolean)
             .join(" · ") || null,
+        grupo:
+          collaborator.naObra === false
+            ? "Em outras obras"
+            : "Nesta obra",
         marcado: false,
         aviso: avisoDeApontamentoRepetido(jaApontados?.get(collaborator.id)),
       }));
 
-    return [...doRascunho, ...doCatalogo];
+    return [
+      ...doRascunho,
+      ...doCatalogo.filter((item) => item.grupo === "Nesta obra"),
+      ...doCatalogo.filter((item) => item.grupo !== "Nesta obra"),
+    ];
   }, [draft.maoObra, collaborators, noRascunho, jaApontados]);
 
   const selecionados = draft.maoObra.filter(
@@ -175,8 +194,8 @@ export function RdoWorkforceEditor({
         </div>
         <p>
           {sourceRdoNumber
-            ? `Marque quem trabalhou hoje. A lista veio do RDO ${sourceRdoNumber} e de quem está na obra.`
-            : "Marque quem trabalhou hoje."}
+            ? `Marque quem trabalhou hoje. A lista veio do RDO ${sourceRdoNumber} e do quadro de pessoal.`
+            : "Marque quem trabalhou hoje. A lista é o quadro de pessoal, com quem está nesta obra em primeiro lugar."}
         </p>
       </div>
 
@@ -189,7 +208,7 @@ export function RdoWorkforceEditor({
         mensagemVazia={
           catalogUnavailableMessage
             ? "Nenhum colaborador autorizado carregado."
-            : "Ninguém vinculado a esta obra ainda. Use “Somar alguém à mão” para lançar quem trabalhou hoje."
+            : "Nenhum colaborador carregado ainda. Use “Somar alguém à mão” para lançar quem trabalhou hoje."
         }
       />
 
