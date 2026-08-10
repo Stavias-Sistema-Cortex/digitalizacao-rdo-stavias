@@ -146,7 +146,8 @@ public class PostgresqlServicePriceCatalogRepository
     @Override
     public Optional<ServiceCatalogEntry> findService(String serviceId) {
         return jdbc.query("""
-                SELECT id, codigo, nome, descricao, status, criado_em
+                SELECT id, codigo, nome, descricao, status, criado_em,
+                       excluido_em, excluido_por
                 FROM catalogo_servico
                 WHERE id = ?
                 """, resultSet -> resultSet.next()
@@ -284,7 +285,8 @@ public class PostgresqlServicePriceCatalogRepository
                 obraId, normalizedQuery, snapshotRevision
         ).addValue("limit", limit + 1);
         StringBuilder pageSql = new StringBuilder("""
-                SELECT id, codigo, nome, descricao, status, criado_em
+                SELECT id, codigo, nome, descricao, status, criado_em,
+                       service.excluido_em, service.excluido_por
                 FROM catalogo_servico service
                 WHERE service.commit_revision <= :snapshotRevision
                 """).append(searchPredicate(normalizedQuery));
@@ -608,13 +610,16 @@ public class PostgresqlServicePriceCatalogRepository
 
     private static ServiceCatalogEntry mapService(java.sql.ResultSet resultSet)
             throws java.sql.SQLException {
+        java.sql.Timestamp excludedAt = resultSet.getTimestamp("excluido_em");
         return new ServiceCatalogEntry(
                 resultSet.getString("id"),
                 resultSet.getString("codigo"),
                 resultSet.getString("nome"),
                 resultSet.getString("descricao"),
                 resultSet.getString("status"),
-                resultSet.getTimestamp("criado_em").toInstant()
+                resultSet.getTimestamp("criado_em").toInstant(),
+                excludedAt == null ? null : excludedAt.toInstant(),
+                resultSet.getString("excluido_por")
         );
     }
 
