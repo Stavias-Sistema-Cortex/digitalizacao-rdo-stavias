@@ -73,16 +73,49 @@ class RdoLinhaIncompletaNaoDerrubaORdoIT {
     }
 
     private RdoCreateRequest.ServicoExecutadoItem linha(
+            String serviceId,
             String servicoNome,
             BigDecimal quantidade,
             String unidade
     ) {
         return new RdoCreateRequest.ServicoExecutadoItem(
-                UUID.randomUUID().toString(), null, null, servicoNome, null,
+                UUID.randomUUID().toString(), serviceId, null, servicoNome, null,
                 quantidade, unidade, null, null, null, null, "REGISTRADA",
                 false, false, null, null, null, null, null
         );
     }
+
+    /**
+     * O serviço do catálogo que a linha precisa nomear.
+     *
+     * <p>A cadeia é obrigatória de ponta a ponta: {@code catalogo_servico}
+     * referencia a obra que o autorizou e o colaborador que o criou, e o código
+     * obedece a um CHECK de formato — daí o contador em vez de um pedaço de
+     * UUID, que traz minúsculas.
+     */
+    private String inserirServico(String obraId, String nome) {
+        String autor = UUID.randomUUID().toString();
+        jdbc.update(
+                """
+                INSERT INTO colaborador (
+                    id, banco_origem, tabela_origem, pk_origem, nome, papel_acesso
+                ) VALUES (?, 'fixture', 'colaborador', ?, 'Fixture', 'ALFA')
+                """,
+                autor, autor
+        );
+        String id = UUID.randomUUID().toString();
+        jdbc.update(
+                """
+                INSERT INTO catalogo_servico (
+                    id, codigo, nome, status, obra_autorizadora_id, criado_por
+                ) VALUES (?, ?, ?, 'ACTIVE', ?, ?)
+                """,
+                id, "SERVICO." + (proximoCodigo++), nome, obraId, autor
+        );
+        return id;
+    }
+
+    private static int proximoCodigo = 1;
 
     private List<RdoResponse.ServicoExecutadoItem> gravar(
             String rdoId,
@@ -106,7 +139,7 @@ class RdoLinhaIncompletaNaoDerrubaORdoIT {
 
         List<RdoResponse.ServicoExecutadoItem> gravadas = gravar(
                 rdoId, obraId, data,
-                List.of(linha("Fresagem funcional", null, null))
+                List.of(linha(inserirServico(obraId, "Fresagem funcional"), "Fresagem funcional", null, null))
         );
 
         assertThat(gravadas).hasSize(1);
@@ -118,28 +151,24 @@ class RdoLinhaIncompletaNaoDerrubaORdoIT {
     }
 
     /**
-     * Serviço digitado sem escolher no catálogo continua sendo trabalho real.
-     * Ele entra como produção sem receita, que é o que ele é.
+     * A porta sem catálogo continua fechada, e de propósito.
+     *
+     * <p>Ela é reservada à importação histórica, que passa por controle de
+     * procedência. Abrir a porta normal do RDO deixaria nascer execução sem
+     * catálogo e sem a origem que só o outro caminho registra. Quem resolve o
+     * caso do trecho desenhado no mapa é o aparelho, guardando a linha até
+     * alguém escolher o serviço.
      */
     @Test
-    void gravaALinhaSemServicoDoCatalogo() {
+    void continuaRecusandoALinhaSemServicoDoCatalogo() {
         String obraId = inserirObra("sem-catalogo");
         LocalDate data = LocalDate.of(2026, 8, 11);
         String rdoId = inserirRdo(obraId, "RDO-0002", data);
 
-        gravar(
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> gravar(
                 rdoId, obraId, data,
-                List.of(linha("Limpeza de bueiro", new BigDecimal("12.500"), "UN"))
-        );
-
-        assertThat(jdbc.queryForObject(
-                "SELECT service_id FROM execucao_servico_rdo WHERE rdo_id = ?",
-                String.class, rdoId
-        )).isNull();
-        assertThat(jdbc.queryForObject(
-                "SELECT revenue_amount FROM execucao_servico_rdo WHERE rdo_id = ?",
-                BigDecimal.class, rdoId
-        )).isNull();
+                List.of(linha(null, "Limpeza de bueiro", new BigDecimal("12.500"), "UN"))
+        )).hasMessageContaining("RDO_REVENUE_SERVICE_REQUIRED");
     }
 
     /** Unidade ausente é falta de unidade, não uma unidade inventada. */
@@ -151,7 +180,7 @@ class RdoLinhaIncompletaNaoDerrubaORdoIT {
 
         gravar(
                 rdoId, obraId, data,
-                List.of(linha("Pintura de faixa", new BigDecimal("3.000"), null))
+                List.of(linha(inserirServico(obraId, "Pintura de faixa"), "Pintura de faixa", new BigDecimal("3.000"), null))
         );
 
         assertThat(jdbc.queryForObject(
@@ -173,8 +202,11 @@ class RdoLinhaIncompletaNaoDerrubaORdoIT {
         List<RdoResponse.ServicoExecutadoItem> gravadas = gravar(
                 rdoId, obraId, data,
                 List.of(
-                        linha(null, null, null),
-                        linha("Fresagem funcional", new BigDecimal("800.000"), "M2")
+                        linha(null, null, null, null),
+                        linha(
+                                inserirServico(obraId, "Fresagem funcional"),
+                                "Fresagem funcional", new BigDecimal("800.000"), "M2"
+                        )
                 )
         );
 
@@ -194,11 +226,13 @@ class RdoLinhaIncompletaNaoDerrubaORdoIT {
 
         List<RdoResponse.ServicoExecutadoItem> gravadas = gravar(
                 rdoId, obraId, data,
-                List.of(linha(null, new BigDecimal("45.000"), "M"))
+                List.of(linha(inserirServico(obraId, "Servico sem nome apontado"), null, new BigDecimal("45.000"), "M"))
         );
 
         assertThat(gravadas).hasSize(1);
-        assertThat(gravadas.getFirst().servicoNome()).isEqualTo("Serviço não identificado");
+        // O nome gravado é o do catálogo: é ele que identifica o serviço.
+        assertThat(gravadas.getFirst().servicoNome())
+                .isEqualTo("Servico sem nome apontado");
         assertThat(gravadas.getFirst().quantidadeExecutada())
                 .isEqualByComparingTo(new BigDecimal("45.000"));
     }
@@ -212,7 +246,7 @@ class RdoLinhaIncompletaNaoDerrubaORdoIT {
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> gravar(
                 rdoId, obraId, data,
-                List.of(linha("Fresagem", new BigDecimal("-1.000"), "M2"))
+                List.of(linha(inserirServico(obraId, "Fresagem"), "Fresagem", new BigDecimal("-1.000"), "M2"))
         )).hasMessageContaining("RDO_EXECUTION_QUANTITY_INVALID");
     }
 
@@ -239,7 +273,7 @@ class RdoLinhaIncompletaNaoDerrubaORdoIT {
         String id = UUID.randomUUID().toString();
         jdbc.update(
                 """
-                INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo, status_rdo)
+                INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo, status)
                 VALUES (?, ?, ?, ?, 'RASCUNHO')
                 """,
                 id, obraId, numero, java.sql.Date.valueOf(data)

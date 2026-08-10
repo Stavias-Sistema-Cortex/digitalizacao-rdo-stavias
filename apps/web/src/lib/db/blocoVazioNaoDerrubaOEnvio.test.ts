@@ -82,6 +82,7 @@ describe("bloco de serviço incompleto", () => {
       rascunho([
         {
           ...createEmptyServicoExecutado(),
+          serviceId: "srv-1",
           servicoNome: "Fresagem funcional",
           quantidadeExecutada: "",
         },
@@ -104,6 +105,7 @@ describe("bloco de serviço incompleto", () => {
       rascunho([
         {
           ...createEmptyServicoExecutado(),
+          serviceId: "srv-1",
           servicoNome: "Fresagem funcional",
           quantidadeExecutada: "",
         },
@@ -122,16 +124,13 @@ describe("bloco de serviço incompleto", () => {
     expect(await servicosEnviados()).toEqual([]);
   });
 
-  /*
-   * O trecho desenhado no mapa: nome sim, número não. É a linha que a
-   * clonagem e o desenho produzem, e era exatamente a que se perdia.
-   */
-  it("sobe o trecho desenhado no mapa, que nasce sem número", async () => {
+  it("sobe a linha sem unidade, que a tabela passou a aceitar", async () => {
     await saveLocalPendingRdoDraftAtomically(
       rascunho([
         {
           ...createEmptyServicoExecutado(),
-          servicoNome: "Serviço a identificar",
+          serviceId: "srv-1",
+          servicoNome: "Fresagem funcional",
           trechoInicial: "206,822",
           trechoFinal: "207,100",
           quantidadeExecutada: "",
@@ -148,11 +147,36 @@ describe("bloco de serviço incompleto", () => {
     });
   });
 
+  /*
+   * A linha sem serviço do catálogo fica no aparelho, e isso é deliberado.
+   *
+   * A porta sem identidade de catálogo é reservada à importação histórica, que
+   * passa por controle de procedência; o servidor recusa a porta normal com
+   * 400, que é terminal e custaria o RDO inteiro. É o caso do trecho desenhado
+   * no mapa, que nomeia o serviço mas não o identifica: ele espera alguém
+   * escolher o serviço, que é a única coisa que o completa.
+   */
+  it("guarda no aparelho a linha que ainda não escolheu o serviço", async () => {
+    await saveLocalPendingRdoDraftAtomically(
+      rascunho([
+        {
+          ...createEmptyServicoExecutado(),
+          servicoNome: "Serviço a identificar",
+          trechoInicial: "206,822",
+          trechoFinal: "207,100",
+        },
+      ]),
+    );
+
+    expect(await servicosEnviados()).toEqual([]);
+  });
+
   it("não mexe na linha que veio completa", async () => {
     await saveLocalPendingRdoDraftAtomically(
       rascunho([
         {
           ...createEmptyServicoExecutado(),
+          serviceId: "srv-1",
           servicoNome: "Fresagem funcional",
           quantidadeExecutada: 1250.5,
           unidade: "M²",

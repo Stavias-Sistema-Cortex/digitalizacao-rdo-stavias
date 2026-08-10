@@ -727,20 +727,28 @@ function isServicoExecutadoEmpty(
 /**
  * A linha que sobe.
  *
- * <p>Só a linha em branco fica para trás. A que tem serviço mas não tem
- * quantidade subia antes como se não existisse — o filtro exigia a quantidade,
- * e a linha desaparecia do envio sem nada dizer a quem a preencheu. O trecho
- * desenhado no mapa nascia exatamente assim, com nome e sem número, e nunca
- * chegava ao servidor.
+ * <p>Duas condições, e cada uma tem uma razão diferente.
  *
- * <p>Perder a linha era pior do que gravá-la incompleta: quantidade ausente é
+ * <p>A quantidade deixou de ser exigida. Ela era, e a linha apontada sem medida
+ * desaparecia do envio sem nada dizer a quem a preencheu — quantidade ausente é
  * "aconteceu, não medi", que é um fato registrável, e o servidor a lê como
- * zero. Receita continua exigindo serviço do catálogo, preço e validação.
+ * zero.
+ *
+ * <p>O serviço do catálogo continua sendo. Não é preciosismo do formulário: a
+ * entrada sem identidade de catálogo é reservada à importação histórica, que
+ * passa por controle de procedência, e o servidor recusa a porta normal. Como a
+ * recusa é 400 — terminal, que a fila não reenvia —, mandar a linha assim
+ * custaria o RDO inteiro. Ela fica no aparelho até alguém escolher o serviço,
+ * que é a única coisa que a completa.
  */
 function isServicoExecutadoSyncable(
   item: ServicoExecutadoDraft,
 ): boolean {
-  return !isServicoExecutadoEmpty(item);
+  if (isServicoExecutadoEmpty(item)) {
+    return false;
+  }
+
+  return item.serviceId.trim() !== "";
 }
 
 function isAlocacaoEmpty(

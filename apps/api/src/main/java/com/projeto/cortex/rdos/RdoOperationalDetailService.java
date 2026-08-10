@@ -677,18 +677,22 @@ public class RdoOperationalDetailService {
                 badRequest("RDO_LEGACY_ITEM_CONTRACT_UNSUPPORTED");
             }
             /*
-             * Serviço fora do catálogo entra como produção sem receita.
+             * O serviço do catálogo continua obrigatório, e a recusa é uma
+             * porta fechada de propósito.
              *
-             * `service_id` é anulável desde a V52, e `servico_nome` é o que a
-             * tabela realmente exige. Quem digitou o nome sem escolher no
-             * catálogo — ou quem desenhou o trecho no mapa, que nomeia o
-             * serviço mas não o identifica — registrava um trabalho real e
-             * recebia 400 no RDO inteiro. A receita não muda: ela continua
-             * exigindo serviço, preço e validação, e sem catálogo não há preço.
+             * Cheguei a abrir isto para deixar subir a linha nomeada sem
+             * catálogo, e estava errado: a entrada sem identidade de catálogo é
+             * reservada à importação histórica, que passa por controle de
+             * procedência. Abrir a porta normal do RDO para ela deixaria nascer
+             * execução sem catálogo e sem a procedência que só o outro caminho
+             * registra — duas linhas indistinguíveis no banco, uma delas sem
+             * origem declarada.
+             *
+             * O bloco incompleto se resolve antes daqui: o aparelho guarda a
+             * linha sem catálogo em vez de mandá-la, e sobe o que já tem
+             * serviço escolhido.
              */
-            CatalogService service = item.serviceId() == null || item.serviceId().isBlank()
-                    ? null
-                    : buscarServicoCatalogado(item.serviceId());
+            CatalogService service = buscarServicoCatalogado(item.serviceId());
             String unit = normalizeUnit(item.unidade());
             String status = normalizarStatusValidacao(item.statusValidacao());
             boolean rework = Boolean.TRUE.equals(item.retrabalho());
@@ -697,9 +701,7 @@ public class RdoOperationalDetailService {
                     status, rework, productionRejected
             );
             PriceChoice price = null;
-            if (service != null
-                    && item.priceVersionId() != null
-                    && !item.priceVersionId().isBlank()) {
+            if (item.priceVersionId() != null && !item.priceVersionId().isBlank()) {
                 PriceChoice validatedPrice = buscarPrecoExato(
                         item.priceVersionId(), obraId, service.id(), unit, dataRdo
                 );
@@ -763,22 +765,6 @@ public class RdoOperationalDetailService {
         return (item.serviceId() == null || item.serviceId().isBlank())
                 && (item.servicoNome() == null || item.servicoNome().isBlank())
                 && item.quantidadeExecutada() == null;
-    }
-
-    /**
-     * O nome que a linha sem catálogo carrega.
-     *
-     * <p>{@code servico_nome} é NOT NULL na tabela, e a linha pode chegar só
-     * com a quantidade. O rótulo genérico é preferível a recusar a medida: ele
-     * diz exatamente o que se sabe — que houve execução e que ninguém a
-     * nomeou — enquanto a recusa apagaria o número.
-     */
-    private String nomeDoServicoApontado(
-            RdoCreateRequest.ServicoExecutadoItem item
-    ) {
-        return item.servicoNome() == null || item.servicoNome().isBlank()
-                ? "Serviço não identificado"
-                : item.servicoNome().trim();
     }
 
     private CatalogService buscarServicoCatalogado(String rawServiceId) {
@@ -959,12 +945,7 @@ public class RdoOperationalDetailService {
                                     "|",
                                     rdoId,
                                     prepared.id(),
-                                    // Sem catálogo, o que identifica a linha é o
-                                    // nome apontado — é o que a tabela exige e o
-                                    // único nome que existe.
-                                    service == null
-                                            ? nomeDoServicoApontado(item)
-                                            : service.id(),
+                                    service.id(),
                                     nullToEmpty(price == null ? null : price.id()),
                                     prepared.quantity().toPlainString(),
                                     prepared.unit(),
@@ -1023,8 +1004,8 @@ public class RdoOperationalDetailService {
                     rdoId,
                     obraId,
                     programacaoId,
-                    service == null ? nomeDoServicoApontado(item) : service.name(),
-                    service == null ? null : service.id(),
+                    service.name(),
+                    service.id(),
                     price == null ? null : price.id(),
                     prepared.quantity(),
                     prepared.unit(),
@@ -1066,9 +1047,9 @@ public class RdoOperationalDetailService {
 
             response.add(new RdoResponse.ServicoExecutadoItem(
                     prepared.id(),
-                    service == null ? null : service.id(),
+                    service.id(),
                     price == null ? null : price.id(),
-                    service == null ? nomeDoServicoApontado(item) : service.name(),
+                    service.name(),
                     null,
                     prepared.quantity(),
                     prepared.unit(),

@@ -166,7 +166,7 @@ class QuilometroDoApontamentoIT {
         String id = UUID.randomUUID().toString();
         jdbc.update(
                 """
-                INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo, status_rdo)
+                INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo, status)
                 VALUES (?, ?, ?, ?, 'RASCUNHO')
                 """,
                 id, obraId, numero, java.sql.Date.valueOf(LocalDate.of(2026, 8, 10))
