@@ -1,3 +1,5 @@
+import "fake-indexeddb/auto";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const commitLocalMutation = vi.hoisted(() => vi.fn());
@@ -29,6 +31,12 @@ vi.mock("../../../lib/db/syncStateRepository", () => ({
 }));
 vi.mock("../../auth/authSession", () => ({
   getSession: () => sessionState.session,
+  // O descarte do desenho não sincronizado abre o banco local, e quem o abre
+  // pede o escopo antes: sem isto o módulo real é puxado no meio do teste.
+  requireDataScope: () => ({
+    ownerId: sessionState.session?.colaboradorId ?? "",
+    scopeMaterial: "ALFA",
+  }),
 }));
 vi.mock("./obraGeoCacheRepository", () => ({
   lerGeometriaLocal: () => Promise.resolve(geometriaLocal.registro),
@@ -257,19 +265,21 @@ describe("encerrarGeometria", () => {
     expect(registro.validoAte).not.toBeNull();
   });
 
-  /**
-   * Um desenho que nunca subiu não tem o que encerrar no servidor. É a única
-   * recusa que sobrou, e ela é sobre o servidor conhecer a geometria — não
-   * sobre a fila do dispositivo estar em dia.
+  /*
+   * O desenho que nunca subiu se apaga aqui mesmo. Recusar com "sincronize
+   * antes de encerrá-lo" fechava a porta justamente na janela em que o erro é
+   * visto: mesmo dia, sem rede, a linha acabou de sair torta. Não há o que
+   * encerrar do outro lado, então o registro e a criação pendente saem juntos
+   * do aparelho.
    */
-  it("não encerra um desenho que nunca chegou ao servidor", async () => {
+  it("descarta localmente o desenho que nunca chegou ao servidor", async () => {
     geometriaLocal.registro = {
       id: "geo-2",
       ownerId: "10000000-0000-4000-8000-000000000001",
       obraId: "obra-1",
       categoria: "TRECHO",
-      objetoTipo: "TRECHO",
-      objetoId: "obra-1",
+      objetoTipo: "RDO",
+      objetoId: "rdo-1",
       geometry: { type: "LineString", coordinates: [] },
       properties: {},
       fonte: "GESTAO_MAPA",
@@ -282,9 +292,10 @@ describe("encerrarGeometria", () => {
       updatedAt: "2026-03-01T00:00:00.000Z",
     };
 
-    await expect(encerrarGeometria("geo-2", "Trecho concluído")).rejects.toThrow(
-      /ainda não subiu/,
-    );
+    const encerrada = await encerrarGeometria("geo-2", "Desenho errado");
+
+    expect(encerrada.status).toBe("ENCERRADA");
+    // Nada sobe: não há geometria do outro lado para encerrar.
     expect(commitLocalMutation).not.toHaveBeenCalled();
   });
 

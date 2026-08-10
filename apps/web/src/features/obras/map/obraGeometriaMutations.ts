@@ -1,4 +1,5 @@
 import type { ObraGeometriaLocalRecord } from "../../../lib/db/db.types";
+import { getCortexDb } from "../../../lib/db/cortexDb";
 import { getSyncState, updateSyncState } from "../../../lib/db/syncStateRepository";
 import { commitLocalMutation } from "../../../lib/sync/localMutationCoordinator";
 import { getSession } from "../../auth/authSession";
@@ -325,10 +326,18 @@ export async function encerrarGeometria(
   ) {
     return existing;
   }
+  /*
+   * O desenho que nunca subiu se apaga aqui mesmo.
+   *
+   * Recusar com "sincronize antes de encerrá-lo" fechava a porta justamente na
+   * janela em que o erro é visto: mesmo dia, sem rede, a linha acabou de ser
+   * traçada torta. Não há o que encerrar do outro lado — o servidor não conhece
+   * esta geometria —, então o desfecho honesto é tirar do aparelho o registro e
+   * a criação que ainda esperava na fila, juntos.
+   */
   if (existing.versao <= 0) {
-    throw new Error(
-      "Este desenho ainda não subiu para o servidor. Sincronize antes de encerrá-lo.",
-    );
+    await descartarGeometriaNaoSincronizada(existing.id);
+    return { ...existing, status: "ENCERRADA", validoAte: agoraParaFallback };
   }
 
   const agora = new Date().toISOString();
@@ -365,4 +374,41 @@ export async function encerrarGeometria(
   });
 
   return next;
+}
+
+/**
+ * Tira do aparelho a geometria que o servidor nunca conheceu.
+ *
+ * <p>O registro e a criação pendente saem na mesma transação: apagar só o
+ * desenho deixaria a fila tentando criar para sempre uma linha que já não
+ * existe aqui, e cada tentativa voltaria como conflito órfão.
+ *
+ * <p>Recusa enquanto a criação estiver em voo. Apagar debaixo de um envio em
+ * curso faria a resposta do servidor chegar para uma geometria que este
+ * aparelho já esqueceu — e aí ela existiria lá e não aqui.
+ */
+async function descartarGeometriaNaoSincronizada(
+  featureId: string,
+): Promise<void> {
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    ["obra_geometrias", "outbox_mutations"],
+    "readwrite",
+  );
+  const geometrias = transaction.objectStore("obra_geometrias");
+  const outbox = transaction.objectStore("outbox_mutations");
+  const pendentes = await outbox.index("by-entity-id").getAll(featureId);
+
+  if (pendentes.some((mutation) => mutation.status === "SYNCING")) {
+    transaction.abort();
+    throw new Error(
+      "Este desenho está subindo agora. Tente de novo em instantes.",
+    );
+  }
+
+  for (const mutation of pendentes) {
+    await outbox.delete(mutation.clientMutationId);
+  }
+  await geometrias.delete(featureId);
+  await transaction.done;
 }

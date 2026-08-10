@@ -78,42 +78,54 @@ export function geometriaDoBalao(
 }
 
 /**
- * Só o ponto operacional sai do mapa por aqui.
+ * O que pode sair do mapa por aqui.
  *
- * <p>Um trecho desenhado pertence ao RDO do dia e sai junto com ele; oferecer
- * a lixeira na linha do trecho abriria um segundo jeito de apagar o mesmo
- * trabalho, por fora do apontamento. A localização da obra não é geometria
- * removível: é o cadastro dela.
+ * <p>O trecho ficou de fora por muito tempo, com uma justificativa que não se
+ * sustenta mais: dizia-se que o desenho pertence ao RDO e sai junto com ele, e
+ * que uma lixeira na linha abriria um segundo jeito de apagar o mesmo
+ * trabalho. Mas o desenho não carrega trabalho nenhum — o quilômetro mora só
+ * no apontamento, e a geometria guarda a forma, a rodovia, o sentido e a
+ * faixa. Apagar a linha não apaga medida alguma; o RDO segue afirmando o mesmo
+ * trecho.
+ *
+ * <p>Sem essa saída, quem desenhava torto e via depois não tinha o que fazer:
+ * a linha errada ficava no mapa da obra para sempre, ou custava o apontamento
+ * inteiro do dia.
+ *
+ * <p>A localização da obra continua fora: ela não é geometria removível, é o
+ * cadastro da obra.
  */
-export function pontoPodeSairDoMapa(
+export function geometriaPodeSairDoMapa(
   properties: Record<string, unknown>,
 ): boolean {
   return (
-    properties.categoria === "PONTO_OPERACIONAL" &&
+    (properties.categoria === "PONTO_OPERACIONAL" ||
+      properties.categoria === "TRECHO") &&
     geometriaDoBalao(properties) !== null
   );
 }
 
-/**
- * A lixeira do balão, quando aquele ponto pode sair do mapa.
- *
- * <p>Elemento e não texto: o botão precisa de um ouvinte de verdade, e uma
- * string de HTML no balão não tem como carregar um. Devolve nulo quando não há
- * o que remover, para quem monta o balão não precisar repetir a regra.
- */
+/** O nome do que a lixeira remove, para o rótulo dizer a verdade. */
+function rotuloDoRemovivel(properties: Record<string, unknown>): string {
+  return properties.categoria === "TRECHO"
+    ? "trecho desenhado"
+    : "ponto operacional";
+}
+
 export function lixeiraDoBalao(
   properties: Record<string, unknown>,
   aoRemover: ((id: string) => void) | null,
 ): HTMLButtonElement | null {
   const id = geometriaDoBalao(properties);
-  if (!id || !aoRemover || !pontoPodeSairDoMapa(properties)) {
+  if (!id || !aoRemover || !geometriaPodeSairDoMapa(properties)) {
     return null;
   }
+  const rotulo = `Remover ${rotuloDoRemovivel(properties)}`;
   const botao = document.createElement("button");
   botao.type = "button";
   botao.className = "mapa-balao-remover";
-  botao.title = "Remover ponto operacional";
-  botao.setAttribute("aria-label", "Remover ponto operacional");
+  botao.title = rotulo;
+  botao.setAttribute("aria-label", rotulo);
   botao.innerHTML = LIXEIRA_SVG;
   botao.addEventListener("click", (evento) => {
     // O clique é do botão, não do mapa: sem isto o painel vetorial reabre o
