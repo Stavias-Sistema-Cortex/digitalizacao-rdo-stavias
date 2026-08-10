@@ -156,43 +156,59 @@ public class ColaboradorDaObraService {
         );
     }
 
+    /**
+     * Quem pode figurar como mão de obra de um RDO.
+     *
+     * <p>Esta lista não monta tela: ela existe para o reparo. Quando uma
+     * mutação de RDO volta recusada por vínculo, o aparelho pergunta aqui quais
+     * dos identificadores citados ainda valem e <em>remove</em> os que não
+     * valem. Uma resposta estreita demais não deixa de mostrar alguém — ela
+     * apaga alguém de um apontamento já feito.
+     *
+     * <p>Por isso ela acompanha a regra do contexto de criação, e não o
+     * contrário. Lia apenas {@code vinculo_colaborador_obra} — mais estreita até
+     * do que a lista antiga da tela, que já somava as equipes —, então já
+     * apagava silenciosamente quem entrou na obra por equipe. Agora que a tela
+     * oferece o quadro inteiro, manter o recorte antigo faria o reparo desfazer
+     * exatamente o que a pessoa acabou de apontar.
+     *
+     * <p>O que continua inválido é quem saiu do quadro: {@code ativo} falso ou
+     * {@code deletado_em} preenchido. Esse é o vínculo que de fato acabou, e
+     * apagá-lo do rascunho é o serviço que este reparo presta.
+     *
+     * <p>O teto subiu junto com o escopo. Ele existe para a resposta não crescer
+     * sem limite, e {@code complete} falso faz o aparelho recusar o reparo em
+     * vez de apagar por engano — mas um teto calibrado para uma obra recusaria
+     * todo reparo numa empresa inteira. São identificadores, e mesmo no teto
+     * novo a resposta é pequena.
+     */
     public ColaboradoresAutorizadosObraResponse listarAutorizados(
             String obraId
     ) {
         Integer total = jdbcTemplate.queryForObject(
                 """
-                SELECT count(DISTINCT c.id)
+                SELECT count(*)
                 FROM colaborador c
-                JOIN vinculo_colaborador_obra link
-                  ON link.colaborador_id = c.id
-                 AND link.obra_id = ?
-                 AND link.status = 'ATIVO'
                 WHERE c.ativo = TRUE
                   AND c.deletado_em IS NULL
                 """,
-                Integer.class,
-                obraId
+                Integer.class
         );
         List<String> ids = jdbcTemplate.queryForList(
                 """
-                SELECT DISTINCT c.id
+                SELECT c.id
                 FROM colaborador c
-                JOIN vinculo_colaborador_obra link
-                  ON link.colaborador_id = c.id
-                 AND link.obra_id = ?
-                 AND link.status = 'ATIVO'
                 WHERE c.ativo = TRUE
                   AND c.deletado_em IS NULL
                 ORDER BY c.id
-                LIMIT 501
+                LIMIT 5001
                 """,
-                String.class,
-                obraId
+                String.class
         );
         int exactTotal = total == null ? 0 : total;
-        boolean complete = exactTotal <= 500 && ids.size() == exactTotal;
+        boolean complete = exactTotal <= 5000 && ids.size() == exactTotal;
         return new ColaboradoresAutorizadosObraResponse(
-                ids.stream().limit(500).toList(),
+                ids.stream().limit(5000).toList(),
                 exactTotal,
                 complete
         );
