@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import type { ExtremoDoTrecho, PontoGeografico } from "./rascunhoDoTrecho";
-import { numeroDigitado } from "../../../lib/numeros/numeroDigitado";
+import { numeroSemMilhar } from "../../../lib/numeros/numeroDigitado";
 
 interface CampoDeExtremoProps {
   extremo: ExtremoDoTrecho;
@@ -41,8 +41,8 @@ export function CampoDeExtremo({
   const [lng, setLng] = useState(() => comoTexto(valor?.lng));
 
   const propagar = (proximoLat: string, proximoLng: string) => {
-    const latitude = numeroDigitado(proximoLat);
-    const longitude = numeroDigitado(proximoLng);
+    const latitude = numeroSemMilhar(proximoLat);
+    const longitude = numeroSemMilhar(proximoLng);
     if (
       latitude !== null &&
       longitude !== null &&

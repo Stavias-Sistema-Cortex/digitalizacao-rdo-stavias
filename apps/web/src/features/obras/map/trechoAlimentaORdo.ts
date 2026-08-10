@@ -60,7 +60,7 @@ export function execucaoDoTrechoDesenhado(input: {
     // conhece é quem executou. Nascem vazias para que área e volume fiquem em
     // branco em vez de zero.
     larguraM: "",
-    espessuraCm: "",
+    espessuraM: "",
     localizacao: limpo(cadastro.rodovia),
     turno: "",
     // Registrada, não validada: o desenho é declaração de quem estava lá, e

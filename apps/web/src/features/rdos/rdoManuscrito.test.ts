@@ -189,7 +189,7 @@ describe("leitura do RDO preenchido à mão", () => {
     ]);
   });
 
-  it("lê o trecho de produção e converte a espessura para centímetros", () => {
+  it("lê o trecho de produção e guarda a espessura em metros", () => {
     const { draft } = interpretarRdoManuscrito([frente(), verso()]);
 
     expect(draft.servicosExecutados).toEqual([
@@ -197,7 +197,7 @@ describe("leitura do RDO preenchido à mão", () => {
         trechoInicial: "206,822",
         trechoFinal: "206,685",
         larguraM: 3.9,
-        espessuraCm: 7,
+        espessuraM: 0.07,
         pista: "SUL - ALÇA DE ACESSO",
         servicoNome: "FRESAGEM FUNCIONAL",
       }),

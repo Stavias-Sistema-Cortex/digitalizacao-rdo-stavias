@@ -388,11 +388,10 @@ export function buildRdoExportProjection(snapshot: RdoWorkbookSnapshot): RdoExpo
     // As colunas LARG. e Espessura já existiam no template e nos dois PDFs;
     // o que faltava era o valor chegar. Comprimento é conta, não campo — o
     // trecho já diz a extensão, e guardá-la ao lado das parcelas criaria duas
-    // versões da mesma verdade. Espessura vai em metros porque é assim que a
-    // planilha e o PDF a esperam, e a captura é em centímetros.
+    // versões da mesma verdade. Espessura vai em metros, que é o que a
+    // planilha e o PDF esperam e agora também o que se captura.
     const medidas = medidasDoServico(item);
-    const espessura = number(item.espessuraCm);
-    return { start: text(item.trechoInicial), end: text(item.trechoFinal), itemNumber: "", length: medidas.comprimentoM, width: number(item.larguraM), thicknessMeters: espessura === null ? null : espessura / 100, roadway: firstNonBlank(item.pista, item.localizacao), lane: text(item.faixa), serviceOrder: "", activity: [text(item.servicoNome), quantityText ? `Quantidade: ${quantityText}` : ""].filter(Boolean).join(" | ") };
+    return { start: text(item.trechoInicial), end: text(item.trechoFinal), itemNumber: "", length: medidas.comprimentoM, width: number(item.larguraM), thicknessMeters: number(item.espessuraM), roadway: firstNonBlank(item.pista, item.localizacao), lane: text(item.faixa), serviceOrder: "", activity: [text(item.servicoNome), quantityText ? `Quantidade: ${quantityText}` : ""].filter(Boolean).join(" | ") };
   })];
   assertRows(workforce.length, MAX_WORKFORCE_GROUPS, "RDO_EXPORT_OVERFLOW_WORKFORCE", "grupos de mão de obra");
   assertRows(equipment.length, MAX_EQUIPMENT, "RDO_EXPORT_OVERFLOW_EQUIPMENT", "equipamentos/veículos");

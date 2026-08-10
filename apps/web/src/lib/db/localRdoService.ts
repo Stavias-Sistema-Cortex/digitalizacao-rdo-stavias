@@ -635,8 +635,8 @@ function buildServicoExecutadoPayload(
     // dia inteiro. Ausência vira null, que é o que o banco entende por medida
     // não informada.
     larguraM: typeof item.larguraM === "number" ? item.larguraM : null,
-    espessuraCm:
-      typeof item.espessuraCm === "number" ? item.espessuraCm : null,
+    espessuraM:
+      typeof item.espessuraM === "number" ? item.espessuraM : null,
     localizacao: nullIfEmpty(item.localizacao),
     turno: nullIfEmpty(item.turno),
     statusValidacao: item.statusValidacao,
@@ -683,7 +683,7 @@ function buildServicoExecutadoLocalPayload(
     pista: item.pista,
     faixa: item.faixa,
     larguraM: item.larguraM ?? "",
-    espessuraCm: item.espessuraCm ?? "",
+    espessuraM: item.espessuraM ?? "",
     localizacao: item.localizacao,
     turno: item.turno,
     statusValidacao: item.statusValidacao,

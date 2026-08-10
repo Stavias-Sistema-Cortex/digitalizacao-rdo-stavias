@@ -44,6 +44,24 @@ function asNumericInput(value: unknown): NumericInput {
   return typeof value === "number" ? value : "";
 }
 
+/**
+ * A espessura gravada antes de ela passar a ser em metros.
+ *
+ * <p>O aparelho guarda RDOs que podem ter sido escritos há semanas, e neles a
+ * espessura está em centímetros. Ler cinco centímetros como cinco metros
+ * multiplicaria o volume por cem e o erro sairia daqui direto para a medição,
+ * sem passar por nenhuma tela que o denunciasse. A conversão acontece uma vez,
+ * na leitura, e o rascunho volta a gravar já em metros.
+ */
+function espessuraEmMetros(item: Record<string, unknown>): NumericInput {
+  if (typeof item.espessuraM === "number") {
+    return item.espessuraM;
+  }
+  return typeof item.espessuraCm === "number"
+    ? Math.round((item.espessuraCm / 100) * 1e6) / 1e6
+    : "";
+}
+
 function mapMaoObra(value: unknown): MaoObraDraft[] {
   return asArray(value).map((rawItem) => {
     const item = asObject(rawItem);
@@ -185,7 +203,7 @@ function mapServicosExecutados(
       pista: asString(item.pista),
       faixa: asString(item.faixa),
       larguraM: asNumericInput(item.larguraM),
-      espessuraCm: asNumericInput(item.espessuraCm),
+      espessuraM: espessuraEmMetros(item),
       localizacao: asString(item.localizacao),
       turno: asString(
         item.turno,

@@ -56,7 +56,7 @@ describe("medidas do serviço executado", () => {
     trechoInicial: "400",
     trechoFinal: "398",
     larguraM: 7 as const,
-    espessuraCm: 5 as const,
+    espessuraM: 0.05 as const,
   };
 
   it("fecha comprimento, área e volume a partir das parcelas", () => {
@@ -77,7 +77,7 @@ describe("medidas do serviço executado", () => {
       areaM2: null,
       volumeM3: null,
     });
-    expect(medidasDoServico({ ...base, espessuraCm: "" })).toEqual({
+    expect(medidasDoServico({ ...base, espessuraM: "" })).toEqual({
       comprimentoM: 2000,
       areaM2: 14000,
       volumeM3: null,

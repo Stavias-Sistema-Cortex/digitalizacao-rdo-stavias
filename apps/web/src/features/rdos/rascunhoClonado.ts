@@ -72,7 +72,7 @@ function servicoSemAProducaoDoDia(
     localId: novoId(),
     quantidadeExecutada: "",
     larguraM: "",
-    espessuraCm: "",
+    espessuraM: "",
     statusValidacao: "REGISTRADA",
     retrabalho: false,
     producaoRejeitada: false,
