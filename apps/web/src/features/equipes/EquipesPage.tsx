@@ -68,6 +68,10 @@ import {
   replaceLocalTeamWorksites,
 } from "./teamLocalRepository";
 import {
+  listarObrasAdmin,
+  type ObraAdminApi,
+} from "../obras/gestao/gestaoObrasApi";
+import {
   filterTeams,
   teamHistoryLabel,
   type TeamFilters,
@@ -172,6 +176,9 @@ export function EquipesPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [obrasParaAssociar, setObrasParaAssociar] = useState<ObraAdminApi[]>([]);
+  const [obraEscolhida, setObraEscolhida] = useState("");
+  const [associandoObra, setAssociandoObra] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
   const [obras, setObras] = useState<ObraLocalRecord[]>([]);
   const [collaborators, setCollaborators] = useState<ColaboradorLocalRecord[]>([]);
@@ -750,6 +757,91 @@ export function EquipesPage() {
     return criada.id;
   }
 
+  /*
+   * A equipe nasce numa obra e ficava presa a ela: o backend sabe associá-la a
+   * outras desde sempre, e a tela nunca ofereceu o gesto. Sem ele, a única
+   * forma de uma equipe alcançar uma obra nova era criar outra equipe.
+   */
+  const equipeAbertaId = selectedTeam?.id ?? null;
+  useEffect(() => {
+    if (!alfa || !equipeAbertaId) return;
+    let cancelled = false;
+    void listarObrasAdmin()
+      .then((lista) => {
+        if (!cancelled) setObrasParaAssociar(lista);
+      })
+      .catch(() => {
+        if (!cancelled) setObrasParaAssociar([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [alfa, equipeAbertaId]);
+
+  const obrasAssociaveis = useMemo(() => {
+    if (!selectedTeam) return [];
+    const jaLigadas = new Set(
+      worksites
+        .filter((link) => link.status === "ATIVO")
+        .map((link) => link.obraId),
+    );
+    jaLigadas.add(selectedTeam.obraPrincipalId);
+    return obrasParaAssociar.filter((obra) => !jaLigadas.has(obra.id));
+  }, [obrasParaAssociar, worksites, selectedTeam]);
+
+  async function associarObra() {
+    if (!selectedTeam || !obraEscolhida) return;
+    const obra = obrasParaAssociar.find((item) => item.id === obraEscolhida);
+    if (!obra) return;
+
+    setAssociandoObra(true);
+    setActionError(null);
+    try {
+      const associacaoId = crypto.randomUUID();
+      const inicioEm = new Date().toISOString().slice(0, 19);
+      const updated = await queueTeamLinkChange(selectedTeam, {
+        action: "ADICIONAR_OBRA",
+        vinculo: {
+          id: associacaoId,
+          obraId: obra.id,
+          inicioEm,
+        },
+        // Associar obra não mexe em quem está na equipe; mandar a lista atual
+        // é o que impede a projeção local de zerar os membros no caminho.
+        projectedMembers: selectedTeam.membros,
+      });
+      setSelectedTeam(updated);
+      setTeams((current) => current.map((team) =>
+        team.id === updated.id ? updated : team
+      ));
+      setWorksites((current) => [
+        {
+          id: associacaoId,
+          equipeId: selectedTeam.id,
+          obraId: obra.id,
+          obraNome: obra.nome ?? obra.codigoContrato ?? obra.id,
+          status: "ATIVO" as const,
+          inicioEm,
+          fimEm: null,
+          motivoEncerramento: null,
+          versaoEntidade: 1,
+          criadoEm: inicioEm,
+          atualizadoEm: inicioEm,
+        },
+        ...current,
+      ]);
+      setObraEscolhida("");
+    } catch (erro: unknown) {
+      setActionError(
+        erro instanceof Error
+          ? erro.message
+          : "Não foi possível associar a obra à equipe.",
+      );
+    } finally {
+      setAssociandoObra(false);
+    }
+  }
+
   return (
     <CortexShell
       active="equipes"
@@ -924,6 +1016,37 @@ export function EquipesPage() {
 
               <section className="teams-section teams-relations">
                 <header><h3>Obras vinculadas</h3></header>
+                {alfa && selectedTeam.status === "ATIVA" && (
+                  <div className="teams-associar-obra">
+                    <label htmlFor="teams-obra-associar">Associar a outra obra</label>
+                    <div className="teams-associar-obra-linha">
+                      <select
+                        id="teams-obra-associar"
+                        value={obraEscolhida}
+                        onChange={(event) => setObraEscolhida(event.target.value)}
+                        disabled={obrasAssociaveis.length === 0 || associandoObra}
+                      >
+                        <option value="">
+                          {obrasAssociaveis.length === 0
+                            ? "Nenhuma outra obra disponível"
+                            : "Selecione uma obra…"}
+                        </option>
+                        {obrasAssociaveis.map((obra) => (
+                          <option key={obra.id} value={obra.id}>
+                            {obra.nome ?? obra.codigoContrato ?? obra.id}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => void associarObra()}
+                        disabled={!obraEscolhida || associandoObra}
+                      >
+                        {associandoObra ? "Associando…" : "Associar"}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="teams-relation-list">{worksites.length > 0 ? worksites.map((link) => <article key={link.id}><strong>{link.obraNome}</strong><span>{link.status === "ATIVO" ? "Atuação ativa" : "Vínculo encerrado"} · {formatDate(link.inicioEm)} — {formatDate(link.fimEm)}</span></article>) : <article><strong>{selectedTeam.obraNome}</strong><span>Obra principal da equipe</span></article>}</div>
               </section>
 

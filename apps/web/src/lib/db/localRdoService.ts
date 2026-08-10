@@ -25,6 +25,7 @@ import {
   type RdoContextSessionGuard,
 } from "../../features/rdos/rdoCreationContextRepository";
 import { validPreviousRdo } from "../../features/rdos/rdoCreationContext";
+import { ApiError } from "../api/apiError";
 import { getCortexDb } from "./cortexDb";
 import type {
   CanonicalOperationalEventRecord,
@@ -1974,10 +1975,41 @@ export async function saveLocalPendingRdoDraftAtomically(
   return { rdo, mutation: committed.mutation };
 }
 
+/**
+ * Por que o contexto não veio, e quanto vale insistir.
+ *
+ * <p>Falta de rede passa; falta de acesso não passa sozinha. Tratar as duas
+ * como a mesma coisa fazia o aparelho bater no servidor a cada minuto, para
+ * sempre, dizendo "tentará novamente" a alguém que não tinha o que esperar —
+ * o RDO precisava que alguém o vinculasse à obra, e a tarja não dizia isso.
+ */
+type MotivoDoContextoAusente = "INDISPONIVEL" | "SEM_ACESSO";
+
+const CONTEXTO_AUSENTE: Record<
+  MotivoDoContextoAusente,
+  { mensagem: string; esperaMs: number }
+> = {
+  INDISPONIVEL: {
+    mensagem:
+      "Contexto da obra indisponível; a sincronização tentará novamente.",
+    esperaMs: 60_000,
+  },
+  SEM_ACESSO: {
+    mensagem:
+      "Você não tem acesso a esta obra, então o RDO não pode subir. "
+      + "Peça vínculo com a obra em Gestão de Obras; o envio segue sozinho "
+      + "assim que o acesso existir.",
+    // Acesso é concedido por gente, não por retentativa. Insistir de minuto em
+    // minuto só gasta bateria e rede de quem está em campo.
+    esperaMs: 900_000,
+  },
+};
+
 async function keepRdoContextHydrationRetryable(
   clientMutationId: string,
   guard: SyncSessionGuard,
   timestamp: string,
+  motivo: MotivoDoContextoAusente = "INDISPONIVEL",
 ): Promise<void> {
   assertSyncSession(guard);
   const database = await getCortexDb();
@@ -1998,15 +2030,15 @@ async function keepRdoContextHydrationRetryable(
         !isCanonicalOutboxMutation(current) ||
         current.blockedReason === "RDO_CREATION_CONTEXT_REQUIRED"
       )) {
+    const desfecho = CONTEXTO_AUSENTE[motivo];
     await store.put({
       ...current,
       status: "PENDING",
-      ultimoErro:
-        "Contexto da obra indisponível; a sincronização tentará novamente.",
+      ultimoErro: desfecho.mensagem,
       conflito: null,
       blockedReason: "RDO_CREATION_CONTEXT_REQUIRED",
       nextAttemptAt: new Date(
-        Date.parse(timestamp) + 60_000,
+        Date.parse(timestamp) + desfecho.esperaMs,
       ).toISOString(),
       updatedAt: timestamp,
     });
@@ -2064,12 +2096,15 @@ export async function hydrateBlockedRdoCreationContextsForSync(
         rdo.obraId,
         rdo.dataRdo,
       );
-    } catch {
+    } catch (caught: unknown) {
       assertSyncSession(guard);
       await keepRdoContextHydrationRetryable(
         mutation.clientMutationId,
         guard,
         timestamp,
+        caught instanceof ApiError && caught.status === 403
+          ? "SEM_ACESSO"
+          : "INDISPONIVEL",
       );
       continue;
     }

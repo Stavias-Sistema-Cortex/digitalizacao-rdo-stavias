@@ -1414,3 +1414,30 @@
   font-size: 0.78rem;
   font-weight: 600;
 }
+
+/* Associar a equipe a outra obra: o gesto que faltava para a equipe não ficar
+   presa à obra em que nasceu. */
+.teams-associar-obra {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.teams-associar-obra label {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+
+.teams-associar-obra-linha {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.teams-associar-obra-linha select {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
