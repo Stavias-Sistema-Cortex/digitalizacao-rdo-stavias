@@ -13,6 +13,9 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -119,89 +122,120 @@ class AcademySourceAdapterMysqlSnapshotIT {
         AtomicInteger executions = new AtomicInteger();
         AtomicReference<PreparedStatement> paginatedStatement =
                 new AtomicReference<>();
+        /*
+         * O spy do Mockito não embrulha o objeto: ele o copia. O adaptador
+         * fecha o que recebe — a cópia — e a conexão real aberta aqui, junto
+         * com os statements reais criados a partir dela, ficaria viva até o fim
+         * da JVM. Quem abre é quem fecha, e é por isso que a lista existe: o
+         * statement nasce dentro de um `doAnswer` chamado pela thread do
+         * executor, então não há escopo léxico que o alcance.
+         */
+        List<PreparedStatement> realStatements =
+                Collections.synchronizedList(new ArrayList<>());
 
-        Connection realReader = DriverManager.getConnection(
-                jdbcUrl(),
-                READER_USER,
-                READER_PASSWORD
-        );
-        Connection observedReader = spy(realReader);
-        doAnswer(invocation -> {
-            PreparedStatement observedStatement = spy(
-                    realReader.prepareStatement(
-                            invocation.getArgument(0, String.class)
-                    )
-            );
-            doAnswer(query -> {
-                Object result = query.callRealMethod();
-                if (executions.incrementAndGet() == 1) {
-                    firstPageRead.countDown();
-                    if (!sourceMutated.await(10, TimeUnit.SECONDS)) {
-                        throw new SQLException(
-                                "fixture mutation did not complete"
-                        );
-                    }
-                }
-                return result;
-            }).when(observedStatement).executeQuery();
-            paginatedStatement.set(observedStatement);
-            return observedStatement;
-        }).when(observedReader).prepareStatement(anyString());
-
-        AcademySourceAdapter adapter = new AcademySourceAdapter(
-                jdbcUrl(),
-                READER_USER,
-                READER_PASSWORD,
-                () -> observedReader
-        );
-        ExecutorService executor = Executors.newSingleThreadExecutor();
         try (
-                Connection writer = adminConnection()
+                Connection realReader = DriverManager.getConnection(
+                        jdbcUrl(),
+                        READER_USER,
+                        READER_PASSWORD
+                )
         ) {
-            Future<AcademyUserSnapshot> future = executor.submit(
-                    () -> adapter.fetchCompleteSnapshot(2)
+            Connection observedReader = spy(realReader);
+            doAnswer(invocation -> {
+                PreparedStatement realStatement = realReader.prepareStatement(
+                        invocation.getArgument(0, String.class)
+                );
+                realStatements.add(realStatement);
+                PreparedStatement observedStatement = spy(realStatement);
+                doAnswer(query -> {
+                    Object result = query.callRealMethod();
+                    if (executions.incrementAndGet() == 1) {
+                        firstPageRead.countDown();
+                        if (!sourceMutated.await(10, TimeUnit.SECONDS)) {
+                            throw new SQLException(
+                                    "fixture mutation did not complete"
+                            );
+                        }
+                    }
+                    return result;
+                }).when(observedStatement).executeQuery();
+                paginatedStatement.set(observedStatement);
+                return observedStatement;
+            }).when(observedReader).prepareStatement(anyString());
+
+            AcademySourceAdapter adapter = new AcademySourceAdapter(
+                    jdbcUrl(),
+                    READER_USER,
+                    READER_PASSWORD,
+                    () -> observedReader
             );
-            assertThat(firstPageRead.await(10, TimeUnit.SECONDS)).isTrue();
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try (
+                    Connection writer = adminConnection()
+            ) {
+                Future<AcademyUserSnapshot> future = executor.submit(
+                        () -> adapter.fetchCompleteSnapshot(2)
+                );
+                assertThat(firstPageRead.await(10, TimeUnit.SECONDS)).isTrue();
 
-            writer.setAutoCommit(false);
-            try (Statement statement = writer.createStatement()) {
-                statement.executeUpdate("""
-                        INSERT INTO usuarios (
-                            id_usuario, cpf, nome, email, ativo,
-                            id_grupo, id_perfil, criado_em
-                        ) VALUES (
-                            3500000000, '12345678909',
-                            'Academy 3500000000 late',
-                            'academy25@example.invalid', 1, 1, 1, NOW(6)
+                writer.setAutoCommit(false);
+                try (Statement statement = writer.createStatement()) {
+                    statement.executeUpdate("""
+                            INSERT INTO usuarios (
+                                id_usuario, cpf, nome, email, ativo,
+                                id_grupo, id_perfil, criado_em
+                            ) VALUES (
+                                3500000000, '12345678909',
+                                'Academy 3500000000 late',
+                                'academy25@example.invalid', 1, 1, 1, NOW(6)
+                            )
+                            """);
+                    statement.executeUpdate("""
+                            UPDATE usuarios
+                            SET nome = 'Academy 4000000000 changed'
+                            WHERE id_usuario = 4000000000
+                            """);
+                }
+                writer.commit();
+                sourceMutated.countDown();
+
+                AcademyUserSnapshot snapshot =
+                        future.get(10, TimeUnit.SECONDS);
+                assertThat(snapshot.complete()).isTrue();
+                assertThat(snapshot.users())
+                        .extracting(
+                                AcademySourceAdapter
+                                        .UsuarioAcademyRecord::idUsuario
                         )
-                        """);
-                statement.executeUpdate("""
-                        UPDATE usuarios
-                        SET nome = 'Academy 4000000000 changed'
-                        WHERE id_usuario = 4000000000
-                        """);
+                        .containsExactly(10L, 3_000_000_000L, 4_000_000_000L);
+                assertThat(snapshot.users())
+                        .filteredOn(user -> user.idUsuario() == 4_000_000_000L)
+                        .extracting(
+                                AcademySourceAdapter
+                                        .UsuarioAcademyRecord::nome
+                        )
+                        .containsExactly("Academy 4000000000 original");
+                verify(paginatedStatement.get(), times(2)).executeQuery();
+            } finally {
+                sourceMutated.countDown();
+                executor.shutdownNow();
+                /*
+                 * shutdownNow interrompe, mas não espera. Fechar a lista com a
+                 * thread do adaptador ainda viva seria iterar enquanto ela
+                 * adiciona — e a ConcurrentModificationException nascida aqui
+                 * substituiria a asserção que derrubou o teste, exatamente o
+                 * que este finally existe para não fazer.
+                 */
+                try {
+                    if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+                        executor.shutdownNow();
+                    }
+                } catch (InterruptedException interrupted) {
+                    // Lançar do finally esconderia o erro original do teste.
+                    Thread.currentThread().interrupt();
+                }
+                closeQuietly(realStatements);
             }
-            writer.commit();
-            sourceMutated.countDown();
-
-            AcademyUserSnapshot snapshot =
-                    future.get(10, TimeUnit.SECONDS);
-            assertThat(snapshot.complete()).isTrue();
-            assertThat(snapshot.users())
-                    .extracting(
-                            AcademySourceAdapter.UsuarioAcademyRecord::idUsuario
-                    )
-                    .containsExactly(10L, 3_000_000_000L, 4_000_000_000L);
-            assertThat(snapshot.users())
-                    .filteredOn(user -> user.idUsuario() == 4_000_000_000L)
-                    .extracting(
-                            AcademySourceAdapter.UsuarioAcademyRecord::nome
-                    )
-                    .containsExactly("Academy 4000000000 original");
-            verify(paginatedStatement.get(), times(2)).executeQuery();
-        } finally {
-            sourceMutated.countDown();
-            executor.shutdownNow();
         }
 
         try (
@@ -229,6 +263,25 @@ class AcademySourceAdapterMysqlSnapshotIT {
                             "name",
                             "Academy 4000000000 changed"
                     );
+        }
+    }
+
+    /**
+     * Fecha os statements da fixture sem deixar o fechamento mascarar a falha
+     * que realmente interessa: no {@code finally}, uma exceção aqui substituiria
+     * o erro da asserção que derrubou o teste.
+     */
+    private void closeQuietly(List<PreparedStatement> statements) {
+        // Lista sincronizada exige lock manual para iterar; sem ele, uma
+        // thread retardatária adicionando durante o for seria CME daqui.
+        synchronized (statements) {
+            for (PreparedStatement statement : statements) {
+                try {
+                    statement.close();
+                } catch (SQLException ignored) {
+                    // A fixture já cumpriu o papel; o desfecho vale mais.
+                }
+            }
         }
     }
 

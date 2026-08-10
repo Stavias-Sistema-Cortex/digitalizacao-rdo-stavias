@@ -38,3 +38,6 @@ xcrun_db
 
 # Cache do Vitest, commitado por engano
 node_modules/
+
+# Configuração local do Claude Code (pessoal, não versionada)
+.claude/settings.local.json

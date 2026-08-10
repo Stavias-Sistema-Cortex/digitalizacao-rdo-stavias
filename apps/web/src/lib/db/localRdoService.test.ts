@@ -15,7 +15,6 @@ import {
   buildRdoSyncPayloadFromLocalRecord,
   canCoalesceLegacyRdoMutation,
   rdoDraftFromLocalRecord,
-  rdoUpdateCreationContextBlockReason,
   validateRdoDraftForSync,
 } from "./localRdoService";
 
@@ -178,33 +177,30 @@ describe("RDO creation-context sync gate", () => {
     expect(rdoCreationContextBlockReason(draft)).toBeNull();
   });
 
-  it("permite null apenas ao atualizar um RDO persistido anterior à V48", () => {
+  /*
+   * A criação continua exigindo o recibo — é dela que ele fala. O que saiu foi
+   * a exigência na atualização, que guardava um dado descartado: em
+   * `RdoSyncOperationHandler.updateDraft` o servidor sobrescreve
+   * `creationContextVersion` com o valor já persistido antes de montar a
+   * requisição, então o que o envelope carrega ali nunca chega a ser lido.
+   */
+  it("cobra o recibo na criação, e só na criação", async () => {
+    const localRdoService = await import("./localRdoService");
     const draft = validDraft();
     draft.creationContextVersion = null;
-    const legacyPersisted: LocalRdoRecord = {
-      id: draft.id,
-      obraId: draft.obraId,
-      programacaoId: null,
-      numeroRdo: draft.numeroRdo,
-      dataRdo: draft.dataRdo,
-      statusRdo: "RASCUNHO",
-      syncStatus: "SYNCED",
-      versaoEntidade: 7,
-      payload: { observacoes: "criado antes da V48" },
-      createdAt: "2026-07-03T12:00:00.000Z",
-      updatedAt: "2026-07-03T12:00:00.000Z",
-    };
 
-    expect(rdoUpdateCreationContextBlockReason(draft, legacyPersisted))
-      .toBeNull();
-    expect(rdoUpdateCreationContextBlockReason(draft, {
-      ...legacyPersisted,
-      payload: { creationContextVersion: -1 },
-    })).toBe("RDO_CREATION_CONTEXT_REQUIRED");
-    expect(rdoUpdateCreationContextBlockReason(draft, {
-      ...legacyPersisted,
-      versaoEntidade: null,
-    })).toBe("RDO_CREATION_CONTEXT_REQUIRED");
+    expect(localRdoService.rdoCreationContextBlockReason(draft)).toBe(
+      "RDO_CREATION_CONTEXT_REQUIRED",
+    );
+    /*
+     * A trava contra o retorno da regra: sobrando uma única porta que cobre o
+     * recibo, ela é a da criação. Uma segunda voltaria a prender edição.
+     */
+    expect(
+      Object.keys(localRdoService).filter((nome) =>
+        nome.toLowerCase().includes("blockreason")
+      ),
+    ).toEqual(["rdoCreationContextBlockReason"]);
   });
 });
 
