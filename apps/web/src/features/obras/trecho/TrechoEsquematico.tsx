@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 
 import {
   calcularEscalaKm,
@@ -69,7 +69,13 @@ function Bloco({
   return (
     <div
       className={`trecho-bloco trecho-bloco--${estado.toLowerCase()}`}
-      style={{ left: `${bloco.inicio}%`, width: `${bloco.largura}%` }}
+      style={{
+        left: `${bloco.inicio}%`,
+        width: `${bloco.largura}%`,
+        // A camada é altura, não cor: dois serviços no mesmo quilômetro ficam
+        // um sobre o outro, ambos inteiros e ambos clicáveis.
+        "--trecho-camada": bloco.camada,
+      } as CSSProperties}
       title={`${rotuloDoSegmento(bloco.segmento)} — ${detalhe}`}
       role="img"
       aria-label={`${rotuloDoSegmento(bloco.segmento)} — ${detalhe}`}
@@ -103,7 +109,10 @@ function Pista({
       <span className="trecho-pista-nome">
         {pista.sentido} · {pista.faixa}
       </span>
-      <div className="trecho-pista-rolagem">
+      <div
+        className="trecho-pista-rolagem"
+        style={{ "--trecho-camadas": pista.camadas } as CSSProperties}
+      >
         {pista.blocos.map((bloco) => (
           <Bloco
             key={bloco.segmento.id}

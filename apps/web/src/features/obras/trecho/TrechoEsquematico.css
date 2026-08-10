@@ -294,11 +294,24 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * A pista cresce com o número de camadas que ela precisa.
+ *
+ * Um dia de obra frequentemente frésa, imprima e capeia o mesmo quilômetro, e
+ * cada um desses é uma linha do RDO. Com altura fixa, todos caíam no mesmo
+ * trilho e o último desenhado cobria os anteriores por inteiro — o trabalho
+ * estava registrado e sumia da única tela que existe para mostrá-lo.
+ *
+ * Quem não disputa quilômetro continua na mesma camada, então a pista só
+ * engorda onde há de fato sobreposição.
+ */
 .trecho-pista-rolagem {
+  --trecho-camadas: 1;
+  --trecho-altura-camada: 26px;
   position: relative;
   flex: 1 1 auto;
   min-width: var(--trecho-pista-min);
-  height: 26px;
+  height: calc(var(--trecho-camadas) * var(--trecho-altura-camada));
   border-radius: 4px;
   background: color-mix(in srgb, black 16%, transparent);
 }
@@ -331,9 +344,10 @@
 }
 
 .trecho-bloco {
+  --trecho-camada: 0;
   position: absolute;
-  top: 2px;
-  bottom: 2px;
+  top: calc(var(--trecho-camada) * var(--trecho-altura-camada) + 2px);
+  height: calc(var(--trecho-altura-camada) - 4px);
   border: 1px solid transparent;
   border-radius: 6px;
   display: flex;
