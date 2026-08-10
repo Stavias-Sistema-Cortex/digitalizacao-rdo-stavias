@@ -207,6 +207,57 @@ public class PostgresqlServicePriceCatalogRepository
         return findService(record.id()).orElseThrow();
     }
 
+    /*
+     * A transição de estado e o recibo entram na mesma escrita.
+     *
+     * O UPDATE só encontra a linha quando ela ainda está no estado de origem,
+     * e é isso que torna a operação segura sob repetição: o segundo envio da
+     * mesma exclusão não acha nada para mudar e cai no recibo já gravado, em
+     * vez de excluir de novo por cima de uma restauração posterior.
+     *
+     * O carimbo de revisão sobe junto porque a listagem do catálogo lê por
+     * snapshot: sem ele, quem já tinha a página aberta continuaria vendo o
+     * serviço como se nada tivesse acontecido.
+     */
+    @Override
+    public ServiceCatalogEntry updateServiceExclusion(ServiceExclusionRecord record) {
+        String estadoDeOrigem = record.excluded() ? "ACTIVE" : "EXCLUIDO";
+        int alteradas = record.excluded()
+                ? jdbc.update("""
+                        UPDATE catalogo_servico
+                        SET status = 'EXCLUIDO',
+                            excluido_em = ?,
+                            excluido_por = ?,
+                            commit_revision = cortex_next_service_catalog_revision()
+                        WHERE id = ? AND status = ?
+                        """,
+                        Timestamp.from(record.occurredAt()),
+                        record.actorId(),
+                        record.serviceId(),
+                        estadoDeOrigem)
+                : jdbc.update("""
+                        UPDATE catalogo_servico
+                        SET status = 'ACTIVE',
+                            excluido_em = NULL,
+                            excluido_por = NULL,
+                            commit_revision = cortex_next_service_catalog_revision()
+                        WHERE id = ? AND status = ?
+                        """,
+                        record.serviceId(),
+                        estadoDeOrigem);
+        if (alteradas == 1) {
+            insertMutation(
+                    record.actorId(),
+                    record.clientMutationId(),
+                    record.excluded() ? "SERVICE_EXCLUDED" : "SERVICE_RESTORED",
+                    record.serviceId(),
+                    record.requestHash(),
+                    record.occurredAt()
+            );
+        }
+        return findService(record.serviceId()).orElseThrow();
+    }
+
     @Override
     public ServicePriceVersion createPrice(CreatePriceRecord record) {
         return insertPrice(record, "SERVICE_PRICE_VERSION_CREATED");

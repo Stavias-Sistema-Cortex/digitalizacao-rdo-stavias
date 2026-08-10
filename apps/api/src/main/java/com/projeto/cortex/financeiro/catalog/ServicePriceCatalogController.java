@@ -56,6 +56,36 @@ public class ServicePriceCatalogController {
         );
     }
 
+    /*
+     * Excluir e restaurar passam pela mesma porta administrativa das demais
+     * escritas do catálogo: quem pode publicar preço pode tirar o serviço de
+     * circulação. O que não muda é o histórico — o RDO que já o executou e as
+     * versões de preço continuam onde estavam.
+     */
+    @PostMapping("/{serviceId}/excluir")
+    public ServiceCatalogEntry excluirServico(
+            @PathVariable String obraId,
+            @PathVariable String serviceId,
+            @RequestBody ExcludeServiceCommand request
+    ) {
+        requireAdministration(obraId);
+        return service.excluirServico(
+                obraId, currentUser.requireUserId(), serviceId, request
+        );
+    }
+
+    @PostMapping("/{serviceId}/restaurar")
+    public ServiceCatalogEntry restaurarServico(
+            @PathVariable String obraId,
+            @PathVariable String serviceId,
+            @RequestBody ExcludeServiceCommand request
+    ) {
+        requireAdministration(obraId);
+        return service.restaurarServico(
+                obraId, currentUser.requireUserId(), serviceId, request
+        );
+    }
+
     @PostMapping("/{serviceId}/precos")
     @ResponseStatus(HttpStatus.CREATED)
     public ServicePriceVersion createPrice(
