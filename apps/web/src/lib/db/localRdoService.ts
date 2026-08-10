@@ -481,29 +481,25 @@ function durableCreationContextCache(
   };
 }
 
-function legacyPersistedUpdateCanOmitContext(
-  rdo: LocalRdoRecord,
-): boolean {
-  if (rdo.versaoEntidade === null) {
-    return false;
-  }
-  const persisted = rdo.payload.creationContextVersion;
-  return persisted === undefined || persisted === null;
-}
-
-export function rdoUpdateCreationContextBlockReason(
-  draft: RdoDraft,
-  persistedRdo: LocalRdoRecord,
-): "RDO_CREATION_CONTEXT_REQUIRED" | null {
-  const createRule = rdoCreationContextBlockReason(draft);
-  if (createRule === null) {
-    return null;
-  }
-  return legacyPersistedUpdateCanOmitContext(persistedRdo)
-    ? null
-    : createRule;
-}
-
+/*
+ * A edição de rascunho nunca é barrada pelo recibo de contexto.
+ *
+ * O recibo é assunto de criação. Numa atualização o servidor sequer lê o que o
+ * cliente manda nesse campo: `RdoSyncOperationHandler.updateDraft` sobrescreve
+ * `creationContextVersion` e `previousRdoId` com o que já está persistido,
+ * antes de montar a requisição. O bloqueio guardava um dado descartado.
+ *
+ * E cobrava caro por isso. Ele era decidido contra o RDO de antes da escrita,
+ * enquanto a mesma transação regravava o registro a partir do rascunho — sem o
+ * recibo, que era o motivo do bloqueio. A prova sumia no instante em que o
+ * veredito era escrito, e nenhuma passagem o revisitava. Um RDO com sete
+ * eventos e dois colaboradores ficou um dia inteiro parado assim: nunca
+ * enviado, sem tentativa, sem erro e sem prazo.
+ *
+ * Bloqueio é o instrumento mais caro que esta fila tem — ele não recusa, ele
+ * some. Só se justifica quando nenhuma outra saída existe, e esta não era uma
+ * delas. Por isso a regra saiu inteira em vez de ganhar mais uma exceção.
+ */
 function entityName(value: string | null | undefined): string | null {
   if (!value || !value.trim()) {
     return null;
@@ -2003,10 +1999,7 @@ async function keepRdoContextHydrationRetryable(
   const current = await store.get(clientMutationId);
   if (current &&
       current.entidadeTipo === "RDO" &&
-      (
-        current.operacao === "CRIAR_RDO" ||
-        current.operacao === "ATUALIZAR_RDO_RASCUNHO"
-      ) &&
+      current.operacao === "CRIAR_RDO" &&
       current.status !== "SYNCED" &&
       (
         !isCanonicalOutboxMutation(current) ||
@@ -2173,32 +2166,25 @@ export async function hydrateBlockedRdoCreationContextsForSync(
 }
 
 /**
- * Destrava a edição de rascunho presa pelo recibo de contexto.
+ * Solta a edição de rascunho que ficou presa pelo recibo de contexto.
  *
- * <p>O bloqueio nasce em `atualizarRdoLocal`, que decide por
- * `rdoUpdateCreationContextBlockReason(draft, existingRdo)` — e a regra que ela
- * aplica é sobre o RDO **antes** da escrita: um RDO criado com recibo exige que
- * a edição também o carregue; um RDO antigo, gravado quando o recibo nem
- * existia, pode omiti-lo.
+ * <p>A regra que prendia essas linhas não existe mais: numa atualização o
+ * servidor sobrescreve `creationContextVersion` com o que já está persistido,
+ * então o recibo que o envelope carrega é irrelevante. Mas fila offline não
+ * esquece — o aparelho que já tinha uma linha bloqueada continua com ela, e
+ * `selectReadyOutboxMutations` continuaria descartando-a em silêncio para
+ * sempre. Esta passagem existe para essas linhas.
  *
- * O problema é que a mesma transação que grava o bloqueio grava também o
- * registro novo, com `creationContextVersion` vindo do rascunho — nulo, que foi
- * o motivo do bloqueio. A prova em que o veredito se apoiou deixa de existir no
- * instante em que ele é escrito, e nenhuma passagem o revisita: a hidratação de
- * contexto só olha `CRIAR_RDO`. A linha fica PENDING com `blockedReason`, e
- * `selectReadyOutboxMutations` a descarta em silêncio, para sempre.
+ * <p>Ela não busca nada. A versão anterior ia à rede atrás do recibo para
+ * carimbá-lo antes de soltar, e isso era pior do que inútil: prendia a
+ * reparação de um bloqueio inválido à disponibilidade de rede, justamente no
+ * aparelho que está em campo. Soltar é a operação inteira, e ela cabe numa
+ * transação local.
  *
- * Foi assim que um RDO com sete eventos e dois colaboradores ficou parado por
- * um dia: `CRIAR_RDO` aplicado no servidor, a edição seguinte nunca enviada, a
- * tela dizendo "aguardando sincronização" e a aba de rede sem um único `push`,
- * porque nunca houve requisição a fazer.
- *
- * O conserto busca o recibo e o carimba no registro e no envelope, em vez de
- * simplesmente apagar o bloqueio: assim a edição sobe cumprindo a regra, e não
- * driblando-a. Sem recibo utilizável, a linha volta com espera — visível e
- * retentável — em vez de morrer calada.
+ * <p>O payload não é reconstruído. Ele guarda a edição de quem esteve em campo
+ * e já está correto; o que sobrava era o veredito, não o dado.
  */
-export async function hydrateBlockedRdoUpdateContextsForSync(
+export async function releaseBlockedRdoUpdatesForSync(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<number> {
   assertSyncSession(guard);
@@ -2221,123 +2207,45 @@ export async function hydrateBlockedRdoUpdateContextsForSync(
     mutation.blockedReason === "RDO_CREATION_CONTEXT_REQUIRED"
   );
 
-  let destravadas = 0;
+  let soltas = 0;
 
   for (const mutation of candidates) {
     assertSyncSession(guard);
-    const rdo = await database.get("rdos", mutation.entidadeId);
-    if (!rdo || rdo.syncStatus === "SYNCED") {
-      continue;
-    }
-
     const timestamp = nowUtc();
-    let context: RdoCreationContextLookup;
-    try {
-      context = await buscarContextoDeCriacaoRdo(rdo.obraId, rdo.dataRdo);
-    } catch {
-      assertSyncSession(guard);
-      await keepRdoContextHydrationRetryable(
-        mutation.clientMutationId,
-        guard,
-        timestamp,
-      );
-      continue;
-    }
-    assertSyncSession(guard);
-
-    const cache = durableCreationContextCache(context, rdo, timestamp);
-    if (!cache) {
-      await keepRdoContextHydrationRetryable(
-        mutation.clientMutationId,
-        guard,
-        timestamp,
-      );
-      continue;
-    }
-
-    const pendingOperationalEvents = (
-      await queryOperationalEvents({
-        rdoId: rdo.id,
-        limit: 500,
-      })
-    ).filter((event) => event.syncStatus !== "SYNCED");
-    assertSyncSession(guard);
-
     const guardedTransaction = guardSyncTransaction(
-      database.transaction(["rdos", "outbox_mutations"], "readwrite"),
+      database.transaction(["outbox_mutations"], "readwrite"),
       guard,
     );
-    const transaction = guardedTransaction.transaction;
-    const rdoStore = transaction.objectStore("rdos");
-    const outboxStore = transaction.objectStore("outbox_mutations");
-    const currentRdo = await rdoStore.get(rdo.id);
-    const currentMutation = await outboxStore.get(
-      mutation.clientMutationId,
+    const outboxStore = guardedTransaction.transaction.objectStore(
+      "outbox_mutations",
     );
+    const atual = await outboxStore.get(mutation.clientMutationId);
 
-    if (!currentRdo ||
-        currentRdo.obraId !== cache.worksiteId ||
-        currentRdo.dataRdo !== cache.selectedDate ||
-        currentRdo.syncStatus === "SYNCED" ||
-        !currentMutation ||
-        currentMutation.entidadeId !== currentRdo.id ||
-        currentMutation.operacao !== "ATUALIZAR_RDO_RASCUNHO" ||
-        currentMutation.blockedReason !== "RDO_CREATION_CONTEXT_REQUIRED" ||
-        !["PENDING", "ERROR"].includes(currentMutation.status)) {
-      await guardedTransaction.complete();
-      continue;
-    }
-
-    const hydratedRdo: LocalRdoRecord = {
-      ...currentRdo,
-      payload: {
-        ...currentRdo.payload,
-        previousRdoId: cache.previousRdoId,
-        creationContextVersion: cache.receiptVersion,
-        creationContextCache: cache,
-      },
-      updatedAt: timestamp,
-    };
     /*
-     * O rascunho sai do registro já hidratado, e não do envelope: é o registro
-     * que guarda a edição de quem estava em campo. Reconstruir dali preserva o
-     * que a pessoa escreveu e acrescenta só o recibo que faltava.
+     * A releitura dentro da transação é o que impede desfazer um bloqueio que
+     * outra escrita pôs por outro motivo entre a varredura e aqui.
      */
-    const draft = rdoDraftFromLocalRecord(hydratedRdo);
-    const aindaBloqueada = rdoUpdateCreationContextBlockReason(
-      draft,
-      hydratedRdo,
-    );
-    if (aindaBloqueada) {
-      /*
-       * O recibo veio, mas não satisfez a regra. Liberar assim mesmo entregaria
-       * ao servidor um envelope que ele recusaria — e trocaria um impasse mudo
-       * por uma recusa em laço.
-       */
+    if (!atual ||
+        atual.entidadeTipo !== "RDO" ||
+        atual.operacao !== "ATUALIZAR_RDO_RASCUNHO" ||
+        atual.blockedReason !== "RDO_CREATION_CONTEXT_REQUIRED" ||
+        !["PENDING", "ERROR"].includes(atual.status)) {
       await guardedTransaction.complete();
-      await keepRdoContextHydrationRetryable(
-        mutation.clientMutationId,
-        guard,
-        timestamp,
-      );
       continue;
     }
 
-    await rdoStore.put(hydratedRdo);
     await outboxStore.put({
-      ...currentMutation,
-      payload: buildRdoSyncPayload(draft, pendingOperationalEvents),
+      ...atual,
       status: "PENDING",
       blockedReason: null,
       nextAttemptAt: null,
-      ultimoErro: null,
       updatedAt: timestamp,
     });
     await guardedTransaction.complete();
-    destravadas += 1;
+    soltas += 1;
   }
 
-  return destravadas;
+  return soltas;
 }
 
 export async function repairRdoCreateMutationsForSync(
@@ -2855,7 +2763,7 @@ export async function recoverErroredWorkforceRdoMutationsForSync(
       nextAttemptAt: null,
       blockedReason: mutacaoAtual.operacao === "CRIAR_RDO"
         ? rdoCreationContextBlockReason(draft)
-        : rdoUpdateCreationContextBlockReason(draft, rdoAtual),
+        : null,
       lastSafeCode: "MAO_OBRA_RECUPERADA_COMO_NOMINAL",
       ultimoErro: VINCULO_RECUPERADO_COMO_NOMINAL,
       conflito: null,
@@ -4751,8 +4659,6 @@ export async function saveExistingRdoDraftAtomically(
 
   const entityIndex =
     outboxStore.index("by-entity-id");
-  const updateContextBlockReason =
-    rdoUpdateCreationContextBlockReason(draft, existingRdo);
 
   const entityMutations =
     await entityIndex.getAll(draft.id);
@@ -4848,7 +4754,7 @@ export async function saveExistingRdoDraftAtomically(
         ultimaTentativaEm: null,
         ultimoErro: null,
         conflito: null,
-        blockedReason: updateContextBlockReason,
+        blockedReason: null,
         nextAttemptAt: null,
         updatedAt: timestamp,
       };
@@ -4868,7 +4774,7 @@ export async function saveExistingRdoDraftAtomically(
         ultimaTentativaEm: null,
         ultimoErro: null,
         conflito: null,
-        blockedReason: updateContextBlockReason,
+        blockedReason: null,
         nextAttemptAt: null,
         dependsOnMutationIds: inFlightLegacyUpdate
           ? [inFlightLegacyUpdate.clientMutationId]

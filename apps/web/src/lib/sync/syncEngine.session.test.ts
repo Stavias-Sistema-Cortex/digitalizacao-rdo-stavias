@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   repairObra: vi.fn(async () => 0),
   repairMaoObra: vi.fn(async () => 0),
   hydrateRdo: vi.fn(async () => 0),
-  hydrateRdoUpdate: vi.fn(async () => 0),
+  releaseRdoUpdate: vi.fn(async () => 0),
   repairRdo: vi.fn(async () => 0),
   recoverRejectedRdo: vi.fn(async () => 0),
   recoverErroredWorkforceRdo: vi.fn(async () => 0),
@@ -84,7 +84,7 @@ vi.mock("./syncStorage", () => ({
 }));
 vi.mock("../db/localRdoService", () => ({
   hydrateBlockedRdoCreationContextsForSync: mocks.hydrateRdo,
-  hydrateBlockedRdoUpdateContextsForSync: mocks.hydrateRdoUpdate,
+  releaseBlockedRdoUpdatesForSync: mocks.releaseRdoUpdate,
   repairRdoCreateMutationsForSync: mocks.repairRdo,
   recoverErroredWorkforceRdoMutationsForSync:
     mocks.recoverErroredWorkforceRdo,
@@ -177,14 +177,14 @@ describe("session-scoped sync single flight", () => {
     expect(mocks.repairObra).toHaveBeenCalledWith(expectedGuard);
     expect(mocks.repairMaoObra).toHaveBeenCalledWith(expectedGuard);
     expect(mocks.repairRdo).toHaveBeenCalledWith(expectedGuard);
-    expect(mocks.hydrateRdoUpdate).toHaveBeenCalledWith(expectedGuard);
+    expect(mocks.releaseRdoUpdate).toHaveBeenCalledWith(expectedGuard);
     /*
-     * A edição de rascunho presa pelo recibo tem de ser destravada antes do
+     * A edição presa por um bloqueio que já não vale tem de ser solta antes do
      * push, senão o ciclo sobe sem ela — que era exatamente o defeito: a linha
      * ficava PENDING com `blockedReason` e o envio a descartava em silêncio.
      */
     expect(
-      mocks.hydrateRdoUpdate.mock.invocationCallOrder[0],
+      mocks.releaseRdoUpdate.mock.invocationCallOrder[0],
     ).toBeLessThan(mocks.push.mock.invocationCallOrder[0]);
     expect(mocks.recoverRejectedRdo).toHaveBeenCalledWith(
       expectedGuard,
