@@ -10,6 +10,8 @@ import {
   queueCancelPrice,
   queueCreatePrice,
   queueCreateService,
+  queueExcluirServico,
+  queueRestaurarServico,
   queueSupersedePrice,
   type LocalServiceCatalogRow,
 } from "./servicePriceRepository";
@@ -30,6 +32,35 @@ type EditorState =
   | { type: "supersede"; priceId: string; serviceId: string }
   | { type: "cancel"; priceId: string; serviceId: string }
   | null;
+
+/** Um serviço fora de circulação: existe, mas não se lança nele. */
+function excluido(service: { status: string }): boolean {
+  return service.status === "EXCLUIDO";
+}
+
+/*
+ * Traço só, sem preenchimento: a lixeira precisa ler como ação e não como
+ * ilustração, e herdar a cor de quem a contém é o que a faz mudar de tom
+ * junto com o botão em foco ou desabilitado.
+ */
+const LIXEIRA_ICONE = (
+  <svg viewBox="0 0 16 16" width="15" height="15" fill="none"
+    stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"
+    aria-hidden="true">
+    <path d="M2.8 4.3h10.4M6.4 4.3V3.1a.8.8 0 0 1 .8-.8h1.6a.8.8 0 0 1 .8.8v1.2" />
+    <path d="M4.2 4.3l.6 8.3a1 1 0 0 0 1 .9h4.4a1 1 0 0 0 1-.9l.6-8.3" />
+    <path d="M6.7 6.9v3.9M9.3 6.9v3.9" />
+  </svg>
+);
+
+const RESTAURAR_ICONE = (
+  <svg viewBox="0 0 16 16" width="15" height="15" fill="none"
+    stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"
+    strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 8a5 5 0 1 1 1.6 3.7" />
+    <path d="M2.6 4.6v3h3" />
+  </svg>
+);
 
 function syncLabel(value: string): string {
   if (value === "SYNCED") return "Sincronizado";
@@ -93,6 +124,8 @@ export function ServicePriceCatalogPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [confirmandoExclusao, setConfirmandoExclusao] =
+    useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>(null);
   const [saving, setSaving] = useState(false);
   const [novoServico, setNovoServico] =
@@ -245,6 +278,33 @@ export function ServicePriceCatalogPage({
     }
   }
 
+  /*
+   * A lixeira tira o serviço de circulação; o histórico fica. As versões de
+   * preço e o RDO que já o executou continuam onde estavam — o que muda é que
+   * ele deixa de ser oferecido para lançamento novo.
+   */
+  async function alternarExclusao(serviceId: string, excluir: boolean) {
+    setSaving(true);
+    setError("");
+    try {
+      if (excluir) {
+        await queueExcluirServico(obraId, serviceId);
+      } else {
+        await queueRestaurarServico(obraId, serviceId);
+      }
+      setConfirmandoExclusao(null);
+      await loadLocal();
+    } catch (caught: unknown) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Não foi possível alterar o serviço.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <section className="finance-service-catalog" aria-labelledby="service-catalog-title">
       <header className="finance-service-catalog__header">
@@ -257,7 +317,12 @@ export function ServicePriceCatalogPage({
           </p>
         </div>
         {canAdmin ? (
-          <button type="button" onClick={abrirNovoServico}>
+          <button
+            type="button"
+            className="finance-service-catalog__novo"
+            onClick={abrirNovoServico}
+          >
+            <span aria-hidden="true">+</span>
             Novo serviço
           </button>
         ) : null}
@@ -605,13 +670,61 @@ export function ServicePriceCatalogPage({
                 {row.service.description ? <p>{row.service.description}</p> : null}
               </div>
               <div className="finance-service-row__actions">
+                {excluido(row.service) ? (
+                  <span className="finance-service-row__excluido">Excluído</span>
+                ) : null}
                 <span data-sync={row.service.syncStatus}>{syncLabel(row.service.syncStatus)}</span>
-                {canAdmin ? (
+                {canAdmin && !excluido(row.service) ? (
                   <button type="button" onClick={() => setEditor({ type: "price", serviceId: row.service.id })}>
                     Novo preço para {row.service.name}
                   </button>
                 ) : null}
+                {canAdmin ? (
+                  <button
+                    type="button"
+                    className="finance-service-row__lixeira"
+                    title={excluido(row.service)
+                      ? `Restaurar ${row.service.name}`
+                      : `Excluir ${row.service.name}`}
+                    aria-label={excluido(row.service)
+                      ? `Restaurar ${row.service.name}`
+                      : `Excluir ${row.service.name}`}
+                    disabled={saving}
+                    onClick={() => {
+                      if (excluido(row.service)) {
+                        void alternarExclusao(row.service.id, false);
+                      } else {
+                        setConfirmandoExclusao(row.service.id);
+                      }
+                    }}
+                  >
+                    {excluido(row.service) ? RESTAURAR_ICONE : LIXEIRA_ICONE}
+                  </button>
+                ) : null}
               </div>
+              {confirmandoExclusao === row.service.id ? (
+                <p className="finance-service-row__confirma">
+                  Excluir <strong>{row.service.name}</strong>? Ele sai do
+                  catálogo para lançamentos novos; os preços e os RDOs que já o
+                  usaram continuam como estão.
+                  <span>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void alternarExclusao(row.service.id, true)}
+                    >
+                      Excluir
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setConfirmandoExclusao(null)}
+                    >
+                      Manter
+                    </button>
+                  </span>
+                </p>
+              ) : null}
             </header>
             {row.priceVersions.length === 0 ? (
               <p className="finance-service-row__empty">Sem preço registrado para esta obra.</p>

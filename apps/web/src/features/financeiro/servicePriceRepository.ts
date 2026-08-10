@@ -385,6 +385,93 @@ export async function queueCreateService(
   return { entityId, clientMutationId: committed.mutation.clientMutationId };
 }
 
+/**
+ * Tira o serviço de circulação, ou o traz de volta.
+ *
+ * <p>Uma função só para os dois sentidos: é a mesma transição, e separá-la
+ * duplicaria o snapshot, a dependência da criação pendente e a projeção local
+ * — três lugares para divergir do servidor, que também trata os dois como um
+ * movimento só.
+ *
+ * <p>O que o serviço já produziu não é tocado: as versões de preço ficam no
+ * lugar, e o RDO que o executou continua sabendo o que foi feito e por qual
+ * preço. O que muda é que ele deixa de ser oferecido para lançamento novo.
+ */
+async function enfileirarTransicaoDeExclusao(
+  obraId: string,
+  serviceId: string,
+  excluir: boolean,
+  motivo?: string,
+): Promise<QueuedCatalogMutation> {
+  const identity = await localMutationIdentity(obraId);
+  const database = await getCortexDb();
+  const atual = await database.get("service_catalog", serviceId);
+  if (!atual) {
+    throw new Error("Serviço não encontrado neste dispositivo.");
+  }
+  const proximoStatus = excluir ? "EXCLUIDO" : "ACTIVE";
+  if (atual.status === proximoStatus) {
+    return { entityId: serviceId, clientMutationId: "" };
+  }
+
+  const occurredAt = nowUtc();
+  const local: ServiceCatalogLocalRecord = {
+    ...atual,
+    status: proximoStatus,
+    syncStatus: "PENDING_SYNC",
+    updatedAt: occurredAt,
+    lastError: null,
+  };
+  const committed = await commitLocalMutation({
+    ...identity,
+    entityType: "SERVICE",
+    entityId: serviceId,
+    entityName: atual.name,
+    operation: "TRANSITION",
+    transportOperation: excluir
+      ? "EXCLUIR_SERVICO_CATALOGO"
+      : "RESTAURAR_SERVICO_CATALOGO",
+    /*
+     * O serviço do catálogo não tem versão de linha, e o servidor não pede uma
+     * para esta entidade: a repetição aqui é resolvida pelo recibo da mutação,
+     * não por comparação de versões. O envelope exige um número em toda
+     * transição, então vai zero — inerte do outro lado, e explícito aqui para
+     * ninguém o confundir com "estava na versão zero".
+     */
+    baseVersion: 0,
+    occurredAt,
+    previousSnapshot: { id: serviceId, obraId: identity.obraId, status: atual.status },
+    nextSnapshot: {
+      id: serviceId,
+      obraId: identity.obraId,
+      status: proximoStatus,
+      motivo: motivo?.trim() || null,
+    },
+    principalSnapshot: { ...local },
+    eventType: excluir ? "SERVICE_EXCLUDED" : "SERVICE_RESTORED",
+    // O serviço criado offline e ainda não aceito precisa subir antes: excluir
+    // o que o servidor não conhece não tem o que encontrar do outro lado.
+    dependsOnMutationIds: await pendingCreateDependency(serviceId),
+    write: () => [{ store: "service_catalog", value: local, principal: true }],
+  });
+  return { entityId: serviceId, clientMutationId: committed.mutation.clientMutationId };
+}
+
+export async function queueExcluirServico(
+  obraId: string,
+  serviceId: string,
+  motivo?: string,
+): Promise<QueuedCatalogMutation> {
+  return enfileirarTransicaoDeExclusao(obraId, serviceId, true, motivo);
+}
+
+export async function queueRestaurarServico(
+  obraId: string,
+  serviceId: string,
+): Promise<QueuedCatalogMutation> {
+  return enfileirarTransicaoDeExclusao(obraId, serviceId, false);
+}
+
 async function pendingCreateDependency(entityId: string): Promise<string[]> {
   const database = await getCortexDb();
   const mutations = await database.getAllFromIndex(
