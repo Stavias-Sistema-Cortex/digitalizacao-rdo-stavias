@@ -76,7 +76,7 @@ export function createEmptyServicoExecutado(): ServicoExecutadoDraft {
     faixa: "",
     localizacao: "",
     larguraM: "",
-    espessuraCm: "",
+    espessuraM: "",
     turno: "",
     statusValidacao: "",
     retrabalho: false,

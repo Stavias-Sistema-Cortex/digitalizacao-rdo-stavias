@@ -162,10 +162,16 @@ function resolvedWorkforceQuantity(item: MaoObraDraft): number | null {
   return firstNonBlank(item.colaboradorId, item.nomeColaborador) ? 1 : null;
 }
 
+/*
+ * A descrição também identifica uma máquina. A entrada de terceiro pede
+ * prefixo ou descrição — a betoneira do empreiteiro costuma ter nome e não ter
+ * placa —, e exigir aqui um dos dois campos que a tela não exige recusava a
+ * exportação inteira por um equipamento que a tela deu por completo.
+ */
 function resolvedEquipmentQuantity(item: EquipamentoDraft): number | null {
   const declared = number(item.quantidade);
   if (declared !== null) return declared;
-  return firstNonBlank(item.assetId, item.prefixo) ? 1 : null;
+  return firstNonBlank(item.assetId, item.prefixo, item.descricao) ? 1 : null;
 }
 
 /*
@@ -235,7 +241,13 @@ function validateOperationalRows(rdo: RdoDraft): void {
   }
   for (const item of rdo.servicosExecutados) {
     if (isBlankService(item)) continue;
-    if (!text(item.servicoNome) || number(item.quantidadeExecutada) === null) error("RDO_EXPORT_INVALID_SERVICE_ROW", "Há linha de serviço sem nome ou quantidade; nenhum item foi omitido.");
+    // A quantidade deixou de ser digitada: ela é o que o trecho, a largura e a
+    // espessura afirmam, na dimensão que a unidade do serviço nomeia. Serviço
+    // medido em tonelada ou em hora não tem medida a derivar do trecho, e
+    // exigi-la aqui recusaria a exportação do dia inteiro por uma linha que o
+    // formulário deu por completa. A linha sai impressa sem o número — que é a
+    // verdade sobre ela — em vez de derrubar o relatório.
+    if (!text(item.servicoNome)) error("RDO_EXPORT_INVALID_SERVICE_ROW", "Há linha de serviço sem nome; nenhum item foi omitido.");
   }
   for (const item of rdo.materiais) {
     if (isBlankMaterial(item)) continue;
@@ -388,11 +400,10 @@ export function buildRdoExportProjection(snapshot: RdoWorkbookSnapshot): RdoExpo
     // As colunas LARG. e Espessura já existiam no template e nos dois PDFs;
     // o que faltava era o valor chegar. Comprimento é conta, não campo — o
     // trecho já diz a extensão, e guardá-la ao lado das parcelas criaria duas
-    // versões da mesma verdade. Espessura vai em metros porque é assim que a
-    // planilha e o PDF a esperam, e a captura é em centímetros.
+    // versões da mesma verdade. Espessura vai em metros, que é o que a
+    // planilha e o PDF esperam e agora também o que se captura.
     const medidas = medidasDoServico(item);
-    const espessura = number(item.espessuraCm);
-    return { start: text(item.trechoInicial), end: text(item.trechoFinal), itemNumber: "", length: medidas.comprimentoM, width: number(item.larguraM), thicknessMeters: espessura === null ? null : espessura / 100, roadway: firstNonBlank(item.pista, item.localizacao), lane: text(item.faixa), serviceOrder: "", activity: [text(item.servicoNome), quantityText ? `Quantidade: ${quantityText}` : ""].filter(Boolean).join(" | ") };
+    return { start: text(item.trechoInicial), end: text(item.trechoFinal), itemNumber: "", length: medidas.comprimentoM, width: number(item.larguraM), thicknessMeters: number(item.espessuraM), roadway: firstNonBlank(item.pista, item.localizacao), lane: text(item.faixa), serviceOrder: "", activity: [text(item.servicoNome), quantityText ? `Quantidade: ${quantityText}` : ""].filter(Boolean).join(" | ") };
   })];
   assertRows(workforce.length, MAX_WORKFORCE_GROUPS, "RDO_EXPORT_OVERFLOW_WORKFORCE", "grupos de mão de obra");
   assertRows(equipment.length, MAX_EQUIPMENT, "RDO_EXPORT_OVERFLOW_EQUIPMENT", "equipamentos/veículos");

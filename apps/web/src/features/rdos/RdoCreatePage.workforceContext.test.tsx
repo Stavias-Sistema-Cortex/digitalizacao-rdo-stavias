@@ -8,7 +8,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -521,138 +520,15 @@ describe("catálogo contextual de mão de obra em RDO legado/importado", () => {
     ).toBeNull();
   });
 
-  it("limita o rateio aos colaboradores canônicos selecionados na equipe do RDO", async () => {
-    const draft = legacyDraft();
-    draft.maoObra = [
-      {
-        localId: "workforce-a",
-        origemItemId: "",
-        sourceRdoId: "",
-        origin: "AUTHORIZED_CONTEXT",
-        availability: "AVAILABLE",
-        selected: true,
-        colaboradorId: "worker-a",
-        nomeColaborador: "Ana da Obra A",
-        cargo: "Operadora",
-        tipoVinculo: "PROPRIO",
-        quantidade: 1,
-        horaInicio: "",
-        horaFim: "",
-        observacoes: "",
-      },
-      {
-        localId: "workforce-b",
-        origemItemId: "",
-        sourceRdoId: "",
-        origin: "AUTHORIZED_CONTEXT",
-        availability: "AVAILABLE",
-        selected: true,
-        colaboradorId: "worker-b",
-        nomeColaborador: "Bruno da Obra A",
-        cargo: "Servente",
-        tipoVinculo: "PROPRIO",
-        quantidade: 1,
-        horaInicio: "",
-        horaFim: "",
-        observacoes: "",
-      },
-      {
-        localId: "workforce-stale",
-        origemItemId: "",
-        sourceRdoId: "",
-        origin: "AUTHORIZED_CONTEXT",
-        availability: "AVAILABLE",
-        selected: true,
-        colaboradorId: "worker-stale",
-        nomeColaborador: "Pessoa com vínculo revogado",
-        cargo: "Operadora",
-        tipoVinculo: "PROPRIO",
-        quantidade: 1,
-        horaInicio: "",
-        horaFim: "",
-        observacoes: "",
-      },
-      {
-        localId: "workforce-unknown",
-        origemItemId: "",
-        sourceRdoId: "",
-        origin: "AUTHORIZED_CONTEXT",
-        availability: "UNKNOWN",
-        selected: true,
-        colaboradorId: "worker-unknown",
-        nomeColaborador: "Pessoa sem confirmação",
-        cargo: "Operadora",
-        tipoVinculo: "PROPRIO",
-        quantidade: 1,
-        horaInicio: "",
-        horaFim: "",
-        observacoes: "",
-      },
-    ];
-    const activeContext = context();
-    activeContext.colaboradores.push({
-      id: "worker-b",
-      codigoColaborador: "004",
-      nome: "Bruno da Obra A",
-      papelNaObra: "OPERACIONAL",
-      nomePerfil: "Servente",
-    });
-    activeContext.colaboradores.push({
-      id: "worker-unknown",
-      codigoColaborador: "002",
-      nome: "Pessoa sem confirmação",
-      papelNaObra: "OPERACIONAL",
-      nomePerfil: "Operadora",
-    });
-
-    render(
-      <RdoCreatePage
-        initialDraft={draft}
-        isExisting={false}
-        creationContext={activeContext}
-        onBackToList={vi.fn()}
-        onSaved={vi.fn()}
-      />,
-    );
-
-    const section = screen
-      .getByRole("heading", { name: "Rateio de colaboradores" })
-      .closest("section");
-    expect(section).not.toBeNull();
-    fireEvent.click(
-      within(section!).getByRole("button", { name: "+ Adicionar" }),
-    );
-    const collaboratorSearch = within(section!).getByRole("combobox", {
-      name: "Colaborador",
-    });
-    fireEvent.focus(collaboratorSearch);
-
-    expect(
-      await within(section!).findByRole("option", {
-        name: /Ana da Obra A.*Operadora/,
-      }),
-    ).toBeVisible();
-    expect(
-      within(section!).queryByRole("option", { name: /Pessoa fora da equipe/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(section!).queryByRole("option", {
-        name: /Pessoa com vínculo revogado/,
-      }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(section!).queryByRole("option", {
-        name: /Pessoa sem confirmação/,
-      }),
-    ).not.toBeInTheDocument();
-    expect(mocks.buscarColaboradores).not.toHaveBeenCalled();
-
-    fireEvent.keyDown(collaboratorSearch, { key: "ArrowDown" });
-    fireEvent.keyDown(collaboratorSearch, { key: "Enter" });
-    await waitFor(() => {
-      expect(collaboratorSearch).toHaveValue("Ana da Obra A");
-    });
-  });
+  /*
+   * O teste que vivia aqui provava que a busca de colaborador do rateio só
+   * oferecia quem estava selecionado na equipe do RDO e tinha vínculo
+   * confirmado. O rateio saiu do formulário — ele repetia, pessoa por pessoa,
+   * o que a seção de Mão de obra já diz —, e com ele saiu a busca que este
+   * teste cobria. A regra que ele protegia continua viva onde ela importa: é
+   * a mesma que decide quem aparece no lado "Autorizados na obra" da seleção
+   * de pessoas, coberta em RdoWorkforceEditor.test.tsx.
+   */
 
   /*
    * O identificador da obra saiu da tela. Ele continua no rascunho e na

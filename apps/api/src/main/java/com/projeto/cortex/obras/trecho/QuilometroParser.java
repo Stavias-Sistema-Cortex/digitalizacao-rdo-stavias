@@ -17,12 +17,20 @@ import java.util.regex.Pattern;
  * <p>Texto que não corresponde a nenhum desses formatos devolve {@code null}.
  * Nunca devolve zero: a ausência de marcação precisa continuar distinguível de
  * uma marcação real no km 0.</p>
+ *
+ * <p>O separador decimal é lido em português, e o ponto de milhar também. A
+ * leitura anterior trocava apenas a primeira vírgula por ponto e exigia o
+ * formato exato {@code 1234.567}: um km escrito como se escreve aqui —
+ * {@code "1.206,5"} — virava {@code "1.206.5"} e era descartado como
+ * irreconhecível. O trecho ficava sem posição no mapa e no esquemático, e o
+ * cadastro recusava o salvamento por falta de quilômetro, sem que nada dissesse
+ * que o culpado era o ponto de milhar.</p>
  */
 public final class QuilometroParser {
 
-    private static final Pattern DECIMAL = Pattern.compile("^\\d{1,4}(?:\\.\\d{1,3})?$");
     private static final Pattern KM_MAIS_METROS =
             Pattern.compile("^(\\d{1,4})\\+(\\d{1,3})$");
+    private static final Pattern DECIMAL = Pattern.compile("^\\d{1,4}(?:\\.\\d{1,3})?$");
     private static final BigDecimal MIL = new BigDecimal("1000");
 
     private QuilometroParser() {
@@ -43,8 +51,7 @@ public final class QuilometroParser {
         }
         normalized = normalized
                 .replace("KM", "")
-                .replace(" ", "")
-                .replace(',', '.');
+                .replace(" ", "");
         if (normalized.isEmpty()) {
             return null;
         }
@@ -54,9 +61,45 @@ public final class QuilometroParser {
             return new BigDecimal(kmMaisMetros.group(1))
                     .add(new BigDecimal(kmMaisMetros.group(2)).divide(MIL));
         }
-        if (DECIMAL.matcher(normalized).matches()) {
-            return new BigDecimal(normalized);
+
+        String decimal = decimalDigitado(normalized);
+        if (decimal == null || !DECIMAL.matcher(decimal).matches()) {
+            return null;
         }
-        return null;
+        return new BigDecimal(decimal);
+    }
+
+    /**
+     * Reduz o quilômetro digitado à forma com ponto decimal e sem milhar.
+     *
+     * <p>Quando os dois separadores aparecem, o último a aparecer é o decimal —
+     * é o que distingue {@code 1.206,5} de {@code 1,206.5}, e o outro é o
+     * milhar.
+     *
+     * <p>Um ponto sozinho é sempre decimal, e essa é a diferença deliberada em
+     * relação ao leitor de números do resto do sistema: ali {@code 1.234} é mil
+     * duzentos e trinta e quatro, aqui {@code 206.822} é o km 206,822. É a
+     * notação que a base inteira já guarda, e trocá-la moveria cada trecho
+     * antigo mil vezes para frente na rodovia.
+     */
+    private static String decimalDigitado(String texto) {
+        if (!texto.matches("^[\\d.,]+$")) {
+            return null;
+        }
+        int ultimaVirgula = texto.lastIndexOf(',');
+        int ultimoPonto = texto.lastIndexOf('.');
+        if (ultimaVirgula >= 0 && ultimoPonto >= 0) {
+            char decimal = ultimaVirgula > ultimoPonto ? ',' : '.';
+            char milhar = decimal == ',' ? '.' : ',';
+            return texto
+                    .replace(String.valueOf(milhar), "")
+                    .replace(decimal, '.');
+        }
+        if (ultimaVirgula >= 0) {
+            return texto.indexOf(',') == ultimaVirgula
+                    ? texto.replace(',', '.')
+                    : null;
+        }
+        return texto;
     }
 }

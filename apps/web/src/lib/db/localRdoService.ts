@@ -73,6 +73,7 @@ import {
   type LocalMutationDomainWrite,
 } from "../sync/localMutationCoordinator";
 import { numeroDigitado } from "../numeros/numeroDigitado";
+import { quilometroDigitado } from "../numeros/quilometroDigitado";
 
 export interface SaveRdoDraftResult {
   rdo: LocalRdoRecord;
@@ -533,18 +534,29 @@ function round3(value: number): number {
   return Math.round((value + Number.EPSILON) * 1000) / 1000;
 }
 
+/**
+ * A extensão entre dois km, em metros, sem se importar com o sentido.
+ *
+ * <p>Lê com o leitor de quilômetro, e não com o de números em geral: ali ponto
+ * é milhar, e `206.822` viraria duzentos e seis mil.
+ *
+ * <p>E não devolve mais em branco quando o km final é menor que o inicial. A
+ * pista Sul tem quilometragem decrescente — começa no 400 e termina no 398 —, e
+ * a subtração ingênua apagava justamente o trecho dela. Distância entre dois
+ * pontos não tem sinal; quem tem sentido é a pista.
+ */
 function calculatedLengthFromKm(
   kmInicial: string,
   kmFinal: string,
 ): number | null {
-  const start = numberFromText(kmInicial);
-  const end = numberFromText(kmFinal);
+  const start = quilometroDigitado(kmInicial);
+  const end = quilometroDigitado(kmFinal);
 
-  if (start === null || end === null || end < start) {
+  if (start === null || end === null) {
     return null;
   }
 
-  return round3((end - start) * 1000);
+  return round3(Math.abs(end - start) * 1000);
 }
 
 function attachmentPayload(
@@ -635,8 +647,8 @@ function buildServicoExecutadoPayload(
     // dia inteiro. Ausência vira null, que é o que o banco entende por medida
     // não informada.
     larguraM: typeof item.larguraM === "number" ? item.larguraM : null,
-    espessuraCm:
-      typeof item.espessuraCm === "number" ? item.espessuraCm : null,
+    espessuraM:
+      typeof item.espessuraM === "number" ? item.espessuraM : null,
     localizacao: nullIfEmpty(item.localizacao),
     turno: nullIfEmpty(item.turno),
     statusValidacao: item.statusValidacao,
@@ -683,7 +695,7 @@ function buildServicoExecutadoLocalPayload(
     pista: item.pista,
     faixa: item.faixa,
     larguraM: item.larguraM ?? "",
-    espessuraCm: item.espessuraCm ?? "",
+    espessuraM: item.espessuraM ?? "",
     localizacao: item.localizacao,
     turno: item.turno,
     statusValidacao: item.statusValidacao,
@@ -1619,24 +1631,20 @@ export function validateRdoDraftForSync(draft: RdoDraft): void {
     throw new Error("O limite é de 5 fotos por RDO.");
   }
 
-  validateKmRange(
-    draft.kmInicialProgramado,
-    draft.kmFinalProgramado,
-    "trecho programado",
-  );
-  validateKmRange(
-    draft.kmInicialInterditado,
-    draft.kmFinalInterditado,
-    "trecho interditado",
-  );
-
-  draft.controlesGeometricos.forEach((item, index) => {
-    validateKmRange(
-      item.kmInicial,
-      item.kmFinal,
-      `controle geométrico ${index + 1}`,
-    );
-  });
+  /*
+   * Aqui havia uma regra que recusava o salvamento quando o km final era menor
+   * que o inicial — no trecho programado, no interditado e no controle
+   * geométrico. Ela descreve uma rodovia que só existe em um sentido.
+   *
+   * A pista Sul tem quilometragem decrescente: interdita-se do km 400 ao 398, e
+   * é assim que se escreve na ordem de serviço. A conta de extensão já tinha
+   * sido corrigida para medir em valor absoluto, e foi isso que produziu o
+   * sintoma exato que o campo relatou — o cálculo aceitava e o salvamento
+   * recusava, com uma mensagem que mandava inverter o que estava certo.
+   *
+   * Distância entre dois pontos não tem sinal. Quem tem sentido é a pista, e
+   * isso é assunto do campo Sentido.
+   */
 
   draft.servicosExecutados.forEach((item, index) => {
     const quantidadeExecutada = numberFromInput(
@@ -1702,25 +1710,6 @@ export function validateRdoDraftForSync(draft: RdoDraft): void {
    * sem caminho de saída. Nenhum bloco do RDO é obrigatório — o que falta
    * aparece na conferência, não no impedimento.
    */
-}
-
-function validateKmRange(
-  initialValue: string,
-  finalValue: string,
-  label: string,
-): void {
-  const initial = numberFromText(initialValue);
-  const final = numberFromText(finalValue);
-
-  if (initial === null || final === null) {
-    return;
-  }
-
-  if (final < initial) {
-    throw new Error(
-      `O KM final do ${label} não pode ser menor que o KM inicial.`,
-    );
-  }
 }
 
 export async function saveNewRdoDraftAtomically(

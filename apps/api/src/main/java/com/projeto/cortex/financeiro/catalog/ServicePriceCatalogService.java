@@ -30,7 +30,15 @@ public class ServicePriceCatalogService {
     private static final Pattern SERVICE_CODE = Pattern.compile(
             "[A-Z0-9][A-Z0-9._/-]{0,79}"
     );
-    private static final Pattern UNIT = Pattern.compile("[A-Z0-9][A-Z0-9._/-]{0,29}");
+    /*
+     * Metro quadrado e metro cúbico se escrevem com expoente, e o catálogo
+     * grava a unidade no símbolo — "m2" digitado vira "M²". O formato não
+     * tinha lugar para ² nem ³, então todo serviço medido em área ou em
+     * volume era aceito localmente, entrava na fila e voltava recusado, sem
+     * que nada dissesse qual caractere era o culpado. Sobrava "M".
+     */
+    private static final Pattern UNIT =
+            Pattern.compile("[A-Z0-9][A-Z0-9²³._/-]{0,29}");
     private static final Pattern SOURCE = Pattern.compile("[A-Z0-9][A-Z0-9._:-]{0,79}");
     private static final int MAX_PAGE_SIZE = 100;
 

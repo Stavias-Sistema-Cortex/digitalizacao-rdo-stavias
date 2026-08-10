@@ -3,7 +3,7 @@ import type {
   MaterialDraft,
   NumericInput,
 } from "./rdo.types";
-import { numeroDigitado } from "../../lib/numeros/numeroDigitado";
+import { quilometroDigitado } from "../../lib/numeros/quilometroDigitado";
 
 export interface ControleGeometricoCalculo {
   espessuraMediaCm: number | null;
@@ -89,13 +89,15 @@ export function calcularControleGeometrico(
  * isso um trecho pela metade — só o km final preenchido — virava uma extensão
  * de quatrocentos quilômetros na tela, medida contra uma origem que ninguém
  * informou.
+ *
+ * <p>Quilômetro tem leitor próprio, e não o dos demais campos. O leitor geral
+ * trata ponto como milhar — `1.234` é mil duzentos e trinta e quatro —, e essa
+ * regra, aplicada a `206.822`, devolvia duzentos e seis mil. A extensão do RDO
+ * saía em centenas de milhares de metros e o trecho ia parar fora do mapa, tudo
+ * a partir de um km escrito exatamente como a base inteira o guarda.
  */
 export function parseKm(value: string): number | null {
-  const texto = value.trim();
-  if (!texto) {
-    return null;
-  }
-  return numeroDigitado(texto);
+  return quilometroDigitado(value);
 }
 
 /**
@@ -135,27 +137,34 @@ export interface MedidasDoServico {
  * versões da mesma verdade, que divergem no primeiro acerto de uma delas.
  * Cada uma só aparece quando as parcelas que a compõem existem — sem largura
  * não há área, e área ausente não é área zero.
+ *
+ * <p>A espessura é lida em metros. Ela morava em centímetros porque é assim
+ * que se fala dela em campo — "cinco centímetros de capa" —, mas era a única
+ * medida do serviço numa unidade diferente das outras duas, e a conversão
+ * escondida no meio da conta de volume era um lugar a mais para errar por
+ * cem. Quem digita continua digitando o que mede; o que mudou é o rótulo do
+ * campo, que agora diz metros.
  */
 export function medidasDoServico(item: {
   trechoInicial: string;
   trechoFinal: string;
   larguraM: NumericInput;
-  espessuraCm: NumericInput;
+  espessuraM: NumericInput;
 }): MedidasDoServico {
   const comprimentoM = extensionMeters(
     item.trechoInicial,
     item.trechoFinal,
   );
   const larguraM = asNumber(item.larguraM);
-  const espessuraCm = asNumber(item.espessuraCm);
+  const espessuraM = asNumber(item.espessuraM);
   const areaM2 =
     comprimentoM === null || larguraM === null
       ? null
       : round3(comprimentoM * larguraM);
   const volumeM3 =
-    areaM2 === null || espessuraCm === null
+    areaM2 === null || espessuraM === null
       ? null
-      : round3(areaM2 * (espessuraCm / 100));
+      : round3(areaM2 * espessuraM);
   return { comprimentoM, areaM2, volumeM3 };
 }
 

@@ -48,7 +48,7 @@ function rdoDeOntem(): RdoDraft {
         trechoInicial: "400",
         trechoFinal: "398",
         larguraM: 7,
-        espessuraCm: 5,
+        espessuraM: 0.05,
       },
     ] as RdoDraft["servicosExecutados"],
     equipamentos: [
@@ -140,7 +140,7 @@ describe("clonar um RDO", () => {
 
     expect(servico.quantidadeExecutada).toBe("");
     expect(servico.larguraM).toBe("");
-    expect(servico.espessuraCm).toBe("");
+    expect(servico.espessuraM).toBe("");
   });
 
   /*

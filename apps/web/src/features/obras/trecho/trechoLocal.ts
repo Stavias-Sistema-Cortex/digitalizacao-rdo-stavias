@@ -1,4 +1,5 @@
 import { getCortexDb } from "../../../lib/db/cortexDb";
+import { quilometroDigitado } from "../../../lib/numeros/quilometroDigitado";
 import type {
   LocalRdoControleGeometricoRecord,
   LocalRdoRecord,
@@ -28,33 +29,12 @@ const NAO_CONFIRMADO = new Set([
   "CONFLICT",
 ]);
 
-const DECIMAL = /^\d{1,4}(?:\.\d{1,3})?$/;
-const KM_MAIS_METROS = /^(\d{1,4})\+(\d{1,3})$/;
-
 /**
  * Espelha `QuilometroParser` do servidor: as colunas de km são texto em toda a
  * base e chegam como o campo digitou. Texto irreconhecível devolve `null` —
  * nunca zero, que é uma marcação válida no km 0.
  */
-export function quilometroDeTexto(bruto: unknown): number | null {
-  if (typeof bruto !== "string" && typeof bruto !== "number") {
-    return null;
-  }
-  const normalizado = String(bruto)
-    .trim()
-    .toUpperCase()
-    .replaceAll("KM", "")
-    .replaceAll(" ", "")
-    .replace(",", ".");
-  if (!normalizado) {
-    return null;
-  }
-  const kmMaisMetros = KM_MAIS_METROS.exec(normalizado);
-  if (kmMaisMetros) {
-    return Number(kmMaisMetros[1]) + Number(kmMaisMetros[2]) / 1000;
-  }
-  return DECIMAL.test(normalizado) ? Number(normalizado) : null;
-}
+export const quilometroDeTexto = quilometroDigitado;
 
 function texto(valor: unknown): string | null {
   return typeof valor === "string" && valor.trim() ? valor.trim() : null;

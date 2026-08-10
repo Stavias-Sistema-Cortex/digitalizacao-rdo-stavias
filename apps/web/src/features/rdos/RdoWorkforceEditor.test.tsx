@@ -8,6 +8,16 @@ import { createEmptyRdo } from "./createEmptyRdo";
 import { RdoWorkforceEditor } from "./RdoWorkforceEditor";
 import type { RdoContextCollaborator } from "./rdoLookupApi";
 
+/**
+ * A mão de obra virou uma lista de marcar.
+ *
+ * <p>Ela era dois painéis com botões de mover e, embaixo, uma tabela de sete
+ * colunas por pessoa: função, vínculo, quantidade, início, fim, observações.
+ * Uma frente de doze eram oitenta e quatro caixas num celular à beira da pista,
+ * quase todas repetindo o mesmo valor. A pergunta que o RDO faz é uma só — quem
+ * trabalhou hoje —, e agora a tela faz essa.
+ */
+
 const catalog: RdoContextCollaborator[] = [
   { id: "worker-a", codigoColaborador: "001", nome: "Ana", papelNaObra: "APONTADOR", nomePerfil: "Apontadora" },
   { id: "worker-b", codigoColaborador: "002", nome: "Bruno", papelNaObra: "OPERACIONAL", nomePerfil: "Operador" },
@@ -55,106 +65,51 @@ function draft() {
   };
 }
 
+function lista() {
+  return screen.getByRole("list", { name: "Pessoas do RDO" });
+}
+
+function caixaDe(nome: string | RegExp): HTMLInputElement {
+  const item = within(lista())
+    .getAllByRole("listitem")
+    .find((linha) =>
+      typeof nome === "string"
+        ? within(linha).queryByText(nome) !== null
+        : nome.test(linha.textContent ?? ""),
+    );
+  if (!item) throw new Error(`Linha não encontrada: ${String(nome)}`);
+  return within(item).getByRole("checkbox");
+}
+
 afterEach(cleanup);
 
-describe("editor da equipe carregada", () => {
-  it("adiciona mão de obra nova no próprio RDO sem criar acesso à obra", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(
-      <RdoWorkforceEditor
-        draft={{ ...draft(), maoObra: [] }}
-        collaborators={catalog}
-        sourceRdoNumber={null}
-        onChange={onChange}
-      />,
-    );
-
-    const newCollaborator = screen.getByRole("textbox", {
-      name: "Adicionar trabalhador ao RDO",
-    });
-    expect(newCollaborator).toHaveAttribute("maxLength", "255");
-    await user.type(newCollaborator, "  Maria   Servente  ");
-    await user.click(
-      screen.getByRole("button", { name: "Adicionar trabalhador" }),
-    );
-
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        maoObra: [
-          expect.objectContaining({
-            colaboradorId: "",
-            nomeColaborador: "Maria Servente",
-            origin: "MANUAL",
-            availability: "AVAILABLE",
-            selected: true,
-          }),
-        ],
-      }),
-    );
-  });
-
-  it("adiciona a mão de obra manual ao pressionar Enter", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(
-      <RdoWorkforceEditor
-        draft={{ ...draft(), maoObra: [] }}
-        collaborators={catalog}
-        sourceRdoNumber={null}
-        onChange={onChange}
-      />,
-    );
-
-    const newCollaborator = screen.getByRole("textbox", {
-      name: "Adicionar trabalhador ao RDO",
-    });
-    await user.type(newCollaborator, "Maria Servente{Enter}");
-
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        maoObra: [
-          expect.objectContaining({
-            colaboradorId: "",
-            nomeColaborador: "Maria Servente",
-          }),
-        ],
-      }),
-    );
-  });
-
-  it("preserva indisponível desmarcado e permite desmarcar o disponível", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
+describe("lista de mão de obra do RDO", () => {
+  /*
+   * Uma lista só, e não dois painéis: quem já está no RDO e quem está na obra
+   * respondem à mesma pergunta e não precisam de lados diferentes.
+   */
+  it("mostra numa lista só quem já veio e quem está na obra", () => {
     render(
       <RdoWorkforceEditor
         draft={draft()}
         collaborators={catalog}
-        sourceRdoNumber="RDO-0020"
-        onChange={onChange}
+        sourceRdoNumber="RDO-0007"
+        onChange={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("Importada do RDO RDO-0020")).toBeVisible();
-    expect(within(screen.getByRole("table")).getByText("Indisponível"))
-      .toBeVisible();
-    // E também no seletor, senão só se descobre rolando até a tabela.
-    expect(
-      within(screen.getByRole("listbox", { name: /Na equipe do RDO/ }))
-        .getByRole("option", { name: /Histórico.*Indisponível/ }),
-    ).toBeVisible();
-    expect(screen.getByRole("checkbox", { name: "Selecionar Histórico" })).toBeDisabled();
-    await user.click(screen.getByRole("checkbox", { name: "Selecionar Ana" }));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        maoObra: expect.arrayContaining([
-          expect.objectContaining({ colaboradorId: "worker-a", selected: false }),
-        ]),
-      }),
-    );
+    const linhas = within(lista()).getAllByRole("listitem");
+    expect(linhas.map((linha) => linha.textContent)).toEqual([
+      expect.stringContaining("Ana"),
+      expect.stringContaining("Histórico"),
+      expect.stringContaining("Bruno"),
+      expect.stringContaining("Carla"),
+    ]);
+    expect(caixaDe("Ana")).toBeChecked();
+    expect(caixaDe("Bruno")).not.toBeChecked();
   });
 
-  it("adiciona apenas autorizados que ainda não estão na equipe", async () => {
+  it("traz para o RDO quem foi marcado no catálogo da obra", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(
@@ -165,187 +120,154 @@ describe("editor da equipe carregada", () => {
         onChange={onChange}
       />,
     );
-    const autorizados = screen.getByRole("listbox", {
-      name: /Autorizados na obra/,
+
+    await user.click(caixaDe("Bruno"));
+
+    const proximo = onChange.mock.calls.at(-1)?.[0];
+    expect(proximo.maoObra).toHaveLength(3);
+    expect(proximo.maoObra[2]).toMatchObject({
+      colaboradorId: "worker-b",
+      nomeColaborador: "Bruno",
+      // A função vem do cadastro, que é quem a conhece — deixou de ser um
+      // campo para alguém redigitar por pessoa.
+      cargo: "Operador",
+      selected: true,
+      origin: "AUTHORIZED_CONTEXT",
     });
-    // Ana já veio do RDO anterior; oferecê-la de novo só criaria a chance de erro.
-    expect(within(autorizados).queryByRole("option", { name: /Ana/ }))
-      .not.toBeInTheDocument();
-
-    await user.type(screen.getByLabelText("Buscar"), "003");
-    await user.click(
-      within(autorizados).getByRole("option", {
-        name: /Carla.*003.*OPERACIONAL/,
-      }),
-    );
-    await user.click(screen.getByRole("button", { name: "Adicionar" }));
-
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        maoObra: expect.arrayContaining([
-          expect.objectContaining({ colaboradorId: "worker-c", selected: true }),
-        ]),
-      }),
-    );
   });
 
   /*
-   * O motivo de existir do seletor de dois lados: montar a frente do dia era um
-   * ciclo inteiro de busca-escolha-adiciona por pessoa. Aqui as duas entram no
-   * mesmo movimento — e num único onChange, senão o pai reagiria só à última e
-   * a primeira sumiria.
+   * Desmarcar não apaga a linha: ela guarda de onde a pessoa veio, e essa
+   * procedência é o que liga este RDO ao anterior. O que sai do envio é a
+   * marca, não o registro.
    */
-  it("leva vários autorizados para a equipe de uma vez só", async () => {
+  it("desmarca sem apagar a linha herdada", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(
       <RdoWorkforceEditor
-        draft={{ ...draft(), maoObra: [draft().maoObra[0]] }}
+        draft={draft()}
         collaborators={catalog}
         sourceRdoNumber={null}
         onChange={onChange}
       />,
     );
 
-    await user.click(screen.getByRole("option", { name: /Bruno/ }));
-    await user.click(screen.getByRole("option", { name: /Carla/ }));
-    await user.click(screen.getByRole("button", { name: "Adicionar" }));
+    await user.click(caixaDe("Ana"));
 
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0].maoObra.map(
-      (row: { colaboradorId: string }) => row.colaboradorId,
-    )).toEqual(["worker-a", "worker-b", "worker-c"]);
+    const proximo = onChange.mock.calls.at(-1)?.[0];
+    expect(proximo.maoObra).toHaveLength(2);
+    expect(proximo.maoObra[0]).toMatchObject({
+      localId: "row-a",
+      origemItemId: "source-a",
+      selected: false,
+    });
   });
 
-  /*
-   * O caminho de volta importa tanto quanto: quem chegou por herança do RDO
-   * anterior costuma precisar sair, e sair em bloco.
-   */
-  it("devolve vários da equipe de uma vez só", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
+  it("mantém quem perdeu o vínculo à vista, dizendo por quê, e não deixa marcar", () => {
     render(
       <RdoWorkforceEditor
         draft={draft()}
-        collaborators={catalog}
-        sourceRdoNumber="RDO-0020"
-        onChange={onChange}
-      />,
-    );
-    const equipe = screen.getByRole("listbox", { name: /Na equipe do RDO/ });
-
-    await user.click(within(equipe).getByRole("option", { name: /Ana/ }));
-    await user.click(within(equipe).getByRole("option", { name: /Histórico/ }));
-    await user.click(screen.getByRole("button", { name: "Remover" }));
-
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0].maoObra).toEqual([]);
-  });
-
-  it("remove um colaborador herdado da equipe do novo RDO", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(
-      <RdoWorkforceEditor
-        draft={draft()}
-        collaborators={catalog}
-        sourceRdoNumber="RDO-0020"
-        onChange={onChange}
-      />,
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Remover Ana da equipe" }),
-    );
-
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        maoObra: expect.not.arrayContaining([
-          expect.objectContaining({ colaboradorId: "worker-a" }),
-        ]),
-      }),
-    );
-  });
-
-  it("busca por nome, código e papel sem esconder quem já está na equipe", async () => {
-    const user = userEvent.setup();
-    render(
-      <RdoWorkforceEditor
-        draft={{ ...draft(), maoObra: [draft().maoObra[0]] }}
         collaborators={catalog}
         sourceRdoNumber={null}
         onChange={vi.fn()}
       />,
     );
-    const search = screen.getByLabelText("Buscar");
-    const autorizados = screen.getByRole("listbox", {
-      name: /Autorizados na obra/,
-    });
-    const equipe = screen.getByRole("listbox", { name: /Na equipe do RDO/ });
 
-    await user.type(search, "operacional");
-    expect(within(autorizados).getByRole("option", { name: /Bruno.*002/ }))
-      .toBeVisible();
-    expect(within(autorizados).getByRole("option", { name: /Carla.*003/ }))
-      .toBeVisible();
-    // A busca é do lado de fora; quem já está dentro não some da vista.
-    expect(within(equipe).getByRole("option", { name: /Ana/ })).toBeVisible();
-
-    await user.clear(search);
-    await user.type(search, "Bruno");
-    expect(within(autorizados).getByRole("option", { name: /Bruno/ }))
-      .toBeVisible();
-    await user.clear(search);
-    await user.type(search, "002");
-    expect(within(autorizados).getByRole("option", { name: /Bruno/ }))
-      .toBeVisible();
+    const caixa = caixaDe("Histórico");
+    expect(caixa).toBeDisabled();
+    expect(caixa).not.toBeChecked();
+    expect(screen.getByText("Indisponível nesta obra")).toBeVisible();
   });
 
-  it("mantém apontador nulo, trocável e derivado apenas da equipe selecionada", async () => {
+  /*
+   * O ajudante do dia não tem cadastro e o dia não espera por ele. Mas é a
+   * exceção: a caixa de texto fica atrás de um botão para não competir com a
+   * lista que responde a pergunta comum.
+   */
+  it("soma alguém à mão só depois de pedirem por isso", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    const manual = {
-      ...draft().maoObra[0],
-      localId: "row-manual",
-      origemItemId: "",
-      sourceRdoId: "",
-      origin: "MANUAL" as const,
-      colaboradorId: "",
-      nomeColaborador: "Maria Servente",
-      cargo: "Servente",
-    };
     render(
       <RdoWorkforceEditor
-        draft={{ ...draft(), maoObra: [...draft().maoObra, manual] }}
+        draft={{ ...draft(), maoObra: [] }}
         collaborators={catalog}
         sourceRdoNumber={null}
         onChange={onChange}
       />,
     );
-    const select = screen.getByLabelText("Apontador do RDO");
-    expect(select).toHaveValue("");
-    expect(screen.queryByRole("option", { name: "Histórico" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "Maria Servente" }))
-      .not.toBeInTheDocument();
-    await user.selectOptions(select, "worker-a");
-    expect(onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ apontadorColaboradorId: "worker-a" }),
+
+    expect(
+      screen.queryByRole("textbox", { name: /Nome de quem não está na lista/ }),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: "Somar alguém à mão" }),
     );
-    await user.selectOptions(select, "");
-    expect(onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ apontadorColaboradorId: "" }),
-    );
+    const campo = screen.getByRole("textbox", {
+      name: /Nome de quem não está na lista/,
+    });
+    expect(campo).toHaveAttribute("maxLength", "255");
+    await user.type(campo, "  Maria   Servente  ");
+    await user.click(screen.getByRole("button", { name: "Adicionar" }));
+
+    const proximo = onChange.mock.calls.at(-1)?.[0];
+    expect(proximo.maoObra).toHaveLength(1);
+    expect(proximo.maoObra[0]).toMatchObject({
+      colaboradorId: "",
+      nomeColaborador: "Maria Servente",
+      selected: true,
+      origin: "MANUAL",
+    });
   });
 
-  it("move o foco entre checkboxes com setas, Home e End", async () => {
+  it("adiciona à mão ao pressionar Enter", async () => {
     const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RdoWorkforceEditor
+        draft={{ ...draft(), maoObra: [] }}
+        collaborators={[]}
+        sourceRdoNumber={null}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Somar alguém à mão" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: /Nome de quem não está na lista/ }),
+      "João Ajudante{Enter}",
+    );
+
+    expect(onChange.mock.calls.at(-1)?.[0].maoObra[0]).toMatchObject({
+      nomeColaborador: "João Ajudante",
+    });
+  });
+
+  /*
+   * Quem foi somado à mão é o único que sai de vez: não há cadastro nem
+   * procedência a preservar, e uma linha digitada por engano precisa poder
+   * sumir.
+   */
+  it("deixa remover quem foi somado à mão, e só ele", () => {
+    const base = draft();
     render(
       <RdoWorkforceEditor
         draft={{
-          ...draft(),
+          ...base,
           maoObra: [
-            draft().maoObra[0],
-            { ...draft().maoObra[0], localId: "row-b", colaboradorId: "worker-b", nomeColaborador: "Bruno" },
+            ...base.maoObra,
+            {
+              ...base.maoObra[0],
+              localId: "row-manual",
+              origemItemId: "",
+              sourceRdoId: "",
+              origin: "MANUAL" as const,
+              colaboradorId: "",
+              nomeColaborador: "Maria Servente",
+            },
           ],
         }}
         collaborators={catalog}
@@ -353,14 +275,97 @@ describe("editor da equipe carregada", () => {
         onChange={vi.fn()}
       />,
     );
-    const ana = screen.getByRole("checkbox", { name: "Selecionar Ana" });
-    const bruno = screen.getByRole("checkbox", { name: "Selecionar Bruno" });
-    ana.focus();
-    await user.keyboard("{ArrowDown}");
-    expect(bruno).toHaveFocus();
-    await user.keyboard("{Home}");
-    expect(ana).toHaveFocus();
-    await user.keyboard("{End}");
-    expect(bruno).toHaveFocus();
+
+    expect(
+      screen.getByRole("button", { name: "Remover Maria Servente" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Remover Ana" })).toBeNull();
+  });
+
+  it("procura por nome, código e função sem esconder quem já está marcado", async () => {
+    const user = userEvent.setup();
+    render(
+      <RdoWorkforceEditor
+        draft={draft()}
+        collaborators={[
+          ...catalog,
+          { id: "worker-d", codigoColaborador: "004", nome: "Daniel", papelNaObra: "OPERACIONAL", nomePerfil: "Pedreiro" },
+          { id: "worker-e", codigoColaborador: "005", nome: "Elis", papelNaObra: "OPERACIONAL", nomePerfil: "Servente" },
+          { id: "worker-f", codigoColaborador: "006", nome: "Fábio", papelNaObra: "OPERACIONAL", nomePerfil: "Servente" },
+          { id: "worker-g", codigoColaborador: "007", nome: "Gisele", papelNaObra: "OPERACIONAL", nomePerfil: "Servente" },
+        ]}
+        sourceRdoNumber={null}
+        onChange={vi.fn()}
+      />,
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "Procurar" }), "servente");
+    const nomes = within(lista())
+      .getAllByRole("listitem")
+      .map((linha) => linha.textContent);
+    expect(nomes).toHaveLength(3);
+    expect(nomes.join(" ")).toContain("Elis");
+    expect(nomes.join(" ")).not.toContain("Ana");
+  });
+
+  /*
+   * O apontador só pode ser alguém que trabalhou: a lista do campo é a dos
+   * marcados, e não a do catálogo inteiro.
+   */
+  it("oferece como apontador apenas quem está marcado", () => {
+    render(
+      <RdoWorkforceEditor
+        draft={draft()}
+        collaborators={catalog}
+        sourceRdoNumber={null}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const seletor = screen.getByLabelText("Apontador do RDO");
+    expect(
+      within(seletor).getAllByRole("option").map((opcao) => opcao.textContent),
+    ).toEqual(["Sem apontador", "Ana"]);
+  });
+
+  /*
+   * Avisa, e não impede: a mesma pessoa em duas frentes no mesmo dia acontece,
+   * e barrar transformaria o caso legítimo num problema sem saída em campo.
+   */
+  it("avisa quem já foi apontado em outro RDO do dia sem impedir a marcação", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RdoWorkforceEditor
+        draft={draft()}
+        collaborators={catalog}
+        sourceRdoNumber={null}
+        jaApontados={new Map([["worker-b", "RDO-0042"]])}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByText("Já apontado hoje no RDO-0042.")).toBeVisible();
+    expect(caixaDe("Bruno")).toBeEnabled();
+
+    await user.click(caixaDe("Bruno"));
+    expect(onChange.mock.calls.at(-1)?.[0].maoObra).toHaveLength(3);
+  });
+
+  it("diz o que houve quando o catálogo não pôde ser carregado", () => {
+    render(
+      <RdoWorkforceEditor
+        draft={{ ...draft(), maoObra: [] }}
+        collaborators={[]}
+        catalogUnavailableMessage="Catálogo indisponível offline."
+        sourceRdoNumber={null}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Catálogo indisponível offline.")).toBeVisible();
+    expect(
+      screen.getByText("Nenhum colaborador autorizado carregado."),
+    ).toBeVisible();
   });
 });

@@ -427,14 +427,16 @@ function lerProducao(
       trechoFinal: kmDaEstaca(final),
       pista,
       larguraM: largura ?? "",
-      // A coluna de espessura do papel é escrita em metros (0,070); o Córtex
-      // guarda em centímetros. Abaixo de um metro só pode ser metro — sete
-      // centímetros de capa não viram sete metros.
-      espessuraCm:
+      // A coluna de espessura do papel costuma ser escrita em metros (0,070),
+      // que é a unidade que o Córtex guarda — mas nem sempre: há quem escreva
+      // "7" ali querendo dizer sete centímetros. Um metro de capa não existe,
+      // então o número igual ou maior que um só pode ter sido escrito em
+      // centímetros.
+      espessuraM:
         espessura === null
           ? ""
-          : espessura < 1
-            ? Math.round(espessura * 100_000) / 1_000
+          : espessura >= 1
+            ? Math.round((espessura / 100) * 1e6) / 1e6
             : espessura,
       servicoNome: atividade,
     });

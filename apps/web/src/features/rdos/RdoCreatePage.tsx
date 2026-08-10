@@ -26,15 +26,11 @@ import type {
   RdoAttachmentRecord,
 } from "../../lib/db/db.types";
 import {
-  createEmptyAlocacaoColaborador,
-  createEmptyEquipamento,
   createEmptyMaterial,
   createEmptyRdo,
   createEmptyServicoExecutado,
 } from "./createEmptyRdo";
 import type {
-  AlocacaoColaboradorDraft,
-  EquipamentoDraft,
   MaterialDraft,
   NumericInput,
   RdoAttachmentDraft,
@@ -43,12 +39,7 @@ import type {
 } from "./rdo.types";
 import type { RdoSyncStatus } from "./rdo.types";
 import { processRdoPhoto } from "./rdoPhotoService";
-import {
-  buscarAssets,
-  type AssetLookup,
-  type ColaboradorLookup,
-  type RdoContextTeam,
-} from "./rdoLookupApi";
+
 import {
   formatRdoServiceType,
   isRdoPriceCatalogSelectable,
@@ -61,6 +52,11 @@ import {
   formatCalculatedNumber,
   medidasDoServico,
 } from "./rdoCalculations";
+import {
+  comQuantidadeMedida,
+  quantidadeDoServico,
+  rotuloDaQuantidade,
+} from "./quantidadeDoServico";
 import { useRdoLocalPersistence } from "./useRdoLocalPersistence";
 import { UNIDADES_RDO, normalizarUnidade } from "./unidades";
 import { requireRdoCreationContext } from "./rdoCreationContextRepository";
@@ -69,6 +65,10 @@ import { RdoEquipmentPicker } from "./RdoEquipmentPicker";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
 import { RDO_WORKFORCE_CATALOG_OFFLINE_UNAVAILABLE } from "./rdoCreationContext";
 import { localRecordToDraft } from "./localRecordToDraft";
+import {
+  apontadosEmOutroRdo,
+  type ApontamentosDoDia,
+} from "./apontadosEmOutroRdo";
 
 interface RdoCreatePageProps {
   initialDraft: RdoDraft;
@@ -269,6 +269,11 @@ function fileSizeLabel(size: number): string {
  * <p>Cada uma só aparece quando as parcelas existem: sem largura não há área,
  * e área ausente não é área zero. Mostrar zero onde falta medida faria o
  * relatório somar produção que ninguém executou.
+ *
+ * <p>Uma delas é a quantidade que vai para a medição, e qual é depende da
+ * unidade que o catálogo dá ao serviço. Ela aparece marcada, porque quem
+ * aponta precisa ver que número está afirmando — a quantidade deixou de ser
+ * um campo, e um número que não se vê é um número em que não se confia.
  */
 function MedidasDoServicoCalculadas({
   item,
@@ -276,10 +281,12 @@ function MedidasDoServicoCalculadas({
   item: ServicoExecutadoDraft;
 }) {
   const { comprimentoM, areaM2, volumeM3 } = medidasDoServico(item);
+  const medida = rotuloDaQuantidade(item.unidade);
+  const quantidade = quantidadeDoServico(item);
   return (
     <div className="rdo-servico-medidas">
       <CalculatedMetric
-        label="Comprimento"
+        label={medida === "Comprimento" ? "Comprimento · quantidade" : "Comprimento"}
         value={
           comprimentoM === null
             ? "—"
@@ -287,7 +294,7 @@ function MedidasDoServicoCalculadas({
         }
       />
       <CalculatedMetric
-        label="Área"
+        label={medida === "Área" ? "Área · quantidade" : "Área"}
         value={
           areaM2 === null
             ? "—"
@@ -295,13 +302,24 @@ function MedidasDoServicoCalculadas({
         }
       />
       <CalculatedMetric
-        label="Volume"
+        label={medida === "Volume" ? "Volume · quantidade" : "Volume"}
         value={
           volumeM3 === null
             ? "—"
             : `${formatCalculatedNumber(volumeM3)} m³`
         }
       />
+      {item.unidade && medida === null ? (
+        <p className="rdo-servico-medidas__aviso" role="status">
+          Este serviço é medido em {item.unidade}, que não sai do trecho.
+          Informe a quantidade pelo Financeiro.
+        </p>
+      ) : null}
+      {medida !== null && quantidade === null ? (
+        <p className="rdo-servico-medidas__aviso" role="status">
+          Faltam medidas para fechar a quantidade em {item.unidade}.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -558,38 +576,6 @@ function LookupField<TItem>({
   );
 }
 
-function getColaboradorTitle(colaborador: ColaboradorLookup) {
-  return (
-    [colaborador.nome, colaborador.codigoColaborador]
-      .filter(Boolean)
-      .join(" · ") || colaborador.id
-  );
-}
-
-function getColaboradorSubtitle(colaborador: ColaboradorLookup) {
-  return (
-    [
-      colaborador.nomeGrupo,
-      colaborador.nomePerfil,
-      colaborador.email,
-    ]
-      .filter(Boolean)
-      .join(" · ") || colaborador.id
-  );
-}
-
-function getAssetTitle(asset: AssetLookup) {
-  return (
-    [asset.externalCode, asset.name]
-      .filter(Boolean)
-      .join(" · ") || asset.id
-  );
-}
-
-function getAssetSubtitle(asset: AssetLookup) {
-  return asset.category || asset.id;
-}
-
 function getTipoServicoTitle(serviceType: RdoServiceType) {
   return serviceType.displayName;
 }
@@ -643,11 +629,6 @@ export function RdoCreatePage({
     persistedWorkforceSnapshot(initialDraft),
   );
   const persistedReadGenerationRef = useRef(0);
-  const [
-    alocacaoColaboradorLabels,
-    setAlocacaoColaboradorLabels,
-  ] = useState<Record<string, string>>({});
-
   const {
     isSaving,
     isSyncing,
@@ -675,101 +656,35 @@ export function RdoCreatePage({
   const buscarTiposServico = (query: string): Promise<RdoServiceType[]> =>
     Promise.resolve(searchRdoServiceTypes(serviceCatalog, query));
 
-  /*
-   * As frentes vigentes da obra. O campo era caixa de texto vazia: quem
-   * preenchia tinha de lembrar o nome exato, e um erro de digitação criava uma
-   * frente que só existe naquele RDO. Sugerir resolve o caso comum sem fechar o
-   * incomum — a digitação continua valendo, porque nem toda alocação
-   * corresponde a uma equipe cadastrada.
-   */
-  const equipesDaObra = activeCreationContext?.equipes ?? [];
   const parqueDaObra = activeCreationContext?.equipamentos ?? [];
-  const buscarEquipesDaObra = (
-    query: string,
-  ): Promise<RdoContextTeam[]> => {
-    const alvo = query
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "")
-      .trim()
-      .toLocaleLowerCase("pt-BR");
-    if (!alvo) return Promise.resolve(equipesDaObra);
-    return Promise.resolve(
-      equipesDaObra.filter((equipe) =>
-        [equipe.nome, equipe.descricao]
-          .filter(Boolean)
-          .join(" ")
-          .normalize("NFD")
-          .replace(/\p{Diacritic}/gu, "")
-          .toLocaleLowerCase("pt-BR")
-          .includes(alvo),
-      ),
-    );
-  };
-  const rateioCollaborators = useMemo<ColaboradorLookup[]>(() => {
-    const collaboratorsById = new Map<string, ColaboradorLookup>();
-    const authorizedIds = new Set(
-      (activeCreationContext?.colaboradores ?? [])
-        .map((collaborator) => collaborator.id.trim())
-        .filter(Boolean),
-    );
 
-    for (const row of draft.maoObra) {
-      const collaboratorId = row.colaboradorId.trim();
-      if (
-        !row.selected ||
-        row.availability !== "AVAILABLE" ||
-        !collaboratorId ||
-        !authorizedIds.has(collaboratorId)
-      ) {
-        continue;
-      }
-      collaboratorsById.set(collaboratorId, {
-        id: collaboratorId,
-        codigoColaborador: null,
-        cpfMascarado: null,
-        nome: row.nomeColaborador.trim() || null,
-        email: null,
-        nomeGrupo: null,
-        nomePerfil: row.cargo.trim() || null,
-        ativo: true,
-        atualizadoEm: null,
+  /*
+   * Quem já aparece em outro RDO desta obra na mesma data. É aviso, não
+   * impedimento: a mesma máquina atender duas frentes no mesmo dia acontece, e
+   * barrar transformaria o caso legítimo num problema sem saída em campo.
+   */
+  const [apontadosHoje, setApontadosHoje] = useState<ApontamentosDoDia>(
+    () => ({ pessoas: new Map(), equipamentos: new Map() }),
+  );
+  useEffect(() => {
+    let cancelado = false;
+    void apontadosEmOutroRdo(draft.obraId, draft.dataRdo, draft.id)
+      .then((encontrados) => {
+        if (!cancelado) setApontadosHoje(encontrados);
+      })
+      .catch(() => {
+        // A leitura é um adorno da lista: sem ela a marcação continua
+        // funcionando, só deixa de avisar. Derrubar o formulário por causa
+        // disso seria trocar um aviso perdido por um dia perdido.
       });
-    }
-
-    return [...collaboratorsById.values()];
-  }, [activeCreationContext?.colaboradores, draft.maoObra]);
-  const buscarColaboradoresDaEquipe = (
-    query: string,
-  ): Promise<ColaboradorLookup[]> => {
-    const normalizedQuery = query
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "")
-      .trim()
-      .toLocaleLowerCase("pt-BR");
-    if (!normalizedQuery) {
-      return Promise.resolve(rateioCollaborators);
-    }
-
-    return Promise.resolve(
-      rateioCollaborators.filter((collaborator) =>
-        [collaborator.nome, collaborator.nomePerfil, collaborator.id]
-          .filter(Boolean)
-          .join(" ")
-          .normalize("NFD")
-          .replace(/\p{Diacritic}/gu, "")
-          .toLocaleLowerCase("pt-BR")
-          .includes(normalizedQuery),
-      ),
-    );
-  };
+    return () => {
+      cancelado = true;
+    };
+  }, [draft.obraId, draft.dataRdo, draft.id]);
 
   const photoCount = draft.attachments.filter(
     (attachment) => attachment.removedAt === null,
   ).length;
-  const programmedExtensionM = extensionMeters(
-    draft.kmInicialProgramado,
-    draft.kmFinalProgramado,
-  );
   const blockedExtensionM = extensionMeters(
     draft.kmInicialInterditado,
     draft.kmFinalInterditado,
@@ -806,14 +721,6 @@ export function RdoCreatePage({
         label: "Serviços",
         isComplete: draft.servicosExecutados.some((item) =>
           hasText(item.servicoNome),
-        ),
-      },
-      {
-        id: "rdo-rateio",
-        label: "Rateio",
-        isComplete: draft.alocacoesColaboradores.some(
-          (item) =>
-            hasText(item.colaboradorId) || hasText(item.equipe),
         ),
       },
       {
@@ -1015,20 +922,6 @@ export function RdoCreatePage({
     setNotice("");
   }
 
-  function updateEquipamento(
-    localId: string,
-    patch: Partial<EquipamentoDraft>,
-  ) {
-    setDraft((current) => ({
-      ...current,
-      equipamentos: current.equipamentos.map((item) =>
-        item.localId === localId
-          ? { ...item, ...patch }
-          : item,
-      ),
-    }));
-  }
-
   function updateMaterial(
     localId: string,
     patch: Partial<MaterialDraft>,
@@ -1043,6 +936,12 @@ export function RdoCreatePage({
     }));
   }
 
+  /*
+   * A quantidade é refeita a cada toque no bloco porque ela não é mais um
+   * campo: é o que o trecho, a largura e a espessura afirmam, lidos na unidade
+   * que o catálogo dá ao serviço. Recalcular aqui, e não na hora de salvar,
+   * mantém a tela e o que sobe dizendo a mesma coisa.
+   */
   function updateServicoExecutado(
     localId: string,
     patch: Partial<ServicoExecutadoDraft>,
@@ -1052,22 +951,7 @@ export function RdoCreatePage({
       servicosExecutados:
         current.servicosExecutados.map((item) =>
           item.localId === localId
-            ? { ...item, ...patch }
-            : item,
-        ),
-    }));
-  }
-
-  function updateAlocacaoColaborador(
-    localId: string,
-    patch: Partial<AlocacaoColaboradorDraft>,
-  ) {
-    setDraft((current) => ({
-      ...current,
-      alocacoesColaboradores:
-        current.alocacoesColaboradores.map((item) =>
-          item.localId === localId
-            ? { ...item, ...patch }
+            ? comQuantidadeMedida({ ...item, ...patch })
             : item,
         ),
     }));
@@ -1076,21 +960,12 @@ export function RdoCreatePage({
   function removeCollectionItem(
     collection:
       | "servicosExecutados"
-      | "alocacoesColaboradores"
       | "maoObra"
       | "equipamentos"
       | "materiais"
       | "controlesGeometricos",
     localId: string,
   ) {
-    if (collection === "alocacoesColaboradores") {
-      setAlocacaoColaboradorLabels((current) => {
-        const next = { ...current };
-        delete next[localId];
-        return next;
-      });
-    }
-
     setDraft((current) => ({
       ...current,
       [collection]: current[collection].filter(
@@ -1598,15 +1473,12 @@ export function RdoCreatePage({
 
         </div>
 
+        {/* A extensão programada saiu. Ela media o que a programação semanal
+            previu, não o que a frente executou, e ficava no alto da tela ao
+            lado de números que falam do dia — dois significados na mesma
+            caixa. A extensão que interessa ao RDO é a dos trechos apontados,
+            e essa o cartão do serviço já mostra. */}
         <div className="computed-grid rdo-extension-grid">
-          <CalculatedMetric
-            label="Extensão programada"
-            value={
-              programmedExtensionM === null
-                ? "Em branco"
-                : `${formatCalculatedNumber(programmedExtensionM)} m`
-            }
-          />
           <CalculatedMetric
             label="Extensão interditada"
             value={
@@ -1905,6 +1777,13 @@ export function RdoCreatePage({
                       },
                     )
                   }
+                  /*
+                   * A unidade passou a vir sempre do catálogo, e não só quando
+                   * o bloco estava vazio. Ela deixou de ser digitável, então
+                   * preservar a que estava ali antes guardaria a unidade de
+                   * outro serviço — e é ela que decide se a quantidade é
+                   * comprimento, área ou volume.
+                   */
                   onSelect={(serviceType) =>
                     updateServicoExecutado(
                       item.localId,
@@ -1917,10 +1796,9 @@ export function RdoCreatePage({
                         servicoNome:
                           formatRdoServiceType(serviceType),
                         unidade:
-                          item.unidade ||
-                          (serviceType.priceChoices.length === 1
+                          serviceType.priceChoices.length === 1
                             ? serviceType.priceChoices[0].unit
-                            : ""),
+                            : "",
                       },
                     )
                   }
@@ -1954,22 +1832,6 @@ export function RdoCreatePage({
                         item.localId,
                         {
                           faixa:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Localização
-                  <input
-                    value={item.localizacao}
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          localizacao:
                             event.target.value,
                         },
                       )
@@ -2020,148 +1882,30 @@ export function RdoCreatePage({
                 />
 
                 <NumericField
-                  label="Espessura (cm)"
-                  value={item.espessuraCm}
+                  label="Espessura (m)"
+                  value={item.espessuraM}
                   onChange={(value) =>
                     updateServicoExecutado(item.localId, {
-                      espessuraCm: value,
+                      espessuraM: value,
                     })
                   }
                 />
 
                 <MedidasDoServicoCalculadas item={item} />
 
-                <label>
-                  Preço versionado
-                  <select
-                    value={item.priceVersionId}
-                    disabled={!priceCatalogSelectable || !item.serviceId}
-                    onChange={(event) => {
-                      const selectedService = serviceCatalog.find(
-                        (service) => service.id === item.serviceId,
-                      );
-                      const selectedPrice =
-                        selectedService?.priceChoices.find(
-                          (price) => price.id === event.target.value,
-                        );
-                      updateServicoExecutado(item.localId, {
-                        priceVersionId: event.target.value,
-                        unidade:
-                          item.unidade || selectedPrice?.unit || "",
-                      });
-                    }}
-                  >
-                    <option value="">
-                      {item.serviceId
-                        ? "Selecione a versão exata"
-                        : "Selecione primeiro o serviço"}
-                    </option>
-                    {serviceCatalog
-                      .find((service) => service.id === item.serviceId)
-                      ?.priceChoices.map((price) => (
-                        <option key={price.id} value={price.id}>
-                          {price.unit} · versão {price.version} ·{" "}
-                          {price.validFrom}
-                          {price.effectiveValidTo
-                            ? ` até ${price.effectiveValidTo}`
-                            : " em diante"}
-                        </option>
-                      ))}
-                  </select>
-                </label>
+                {/* Preço versionado, quantidade, unidade e turno do serviço
+                    saíram da tela porque nenhum deles era pergunta para quem
+                    aponta a frente. A unidade é do contrato e vem do catálogo;
+                    o preço é a versão vigente na data, e escolhê-lo à mão era
+                    convidar a escolher a errada; o turno do serviço repetia o
+                    do RDO; e a quantidade é o que o trecho, a largura e a
+                    espessura já dizem — digitá-la de novo só criava um segundo
+                    número para divergir do primeiro. Todos continuam no
+                    rascunho e continuam subindo. */}
+              </div>
 
-                {/* Item contratual ID sai da tela pelo mesmo motivo que Obra ID
-                    e Programação ID saíram: pedir um UUID a quem aponta em
-                    campo é pedir o que ninguém tem à mão. O valor continua no
-                    rascunho e continua subindo — o que deixa de existir é a
-                    caixa que convidava a digitá-lo errado. */}
-                <NumericField
-                  label="Quantidade executada"
-                  value={item.quantidadeExecutada}
-                  onChange={(value) =>
-                    updateServicoExecutado(
-                      item.localId,
-                      {
-                        quantidadeExecutada: value,
-                      },
-                    )
-                  }
-                />
-
-                <label>
-                  Unidade
-                  <input
-                    value={item.unidade}
-                    list="rdo-unidades"
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          unidade: normalizarUnidade(
-                            event.target.value,
-                          ),
-                        },
-                      )
-                    }
-                    placeholder="m², m³, t..."
-                  />
-                </label>
-
-                <label>
-                  Status de validação
-                  <select
-                    value={item.statusValidacao}
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          statusValidacao:
-                            event.target
-                              .value as ServicoExecutadoDraft["statusValidacao"],
-                        },
-                      )
-                    }
-                  >
-                    <option value="REGISTRADA">
-                      Registrada
-                    </option>
-                    <option value="VALIDADA">
-                      Validada
-                    </option>
-                    <option value="REJEITADA">
-                      Rejeitada
-                    </option>
-                  </select>
-                </label>
-
-                <label>
-                  Turno do serviço
-                  <select
-                    value={item.turno}
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          turno:
-                            event.target
-                              .value as ServicoExecutadoDraft["turno"],
-                        },
-                      )
-                    }
-                  >
-                    <option value="">
-                      Usar turno do RDO
-                    </option>
-                    <option value="DIURNO">
-                      Diurno
-                    </option>
-                    <option value="NOTURNO">
-                      Noturno
-                    </option>
-                  </select>
-                </label>
-
-                <label className="checkbox-field">
+              <div className="rdo-servico-marcas">
+                <label className="rdo-servico-marca">
                   <input
                     type="checkbox"
                     checked={item.retrabalho}
@@ -2175,10 +1919,16 @@ export function RdoCreatePage({
                       )
                     }
                   />
-                  Retrabalho
+                  <span>
+                    <strong>Retrabalho</strong>
+                    <small>
+                      Refazer o que já tinha sido executado. Não conta como
+                      produção nova na medição.
+                    </small>
+                  </span>
                 </label>
 
-                <label className="checkbox-field">
+                <label className="rdo-servico-marca">
                   <input
                     type="checkbox"
                     checked={item.producaoRejeitada}
@@ -2192,7 +1942,12 @@ export function RdoCreatePage({
                       )
                     }
                   />
-                  Produção rejeitada
+                  <span>
+                    <strong>Produção rejeitada</strong>
+                    <small>
+                      Executado e recusado na conferência.
+                    </small>
+                  </span>
                 </label>
               </div>
 
@@ -2217,350 +1972,15 @@ export function RdoCreatePage({
         </div>
       </section>
 
-          <section className="form-card" id="rdo-rateio">
-        <CollectionHeader
-          title="Rateio de colaboradores"
-          onAdd={() =>
-            setDraft((current) => ({
-              ...current,
-              alocacoesColaboradores: [
-                ...current.alocacoesColaboradores,
-                createEmptyAlocacaoColaborador(),
-              ],
-            }))
-          }
-        />
+          {/* O rateio de colaboradores saiu do RDO.
 
-        <div className="collection-list">
-          {draft.alocacoesColaboradores.map((item, index) => (
-            <div
-              className="collection-row"
-              key={item.localId}
-            >
-              <div className="row-title">
-                <strong>
-                  Rateio {index + 1}
-                </strong>
-
-                <button
-                  type="button"
-                  className="danger-link"
-                  onClick={() =>
-                    removeCollectionItem(
-                      "alocacoesColaboradores",
-                      item.localId,
-                    )
-                  }
-                >
-                  Remover
-                </button>
-              </div>
-
-              <div className="form-grid">
-                <LookupField
-                  label="Colaborador"
-                  value={
-                    alocacaoColaboradorLabels[
-                      item.localId
-                    ] ?? item.colaboradorId
-                  }
-                  placeholder="Buscar na equipe do RDO"
-                  emptyMessage="Nenhum integrante canônico selecionado na equipe."
-                  search={buscarColaboradoresDaEquipe}
-                  onQueryChange={(value) => {
-                    setAlocacaoColaboradorLabels(
-                      (current) => ({
-                        ...current,
-                        [item.localId]: value,
-                      }),
-                    );
-                    updateAlocacaoColaborador(
-                      item.localId,
-                      {
-                        colaboradorId: "",
-                      },
-                    );
-                  }}
-                  onSelect={(colaborador) => {
-                    setAlocacaoColaboradorLabels(
-                      (current) => ({
-                        ...current,
-                        [item.localId]:
-                          getColaboradorTitle(colaborador),
-                      }),
-                    );
-                    updateAlocacaoColaborador(
-                      item.localId,
-                      {
-                        colaboradorId: colaborador.id,
-                        equipe:
-                          colaborador.nomeGrupo ??
-                          item.equipe,
-                        funcao:
-                          colaborador.nomePerfil ??
-                          item.funcao,
-                      },
-                    );
-                  }}
-                  getKey={(colaborador) => colaborador.id}
-                  getTitle={getColaboradorTitle}
-                  getSubtitle={getColaboradorSubtitle}
-                />
-
-                <LookupField
-                  label="Equipe"
-                  value={item.equipe}
-                  placeholder="Equipe da obra ou nome livre"
-                  emptyMessage={
-                    equipesDaObra.length === 0
-                      ? "Nenhuma equipe vigente nesta obra. Pode digitar o nome."
-                      : "Nenhuma equipe com esse nome. Pode digitar o seu."
-                  }
-                  search={buscarEquipesDaObra}
-                  onQueryChange={(value) =>
-                    updateAlocacaoColaborador(item.localId, {
-                      equipe: value,
-                    })
-                  }
-                  onSelect={(equipe) =>
-                    updateAlocacaoColaborador(item.localId, {
-                      equipe: equipe.nome ?? "",
-                    })
-                  }
-                  getKey={(equipe) => equipe.id}
-                  getTitle={(equipe) => equipe.nome ?? "Sem nome"}
-                  getSubtitle={(equipe) =>
-                    equipe.integrantes === 1
-                      ? "1 integrante"
-                      : `${equipe.integrantes} integrantes`
-                  }
-                />
-
-                <LookupField
-                  label="Tipo de serviço"
-                  value={item.servicoNome}
-                  placeholder="Pesquise por codigo, frente ou servico"
-                  emptyMessage="Nenhum tipo de servico encontrado."
-                  search={buscarTiposServico}
-                  onQueryChange={(value) =>
-                    updateAlocacaoColaborador(
-                      item.localId,
-                      {
-                        servicoNome: value,
-                      },
-                    )
-                  }
-                  onSelect={(serviceType) =>
-                    updateAlocacaoColaborador(
-                      item.localId,
-                      {
-                        servicoNome:
-                          formatRdoServiceType(serviceType),
-                      },
-                    )
-                  }
-                  getKey={(serviceType) => serviceType.catalogId}
-                  getTitle={getTipoServicoTitle}
-                  getSubtitle={getTipoServicoSubtitle}
-                />
-
-                <label>
-                  Início
-                  <input
-                    type="time"
-                    value={item.horaInicio}
-                    onChange={(event) =>
-                      updateAlocacaoColaborador(
-                        item.localId,
-                        {
-                          horaInicio:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Fim
-                  <input
-                    type="time"
-                    value={item.horaFim}
-                    onChange={(event) =>
-                      updateAlocacaoColaborador(
-                        item.localId,
-                        {
-                          horaFim:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <NumericField
-                  label="Percentual do dia"
-                  value={item.percentualDia}
-                  onChange={(value) =>
-                    updateAlocacaoColaborador(
-                      item.localId,
-                      {
-                        percentualDia: value,
-                      },
-                    )
-                  }
-                />
-
-                <label>
-                  Turno
-                  <select
-                    value={item.turno}
-                    onChange={(event) =>
-                      updateAlocacaoColaborador(
-                        item.localId,
-                        {
-                          turno:
-                            event.target
-                              .value as AlocacaoColaboradorDraft["turno"],
-                        },
-                      )
-                    }
-                  >
-                    <option value="">
-                      Usar turno do RDO
-                    </option>
-                    <option value="DIURNO">
-                      Diurno
-                    </option>
-                    <option value="NOTURNO">
-                      Noturno
-                    </option>
-                  </select>
-                </label>
-
-                <label>
-                  Função
-                  <input
-                    value={item.funcao}
-                    onChange={(event) =>
-                      updateAlocacaoColaborador(
-                        item.localId,
-                        {
-                          funcao:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Centro de custo
-                  <input
-                    value={item.centroCusto}
-                    onChange={(event) =>
-                      updateAlocacaoColaborador(
-                        item.localId,
-                        {
-                          centroCusto:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Tipo de alocação
-                  <select
-                    value={item.tipoAlocacao}
-                    onChange={(event) =>
-                      updateAlocacaoColaborador(
-                        item.localId,
-                        {
-                          tipoAlocacao:
-                            event.target
-                              .value as AlocacaoColaboradorDraft["tipoAlocacao"],
-                        },
-                      )
-                    }
-                  >
-                    <option value="TRABALHO">
-                      Trabalho
-                    </option>
-                    <option value="DESLOCAMENTO">
-                      Deslocamento
-                    </option>
-                    <option value="TREINAMENTO">
-                      Treinamento
-                    </option>
-                    <option value="MANUTENCAO">
-                      Manutenção
-                    </option>
-                    <option value="APOIO">
-                      Apoio
-                    </option>
-                    <option value="ADMINISTRATIVO">
-                      Administrativo
-                    </option>
-                    <option value="AFASTAMENTO">
-                      Afastamento
-                    </option>
-                    <option value="OUTRO">
-                      Outro
-                    </option>
-                  </select>
-                </label>
-
-                <label>
-                  Status
-                  <select
-                    value={item.status}
-                    onChange={(event) =>
-                      updateAlocacaoColaborador(
-                        item.localId,
-                        {
-                          status:
-                            event.target
-                              .value as AlocacaoColaboradorDraft["status"],
-                        },
-                      )
-                    }
-                  >
-                    <option value="REGISTRADA">
-                      Registrada
-                    </option>
-                    <option value="VALIDADA">
-                      Validada
-                    </option>
-                    <option value="CONFLITO">
-                      Conflito
-                    </option>
-                  </select>
-                </label>
-
-              </div>
-
-              <label className="full-width">
-                Observações do rateio
-                <textarea
-                  rows={3}
-                  value={item.observacoes}
-                  onChange={(event) =>
-                    updateAlocacaoColaborador(
-                      item.localId,
-                      {
-                        observacoes:
-                          event.target.value,
-                      },
-                    )
-                  }
-                />
-              </label>
-            </div>
-          ))}
-        </div>
-      </section>
+              Ele pedia, por pessoa e por linha, percentual do dia, tipo de
+              alocação, centro de custo, função, turno e status — uma segunda
+              folha de apontamento ao lado da mão de obra, preenchida pela
+              mesma pessoa sobre as mesmas pessoas. Ninguém a preenchia, e o
+              que dela se esperava (quem trabalhou, em que horário) a seção de
+              Mão de obra já responde. O que ficou órfão foi um bloco que
+              tornava o formulário mais longo sem tornar o dia mais descrito. */}
 
       <div id="rdo-mao-de-obra">
         <RdoWorkforceEditor
@@ -2572,249 +1992,27 @@ export function RdoCreatePage({
           sourceRdoNumber={
             activeCreationContext?.previousRdo?.numeroRdo ?? null
           }
+          jaApontados={apontadosHoje.pessoas}
           onChange={setDraft}
         />
       </div>
 
           <section className="form-card" id="rdo-equipamentos">
-        <CollectionHeader
-          title="Equipamentos"
-          onAdd={() =>
-            setDraft((current) => ({
-              ...current,
-              equipamentos: [
-                ...current.equipamentos,
-                createEmptyEquipamento(),
-              ],
-            }))
-          }
-        />
+        <div className="section-heading collection-heading">
+          <div>
+            <h2>Equipamentos</h2>
+          </div>
+          <p>Marque as máquinas que trabalharam hoje.</p>
+        </div>
 
         <RdoEquipmentPicker
           parque={parqueDaObra}
           equipamentos={draft.equipamentos}
+          jaApontados={apontadosHoje.equipamentos}
           onChange={(equipamentos) =>
             setDraft((current) => ({ ...current, equipamentos }))
           }
         />
-
-        <div className="collection-list">
-          {draft.equipamentos.map(
-            (item, index) => (
-              <div
-                className="collection-row"
-                key={item.localId}
-              >
-                <div className="row-title">
-                  <strong>
-                    Equipamento {index + 1}
-                  </strong>
-
-                  <button
-                    type="button"
-                    className="danger-link"
-                    onClick={() =>
-                      removeCollectionItem(
-                        "equipamentos",
-                        item.localId,
-                      )
-                    }
-                  >
-                    Remover
-                  </button>
-                </div>
-
-                <div className="form-grid">
-                  <LookupField
-                    label="Asset"
-                    value={
-                      item.prefixo ||
-                      item.descricao ||
-                      item.assetId
-                    }
-                    placeholder="Digite prefixo, nome ou categoria"
-                    emptyMessage="Nenhum asset encontrado. Confira se a base Zeladoria foi sincronizada."
-                    search={buscarAssets}
-                    onQueryChange={(value) =>
-                      updateEquipamento(
-                        item.localId,
-                        {
-                          assetId: "",
-                          prefixo: value,
-                        },
-                      )
-                    }
-                    onSelect={(asset) =>
-                      updateEquipamento(
-                        item.localId,
-                        {
-                          assetId: asset.id,
-                          prefixo:
-                            asset.externalCode ??
-                            item.prefixo,
-                          descricao:
-                            asset.name ??
-                            item.descricao,
-                          tipoEquipamento:
-                            asset.category ??
-                            item.tipoEquipamento,
-                        },
-                      )
-                    }
-                    getKey={(asset) => asset.id}
-                    getTitle={getAssetTitle}
-                    getSubtitle={getAssetSubtitle}
-                  />
-
-                  <label>
-                    Prefixo
-                    <input
-                      value={item.prefixo}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            prefixo:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Descrição
-                    <input
-                      value={item.descricao}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            descricao:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Tipo
-                    <input
-                      value={item.tipoEquipamento}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            tipoEquipamento:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Vínculo
-                    <select
-                      value={item.tipoVinculo}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            tipoVinculo:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    >
-                      <option value="PROPRIO">
-                        Próprio
-                      </option>
-                      <option value="LOCADO">
-                        Locado
-                      </option>
-                      <option value="TERCEIRIZADO">
-                        Terceirizado
-                      </option>
-                    </select>
-                  </label>
-
-                  <label>
-                    Quantidade
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.quantidade}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            quantidade:
-                              parseNumericInput(
-                                event.target.value,
-                              ),
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Início
-                    <input
-                      type="time"
-                      value={item.horaInicio}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            horaInicio:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Fim
-                    <input
-                      type="time"
-                      value={item.horaFim}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            horaFim:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-
-                <label className="full-width">
-                  Observações do equipamento
-                  <textarea
-                    rows={3}
-                    value={item.observacoes}
-                    onChange={(event) =>
-                      updateEquipamento(
-                        item.localId,
-                        {
-                          observacoes:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-              </div>
-            ),
-          )}
-        </div>
       </section>
 
           <section className="form-card" id="rdo-materiais">

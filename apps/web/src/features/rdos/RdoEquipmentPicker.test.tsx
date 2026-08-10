@@ -9,6 +9,17 @@ import { RdoEquipmentPicker } from "./RdoEquipmentPicker";
 import type { EquipamentoDraft } from "./rdo.types";
 import type { RdoContextEquipment } from "./rdoLookupApi";
 
+/**
+ * O parque da obra virou uma lista de marcar, e o terceiro ficou atrás de um
+ * botão.
+ *
+ * <p>Cada máquina era uma ficha com nove campos — asset, prefixo, descrição,
+ * tipo, vínculo, quantidade, início, fim, observações — para dizer que a
+ * retroescavadeira da obra trabalhou hoje. O que é exceção, a máquina de
+ * terceiro que não está no Zeladoria, ocupava a tela inteira; o que é regra
+ * não tinha lugar nenhum.
+ */
+
 const PARQUE: RdoContextEquipment[] = [
   {
     id: "asset-esc",
@@ -28,10 +39,22 @@ function linha(patch: Partial<EquipamentoDraft>): EquipamentoDraft {
   return { ...createEmptyEquipamento(), ...patch };
 }
 
+function lista() {
+  return screen.getByRole("list", { name: "Equipamentos do RDO" });
+}
+
+function caixaDe(nome: RegExp): HTMLInputElement {
+  const item = within(lista())
+    .getAllByRole("listitem")
+    .find((it) => nome.test(it.textContent ?? ""));
+  if (!item) throw new Error(`Linha não encontrada: ${String(nome)}`);
+  return within(item).getByRole("checkbox");
+}
+
 afterEach(cleanup);
 
-describe("escolha de equipamentos com o parque à vista", () => {
-  it("mostra o parque de um lado e o que já entrou do outro", () => {
+describe("marcação de equipamentos do RDO", () => {
+  it("mostra numa lista só o que já entrou e o resto do parque", () => {
     render(
       <RdoEquipmentPicker
         parque={PARQUE}
@@ -47,20 +70,14 @@ describe("escolha de equipamentos com o parque à vista", () => {
       />,
     );
 
-    const parque = screen.getByRole("listbox", { name: /No parque da obra/ });
-    const noRdo = screen.getByRole("listbox", { name: /Neste RDO/ });
-
-    expect(within(parque).getByRole("option", { name: /Escavadeira/ }))
-      .toBeVisible();
-    // O que já foi lançado sai da oferta: duas linhas do mesmo asset dobrariam
-    // a hora de máquina do dia sem ninguém ver.
-    expect(within(parque).queryByRole("option", { name: /Caminhão/ }))
-      .not.toBeInTheDocument();
-    expect(within(noRdo).getByRole("option", { name: /Caminhão/ }))
-      .toBeVisible();
+    // O que já foi lançado aparece marcado, e uma vez só: duas linhas do mesmo
+    // asset dobrariam a hora de máquina do dia sem ninguém ver.
+    expect(within(lista()).getAllByRole("listitem")).toHaveLength(2);
+    expect(caixaDe(/Caminhão/)).toBeChecked();
+    expect(caixaDe(/Escavadeira/)).not.toBeChecked();
   });
 
-  it("lança várias máquinas de uma vez, já identificadas pelo cadastro", async () => {
+  it("lança a máquina já identificada pelo cadastro", async () => {
     const usuario = userEvent.setup();
     const onChange = vi.fn();
     render(
@@ -71,48 +88,120 @@ describe("escolha de equipamentos com o parque à vista", () => {
       />,
     );
 
-    await usuario.click(screen.getByRole("option", { name: /Escavadeira/ }));
-    await usuario.click(screen.getByRole("option", { name: /Caminhão/ }));
-    await usuario.click(screen.getByRole("button", { name: "Adicionar" }));
+    await usuario.click(caixaDe(/Escavadeira/));
 
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0]).toEqual([
+    expect(onChange.mock.calls.at(-1)?.[0]).toEqual([
       expect.objectContaining({
         assetId: "asset-esc",
         prefixo: "ESC-07",
         descricao: "Escavadeira Hidráulica",
         tipoEquipamento: "Terraplenagem",
       }),
-      expect.objectContaining({ assetId: "asset-cam", prefixo: "CAM-12" }),
     ]);
   });
 
-  it("tira várias do RDO de uma vez", async () => {
+  it("tira do RDO a máquina desmarcada", async () => {
     const usuario = userEvent.setup();
     const onChange = vi.fn();
-    const equipamentos = [
-      linha({ localId: "l1", assetId: "asset-esc", descricao: "Escavadeira Hidráulica" }),
-      linha({ localId: "l2", descricao: "Betoneira do empreiteiro" }),
-    ];
     render(
       <RdoEquipmentPicker
         parque={PARQUE}
-        equipamentos={equipamentos}
+        equipamentos={[
+          linha({ localId: "l1", assetId: "asset-esc", descricao: "Escavadeira Hidráulica" }),
+          linha({ localId: "l2", descricao: "Betoneira do empreiteiro" }),
+        ]}
         onChange={onChange}
       />,
     );
-    const noRdo = screen.getByRole("listbox", { name: /Neste RDO/ });
 
-    await usuario.click(within(noRdo).getByRole("option", { name: /Escavadeira/ }));
-    await usuario.click(within(noRdo).getByRole("option", { name: /Betoneira/ }));
-    await usuario.click(screen.getByRole("button", { name: "Remover" }));
+    await usuario.click(caixaDe(/Escavadeira/));
 
-    expect(onChange).toHaveBeenCalledWith([]);
+    expect(onChange.mock.calls.at(-1)?.[0]).toEqual([
+      expect.objectContaining({ localId: "l2" }),
+    ]);
+  });
+
+  /*
+   * A máquina de terceiro é a exceção que justifica campos livres, e por isso
+   * eles ficam escondidos: abertos, competiam com a lista que responde à
+   * pergunta comum.
+   */
+  it("mantém escondidos os campos do terceiro até alguém pedir por eles", async () => {
+    const usuario = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RdoEquipmentPicker
+        parque={PARQUE}
+        equipamentos={[]}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.queryByLabelText("Prefixo ou placa")).toBeNull();
+
+    await usuario.click(
+      screen.getByRole("button", { name: "Adicionar equipamento de terceiro" }),
+    );
+    await usuario.type(screen.getByLabelText("Prefixo ou placa"), "BET-01");
+    await usuario.type(
+      screen.getByLabelText("Descrição"),
+      "Betoneira do empreiteiro",
+    );
+    await usuario.click(screen.getByRole("button", { name: "Adicionar ao RDO" }));
+
+    expect(onChange.mock.calls.at(-1)?.[0]).toEqual([
+      expect.objectContaining({
+        assetId: "",
+        prefixo: "BET-01",
+        descricao: "Betoneira do empreiteiro",
+        tipoVinculo: "TERCEIRIZADO",
+      }),
+    ]);
+  });
+
+  /*
+   * A exportação recusa equipamento sem descrição. Cair no prefixo evita que a
+   * máquina suma do RDO por um campo que ninguém viu em branco.
+   */
+  it("usa o prefixo como descrição quando só ele foi escrito", async () => {
+    const usuario = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RdoEquipmentPicker parque={[]} equipamentos={[]} onChange={onChange} />,
+    );
+
+    await usuario.click(
+      screen.getByRole("button", { name: "Adicionar equipamento de terceiro" }),
+    );
+    await usuario.type(screen.getByLabelText("Prefixo ou placa"), "BET-01");
+    await usuario.click(screen.getByRole("button", { name: "Adicionar ao RDO" }));
+
+    expect(onChange.mock.calls.at(-1)?.[0][0]).toMatchObject({
+      prefixo: "BET-01",
+      descricao: "BET-01",
+    });
+  });
+
+  it("avisa a máquina já apontada em outro RDO do dia sem impedir a marcação", async () => {
+    const usuario = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RdoEquipmentPicker
+        parque={PARQUE}
+        equipamentos={[]}
+        jaApontados={new Map([["asset-esc", "RDO-0042"]])}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByText("Já apontado hoje no RDO-0042.")).toBeVisible();
+    await usuario.click(caixaDe(/Escavadeira/));
+    expect(onChange).toHaveBeenCalled();
   });
 
   /*
    * Sem contexto — offline, ou obra sem parque cadastrado — a tela não pode
-   * dar a entender que não há saída: a máquina ainda entra à mão pela ficha.
+   * dar a entender que não há saída.
    */
   it("aponta a saída manual quando o parque não veio", () => {
     render(

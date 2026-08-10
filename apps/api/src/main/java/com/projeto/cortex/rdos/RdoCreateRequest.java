@@ -209,9 +209,13 @@ public record RdoCreateRequest(
              * serviço. Vieram do controle geométrico, etapa que saiu do RDO:
              * a medida pertence ao trecho a que se refere. Opcionais — ausência
              * é falta de medida, nunca zero.
+             *
+             * <p>Ambas em metros. A espessura era a única das três medidas em
+             * outra unidade, e a divisão por cem vivia escondida dentro da
+             * conta de volume.
              */
             BigDecimal larguraM,
-            BigDecimal espessuraCm
+            BigDecimal espessuraM
     ) {
         /** Assinatura anterior à captura de largura e espessura. */
         public ServicoExecutadoItem(

@@ -107,9 +107,13 @@ export interface ServicoExecutadoDraft {
   pista: string;
   faixa: string;
   localizacao: string;
-  /** Largura e espessura executadas: é delas que saem área e volume. */
+  /**
+   * Largura e espessura executadas, ambas em metros: é delas que saem área e
+   * volume. A espessura vivia em centímetros — a única das três medidas numa
+   * unidade diferente, com a divisão por cem escondida dentro da conta.
+   */
   larguraM: NumericInput;
-  espessuraCm: NumericInput;
+  espessuraM: NumericInput;
   turno: "" | TurnoRdo;
   statusValidacao: "" | "REGISTRADA" | "VALIDADA" | "REJEITADA";
   retrabalho: boolean;

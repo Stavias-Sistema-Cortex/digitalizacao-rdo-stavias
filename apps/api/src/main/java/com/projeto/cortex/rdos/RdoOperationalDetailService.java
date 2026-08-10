@@ -370,7 +370,7 @@ public class RdoOperationalDetailService {
                     pista,
                     faixa,
                     largura_m,
-                    espessura_cm,
+                    espessura_m,
                     localizacao,
                     turno,
                     status_validacao,
@@ -413,7 +413,7 @@ public class RdoOperationalDetailService {
                         rs.getString("pista"),
                         rs.getString("faixa"),
                         rs.getBigDecimal("largura_m"),
-                        rs.getBigDecimal("espessura_cm")
+                        rs.getBigDecimal("espessura_m")
                 ),
                 rdoId
         );
@@ -972,7 +972,7 @@ public class RdoOperationalDetailService {
                         pista,
                         faixa,
                         largura_m,
-                        espessura_cm,
+                        espessura_m,
                         localizacao,
                         data_execucao,
                         turno,
@@ -1014,7 +1014,7 @@ public class RdoOperationalDetailService {
                     nuloSeVazio(item.pista()),
                     nuloSeVazio(item.faixa()),
                     item.larguraM(),
-                    item.espessuraCm(),
+                    item.espessuraM(),
                     nuloSeVazio(item.localizacao()),
                     dataRdo,
                     prepared.turn(),
