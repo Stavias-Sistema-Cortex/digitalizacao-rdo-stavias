@@ -11,6 +11,69 @@
 -- descreveu o que se quis dizer — e isso só pode valer enquanto o registro não
 -- produziu consequência.
 
+-- A tranca cega da V49 sai primeiro, e este é também o conserto de um erro em
+-- produção: ela recusava QUALQUER UPDATE em catalogo_servico — inclusive a
+-- exclusão que a V72 criou. A V72 abriu o estado 'EXCLUIDO' no CHECK mas
+-- esqueceu desta tranca, então toda exclusão que chegava ao servidor morria em
+-- 'catalogo_servico_IMMUTABLE' e voltava para o aparelho como rejeição, com o
+-- serviço ainda de pé na tela. Apagar, excluir e arquivar jamais podem travar
+-- a sincronização: a fila não reenvia recusa terminal, e uma exclusão recusada
+-- vira um registro que ninguém consegue tirar do caminho.
+--
+-- O que a tranca protegia de verdade continua protegido, agora por guardas que
+-- sabem distinguir: DELETE segue proibido nas duas tabelas — sumir com a linha
+-- levaria junto o histórico que os RDOs citam —, e a identidade de cada
+-- registro segue imutável. O que passa é a transição legítima: excluir,
+-- restaurar, corrigir.
+DROP TRIGGER trg_catalogo_servico_immutable ON catalogo_servico;
+DROP TRIGGER trg_service_price_version_immutable ON service_price_version;
+
+CREATE OR REPLACE FUNCTION cortex_guard_catalogo_servico_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'P0001',
+            MESSAGE = 'catalogo_servico_IMMUTABLE';
+    END IF;
+    -- Identidade e autoria não se corrigem: o id é o que os RDOs e os preços
+    -- citam, e quem criou o registro criou o registro.
+    IF NEW.id <> OLD.id
+       OR NEW.obra_autorizadora_id <> OLD.obra_autorizadora_id
+       OR NEW.criado_por <> OLD.criado_por
+       OR NEW.criado_em <> OLD.criado_em THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'P0001',
+            MESSAGE = 'catalogo_servico_IMMUTABLE';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_catalogo_servico_guard
+BEFORE UPDATE OR DELETE ON catalogo_servico
+FOR EACH ROW EXECUTE FUNCTION cortex_guard_catalogo_servico_mutation();
+
+-- No preço, o DELETE continua proibido por este guarda; o UPDATE é julgado
+-- pelo gatilho de correção criado logo abaixo, que conhece as regras de
+-- consequência e vigência.
+CREATE OR REPLACE FUNCTION cortex_guard_service_price_version_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION USING
+        ERRCODE = 'P0001',
+        MESSAGE = 'service_price_version_IMMUTABLE';
+END;
+$$;
+
+CREATE TRIGGER trg_service_price_version_no_delete
+BEFORE DELETE ON service_price_version
+FOR EACH ROW EXECUTE FUNCTION cortex_guard_service_price_version_delete();
+
 ALTER TABLE service_catalog_mutation
     DROP CONSTRAINT chk_service_catalog_mutation_operation;
 
@@ -45,7 +108,8 @@ BEGIN
        OR NEW.moeda <> OLD.moeda
        OR NEW.versao <> OLD.versao
        OR NEW.supersedes_id IS DISTINCT FROM OLD.supersedes_id
-       OR NEW.criado_por <> OLD.criado_por THEN
+       OR NEW.criado_por <> OLD.criado_por
+       OR NEW.criado_em <> OLD.criado_em THEN
         RAISE EXCEPTION USING
             ERRCODE = 'P0001',
             MESSAGE = 'SERVICE_PRICE_IDENTITY_IMMUTABLE';

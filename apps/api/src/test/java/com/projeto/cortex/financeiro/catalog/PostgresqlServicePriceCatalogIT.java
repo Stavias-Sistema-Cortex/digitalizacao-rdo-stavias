@@ -161,11 +161,18 @@ class PostgresqlServicePriceCatalogIT {
         ));
         assertThat(cancelled.status()).isEqualTo("CANCELLED");
         assertThat(cancelled.effectiveValidTo()).isEqualTo(LocalDate.of(2026, 7, 31));
+        /*
+         * A história continua não-reescrevível, agora com o motivo certo. A
+         * tranca cega da V49 recusava qualquer UPDATE — inclusive a exclusão
+         * legítima da V72, que morria nela em produção. A V75 trocou a tranca
+         * pelo gatilho de correção, e é ele que recusa reescrever uma versão já
+         * substituída: ela é elo de uma corrente, não mais só um cadastro.
+         */
         assertThatThrownBy(() -> jdbc.update(
                 "UPDATE service_price_version SET valor_unitario = 1 WHERE id = ?",
                 first.id()
         )).isInstanceOf(DataAccessException.class)
-                .hasMessageContaining("service_price_version_IMMUTABLE");
+                .hasMessageContaining("SERVICE_PRICE_ALREADY_TERMINATED");
         assertThatThrownBy(() -> jdbc.update(
                 "DELETE FROM service_price_version WHERE id = ?", first.id()
         )).isInstanceOf(DataAccessException.class);

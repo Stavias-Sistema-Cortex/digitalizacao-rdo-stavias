@@ -327,6 +327,42 @@ class PostgresqlCorrecaoDeCatalogoIT {
     }
 
     /*
+     * O caminho que estava quebrado em produção desde a V72, sem que nenhum
+     * teste de integração o percorresse. A V49 trancou catalogo_servico contra
+     * qualquer UPDATE; a V72 abriu o estado 'EXCLUIDO' no CHECK mas esqueceu da
+     * tranca, então toda exclusão que chegava ao servidor morria em
+     * 'catalogo_servico_IMMUTABLE' e voltava como rejeição — e rejeição de
+     * exclusão é um registro que ninguém consegue tirar do caminho. Excluir,
+     * restaurar e arquivar jamais podem travar a sincronização; este teste
+     * percorre a transição inteira num PostgreSQL de verdade para prender isso.
+     */
+    @Test
+    void excluiERestauraOServicoContraOBancoDeVerdade() {
+        String obra = insertWorksite("EXCLUI-RESTAURA");
+        String ator = insertActor("Dono da exclusão");
+        ServicePriceCatalogService servico = service();
+        ServiceCatalogEntry catalogo = inTx(() -> servico.createService(
+                obra, ator, new CreateServiceCommand(
+                        mutation(), "EXCLUI." + sufixo(), "Serviço de saída", null
+                )
+        ));
+
+        ServiceCatalogEntry excluido = inTx(() -> servico.excluirServico(
+                obra, ator, catalogo.id(),
+                new ExcludeServiceCommand(mutation(), "Cadastrado por engano")
+        ));
+        assertThat(excluido.status()).isEqualTo("EXCLUIDO");
+        assertThat(excluido.excludedAt()).isNotNull();
+
+        ServiceCatalogEntry restaurado = inTx(() -> servico.restaurarServico(
+                obra, ator, catalogo.id(),
+                new ExcludeServiceCommand(mutation(), null)
+        ));
+        assertThat(restaurado.status()).isEqualTo("ACTIVE");
+        assertThat(restaurado.excludedAt()).isNull();
+    }
+
+    /*
      * Uma execução aceita de verdade: é ela que congela o valor unitário e o
      * total, e é por existir que a correção deixa de ser possível. Os gatilhos
      * de receita exigem preço vigente na data, valor idêntico ao do cadastro,
