@@ -262,6 +262,25 @@
   color: #6a5518;
 }
 
+/*
+ * Cada célula do rastro empilha duas informações — data e RDO, serviço e
+ * código, quantidade e unidade. Sem eixo, elas encostavam uma na outra e a
+ * leitura virava emenda: "1.000 × R$ 0,5000M · versão 1".
+ */
+.finance-revenue-table td > time,
+.finance-revenue-table td > strong,
+.finance-revenue-table td > span,
+.finance-revenue-table td > small,
+.finance-revenue-table td > code {
+  display: block;
+}
+
+.finance-revenue-table td > small,
+.finance-revenue-table td > code {
+  margin-top: 2px;
+  color: var(--color-muted);
+}
+
 .finance-revenue-table-wrap {
   overflow-x: auto;
 }
@@ -671,6 +690,34 @@
   font-size: 0.78rem;
   color: var(--color-ink);
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Rótulo, valor e detalhe de cada medida do preço.
+ *
+ * O bloco tinha espaço entre os grupos e nenhum dentro deles: rótulo, valor e
+ * detalhe eram elementos inline encostados, e a linha saía lida como
+ * "Vigência2026-08-07até" — palavras coladas que parecem erro de texto e são
+ * falta de eixo. Empilhar dá ao rótulo o papel de rótulo e devolve a leitura.
+ */
+.finance-price-version > div:not(.finance-price-version__actions) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.finance-price-version > div:not(.finance-price-version__actions) > span {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.finance-price-version > div:not(.finance-price-version__actions) > small {
+  color: var(--color-muted);
+  line-height: 1.35;
 }
 
 .finance-price-version__actions {
