@@ -15,6 +15,7 @@ import type { LeituraMapaObra } from "./obraMapApi";
 const carregarMapaObra = vi.hoisted(() => vi.fn());
 const registrarTrechoDesenhado = vi.hoisted(() => vi.fn());
 const encerrarGeometria = vi.hoisted(() => vi.fn());
+const redesenharTrecho = vi.hoisted(() => vi.fn());
 const resolverRdoDoTrecho = vi.hoisted(() => vi.fn());
 const createAndPersistLocalPendingRdoDraft = vi.hoisted(() => vi.fn());
 const getLocalRdo = vi.hoisted(() => vi.fn());
@@ -32,12 +33,20 @@ const leaflet = vi.hoisted(() => ({
   ultimasFeatures: { features: [] } as { features: { id: string }[] },
   espelho: undefined as unknown,
   removerPonto: null as ((id: string) => void) | null,
+  redesenharTrecho: null as ((id: string) => void) | null,
 }));
 
 /** A lixeira do balão do ponto, como o mapa a acionaria ao clique. */
 function clicarNaLixeira(id: string) {
   act(() => {
     leaflet.removerPonto?.(id);
+  });
+}
+
+/** O lápis do balão do trecho, pelo mesmo caminho. */
+function clicarNoLapis(id: string) {
+  act(() => {
+    leaflet.redesenharTrecho?.(id);
   });
 }
 
@@ -66,6 +75,7 @@ vi.mock("../../auth/authSession", async (importOriginal) => ({
 vi.mock("./obraMapApi", () => ({ carregarMapaObra }));
 vi.mock("./obraGeometriaMutations", () => ({
   encerrarGeometria,
+  redesenharTrecho,
   registrarTrechoDesenhado,
 }));
 vi.mock("./rdoDoTrechoDesenhado", () => ({ resolverRdoDoTrecho }));
@@ -100,6 +110,7 @@ vi.mock("./LeafletTrechoMap", () => ({
       ) => void;
       onCamera?: unknown;
       onRemoverPonto?: ((id: string) => void) | null;
+      onRedesenharTrecho?: ((id: string) => void) | null;
     }) => {
       leaflet.marcando = props.marcando ?? null;
       leaflet.ultimoRascunho = props.rascunho ?? null;
@@ -107,6 +118,7 @@ vi.mock("./LeafletTrechoMap", () => ({
       leaflet.ultimasFeatures = props.features;
       leaflet.espelho = props.onCamera ?? null;
       leaflet.removerPonto = props.onRemoverPonto ?? null;
+      leaflet.redesenharTrecho = props.onRedesenharTrecho ?? null;
       return (
         <div
           data-testid="mapa-leaflet"
@@ -150,6 +162,8 @@ beforeEach(() => {
   registrarTrechoDesenhado.mockReset();
   encerrarGeometria.mockReset();
   encerrarGeometria.mockResolvedValue({ id: "ponto-1" });
+  redesenharTrecho.mockReset();
+  redesenharTrecho.mockResolvedValue({ id: "geo-1" });
   carregarMapaObra.mockResolvedValue(leitura());
   registrarTrechoDesenhado.mockResolvedValue({ id: "geo-1" });
   resolverRdoDoTrecho.mockReset();
@@ -170,6 +184,7 @@ beforeEach(() => {
   leaflet.marcando = null;
   leaflet.ultimoRascunho = null;
   leaflet.marcar = null;
+  leaflet.redesenharTrecho = null;
   leaflet.espelho = undefined;
   satelite.ultimaLeitura = undefined;
 });
@@ -186,6 +201,28 @@ function pontoOperacional(id: string) {
     properties: { observadoEm: "2026-08-04T12:00:00.000Z" },
     fonte: "CAPTURA_CAMPO",
     versao: 1,
+    validoDesde: "2026-08-04T12:00:00.000Z",
+    validoAte: null,
+  };
+}
+
+/** Uma linha já desenhada e já confirmada pelo servidor. */
+function trechoDesenhado(id: string) {
+  return {
+    id,
+    categoria: "TRECHO",
+    objetoTipo: "RDO",
+    objetoId: "rdo-1",
+    geometry: {
+      type: "LineString" as const,
+      coordinates: [
+        [-47.4, -22.0],
+        [-47.3, -22.01],
+      ],
+    },
+    properties: { rodovia: "SP-310", sentido: "Sul" },
+    fonte: "GESTAO_MAPA",
+    versao: 3,
     validoDesde: "2026-08-04T12:00:00.000Z",
     validoAte: null,
   };
@@ -792,5 +829,171 @@ describe("RodoviaWorkspace", () => {
     expect(
       screen.getByRole("button", { name: "Registrar trecho" }),
     ).toBeEnabled();
+  });
+  /**
+   * Corrigir em vez de refazer.
+   *
+   * <p>A lixeira resolvia a linha errada de um jeito só: jogando fora o
+   * desenho inteiro. Quem errou um extremo por cinquenta metros tinha que
+   * apagar a linha e refazê-la do zero — remarcando o extremo que já estava
+   * certo e redigitando rodovia, sentido, faixa e quilômetro para descrever de
+   * novo exatamente o mesmo trabalho.
+   */
+  describe("corrigir o traçado de um trecho", () => {
+    it("abre a correção com os extremos que a linha já tem", async () => {
+      carregarMapaObra.mockResolvedValue(
+        leitura({ dados: { obra, features: [trechoDesenhado("geo-1")] } }),
+      );
+      render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+      await screen.findByTestId("mapa-leaflet");
+
+      clicarNoLapis("geo-1");
+
+      await screen.findByRole("form", { name: /Correção do traçado/i });
+      expect(leaflet.ultimoRascunho).toEqual({
+        inicio: { lat: -22.0, lng: -47.4 },
+        fim: { lat: -22.01, lng: -47.3 },
+      });
+    });
+
+    it("sobe só a forma nova, sobre o mesmo trecho", async () => {
+      const user = userEvent.setup();
+      carregarMapaObra.mockResolvedValue(
+        leitura({ dados: { obra, features: [trechoDesenhado("geo-1")] } }),
+      );
+      render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+      await screen.findByTestId("mapa-leaflet");
+
+      clicarNoLapis("geo-1");
+      await screen.findByRole("form", { name: /Correção do traçado/i });
+      marcar("FIM", { lat: -22.05, lng: -47.25 });
+      await user.click(
+        screen.getByRole("button", { name: "Salvar o traçado" }),
+      );
+
+      await waitFor(() => expect(redesenharTrecho).toHaveBeenCalledTimes(1));
+      expect(redesenharTrecho).toHaveBeenCalledWith(
+        expect.objectContaining({
+          featureId: "geo-1",
+          pontos: [
+            { lat: -22.0, lng: -47.4 },
+            { lat: -22.05, lng: -47.25 },
+          ],
+        }),
+      );
+      // O desenho não é recriado: seria outro registro, e o Financeiro leria
+      // duas declarações do mesmo trabalho.
+      expect(registrarTrechoDesenhado).not.toHaveBeenCalled();
+      expect(encerrarGeometria).not.toHaveBeenCalled();
+    });
+
+    /*
+     * O que a linha representa já está descrito, e não muda por ela ter ficado
+     * torta. Reabrir esses campos aqui convidaria a reescrever, num gesto de
+     * geometria, o que o apontamento do RDO afirma.
+     */
+    it("não pede de novo o que a linha já descreve", async () => {
+      carregarMapaObra.mockResolvedValue(
+        leitura({ dados: { obra, features: [trechoDesenhado("geo-1")] } }),
+      );
+      render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+      await screen.findByTestId("mapa-leaflet");
+
+      clicarNoLapis("geo-1");
+
+      await screen.findByRole("form", { name: /Correção do traçado/i });
+      expect(screen.queryByLabelText("Rodovia")).toBeNull();
+      expect(screen.queryByLabelText("Km inicial")).toBeNull();
+    });
+
+    it("sai da correção sem gravar quando o traçado estava bom", async () => {
+      const user = userEvent.setup();
+      carregarMapaObra.mockResolvedValue(
+        leitura({ dados: { obra, features: [trechoDesenhado("geo-1")] } }),
+      );
+      render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+      await screen.findByTestId("mapa-leaflet");
+
+      clicarNoLapis("geo-1");
+      await screen.findByRole("form", { name: /Correção do traçado/i });
+      await user.click(
+        screen.getByRole("button", { name: "Deixar como está" }),
+      );
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("form", { name: /Correção do traçado/i }),
+        ).toBeNull(),
+      );
+      expect(redesenharTrecho).not.toHaveBeenCalled();
+    });
+
+    /*
+     * O rascunho é o mesmo campo dos dois gestos. Trocá-lo por baixo apagaria
+     * da tela extremos que ninguém desistiu de marcar.
+     */
+    it("não sacrifica em silêncio o desenho em andamento", async () => {
+      const user = userEvent.setup();
+      carregarMapaObra.mockResolvedValue(
+        leitura({ dados: { obra, features: [trechoDesenhado("geo-1")] } }),
+      );
+      render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+      await screen.findByTestId("mapa-leaflet");
+
+      await user.click(screen.getByRole("button", { name: "Desenhar trecho" }));
+      marcar("INICIO", INICIO);
+      clicarNoLapis("geo-1");
+
+      await screen.findByText(/Termine ou descarte o desenho em andamento/i);
+      expect(
+        screen.queryByRole("form", { name: /Correção do traçado/i }),
+      ).toBeNull();
+      expect(leaflet.ultimoRascunho).toEqual({ inicio: INICIO, fim: null });
+    });
+
+    /*
+     * Quem não desenha também não corrige: o servidor exige Alfa para alterar
+     * a geometria, e um lápis que só sabe tomar 403 some da tela em vez de
+     * fingir que funciona.
+     */
+    it("não oferece o lápis a quem não pode desenhar", async () => {
+      carregarMapaObra.mockResolvedValue(
+        leitura({ dados: { obra, features: [trechoDesenhado("geo-1")] } }),
+      );
+      render(<RodoviaWorkspace obra={obra} podeDesenhar={false} />);
+      await screen.findByTestId("mapa-leaflet");
+
+      expect(leaflet.redesenharTrecho).toBeNull();
+    });
+
+    it("mantém os extremos na tela quando a gravação falha", async () => {
+      const user = userEvent.setup();
+      carregarMapaObra.mockResolvedValue(
+        leitura({ dados: { obra, features: [trechoDesenhado("geo-1")] } }),
+      );
+      redesenharTrecho.mockRejectedValue(
+        new Error(
+          "Este desenho ainda não subiu para o servidor. Apague-o e desenhe de novo.",
+        ),
+      );
+      render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+      await screen.findByTestId("mapa-leaflet");
+
+      clicarNoLapis("geo-1");
+      await screen.findByRole("form", { name: /Correção do traçado/i });
+      marcar("FIM", { lat: -22.05, lng: -47.25 });
+      await user.click(
+        screen.getByRole("button", { name: "Salvar o traçado" }),
+      );
+
+      await screen.findByText(/Apague-o e desenhe de novo/i);
+      expect(leaflet.ultimoRascunho).toEqual({
+        inicio: { lat: -22.0, lng: -47.4 },
+        fim: { lat: -22.05, lng: -47.25 },
+      });
+      expect(
+        screen.getByRole("button", { name: "Salvar o traçado" }),
+      ).toBeEnabled();
+    });
   });
 });

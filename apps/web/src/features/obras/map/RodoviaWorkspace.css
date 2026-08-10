@@ -132,6 +132,15 @@
   padding: 14px;
 }
 
+/* A correção usa a mesma caixa do cadastro, com uma barra que diz que este é
+   outro gesto: aqui não se descreve um trecho novo, endireita-se um que já
+   existe. Sem a marca, as duas telas seriam o mesmo formulário com campos a
+   menos, e "faltando campos" lê como defeito. */
+.rodovia-cadastro--correcao {
+  border-left: 3px solid var(--color-brand-yellow);
+  padding-left: 16px;
+}
+
 .rodovia-cadastro > header {
   display: flex;
   flex-wrap: wrap;

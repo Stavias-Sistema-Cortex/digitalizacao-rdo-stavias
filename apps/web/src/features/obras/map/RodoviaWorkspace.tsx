@@ -40,6 +40,7 @@ import {
 import { carregarMapaObra, type LeituraMapaObra } from "./obraMapApi";
 import {
   encerrarGeometria,
+  redesenharTrecho,
   registrarPontoDeCampo,
   registrarTrechoDesenhado,
   type GeometriaVisivelNoMapa,
@@ -137,6 +138,45 @@ function formatarInstante(valor: string | null): string {
  */
 const MOTIVO_DA_REMOCAO_NO_MAPA =
   "Geometria removida do mapa por quem a revisou.";
+
+/**
+ * O porquê que fica gravado quando alguém acerta um traçado torto.
+ *
+ * <p>Pela mesma razão do encerramento: a alteração geográfica é registro e
+ * precisa de motivo, mas exigir que ele seja digitado para endireitar uma
+ * linha é atrito onde não ajuda. Quem corrigiu, quando, e de qual trecho — o
+ * registro já carrega.
+ */
+const MOTIVO_DA_CORRECAO_NO_MAPA =
+  "Traçado corrigido no mapa por quem o revisou.";
+
+/**
+ * Os dois extremos de uma linha já desenhada.
+ *
+ * <p>A correção abre com a linha que existe, e não com a tela em branco: quem
+ * vai acertar um traçado quase sempre quer mover um extremo e deixar o outro
+ * onde está. Começar do zero obrigaria a remarcar o ponto que já estava certo,
+ * que é o mesmo trabalho de apagar e desenhar de novo.
+ */
+function extremosDaLinha(
+  geometry: OperationalFeature["geometry"],
+): { inicio: PontoGeografico; fim: PontoGeografico } | null {
+  const coordenadas =
+    geometry.type === "LineString"
+      ? (geometry.coordinates as unknown as [number, number][])
+      : geometry.type === "MultiLineString"
+        ? (geometry.coordinates as unknown as [number, number][][]).flat()
+        : null;
+  if (!coordenadas || coordenadas.length < 2) {
+    return null;
+  }
+  const primeira = coordenadas[0];
+  const ultima = coordenadas[coordenadas.length - 1];
+  return {
+    inicio: { lng: primeira[0], lat: primeira[1] },
+    fim: { lng: ultima[0], lat: ultima[1] },
+  };
+}
 
 /** O que o encerramento precisa saber da geometria que está na tela. */
 function geometriaVisivel(
@@ -556,6 +596,94 @@ export function RodoviaWorkspace({
     setAviso(null);
   }, []);
 
+  /*
+   * Correção do traçado.
+   *
+   * A lixeira resolvia a linha errada de um jeito só — jogando fora o desenho
+   * inteiro. Quem errou um extremo por cinquenta metros tinha que apagar a
+   * linha e refazê-la do zero, redigitando rodovia, sentido, faixa e
+   * quilômetro para descrever de novo exatamente o mesmo trabalho.
+   *
+   * Corrigir muda a forma e mais nada. A identidade do desenho é a mesma, o
+   * apontamento do RDO não é tocado, e o histórico lê uma correção em vez de
+   * um desenho morto e outro nascido.
+   */
+  const [trechoEmCorrecao, setTrechoEmCorrecao] = useState<string | null>(null);
+  const [salvandoCorrecao, setSalvandoCorrecao] = useState(false);
+
+  const corrigirTracado = useCallback(
+    (id: string) => {
+      setErroDaRemocao(null);
+      setPontoParaRemover(null);
+      // Um desenho novo em andamento não é sacrificado em silêncio: o rascunho
+      // é o mesmo campo dos dois gestos, e trocá-lo por baixo apagaria da tela
+      // extremos que ninguém desistiu de marcar.
+      if (!trechoEmCorrecao && emCadastro) {
+        setAviso(
+          "Termine ou descarte o desenho em andamento antes de corrigir outro trecho.",
+        );
+        return;
+      }
+      const feature = colecaoCompleta.features.find(
+        (candidata) => candidata.id === id,
+      );
+      const extremos = feature ? extremosDaLinha(feature.geometry) : null;
+      if (!extremos) {
+        setAviso("Este desenho não é uma linha com dois extremos.");
+        return;
+      }
+      setAviso(null);
+      setTrechoEmCorrecao(id);
+      setRascunho(extremos);
+      setMarcacoesNoMapa((anterior) => anterior + 1);
+      // Nada é remarcado sozinho: quem abre a correção escolhe qual extremo
+      // move, e o outro fica onde já estava certo.
+      setMarcando(null);
+    },
+    [colecaoCompleta.features, emCadastro, trechoEmCorrecao],
+  );
+
+  const cancelarCorrecao = useCallback(() => {
+    setTrechoEmCorrecao(null);
+    setRascunho(RASCUNHO_VAZIO);
+    setMarcando(null);
+    setAviso(null);
+  }, []);
+
+  const salvarCorrecao = useCallback(async () => {
+    const { inicio, fim } = rascunho;
+    if (!trechoEmCorrecao || !inicio || !fim) {
+      setAviso("O trecho precisa continuar com início e fim para ser corrigido.");
+      return;
+    }
+    setSalvandoCorrecao(true);
+    setAviso(null);
+    try {
+      await redesenharTrecho({
+        featureId: trechoEmCorrecao,
+        pontos: [inicio, fim],
+        motivo: MOTIVO_DA_CORRECAO_NO_MAPA,
+      });
+      setTrechoEmCorrecao(null);
+      setRascunho(RASCUNHO_VAZIO);
+      setMarcando(null);
+      setAviso(
+        "Traçado corrigido neste dispositivo. Ele sobe sozinho na próxima sincronização.",
+      );
+      recarregar();
+    } catch (motivo: unknown) {
+      // Os extremos ficam na tela: uma falha de gravação não pode custar a
+      // remarcação que acabou de ser feita.
+      setAviso(
+        motivo instanceof Error
+          ? motivo.message
+          : "Não foi possível corrigir o traçado.",
+      );
+    } finally {
+      setSalvandoCorrecao(false);
+    }
+  }, [rascunho, recarregar, trechoEmCorrecao]);
+
   const salvarCadastro = useCallback(async () => {
     const { inicio, fim } = rascunho;
     if (!inicio || !fim) {
@@ -745,7 +873,7 @@ export function RodoviaWorkspace({
           >
             {capturando ? "Lendo o GPS…" : "Registrar posição"}
           </button>
-          {podeDesenhar ? (
+          {podeDesenhar && !trechoEmCorrecao ? (
             <button
               type="button"
               className={
@@ -823,7 +951,75 @@ export function RodoviaWorkspace({
         </p>
       ) : null}
 
-      {emCadastro ? (
+      {/*
+        A correção reaproveita os mesmos campos de extremo, e só eles: o que a
+        linha representa já está descrito e não muda por ela ter ficado torta.
+        Reabrir rodovia, sentido e quilômetro aqui convidaria a reescrever, num
+        gesto de geometria, o que o apontamento do RDO afirma.
+      */}
+      {trechoEmCorrecao ? (
+        <form
+          className="rodovia-cadastro rodovia-cadastro--correcao"
+          aria-label="Correção do traçado do trecho"
+          noValidate
+          onSubmit={(evento) => {
+            evento.preventDefault();
+            void salvarCorrecao();
+          }}
+        >
+          <header>
+            <div>
+              <p className="eyebrow">Corrigindo o traçado</p>
+              <h3>Marque de novo o extremo que ficou fora do lugar</h3>
+            </div>
+            <span>
+              {extensaoDaLinha === null
+                ? "Os dois extremos precisam existir"
+                : `${new Intl.NumberFormat("pt-BR", {
+                    maximumFractionDigits: 0,
+                  }).format(extensaoDaLinha)} m no traçado novo`}
+            </span>
+          </header>
+
+          <div className="rodovia-cadastro__extremos">
+            <CampoDeExtremo
+              key={`CORRECAO:INICIO:${marcacoesNoMapa}`}
+              extremo="INICIO"
+              valor={rascunho.inicio}
+              marcando={marcando === "INICIO"}
+              onAlterar={(ponto) => alterarExtremo("INICIO", ponto)}
+              onMarcarNoMapa={() => marcarExtremo("INICIO")}
+            />
+            <CampoDeExtremo
+              key={`CORRECAO:FIM:${marcacoesNoMapa}`}
+              extremo="FIM"
+              valor={rascunho.fim}
+              marcando={marcando === "FIM"}
+              onAlterar={(ponto) => alterarExtremo("FIM", ponto)}
+              onMarcarNoMapa={() => marcarExtremo("FIM")}
+            />
+          </div>
+
+          <footer>
+            <button type="button" onClick={cancelarCorrecao}>
+              Deixar como está
+            </button>
+            <button
+              type="submit"
+              className="is-primary"
+              disabled={salvandoCorrecao}
+            >
+              {salvandoCorrecao ? "Corrigindo…" : "Salvar o traçado"}
+            </button>
+          </footer>
+          <small>
+            É o mesmo trecho: a rodovia, o sentido, a faixa e o apontamento do
+            RDO seguem como estão. Só a forma desenhada muda.
+          </small>
+        </form>
+      ) : null}
+
+      {emCadastro && !trechoEmCorrecao ? (
         <form
           className="rodovia-cadastro"
           aria-label="Cadastro do trecho desenhado"
@@ -1147,6 +1343,7 @@ export function RodoviaWorkspace({
             leitura={leituraVisivel}
             filtro={filtro}
             onRemoverPonto={podeRemoverPonto ? pedirRemocaoDoPonto : undefined}
+            onRedesenharTrecho={podeDesenhar ? corrigirTracado : undefined}
             carregando={estado.fase === "carregando"}
             erroLeitura={estado.fase === "erro" ? estado.mensagem : null}
             camera={
@@ -1165,6 +1362,7 @@ export function RodoviaWorkspace({
               marcando={podeDesenhar ? marcando : null}
               onPontoMarcado={aoMarcarPonto}
               onRemoverPonto={podeRemoverPonto ? pedirRemocaoDoPonto : undefined}
+            onRedesenharTrecho={podeDesenhar ? corrigirTracado : undefined}
               camera={
                 travado && camera?.origem === "vetorial" ? camera.valor : null
               }
