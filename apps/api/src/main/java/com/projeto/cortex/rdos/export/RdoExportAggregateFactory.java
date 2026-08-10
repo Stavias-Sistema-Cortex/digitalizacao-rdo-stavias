@@ -47,7 +47,8 @@ public class RdoExportAggregateFactory {
         RdoExportWorksiteReader.Worksite worksite =
                 worksiteReader.read(rdo.obraId());
         List<WorkforceGroup> workforce = groupWorkforce(rdo.maoObra());
-        List<RdoResponse.EquipamentoItem> equipment = copy(rdo.equipamentos());
+        List<RdoResponse.EquipamentoItem> equipment =
+                resolveEquipment(rdo.equipamentos());
         List<WorkedRow> worked = buildWorkedRows(rdo);
         List<MaterialRow> materials = buildMaterialRows(rdo);
         List<RdoResponse.ControleGeometricoItem> geometry =
@@ -493,7 +494,7 @@ public class RdoExportAggregateFactory {
             boolean subcontracted = isSubcontracted(item.tipoVinculo());
             String key = normalize(role) + "|" + subcontracted;
             WorkforceGroup previous = grouped.get(key);
-            BigDecimal quantity = nonNull(item.quantidade());
+            BigDecimal quantity = resolvedWorkforceQuantity(item);
             grouped.put(key, previous == null
                     ? new WorkforceGroup(role, subcontracted, quantity)
                     : new WorkforceGroup(
@@ -509,6 +510,78 @@ public class RdoExportAggregateFactory {
         String normalized = normalize(value);
         return normalized.contains("SUBCONTRAT")
                 || normalized.contains("TERCEIR");
+    }
+
+    /*
+     * A linha que se identifica sozinha vale um. Espelha
+     * resolvedWorkforceQuantity do aparelho: a escolha em lista dupla põe uma
+     * pessoa por linha e não pede quantidade, porque nesse modelo o número não
+     * foi esquecido, ele é um. Antes esta soma tomava o nulo por zero e
+     * imprimia "0" no lugar da frente inteira — número errado, sem aviso, num
+     * relatório que alguém assina.
+     *
+     * <p>A linha que não identifica ninguém continua exigindo o número: um
+     * cargo sem nome e sem quantidade não diz quantas pessoas foram.
+     */
+    private BigDecimal resolvedWorkforceQuantity(
+            RdoResponse.MaoObraItem item
+    ) {
+        if (item.quantidade() != null) {
+            return item.quantidade();
+        }
+        if (firstNonBlank(item.colaboradorId(), item.nomeColaborador())
+                != null) {
+            return BigDecimal.ONE;
+        }
+        throw new ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "Há linha de mão de obra sem cargo/nome ou quantidade;"
+                        + " nenhum valor foi inventado."
+        );
+    }
+
+    /*
+     * O parque é o que a obra tem, e o formulário só oferece duas colunas —
+     * própria ou de terceiro. Máquina com cadastro atrás entra como própria,
+     * que é o que o cadastro afirma ao listá-la no parque da obra; a máquina
+     * digitada à mão, sem cadastro, continua exigindo o vínculo declarado.
+     * Espelha resolvedEquipmentLinkType do aparelho.
+     */
+    private List<RdoResponse.EquipamentoItem> resolveEquipment(
+            List<RdoResponse.EquipamentoItem> items
+    ) {
+        List<RdoResponse.EquipamentoItem> resolved = new ArrayList<>();
+        for (RdoResponse.EquipamentoItem item : copy(items)) {
+            boolean registered =
+                    firstNonBlank(item.assetId(), item.prefixo()) != null;
+            String linkType = item.tipoVinculo() == null
+                    || item.tipoVinculo().isBlank()
+                    ? (firstNonBlank(item.assetId()) != null ? "PROPRIO" : "")
+                    : item.tipoVinculo();
+            if (item.quantidade() == null && !registered) {
+                throw new ResponseStatusException(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Há linha de equipamento sem descrição ou quantidade;"
+                                + " nenhum valor foi inventado."
+                );
+            }
+            BigDecimal quantity = item.quantidade() != null
+                    ? item.quantidade()
+                    : BigDecimal.ONE;
+            resolved.add(new RdoResponse.EquipamentoItem(
+                    item.id(),
+                    item.assetId(),
+                    item.prefixo(),
+                    item.descricao(),
+                    item.tipoEquipamento(),
+                    linkType,
+                    quantity,
+                    item.horaInicio(),
+                    item.horaFim(),
+                    item.observacoes()
+            ));
+        }
+        return resolved;
     }
 
     private void validateEquipmentOwnership(String value) {

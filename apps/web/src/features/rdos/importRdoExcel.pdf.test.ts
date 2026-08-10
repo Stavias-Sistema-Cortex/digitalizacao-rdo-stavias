@@ -11,6 +11,51 @@ vi.mock("pdfjs-dist/legacy/build/pdf.worker.mjs?url", () => ({
   default: `file://${process.cwd()}/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs`,
 }));
 
+/*
+ * Desenhar a página exige o canvas de verdade, que o jsdom não tem. O
+ * desenho tem teste próprio, contra um documento encenado; aqui o que se
+ * verifica é a ligação — a folha sem texto vira anexo, o rascunho abre vazio
+ * e nada sobe.
+ */
+vi.mock("./rdoDigitalizadoEmFotos", async (original) => {
+  const real = await original<
+    typeof import("./rdoDigitalizadoEmFotos")
+  >();
+  return {
+    ...real,
+    digitalizacaoEmFotos: vi.fn(
+      async (
+        _documento: unknown,
+        rdoId: string,
+        obraId: string | null,
+        nomeArquivo: string,
+      ) => [{
+        id: "foto-1",
+        rdoId,
+        obraId,
+        tipo: "FOTO" as const,
+        nome: `${nomeArquivo} — página 1.jpg`,
+        nomeOriginal: nomeArquivo,
+        mimeType: "image/jpeg",
+        tamanhoBytes: 8,
+        tamanhoOriginalBytes: 8,
+        tamanhoComprimidoBytes: 8,
+        arquivo: new Blob(["folha"], { type: "image/jpeg" }),
+        syncStatus: "PENDING_SYNC" as const,
+        ultimoErro: null,
+        metadata: { origem: "RDO_DIGITALIZADO", pagina: 1 },
+        createdAt: "2026-08-10T00:00:00.000Z",
+        updatedAt: "2026-08-10T00:00:00.000Z",
+        removedAt: null,
+      }],
+    ),
+  };
+});
+
+vi.mock("../../lib/db/rdoAttachmentRepository", () => ({
+  putRdoAttachment: vi.fn(async () => undefined),
+}));
+
 function selectablePdfFile(lines: string[], name = "rdo-importado.pdf"): File {
   const document = new jsPDF({ unit: "pt", format: "a4" });
   lines.forEach((line, index) => {
@@ -66,13 +111,39 @@ describe("RDO PDF import", () => {
     );
   });
 
-  it("rejects a PDF without selectable text instead of inventing an RDO", async () => {
-    await expect(importarRdoArquivo(
+  /*
+   * A folha fotografada não tem texto, e recusá-la deixava a pessoa sem saída:
+   * o papel existia e o RDO precisava ser lançado. Agora ela entra como as
+   * fotos do RDO e o rascunho abre para preenchimento — vazio, porque nada foi
+   * lido, e no aparelho, porque nada sobe sozinho.
+   */
+  it("abre a digitalização para preenchimento em vez de recusar o arquivo", async () => {
+    const imported = await importarRdoArquivo(
       selectablePdfFile([], "rdo-escaneado.pdf"),
       "Sessão atual",
-    )).rejects.toThrow(
-      "Não encontrei texto selecionável neste PDF. Para PDF escaneado, será necessário OCR antes da importação.",
     );
+
+    expect(imported.draft.attachments).not.toHaveLength(0);
+    expect(imported.draft.attachments[0]).toMatchObject({
+      tipo: "FOTO",
+      mimeType: "image/jpeg",
+    });
+    expect(imported.warnings.join(" ")).toMatch(/nada foi lido automaticamente/i);
+    expect(imported.warnings.join(" ")).toMatch(/nada foi enviado/i);
+  });
+
+  it("não inventa nenhum lançamento a partir da folha fotografada", async () => {
+    const imported = await importarRdoArquivo(
+      selectablePdfFile([], "rdo-escaneado.pdf"),
+      "Sessão atual",
+    );
+
+    expect(imported.draft.maoObra).toEqual([]);
+    expect(imported.draft.equipamentos).toEqual([]);
+    expect(imported.draft.servicosExecutados).toEqual([]);
+    expect(imported.draft.materiais).toEqual([]);
+    expect(imported.draft.controlesGeometricos).toEqual([]);
+    expect(imported.draft.syncStatus).toBe("LOCAL_ONLY");
   });
 
   it("returns a safe Portuguese error for a malformed PDF", async () => {

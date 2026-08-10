@@ -1672,20 +1672,13 @@ export function validateRdoDraftForSync(draft: RdoDraft): void {
     throw new Error("O apontador deve estar selecionado na equipe do RDO.");
   }
 
-  const requiresCaixa = draft.servicosExecutados.some((item) =>
-    item.servicoNome.toLowerCase().includes("caixa"),
-  );
-
-  if (
-    requiresCaixa &&
-    !draft.controlesGeometricos.some(
-      (item) => item.numero.trim() || item.subtrecho.trim(),
-    )
-  ) {
-    throw new Error(
-      "Informe a caixa no controle geométrico para serviços que exigem caixa.",
-    );
-  }
+  /*
+   * Aqui havia uma exigência de controle geométrico para serviço de caixa. A
+   * etapa de controle geométrico saiu da tela, e a regra passou a cobrar um
+   * preenchimento que ninguém tinha mais onde fazer: o RDO travava no salvar
+   * sem caminho de saída. Nenhum bloco do RDO é obrigatório — o que falta
+   * aparece na conferência, não no impedimento.
+   */
 }
 
 function validateKmRange(
@@ -4662,14 +4655,6 @@ export async function saveExistingRdoDraftAtomically(
 
     throw new Error(
       `O RDO local ${draft.id} não foi encontrado.`,
-    );
-  }
-
-  if (existingRdo.statusRdo === "ENVIADO") {
-    transaction.abort();
-
-    throw new Error(
-      "Um RDO enviado não pode mais ser editado.",
     );
   }
 

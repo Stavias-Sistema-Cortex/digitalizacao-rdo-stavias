@@ -94,7 +94,11 @@ export function adicionarEquipamentosDoCatalogo(
       localId: createId(),
       assetId,
       prefixo: asset.codigoExterno?.trim() ?? "",
-      descricao: asset.nome?.trim() ?? "",
+      // O mesmo título que a lista mostrou. Copiar só o nome deixava a
+      // descrição vazia quando o cadastro só tem código, e a exportação recusa
+      // equipamento sem descrição — a máquina sumia do RDO por um campo que a
+      // pessoa nunca viu em branco.
+      descricao: tituloDoCatalogo(asset),
       tipoEquipamento: asset.categoria?.trim() ?? "",
     });
   }

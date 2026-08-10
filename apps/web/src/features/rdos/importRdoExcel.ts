@@ -15,9 +15,20 @@ import {
   createEmptyRdo,
 } from "./createEmptyRdo";
 import {
-  extractBoundedPdfLines,
+  extractBoundedPdfContent,
   type PdfDocumentForTextExtraction,
 } from "./boundedPdfTextExtraction";
+import { putRdoAttachment } from "../../lib/db/rdoAttachmentRepository";
+import {
+  digitalizacaoEmFotos,
+  fotoComoAnexoDoRascunho,
+  type DocumentoRenderizavel,
+} from "./rdoDigitalizadoEmFotos";
+import {
+  interpretarRdoManuscrito,
+  normalizarRotulo,
+  type PaginaReconhecida,
+} from "./rdoManuscrito";
 import type {
   CondicaoClimatica,
   ControleGeometricoDraft,
@@ -26,9 +37,6 @@ import type {
   MaterialDraft,
   RdoDraft,
 } from "./rdo.types";
-import {
-  RdoImportSafeError,
-} from "./rdoImportPolicy";
 import { normalizarUnidade } from "./unidades";
 
 type WorkSheet = SpreadsheetSheet;
@@ -195,13 +203,92 @@ async function importarRdoPdf(
   preenchidoPorSessao: string,
   bytes: Uint8Array,
 ): Promise<RdoImportResult> {
-  const lines = await extractPdfLines(bytes);
-  const textoExtraido = lines.join("\n").trim();
+  return await comDocumentoPdf(bytes, async (documento) => {
+    const { lines, paginas } = await extractBoundedPdfContent(documento);
+    const textoExtraido = lines.join("\n").trim();
 
-  if (!textoExtraido) {
-    throw new RdoImportSafeError(
-      "Não encontrei texto selecionável neste PDF. Para PDF escaneado, será necessário OCR antes da importação.",
+    if (!textoExtraido) {
+      return await rdoDigitalizadoParaPreenchimento(
+        documento,
+        file,
+        preenchidoPorSessao,
+      );
+    }
+
+    return montarRdoDePdfComTexto(
+      file,
+      preenchidoPorSessao,
+      lines,
+      paginas,
+      textoExtraido,
     );
+  });
+}
+
+/**
+ * O RDO fotografado entra como papel, não como texto.
+ *
+ * <p>Sem camada de texto não há o que ler, e recusar o arquivo deixava a
+ * pessoa sem saída. As páginas viram as fotos do RDO — o mesmo caminho que o
+ * RDO já tem para papel — e o rascunho abre em branco para preenchimento, com
+ * a folha à vista. Nada sobe sozinho: o rascunho fica no aparelho até que
+ * alguém o salve.
+ */
+async function rdoDigitalizadoParaPreenchimento(
+  documento: DocumentoRenderizavel,
+  file: File,
+  preenchidoPorSessao: string,
+): Promise<RdoImportResult> {
+  const draft = createEmptyRdo();
+  draft.preenchidoPor = preenchidoPorSessao;
+
+  const fotos = await digitalizacaoEmFotos(
+    documento,
+    draft.id,
+    null,
+    file.name,
+  );
+  for (const foto of fotos) {
+    await putRdoAttachment(foto);
+  }
+  draft.attachments = fotos.map(fotoComoAnexoDoRascunho);
+
+  return {
+    draft,
+    summary: `${file.name}: digitalização anexada em ${fotos.length} página(s); o RDO abriu para preenchimento.`,
+    warnings: [
+      "Esta folha é imagem, não texto: nada foi lido automaticamente."
+        + " Preencha os campos com a digitalização à vista — ela ficou anexada ao RDO.",
+      "O rascunho fica neste aparelho até você salvar; nada foi enviado.",
+    ],
+  };
+}
+
+function montarRdoDePdfComTexto(
+  file: File,
+  preenchidoPorSessao: string,
+  lines: string[],
+  paginas: PaginaReconhecida[],
+  textoExtraido: string,
+): RdoImportResult {
+
+  /*
+   * O formulário de papel tem lugar certo para cada coisa, e é isso que
+   * permite ler a tabela inteira — quem é contratado, quem é terceiro, qual
+   * máquina é locada — em vez de só os poucos campos rotulados que a leitura
+   * linha a linha alcança. Fora do formulário, segue a leitura genérica.
+   */
+  if (ehFormularioDeRdoEmPapel(lines)) {
+    const leitura = interpretarRdoManuscrito(paginas);
+    leitura.draft.preenchidoPor = preenchidoPorSessao;
+    return {
+      draft: leitura.draft,
+      summary: `Importado de ${file.name}: formulário de RDO reconhecido, ${leitura.camposLidos.length} campos lidos.`,
+      warnings: [
+        "Confira campo a campo antes de salvar: o que veio do papel é proposta, não lançamento.",
+        ...leitura.pendencias,
+      ],
+    };
   }
 
   const draft = createEmptyRdo();
@@ -294,9 +381,23 @@ async function importarRdoPdf(
   };
 }
 
-async function extractPdfLines(
+const ANCORAS_DO_FORMULARIO = [
+  "RELATORIO DIARIO DE OBRA",
+  "MAO DE OBRA",
+  "PRODUCAO SEGMENTOS",
+];
+
+function ehFormularioDeRdoEmPapel(lines: readonly string[]): boolean {
+  const texto = normalizarRotulo(lines.join(" "));
+  return ANCORAS_DO_FORMULARIO.every((ancora) => texto.includes(ancora));
+}
+
+async function comDocumentoPdf<T>(
   bytes: Uint8Array,
-): Promise<string[]> {
+  usar: (
+    documento: PdfDocumentForTextExtraction & DocumentoRenderizavel,
+  ) => Promise<T>,
+): Promise<T> {
   let loadingTask: {
     promise: Promise<PdfDocumentForTextExtraction>;
     destroy: () => Promise<void>;
@@ -311,7 +412,15 @@ async function extractPdfLines(
       data: bytes,
     });
     const document = await loadingTask.promise;
-    return await extractBoundedPdfLines(document);
+    /*
+     * A página do PDF.js sabe extrair texto e sabe desenhar; os dois contratos
+     * que este módulo usa são recortes dela. A conversão é aqui, num ponto só,
+     * para que a assinatura exata do render — que muda entre versões da
+     * biblioteca — não vaze para quem lê o RDO.
+     */
+    return await usar(
+      document as PdfDocumentForTextExtraction & DocumentoRenderizavel,
+    );
   } catch (error: unknown) {
     if (error instanceof RdoImportResourceError) {
       throw error;
