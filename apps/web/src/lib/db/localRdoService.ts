@@ -2183,6 +2183,9 @@ export async function hydrateBlockedRdoCreationContextsForSync(
  *
  * <p>O payload não é reconstruído. Ele guarda a edição de quem esteve em campo
  * e já está correto; o que sobrava era o veredito, não o dado.
+ *
+ * <p>Nenhuma linha sai daqui bloqueada: ou volta ao envio, ou — quando o RDO
+ * dela já teve desfecho — é podada como sobra desse desfecho.
  */
 export async function releaseBlockedRdoUpdatesForSync(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
@@ -2226,21 +2229,31 @@ export async function releaseBlockedRdoUpdatesForSync(
     /*
      * A releitura dentro da transação é o que impede desfazer um bloqueio que
      * outra escrita pôs por outro motivo entre a varredura e aqui.
-     *
-     * E soltar exige um RDO local que ainda deva algo ao servidor. Uma linha
-     * bloqueada pode sobreviver ao desfecho do seu RDO — um descarte de
-     * conflito, por exemplo, marca o registro como SYNCED sem enxergá-la.
-     * Liberar essa órfã empurraria um rascunho velho por cima do estado que
-     * alguém já deu por resolvido, e o servidor aceitaria: a versão-base
-     * ainda bate.
      */
     if (!atual ||
         atual.entidadeTipo !== "RDO" ||
         atual.operacao !== "ATUALIZAR_RDO_RASCUNHO" ||
         atual.blockedReason !== "RDO_CREATION_CONTEXT_REQUIRED" ||
-        !["PENDING", "ERROR"].includes(atual.status) ||
-        !rdo ||
-        rdo.syncStatus === "SYNCED") {
+        !["PENDING", "ERROR"].includes(atual.status)) {
+      await guardedTransaction.complete();
+      continue;
+    }
+
+    /*
+     * Toda linha alcançada aqui tem desfecho — nenhuma permanece bloqueada.
+     *
+     * O que decide qual desfecho é o RDO dela. Se ele ainda deve algo ao
+     * servidor, a linha volta ao envio. Se já teve o seu fim — o descarte de
+     * conflito marca o registro como SYNCED sem enxergar esta linha, e o
+     * apagamento o remove —, a linha é sobra desse desfecho, e sobe seria o
+     * pior dos destinos: o servidor aceitaria o rascunho velho por cima do
+     * estado já resolvido, porque a versão-base ainda bate. Sobrescrita sem
+     * erro e sem rastro. Deixá-la presa também não serve — é "Sincronização
+     * parada" aceso para sempre, sem nada que a pessoa possa fazer. A fila é
+     * fila, não arquivo: sobra se poda.
+     */
+    if (!rdo || rdo.syncStatus === "SYNCED") {
+      await outboxStore.delete(atual.clientMutationId);
       await guardedTransaction.complete();
       continue;
     }

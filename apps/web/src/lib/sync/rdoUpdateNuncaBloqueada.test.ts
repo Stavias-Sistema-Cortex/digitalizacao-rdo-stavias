@@ -173,29 +173,39 @@ describe("edição de rascunho presa por um bloqueio que já não vale", () => {
 
   /*
    * Uma linha bloqueada pode sobreviver ao desfecho do seu RDO: o descarte de
-   * conflito marca o registro como SYNCED sem enxergá-la. Soltar essa órfã
-   * empurraria um rascunho velho por cima do estado que alguém já deu por
-   * resolvido — e o servidor aceitaria, porque a versão-base ainda bate.
+   * conflito marca o registro como SYNCED sem enxergá-la. Essa órfã não tem
+   * destino bom em nenhuma das duas pontas — soltar empurraria um rascunho
+   * velho por cima do estado que alguém já deu por resolvido (e o servidor
+   * aceitaria, porque a versão-base ainda bate); manter presa é
+   * "Sincronização parada" aceso para sempre, sem saída. Então ela é podada:
+   * o desfecho do RDO já a incluía, só faltava a fila saber.
    */
-  it("não solta a linha cujo RDO já está resolvido", async () => {
+  it("poda, em vez de soltar, a linha cujo RDO já está resolvido", async () => {
     const database = await getCortexDb();
     await database.put("rdos", { ...rdoEditado(), syncStatus: "SYNCED" });
     await database.put("outbox_mutations", edicaoBloqueadaNaFilaAntiga());
 
     expect(await releaseBlockedRdoUpdatesForSync()).toBe(0);
+    // Nem na fila, nem no envio: a linha deixou de existir.
     expect(
-      (await database.get("outbox_mutations", MUTATION_ID))?.blockedReason,
-    ).toBe("RDO_CREATION_CONTEXT_REQUIRED");
+      await database.get("outbox_mutations", MUTATION_ID),
+    ).toBeUndefined();
+    expect(
+      selectReadyOutboxMutations(
+        await database.getAll("outbox_mutations"),
+        10,
+      ),
+    ).toEqual([]);
   });
 
-  it("não solta a linha órfã, sem RDO local", async () => {
+  it("poda também a linha órfã, sem RDO local", async () => {
     const database = await getCortexDb();
     await database.put("outbox_mutations", edicaoBloqueadaNaFilaAntiga());
 
     expect(await releaseBlockedRdoUpdatesForSync()).toBe(0);
     expect(
-      (await database.get("outbox_mutations", MUTATION_ID))?.blockedReason,
-    ).toBe("RDO_CREATION_CONTEXT_REQUIRED");
+      await database.get("outbox_mutations", MUTATION_ID),
+    ).toBeUndefined();
   });
 
   /*
