@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -134,32 +134,31 @@ describe("equipe do RDO seguinte", () => {
     expect(herdada[0].horaFim).toBe("17:00");
   });
 
-  it("deixa editar o horário de quem veio herdado", async () => {
-    const user = userEvent.setup();
-    const aoMudar = vi.fn();
+  /*
+   * O horário por pessoa saiu da tela: ele repetia, doze vezes, o turno que a
+   * Identificação já declara, e ninguém o ajustava. O que veio do RDO anterior
+   * continua no rascunho e continua subindo — o que deixou de existir é a
+   * coluna que pedia para redigitá-lo.
+   */
+  it("carrega o horário herdado sem pedir que alguém o redigite", () => {
+    const herdada = carryForwardWorkforce(equipeDoRdoAnterior(), CATALOGO);
 
     render(
       <EditorComEstado
         inicial={{
           ...createEmptyRdo(),
           previousRdoId: "rdo-0001",
-          maoObra: carryForwardWorkforce(equipeDoRdoAnterior(), CATALOGO),
+          maoObra: herdada,
         }}
-        aoMudar={aoMudar}
+        aoMudar={vi.fn()}
       />,
     );
 
-    const inicio = screen.getByLabelText("Início de Ana");
-    await user.clear(inicio);
-    await user.type(inicio, "09:30");
-
-    const ultimo = aoMudar.mock.calls.at(-1)?.[0];
-    expect(
-      ultimo.maoObra.find(
-        (linha: { colaboradorId: string }) =>
-          linha.colaboradorId === "worker-a",
-      ),
-    ).toMatchObject({ horaInicio: "09:30" });
+    expect(screen.queryByLabelText("Início de Ana")).toBeNull();
+    expect(herdada[0]).toMatchObject({
+      horaInicio: "07:00",
+      horaFim: "17:00",
+    });
   });
 
   /** A turma de hoje pode ganhar gente que ontem não estava. */
@@ -178,9 +177,10 @@ describe("equipe do RDO seguinte", () => {
       />,
     );
 
-    await user.type(screen.getByLabelText("Buscar"), "Carla");
-    await user.click(screen.getByRole("option", { name: /Carla/ }));
-    await user.click(screen.getByRole("button", { name: "Adicionar" }));
+    const carla = screen
+      .getAllByRole("listitem")
+      .find((linha) => /Carla/.test(linha.textContent ?? ""));
+    await user.click(within(carla!).getByRole("checkbox"));
 
     const ultimo = aoMudar.mock.calls.at(-1)?.[0];
     expect(ultimo.maoObra).toHaveLength(3);

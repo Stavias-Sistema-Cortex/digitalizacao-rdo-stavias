@@ -202,14 +202,12 @@ export function rascunhoClonadoDe(
     // O que se repete: a equipe, as frentes de serviço, a frota e os
     // insumos — tudo sem os números do dia.
     maoObra: origem.maoObra.map((item) => pessoaDaMesmaEquipe(item, novoId)),
-    alocacoesColaboradores: origem.alocacoesColaboradores.map((item) => ({
-      ...item,
-      localId: novoId(),
-      horaInicio: "",
-      horaFim: "",
-      percentualDia: "" as const,
-      observacoes: "",
-    })),
+
+    // O rateio saiu do formulário, e o clone deixa de carregá-lo. Copiá-lo
+    // agora criaria linhas que sobem para o servidor sem que exista tela onde
+    // vê-las ou corrigi-las — estado invisível, herdado a cada clonagem, e
+    // exatamente o tipo de coisa que só aparece meses depois num relatório.
+    alocacoesColaboradores: [],
     servicosExecutados: origem.servicosExecutados.map((item) =>
       servicoSemAProducaoDoDia(item, novoId),
     ),

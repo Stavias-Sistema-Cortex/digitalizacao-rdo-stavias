@@ -26,13 +26,11 @@ import type {
   RdoAttachmentRecord,
 } from "../../lib/db/db.types";
 import {
-  createEmptyEquipamento,
   createEmptyMaterial,
   createEmptyRdo,
   createEmptyServicoExecutado,
 } from "./createEmptyRdo";
 import type {
-  EquipamentoDraft,
   MaterialDraft,
   NumericInput,
   RdoAttachmentDraft,
@@ -41,10 +39,7 @@ import type {
 } from "./rdo.types";
 import type { RdoSyncStatus } from "./rdo.types";
 import { processRdoPhoto } from "./rdoPhotoService";
-import {
-  buscarAssets,
-  type AssetLookup,
-} from "./rdoLookupApi";
+
 import {
   formatRdoServiceType,
   isRdoPriceCatalogSelectable,
@@ -70,6 +65,10 @@ import { RdoEquipmentPicker } from "./RdoEquipmentPicker";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
 import { RDO_WORKFORCE_CATALOG_OFFLINE_UNAVAILABLE } from "./rdoCreationContext";
 import { localRecordToDraft } from "./localRecordToDraft";
+import {
+  apontadosEmOutroRdo,
+  type ApontamentosDoDia,
+} from "./apontadosEmOutroRdo";
 
 interface RdoCreatePageProps {
   initialDraft: RdoDraft;
@@ -577,18 +576,6 @@ function LookupField<TItem>({
   );
 }
 
-function getAssetTitle(asset: AssetLookup) {
-  return (
-    [asset.externalCode, asset.name]
-      .filter(Boolean)
-      .join(" · ") || asset.id
-  );
-}
-
-function getAssetSubtitle(asset: AssetLookup) {
-  return asset.category || asset.id;
-}
-
 function getTipoServicoTitle(serviceType: RdoServiceType) {
   return serviceType.displayName;
 }
@@ -670,6 +657,30 @@ export function RdoCreatePage({
     Promise.resolve(searchRdoServiceTypes(serviceCatalog, query));
 
   const parqueDaObra = activeCreationContext?.equipamentos ?? [];
+
+  /*
+   * Quem já aparece em outro RDO desta obra na mesma data. É aviso, não
+   * impedimento: a mesma máquina atender duas frentes no mesmo dia acontece, e
+   * barrar transformaria o caso legítimo num problema sem saída em campo.
+   */
+  const [apontadosHoje, setApontadosHoje] = useState<ApontamentosDoDia>(
+    () => ({ pessoas: new Map(), equipamentos: new Map() }),
+  );
+  useEffect(() => {
+    let cancelado = false;
+    void apontadosEmOutroRdo(draft.obraId, draft.dataRdo, draft.id)
+      .then((encontrados) => {
+        if (!cancelado) setApontadosHoje(encontrados);
+      })
+      .catch(() => {
+        // A leitura é um adorno da lista: sem ela a marcação continua
+        // funcionando, só deixa de avisar. Derrubar o formulário por causa
+        // disso seria trocar um aviso perdido por um dia perdido.
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [draft.obraId, draft.dataRdo, draft.id]);
 
   const photoCount = draft.attachments.filter(
     (attachment) => attachment.removedAt === null,
@@ -909,20 +920,6 @@ export function RdoCreatePage({
     }));
 
     setNotice("");
-  }
-
-  function updateEquipamento(
-    localId: string,
-    patch: Partial<EquipamentoDraft>,
-  ) {
-    setDraft((current) => ({
-      ...current,
-      equipamentos: current.equipamentos.map((item) =>
-        item.localId === localId
-          ? { ...item, ...patch }
-          : item,
-      ),
-    }));
   }
 
   function updateMaterial(
@@ -1995,249 +1992,27 @@ export function RdoCreatePage({
           sourceRdoNumber={
             activeCreationContext?.previousRdo?.numeroRdo ?? null
           }
+          jaApontados={apontadosHoje.pessoas}
           onChange={setDraft}
         />
       </div>
 
           <section className="form-card" id="rdo-equipamentos">
-        <CollectionHeader
-          title="Equipamentos"
-          onAdd={() =>
-            setDraft((current) => ({
-              ...current,
-              equipamentos: [
-                ...current.equipamentos,
-                createEmptyEquipamento(),
-              ],
-            }))
-          }
-        />
+        <div className="section-heading collection-heading">
+          <div>
+            <h2>Equipamentos</h2>
+          </div>
+          <p>Marque as máquinas que trabalharam hoje.</p>
+        </div>
 
         <RdoEquipmentPicker
           parque={parqueDaObra}
           equipamentos={draft.equipamentos}
+          jaApontados={apontadosHoje.equipamentos}
           onChange={(equipamentos) =>
             setDraft((current) => ({ ...current, equipamentos }))
           }
         />
-
-        <div className="collection-list">
-          {draft.equipamentos.map(
-            (item, index) => (
-              <div
-                className="collection-row"
-                key={item.localId}
-              >
-                <div className="row-title">
-                  <strong>
-                    Equipamento {index + 1}
-                  </strong>
-
-                  <button
-                    type="button"
-                    className="danger-link"
-                    onClick={() =>
-                      removeCollectionItem(
-                        "equipamentos",
-                        item.localId,
-                      )
-                    }
-                  >
-                    Remover
-                  </button>
-                </div>
-
-                <div className="form-grid">
-                  <LookupField
-                    label="Asset"
-                    value={
-                      item.prefixo ||
-                      item.descricao ||
-                      item.assetId
-                    }
-                    placeholder="Digite prefixo, nome ou categoria"
-                    emptyMessage="Nenhum asset encontrado. Confira se a base Zeladoria foi sincronizada."
-                    search={buscarAssets}
-                    onQueryChange={(value) =>
-                      updateEquipamento(
-                        item.localId,
-                        {
-                          assetId: "",
-                          prefixo: value,
-                        },
-                      )
-                    }
-                    onSelect={(asset) =>
-                      updateEquipamento(
-                        item.localId,
-                        {
-                          assetId: asset.id,
-                          prefixo:
-                            asset.externalCode ??
-                            item.prefixo,
-                          descricao:
-                            asset.name ??
-                            item.descricao,
-                          tipoEquipamento:
-                            asset.category ??
-                            item.tipoEquipamento,
-                        },
-                      )
-                    }
-                    getKey={(asset) => asset.id}
-                    getTitle={getAssetTitle}
-                    getSubtitle={getAssetSubtitle}
-                  />
-
-                  <label>
-                    Prefixo
-                    <input
-                      value={item.prefixo}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            prefixo:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Descrição
-                    <input
-                      value={item.descricao}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            descricao:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Tipo
-                    <input
-                      value={item.tipoEquipamento}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            tipoEquipamento:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Vínculo
-                    <select
-                      value={item.tipoVinculo}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            tipoVinculo:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    >
-                      <option value="PROPRIO">
-                        Próprio
-                      </option>
-                      <option value="LOCADO">
-                        Locado
-                      </option>
-                      <option value="TERCEIRIZADO">
-                        Terceirizado
-                      </option>
-                    </select>
-                  </label>
-
-                  <label>
-                    Quantidade
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.quantidade}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            quantidade:
-                              parseNumericInput(
-                                event.target.value,
-                              ),
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Início
-                    <input
-                      type="time"
-                      value={item.horaInicio}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            horaInicio:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Fim
-                    <input
-                      type="time"
-                      value={item.horaFim}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            horaFim:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-
-                <label className="full-width">
-                  Observações do equipamento
-                  <textarea
-                    rows={3}
-                    value={item.observacoes}
-                    onChange={(event) =>
-                      updateEquipamento(
-                        item.localId,
-                        {
-                          observacoes:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-              </div>
-            ),
-          )}
-        </div>
       </section>
 
           <section className="form-card" id="rdo-materiais">

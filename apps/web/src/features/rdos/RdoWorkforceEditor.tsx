@@ -1,19 +1,13 @@
-import {
-  useMemo,
-  useId,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { useId, useMemo, useState } from "react";
 
-import { DualListbox, type DualListboxItem } from "../../components/DualListbox";
+import { ListaDeMarcar, type ItemDeMarcar } from "../../components/ListaDeMarcar";
 import {
   addAuthorizedWorker,
-  nextRosterFocusIndex,
   removeRosterMember,
   setRosterApontador,
   setRosterSelected,
 } from "./rdoCreationContext";
+import { avisoDeApontamentoRepetido } from "./apontadosEmOutroRdo";
 import { createEmptyMaoObra } from "./createEmptyRdo";
 import type { MaoObraDraft, RdoDraft } from "./rdo.types";
 import type { RdoContextCollaborator } from "./rdoLookupApi";
@@ -25,112 +19,135 @@ interface RdoWorkforceEditorProps {
   collaborators: readonly RdoContextCollaborator[];
   catalogUnavailableMessage?: string;
   sourceRdoNumber: string | null;
+  /** colaboradorId → RDO do mesmo dia em que a pessoa já foi apontada. */
+  jaApontados?: ReadonlyMap<string, string>;
   onChange: (draft: RdoDraft) => void;
 }
 
+/** Marca uma pessoa do catálogo que ainda não tem linha no rascunho. */
+const PREFIXO_DO_CATALOGO = "catalogo:";
+
+function nomeDaPessoa(row: MaoObraDraft): string {
+  return row.nomeColaborador.trim() || row.colaboradorId || "Sem nome";
+}
+
+function nomeDoCatalogo(collaborator: RdoContextCollaborator): string {
+  return (
+    collaborator.nome?.trim() ||
+    collaborator.codigoColaborador?.trim() ||
+    "Colaborador sem nome"
+  );
+}
+
+/**
+ * A mão de obra do dia, marcada numa lista só.
+ *
+ * <p>Esta seção pedia, por pessoa, função, vínculo, quantidade, hora de início,
+ * hora de fim e observações — sete campos numa tabela larga, ao lado de dois
+ * painéis para mover gente de um lado para o outro. Uma frente de doze pessoas
+ * eram oitenta e quatro caixas, quase todas repetindo o mesmo valor, digitadas
+ * num celular à beira da pista.
+ *
+ * <p>A pergunta é uma só: quem trabalhou hoje. A função vem do cadastro, que é
+ * quem a conhece; o horário do dia é o do RDO, que já está declarado na
+ * Identificação; e o resto não era preenchido por ninguém. O que ficou é uma
+ * lista de quem está na obra, com uma caixa para marcar — e quem foi somado à
+ * mão, para o ajudante do dia que não tem cadastro.
+ */
 export function RdoWorkforceEditor({
   draft,
   collaborators,
   catalogUnavailableMessage,
   sourceRdoNumber,
+  jaApontados,
   onChange,
 }: RdoWorkforceEditorProps) {
   const [newCollaboratorName, setNewCollaboratorName] = useState("");
+  const [somandoAMao, setSomandoAMao] = useState(false);
   const newCollaboratorId = useId();
-  const checkboxRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const existingIds = useMemo(
-    () => new Set(draft.maoObra.map((row) => row.colaboradorId)),
+
+  const noRascunho = useMemo(
+    () =>
+      new Set(
+        draft.maoObra
+          .map((row) => row.colaboradorId.trim())
+          .filter(Boolean),
+      ),
     [draft.maoObra],
   );
-  const disponiveis = useMemo<DualListboxItem[]>(
-    () =>
-      collaborators
-        .filter((collaborator) => !existingIds.has(collaborator.id))
-        .map((collaborator) => ({
-          id: collaborator.id,
-          titulo: collaborator.nome?.trim() ||
-            collaborator.codigoColaborador?.trim() ||
-            "Colaborador sem nome",
-          detalhe: [
+
+  /*
+   * Uma lista só: primeiro quem já tem linha no rascunho — herdado do RDO
+   * anterior, clonado ou somado à mão —, depois quem está autorizado na obra e
+   * ainda não foi trazido. A ordem importa: quem o RDO já conhece fica em cima,
+   * porque é sobre eles que a pergunta do dia costuma ser.
+   */
+  const itens = useMemo<ItemDeMarcar[]>(() => {
+    const doRascunho = draft.maoObra.map((row) => {
+      const indisponivel = row.availability === "UNAVAILABLE";
+      return {
+        id: row.localId,
+        titulo: nomeDaPessoa(row),
+        detalhe: row.cargo.trim() || null,
+        marcado: row.selected && !indisponivel,
+        impedimento: indisponivel
+          ? "Indisponível nesta obra"
+          : null,
+        aviso: avisoDeApontamentoRepetido(
+          jaApontados?.get(row.colaboradorId.trim()),
+        ),
+        // Só sai de vez quem foi somado à mão. Quem veio do catálogo ou do RDO
+        // anterior se desmarca: a linha guarda a procedência, e apagá-la
+        // perderia de onde a pessoa entrou neste RDO.
+        removivel: !row.colaboradorId.trim(),
+      };
+    });
+
+    const doCatalogo = collaborators
+      .filter((collaborator) => !noRascunho.has(collaborator.id))
+      .map((collaborator) => ({
+        id: `${PREFIXO_DO_CATALOGO}${collaborator.id}`,
+        titulo: nomeDoCatalogo(collaborator),
+        detalhe:
+          [
             collaborator.codigoColaborador,
             collaborator.papelNaObra,
             collaborator.nomePerfil,
-          ].filter(Boolean).join(" · "),
-        })),
-    [collaborators, existingIds],
-  );
-  /*
-   * O lado escolhido é indexado pelo localId, não pelo id do colaborador: quem
-   * foi somado à mão não tem cadastro, e sem localId sairia de vista sem sair
-   * do RDO.
-   */
-  const escolhidos = useMemo<DualListboxItem[]>(
-    () =>
-      draft.maoObra.map((row) => ({
-        id: row.localId,
-        titulo: row.nomeColaborador || row.colaboradorId ||
-          "Colaborador sem nome",
-        detalhe: row.availability === "UNAVAILABLE"
-          ? "Indisponível"
-          : row.cargo,
-      })),
-    [draft.maoObra],
-  );
-  const selected = draft.maoObra.filter(
+          ]
+            .filter(Boolean)
+            .join(" · ") || null,
+        marcado: false,
+        aviso: avisoDeApontamentoRepetido(jaApontados?.get(collaborator.id)),
+      }));
+
+    return [...doRascunho, ...doCatalogo];
+  }, [draft.maoObra, collaborators, noRascunho, jaApontados]);
+
+  const selecionados = draft.maoObra.filter(
     (row) =>
       row.selected &&
       row.availability !== "UNAVAILABLE" &&
       row.colaboradorId.trim(),
   );
 
-  function updateRow(localId: string, patch: Partial<MaoObraDraft>) {
-    onChange({
-      ...draft,
-      maoObra: draft.maoObra.map((row) =>
-        row.localId === localId ? { ...row, ...patch } : row,
-      ),
-    });
-  }
-
-  function handleRosterKeyDown(
-    event: KeyboardEvent<HTMLInputElement>,
-    index: number,
-  ) {
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+  function marcar(id: string, marcado: boolean) {
+    if (id.startsWith(PREFIXO_DO_CATALOGO)) {
+      if (!marcado) return;
+      onChange(
+        addAuthorizedWorker(
+          draft,
+          id.slice(PREFIXO_DO_CATALOGO.length),
+          collaborators,
+        ),
+      );
       return;
     }
-    event.preventDefault();
-    const next = nextRosterFocusIndex(event.key, index, draft.maoObra.length);
-    checkboxRefs.current[next]?.focus();
+    onChange(setRosterSelected(draft, id, marcado));
   }
 
-  /*
-   * A frente inteira entra de uma vez. Dobrar as adições sobre o mesmo rascunho
-   * — em vez de um onChange por pessoa — evita que o pai perca as anteriores ao
-   * reagir só à última.
-   */
-  function addCollaborators(collaboratorIds: readonly string[]) {
-    const proximo = collaboratorIds.reduce(
-      (acumulado, collaboratorId) =>
-        collaboratorId
-          ? addAuthorizedWorker(acumulado, collaboratorId, collaborators)
-          : acumulado,
-      draft,
-    );
-    if (proximo !== draft) onChange(proximo);
-  }
-
-  function removeCollaborators(localIds: readonly string[]) {
-    const proximo = localIds.reduce(
-      (acumulado, localId) => removeRosterMember(acumulado, localId),
-      draft,
-    );
-    if (proximo !== draft) onChange(proximo);
-  }
-
-  function addNewCollaborator() {
-    const normalizedName = newCollaboratorName.trim().replace(/\s+/g, " ");
-    if (!normalizedName) return;
+  function adicionarAMao() {
+    const nome = newCollaboratorName.trim().replace(/\s+/g, " ");
+    if (!nome) return;
 
     onChange({
       ...draft,
@@ -138,8 +155,9 @@ export function RdoWorkforceEditor({
         ...draft.maoObra,
         {
           ...createEmptyMaoObra(),
-          nomeColaborador: normalizedName,
+          nomeColaborador: nome,
           availability: "AVAILABLE",
+          selected: true,
         },
       ],
     });
@@ -157,27 +175,29 @@ export function RdoWorkforceEditor({
         </div>
         <p>
           {sourceRdoNumber
-            ? `Importada do RDO ${sourceRdoNumber}`
-            : "Nenhum RDO anterior elegível; adicione colaboradores autorizados."}
+            ? `Marque quem trabalhou hoje. A lista veio do RDO ${sourceRdoNumber} e de quem está na obra.`
+            : "Marque quem trabalhou hoje."}
         </p>
       </div>
 
-      <DualListbox
-        rotulo="Colaboradores do RDO"
-        disponiveis={disponiveis}
-        escolhidos={escolhidos}
-        onEscolher={addCollaborators}
-        onRemover={removeCollaborators}
-        tituloDisponiveis="Autorizados na obra"
-        tituloEscolhidos="Na equipe do RDO"
+      <ListaDeMarcar
+        rotulo="Pessoas do RDO"
+        itens={itens}
+        onMarcar={marcar}
+        onRemover={(localId) => onChange(removeRosterMember(draft, localId))}
         desabilitado={Boolean(catalogUnavailableMessage)}
-        mensagemSemDisponiveis={
+        mensagemVazia={
           catalogUnavailableMessage
             ? "Nenhum colaborador autorizado carregado."
-            : "Todo mundo autorizado nesta obra já está na equipe."
+            : "Ninguém vinculado a esta obra ainda. Use “Somar alguém à mão” para lançar quem trabalhou hoje."
         }
-        mensagemSemEscolhidos="Nenhum trabalhador neste RDO ainda."
       />
+
+      {catalogUnavailableMessage ? (
+        <p className="rdo-workforce-catalog-unavailable" role="status">
+          {catalogUnavailableMessage}
+        </p>
+      ) : null}
 
       <div className="rdo-workforce-controls">
         <label>
@@ -189,178 +209,62 @@ export function RdoWorkforceEditor({
             }
           >
             <option value="">Sem apontador</option>
-            {selected.map((row) => (
+            {selecionados.map((row) => (
               <option key={row.colaboradorId} value={row.colaboradorId}>
-                {row.nomeColaborador || row.colaboradorId}
+                {nomeDaPessoa(row)}
               </option>
             ))}
           </select>
         </label>
       </div>
 
-      <form
-        className="rdo-workforce-manual-add"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addNewCollaborator();
-        }}
-      >
-        <label htmlFor={newCollaboratorId}>
-          Adicionar trabalhador ao RDO
-        </label>
-        <input
-          id={newCollaboratorId}
-          maxLength={255}
-          value={newCollaboratorName}
-          onChange={(event) => setNewCollaboratorName(event.target.value)}
-        />
-        <button
-          type="submit"
-          className="add-button"
-          disabled={!newCollaboratorName.trim()}
+      {/* Somar alguém à mão fica atrás de um botão: é a exceção — o ajudante
+          do dia, o motorista de terceiro —, e deixá-la aberta punha uma caixa
+          de texto vazia à frente da lista que responde a pergunta comum. */}
+      {somandoAMao ? (
+        <form
+          className="rdo-workforce-manual-add"
+          onSubmit={(event) => {
+            event.preventDefault();
+            adicionarAMao();
+          }}
         >
-          Adicionar trabalhador
-        </button>
-      </form>
-
-      {catalogUnavailableMessage ? (
-        <p className="rdo-workforce-catalog-unavailable" role="status">
-          {catalogUnavailableMessage}
-        </p>
-      ) : null}
-
-      {draft.maoObra.length === 0 ? (
-        <p className="rdo-workforce-empty">
-          Nenhum trabalhador foi carregado para este RDO.
-        </p>
+          <label htmlFor={newCollaboratorId}>
+            Nome de quem não está na lista
+          </label>
+          <input
+            id={newCollaboratorId}
+            maxLength={255}
+            autoFocus
+            value={newCollaboratorName}
+            onChange={(event) => setNewCollaboratorName(event.target.value)}
+          />
+          <button
+            type="submit"
+            className="add-button"
+            disabled={!newCollaboratorName.trim()}
+          >
+            Adicionar
+          </button>
+          <button
+            type="button"
+            className="rdo-workforce-manual-cancel"
+            onClick={() => {
+              setSomandoAMao(false);
+              setNewCollaboratorName("");
+            }}
+          >
+            Cancelar
+          </button>
+        </form>
       ) : (
-        <div className="rdo-workforce-table-region">
-          <table className="rdo-workforce-table">
-            <thead>
-              <tr>
-                <th scope="col">Incluir</th>
-                <th scope="col">Colaborador</th>
-                <th scope="col">Função</th>
-                <th scope="col">Vínculo</th>
-                <th scope="col">Qtd.</th>
-                <th scope="col">Início</th>
-                <th scope="col">Fim</th>
-                <th scope="col">Observações</th>
-                <th scope="col">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {draft.maoObra.map((row, index) => {
-                const unavailable = row.availability === "UNAVAILABLE";
-                return (
-                  <tr
-                    key={row.localId}
-                    className={row.origin === "PREVIOUS_RDO" ? "rdo-workforce-row--carried" : undefined}
-                  >
-                    <td>
-                      <input
-                        ref={(element) => {
-                          checkboxRefs.current[index] = element;
-                        }}
-                        type="checkbox"
-                        checked={row.selected}
-                        disabled={unavailable}
-                        aria-label={`Selecionar ${row.nomeColaborador || row.colaboradorId}`}
-                        onKeyDown={(event) => handleRosterKeyDown(event, index)}
-                        onChange={(event) =>
-                          onChange(
-                            setRosterSelected(draft, row.localId, event.target.checked),
-                          )
-                        }
-                      />
-                    </td>
-                    <th scope="row">
-                      <span>{row.nomeColaborador || row.colaboradorId}</span>
-                      {unavailable ? <small>Indisponível</small> : null}
-                    </th>
-                    <td>
-                      <input
-                        aria-label={`Função de ${row.nomeColaborador}`}
-                        value={row.cargo}
-                        disabled={unavailable}
-                        onChange={(event) => updateRow(row.localId, { cargo: event.target.value })}
-                      />
-                    </td>
-                    <td>
-                      <select
-                        aria-label={`Vínculo de ${row.nomeColaborador}`}
-                        value={row.tipoVinculo}
-                        disabled={unavailable}
-                        onChange={(event) => updateRow(row.localId, { tipoVinculo: event.target.value })}
-                      >
-                        <option value="">Selecione</option>
-                        <option value="PROPRIO">Próprio</option>
-                        <option value="CONTRATADO">Contratado</option>
-                        <option value="TERCEIRIZADO">Terceirizado</option>
-                      </select>
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        aria-label={`Quantidade de ${row.nomeColaborador}`}
-                        value={row.quantidade}
-                        disabled={unavailable}
-                        onChange={(event) =>
-                          updateRow(row.localId, {
-                            quantidade:
-                              event.target.value === ""
-                                ? ""
-                                : Number(event.target.value),
-                          })
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="time"
-                        aria-label={`Início de ${row.nomeColaborador}`}
-                        value={row.horaInicio}
-                        disabled={unavailable}
-                        onChange={(event) => updateRow(row.localId, { horaInicio: event.target.value })}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="time"
-                        aria-label={`Fim de ${row.nomeColaborador}`}
-                        value={row.horaFim}
-                        disabled={unavailable}
-                        onChange={(event) => updateRow(row.localId, { horaFim: event.target.value })}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        aria-label={`Observações de ${row.nomeColaborador}`}
-                        value={row.observacoes}
-                        disabled={unavailable}
-                        onChange={(event) => updateRow(row.localId, { observacoes: event.target.value })}
-                      />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="rdo-workforce-remove"
-                        aria-label={`Remover ${row.nomeColaborador || row.colaboradorId} da equipe`}
-                        onClick={() =>
-                          onChange(removeRosterMember(draft, row.localId))
-                        }
-                      >
-                        Remover
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <button
+          type="button"
+          className="add-button rdo-workforce-manual-toggle"
+          onClick={() => setSomandoAMao(true)}
+        >
+          Somar alguém à mão
+        </button>
       )}
     </section>
   );
