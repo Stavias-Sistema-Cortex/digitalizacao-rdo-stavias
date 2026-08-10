@@ -1306,6 +1306,40 @@ public class RdoOperationalDetailService {
     }
 
 
+    /**
+     * Dois turnos ocupam o mesmo minuto.
+     *
+     * <p>Cada um vira um intervalo em minutos desde a meia-noite, com 24 horas
+     * somadas ao fim quando ele não passa do início — que é como se lê uma
+     * jornada que atravessa a noite. O segundo é comparado também deslocado de
+     * um dia para frente e para trás, porque o par em que só um dos dois
+     * atravessa se encontra numa dessas voltas.
+     */
+    private boolean seSobrepoemNoRelogio(
+            IntervaloAlocacao um,
+            IntervaloAlocacao outro
+    ) {
+        long inicioA = um.horaInicio().toSecondOfDay() / 60L;
+        long fimA = inicioA + duracaoEmMinutos(um);
+        long inicioB = outro.horaInicio().toSecondOfDay() / 60L;
+        long duracaoB = duracaoEmMinutos(outro);
+        for (long volta : new long[] {-1440L, 0L, 1440L}) {
+            long deslocado = inicioB + volta;
+            if (inicioA < deslocado + duracaoB && deslocado < fimA) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Minutos de um turno, com a volta do relógio somada quando ele vira o dia. */
+    private long duracaoEmMinutos(IntervaloAlocacao intervalo) {
+        long minutos = ChronoUnit.MINUTES.between(
+                intervalo.horaInicio(), intervalo.horaFim()
+        );
+        return minutos <= 0 ? minutos + 1440 : minutos;
+    }
+
     private void validarSemSobreposicao(
             String rdoId,
             String colaboradorId,
@@ -1316,9 +1350,26 @@ public class RdoOperationalDetailService {
             return;
         }
 
-        Integer overlaps = jdbcTemplate.queryForObject(
+        /*
+         * A comparação sai do SQL porque o relógio dá a volta.
+         *
+         * O par `hora_inicio < ? AND hora_fim > ?` é a checagem clássica de
+         * sobreposição, e ela pressupõe que o fim vem depois do início no mesmo
+         * mostrador. A jornada noturna quebra essa premissa: 22:00 → 06:00 tem
+         * o fim "antes" do início, e o SQL simplesmente parava de encontrar
+         * qualquer conflito — a guarda continuava lá, sem nunca acusar nada.
+         * Falha silenciosa é pior que recusa: ninguém procura o que não
+         * reclama.
+         *
+         * Em minutos desde a meia-noite, com a volta somada, os dois turnos
+         * viram intervalos comuns e a comparação volta a ser a de sempre. O
+         * deslocamento de 24 horas cobre o par em que um atravessa e o outro
+         * não. São poucas linhas por pessoa e por dia, então trazer as
+         * candidatas custa menos que a acrobacia equivalente em SQL.
+         */
+        List<IntervaloAlocacao> candidatas = jdbcTemplate.query(
                 """
-                SELECT COUNT(*)
+                SELECT hora_inicio, hora_fim
                 FROM alocacao_colaborador
                 WHERE colaborador_id = ?
                   AND data_alocacao = ?
@@ -1326,18 +1377,22 @@ public class RdoOperationalDetailService {
                   AND (rdo_id IS NULL OR rdo_id <> ?)
                   AND hora_inicio IS NOT NULL
                   AND hora_fim IS NOT NULL
-                  AND hora_inicio < ?
-                  AND hora_fim > ?
                 """,
-                Integer.class,
+                (rs, rowNumber) -> new IntervaloAlocacao(
+                        rs.getTime("hora_inicio").toLocalTime(),
+                        rs.getTime("hora_fim").toLocalTime(),
+                        0
+                ),
                 colaboradorId,
                 dataRdo,
-                rdoId,
-                intervalo.horaFim(),
-                intervalo.horaInicio()
+                rdoId
         );
 
-        if (overlaps != null && overlaps > 0) {
+        long overlaps = candidatas.stream()
+                .filter(candidata -> seSobrepoemNoRelogio(intervalo, candidata))
+                .count();
+
+        if (overlaps > 0) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Alocação sobreposta para o colaborador na mesma data."
@@ -1384,19 +1439,30 @@ public class RdoOperationalDetailService {
                 );
             }
 
+            /*
+             * O turno da noite vira o dia.
+             *
+             * A conta era a diferença crua entre dois relógios, e ela é
+             * negativa em toda jornada noturna: entrar às 22:00 e sair às 06:00
+             * dava -960 minutos, que caía direto na recusa "horaFim deve ser
+             * maior que horaInicio". A frente que trabalha à noite — que é
+             * quando boa parte da obra em rodovia acontece, com a pista
+             * interditada — não conseguia apontar a própria jornada.
+             *
+             * O relógio não guarda o dia, então a travessia é lida do único
+             * jeito possível: hora final menor que a inicial significa o dia
+             * seguinte. Uma jornada de RDO não passa de 24 horas, então não há
+             * ambiguidade a resolver — só a volta do relógio a somar.
+             */
             long minutos = ChronoUnit.MINUTES.between(horaInicio, horaFim);
-
-            if (minutos <= 0) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "horaFim deve ser maior que horaInicio."
-                );
+            if (minutos < 0) {
+                minutos += 1440;
             }
 
-            if (minutos > 1440) {
+            if (minutos == 0) {
                 throw new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
-                        "Uma alocação não pode exceder 24 horas."
+                        "horaFim não pode ser igual a horaInicio."
                 );
             }
 

@@ -13,7 +13,7 @@ import {
   applyRdoCreationContext,
   isRdoCreationContextComplete,
 } from "./rdoCreationContext";
-import type { RdoDraft } from "./rdo.types";
+import type { MaoObraDraft, RdoDraft } from "./rdo.types";
 import type {
   RdoCreationContextLookup,
   RdoLocalPendingCreationContextLookup,
@@ -184,15 +184,40 @@ export async function createAndPersistLocalPendingRdoDraft(
   };
 }
 
+/**
+ * A mesma pessoa, vinda de dois lados.
+ *
+ * <p>A junção deduplicava por {@code colaboradorId}, e quem foi digitado à mão
+ * não tem um: o campo é vazio, o conjunto de ids importados nunca o continha, e
+ * a linha entrava duas vezes. O defeito ficou escondido enquanto o contexto
+ * zerava a mão de obra antes da junção — do lado contextual não havia ninguém
+ * para duplicar.
+ *
+ * <p>A identidade é o colaborador quando ele existe, e a linha em si quando
+ * não: {@code localId} é o que separa duas pessoas manuais homônimas, que numa
+ * frente grande acontecem.
+ */
+function identidadeDaPessoa(row: MaoObraDraft): string {
+  const colaborador = row.colaboradorId.trim();
+  return colaborador ? `colaborador:${colaborador}` : `linha:${row.localId}`;
+}
+
+/** As pessoas dos dois lados, sem repetir quem já está no primeiro. */
+function pessoasSemRepetir(
+  primeiro: readonly MaoObraDraft[],
+  segundo: readonly MaoObraDraft[],
+): MaoObraDraft[] {
+  const jaTem = new Set(primeiro.map(identidadeDaPessoa));
+  return [
+    ...structuredClone(primeiro as MaoObraDraft[]),
+    ...segundo.filter((row) => !jaTem.has(identidadeDaPessoa(row))),
+  ];
+}
+
 function mergeLocalPendingImportedEvidence(
   contextual: RdoDraft,
   imported: RdoDraft,
 ): RdoDraft {
-  const importedCollaboratorIds = new Set(
-    imported.maoObra
-      .map((row) => row.colaboradorId.trim())
-      .filter(Boolean),
-  );
   return {
     ...contextual,
     ...structuredClone(imported),
@@ -210,12 +235,7 @@ function mergeLocalPendingImportedEvidence(
     cidade: contextual.cidade,
     uf: contextual.uf,
     numeroRdo: contextual.numeroRdo,
-    maoObra: [
-      ...structuredClone(imported.maoObra),
-      ...contextual.maoObra.filter(
-        (row) => !importedCollaboratorIds.has(row.colaboradorId),
-      ),
-    ],
+    maoObra: pessoasSemRepetir(imported.maoObra, contextual.maoObra),
     importEvidence: imported.importEvidence,
     syncStatus: "LOCAL_PENDING",
   };
@@ -225,11 +245,6 @@ function mergeImportedEvidence(
   contextual: RdoDraft,
   imported: RdoDraft,
 ): RdoDraft {
-  const importedCollaboratorIds = new Set(
-    imported.maoObra
-      .map((row) => row.colaboradorId.trim())
-      .filter(Boolean),
-  );
   return {
     ...contextual,
     ...structuredClone(imported),
@@ -247,12 +262,7 @@ function mergeImportedEvidence(
     cidade: contextual.cidade,
     uf: contextual.uf,
     numeroRdo: contextual.numeroRdo,
-    maoObra: [
-      ...structuredClone(imported.maoObra),
-      ...contextual.maoObra.filter(
-        (row) => !importedCollaboratorIds.has(row.colaboradorId),
-      ),
-    ],
+    maoObra: pessoasSemRepetir(imported.maoObra, contextual.maoObra),
     importEvidence: {
       source: "IMPORTED_DOCUMENT",
       rawWorksiteIdentity: imported.importEvidence?.rawWorksiteIdentity ?? {

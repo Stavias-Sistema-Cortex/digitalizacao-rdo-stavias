@@ -107,11 +107,26 @@ export function applyRdoCreationContext(
     rodovia: context.obra.rodovia?.trim() ?? "",
     cidade: context.obra.cidade?.trim() ?? "",
     uf: context.obra.uf?.trim() ?? "",
-    maoObra: carryForwardWorkforce(
-      previousWorkforce,
-      context.colaboradores,
-      createId,
-    ),
+    /*
+     * A equipe que o rascunho já traz manda.
+     *
+     * <p>Aqui a mão de obra era sempre reconstruída do RDO anterior, e isso
+     * atropelava a clonagem: quem clonava o RDO de segunda para repetir a
+     * frente recebia a equipe de sexta, porque "anterior" é o RDO que antecede
+     * a data nova, não o que foi escolhido para copiar. Um rascunho que já
+     * chega com gente dentro está afirmando quem trabalhou, e essa afirmação
+     * vale mais do que a herança automática.
+     *
+     * <p>Rascunho vazio — o caminho normal, de quem cria um RDO do zero —
+     * continua herdando do anterior, que é o que poupa a digitação diária.
+     */
+    maoObra: draft.maoObra.length > 0
+      ? draft.maoObra
+      : carryForwardWorkforce(
+          previousWorkforce,
+          context.colaboradores,
+          createId,
+        ),
     apontadorColaboradorId: "",
     apontadorRdo: "",
     syncStatus: "LOCAL_ONLY",
@@ -147,11 +162,15 @@ export function applyLocalPendingRdoCreationContext(
     rodovia: context.obra.rodovia?.trim() ?? "",
     cidade: context.obra.cidade?.trim() ?? "",
     uf: context.obra.uf?.trim() ?? "",
-    maoObra: carryForwardWorkforce(
-      previousWorkforce,
-      context.colaboradores,
-      createId,
-    ),
+    // Mesma regra do caminho com recibo: a equipe que o rascunho traz manda,
+    // e o clone é justamente quem a traz.
+    maoObra: draft.maoObra.length > 0
+      ? draft.maoObra
+      : carryForwardWorkforce(
+          previousWorkforce,
+          context.colaboradores,
+          createId,
+        ),
     apontadorColaboradorId: "",
     apontadorRdo: "",
     syncStatus: "LOCAL_PENDING",
