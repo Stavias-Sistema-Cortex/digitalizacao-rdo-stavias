@@ -105,9 +105,14 @@
 
 .lista-de-marcar__item input[type="checkbox"] {
   flex: 0 0 auto;
-  /* Alvo de toque: o RDO é preenchido no celular, com a mão suja de obra. */
-  width: 20px;
-  height: 20px;
+  /*
+   * A caixa é discreta; quem dá o alvo de toque é a linha inteira, que é
+   * clicável por ser um `label`. Uma caixa grande não aumenta o alvo — só
+   * pesa a lista.
+   */
+  width: 17px;
+  height: 17px;
+  accent-color: #34443b;
   margin: 0;
   cursor: pointer;
 }

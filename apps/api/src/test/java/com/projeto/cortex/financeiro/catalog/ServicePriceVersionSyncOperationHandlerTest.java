@@ -182,6 +182,97 @@ class ServicePriceVersionSyncOperationHandlerTest {
         assertThat(handler.requiresBaseVersion("SUBSTITUIR_PRECO_SERVICO")).isFalse();
     }
 
+    /*
+     * Corrigir e substituir chegam por portas diferentes de propósito.
+     * Substituir cria uma linha nova e publica; corrigir reescreve a que existe
+     * e não publica nada — chamar isso de publicação faria a linha do tempo da
+     * receita mostrar um preço novo onde houve conserto de digitação.
+     */
+    @Test
+    void correctsThePriceInPlaceWithoutAnnouncingAPublication() {
+        when(service.atualizarPreco(eq(WORKSITE), eq(ACTOR), eq(PRICE), any()))
+                .thenReturn(price(PRICE, null, "ACTIVE"));
+        ObjectNode payload = basePayload(PRICE);
+        payload.put("unitPrice", "50.0000");
+        payload.put("contractedQuantity", "1200.000");
+        payload.put("validFrom", "2026-07-01");
+        payload.put("source", "CONTRATO_MEDIDO");
+
+        AppliedSyncMutation applied = handler.apply(
+                mutation(
+                        "ATUALIZAR_PRECO_SERVICO", "UPDATE", PRICE, 4L,
+                        payload, List.of()
+                ),
+                new SyncMutationContext(ACTOR, DEVICE)
+        );
+
+        verifyAdmin();
+        verify(service, never()).supersedePrice(any(), any(), any(), any());
+        verify(service, never()).createPrice(any(), any(), any(), any());
+        ArgumentCaptor<UpdateServicePriceCommand> command =
+                ArgumentCaptor.forClass(UpdateServicePriceCommand.class);
+        verify(service).atualizarPreco(
+                eq(WORKSITE), eq(ACTOR), eq(PRICE), command.capture()
+        );
+        assertThat(command.getValue().clientMutationId()).isEqualTo(MUTATION);
+        assertThat(command.getValue().unitPrice()).isEqualByComparingTo("50.0000");
+        assertThat(command.getValue().contractedQuantity())
+                .isEqualByComparingTo("1200.000");
+        assertThat(applied.authoritativeEvent().eventType())
+                .isEqualTo("SERVICE_PRICE_VERSION_UPDATED");
+        assertThat(handler.requiresBaseVersion("ATUALIZAR_PRECO_SERVICO"))
+                .isFalse();
+    }
+
+    /*
+     * Versões anteriores à quantidade contratada não têm o campo. Exigi-lo na
+     * correção obrigaria quem só quer consertar o valor a inventar um número de
+     * contrato.
+     */
+    @Test
+    void acceptsACorrectionThatLeavesTheContractedQuantityAbsent() {
+        when(service.atualizarPreco(eq(WORKSITE), eq(ACTOR), eq(PRICE), any()))
+                .thenReturn(price(PRICE, null, "ACTIVE"));
+        ObjectNode payload = basePayload(PRICE);
+        payload.put("unitPrice", "50.0000");
+        payload.putNull("contractedQuantity");
+        payload.put("validFrom", "2026-07-01");
+        payload.put("source", "CONTRATO_MEDIDO");
+
+        handler.apply(
+                mutation(
+                        "ATUALIZAR_PRECO_SERVICO", "UPDATE", PRICE, 4L,
+                        payload, List.of()
+                ),
+                new SyncMutationContext(ACTOR, DEVICE)
+        );
+
+        ArgumentCaptor<UpdateServicePriceCommand> command =
+                ArgumentCaptor.forClass(UpdateServicePriceCommand.class);
+        verify(service).atualizarPreco(
+                eq(WORKSITE), eq(ACTOR), eq(PRICE), command.capture()
+        );
+        assertThat(command.getValue().contractedQuantity()).isNull();
+    }
+
+    @Test
+    void rejectsCorrectionWhenClientSuppliesAnyRelatedEntity() {
+        ObjectNode payload = basePayload(PRICE);
+        payload.put("unitPrice", "50.0000");
+        payload.put("validFrom", "2026-07-01");
+        payload.put("source", "CONTRATO_MEDIDO");
+
+        assertThatThrownBy(() -> handler.apply(
+                mutation(
+                        "ATUALIZAR_PRECO_SERVICO", "UPDATE", PRICE, 4L,
+                        payload, List.of(related("SERVICE", EXTRA_SERVICE))
+                ),
+                new SyncMutationContext(ACTOR, DEVICE)
+        )).isInstanceOf(ResponseStatusException.class);
+
+        verify(service, never()).atualizarPreco(any(), any(), any(), any());
+    }
+
     @Test
     void rejectsServiceIdThatIsNotDeclaredAsRelatedEntity() {
         ObjectNode payload = basePayload(PRICE);

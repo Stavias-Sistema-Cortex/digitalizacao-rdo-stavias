@@ -231,7 +231,7 @@ describe("lista de mão de obra do RDO", () => {
    * exceção: a caixa de texto fica atrás de um botão para não competir com a
    * lista que responde a pergunta comum.
    */
-  it("soma alguém à mão só depois de pedirem por isso", async () => {
+  it("abre o campo de nome só depois de pedirem por ele", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(
@@ -244,14 +244,14 @@ describe("lista de mão de obra do RDO", () => {
     );
 
     expect(
-      screen.queryByRole("textbox", { name: /Nome de quem não está na lista/ }),
+      screen.queryByRole("textbox", { name: /Nome do colaborador/ }),
     ).toBeNull();
 
     await user.click(
-      screen.getByRole("button", { name: "Somar alguém à mão" }),
+      screen.getByRole("button", { name: "Adicionar colaborador" }),
     );
     const campo = screen.getByRole("textbox", {
-      name: /Nome de quem não está na lista/,
+      name: /Nome do colaborador/,
     });
     expect(campo).toHaveAttribute("maxLength", "255");
     await user.type(campo, "  Maria   Servente  ");
@@ -280,10 +280,10 @@ describe("lista de mão de obra do RDO", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: "Somar alguém à mão" }),
+      screen.getByRole("button", { name: "Adicionar colaborador" }),
     );
     await user.type(
-      screen.getByRole("textbox", { name: /Nome de quem não está na lista/ }),
+      screen.getByRole("textbox", { name: /Nome do colaborador/ }),
       "João Ajudante{Enter}",
     );
 

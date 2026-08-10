@@ -208,6 +208,55 @@ public class PostgresqlServicePriceCatalogRepository
     }
 
     /*
+     * A correção do cadastro e o recibo entram na mesma escrita.
+     *
+     * O trava por código repete o da criação porque o conflito é o mesmo: dois
+     * serviços vivos não podem dividir um código, e a corrida entre corrigir um
+     * para "FRE-01" e criar outro com "FRE-01" precisa de um vencedor.
+     *
+     * O carimbo de revisão sobe junto: a listagem lê por snapshot, e sem ele
+     * quem já tinha a página aberta continuaria vendo o nome errado.
+     */
+    @Override
+    public ServiceCatalogEntry updateService(UpdateServiceRecord record) {
+        rejectConcurrentMutationReplay(
+                record.actorId(), record.clientMutationId()
+        );
+        jdbc.query(
+                "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                resultSet -> null,
+                "catalogo_servico:" + record.code()
+        );
+        try {
+            jdbc.update("""
+                    UPDATE catalogo_servico
+                    SET codigo = ?,
+                        nome = ?,
+                        descricao = ?,
+                        commit_revision = cortex_next_service_catalog_revision()
+                    WHERE id = ?
+                    """,
+                    record.code(),
+                    record.name(),
+                    record.description(),
+                    record.serviceId()
+            );
+            insertMutation(
+                    record.actorId(), record.clientMutationId(),
+                    "SERVICE_UPDATED", record.serviceId(), record.requestHash(),
+                    record.occurredAt()
+            );
+        } catch (DataAccessException exception) {
+            if (contains(exception, "uq_catalogo_servico_codigo_normalizado")
+                    || contains(exception, "catalogo_servico_codigo")) {
+                throw new ServiceCatalogCodeConflictException();
+            }
+            throw exception;
+        }
+        return findService(record.serviceId()).orElseThrow();
+    }
+
+    /*
      * A transição de estado e o recibo entram na mesma escrita.
      *
      * O UPDATE só encontra a linha quando ela ainda está no estado de origem,
@@ -261,6 +310,69 @@ public class PostgresqlServicePriceCatalogRepository
     @Override
     public ServicePriceVersion createPrice(CreatePriceRecord record) {
         return insertPrice(record, "SERVICE_PRICE_VERSION_CREATED");
+    }
+
+    /*
+     * A correção é uma escrita só, e quem julga se ela ainda cabe é o gatilho
+     * do banco: preço já citado por execução, já substituído ou já cancelado
+     * não se corrige, e duas vigências não podem se sobrepor.
+     *
+     * A regra mora lá, e não aqui, porque é lá que a corrida se resolve. Entre
+     * ler "ninguém usou ainda" e escrever a correção há uma janela em que outro
+     * aparelho pode ter validado a execução que usa este preço; o gatilho
+     * decide dentro da mesma transação da escrita, onde essa janela não existe.
+     */
+    @Override
+    public ServicePriceVersion updatePrice(UpdatePriceRecord record) {
+        rejectConcurrentMutationReplay(
+                record.actorId(), record.clientMutationId()
+        );
+        try {
+            jdbc.update("""
+                    UPDATE service_price_version
+                    SET valor_unitario = ?,
+                        quantidade_contratada = ?,
+                        vigencia_inicio = ?,
+                        vigencia_fim = ?,
+                        fonte = ?,
+                        commit_revision = cortex_next_service_catalog_revision()
+                    WHERE id = ? AND obra_id = ?
+                    """,
+                    record.unitPrice(),
+                    record.contractedQuantity(),
+                    record.validFrom(),
+                    record.validTo(),
+                    record.source(),
+                    record.id(),
+                    record.obraId()
+            );
+            insertMutation(
+                    record.actorId(), record.clientMutationId(),
+                    "SERVICE_PRICE_VERSION_UPDATED", record.id(),
+                    record.requestHash(), record.occurredAt()
+            );
+        } catch (DataAccessException exception) {
+            if (contains(exception, "SERVICE_PRICE_VALIDITY_OVERLAP")) {
+                throw new ServicePriceValidityOverlapException();
+            }
+            if (contains(exception, "SERVICE_PRICE_ALREADY_USED")) {
+                throw new ServicePriceCancellationException(
+                        "SERVICE_PRICE_ALREADY_USED"
+                );
+            }
+            if (contains(exception, "SERVICE_PRICE_ALREADY_TERMINATED")) {
+                throw new ServicePriceCancellationException(
+                        "SERVICE_PRICE_ALREADY_TERMINATED"
+                );
+            }
+            if (contains(exception, "SERVICE_PRICE_IDENTITY_IMMUTABLE")) {
+                throw new ServicePriceCancellationException(
+                        "SERVICE_PRICE_IDENTITY_IMMUTABLE"
+                );
+            }
+            throw exception;
+        }
+        return findPrice(record.obraId(), record.id()).orElseThrow();
     }
 
     @Override

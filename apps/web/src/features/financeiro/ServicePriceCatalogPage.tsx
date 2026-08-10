@@ -10,9 +10,12 @@ import {
   queueCancelPrice,
   queueCreatePrice,
   queueCreateService,
+  apagarServicoNuncaAceito,
   queueExcluirServico,
   queueRestaurarServico,
   queueSupersedePrice,
+  queueUpdatePrice,
+  queueUpdateService,
   type LocalServiceCatalogRow,
 } from "./servicePriceRepository";
 import {
@@ -28,7 +31,9 @@ interface ServicePriceCatalogPageProps {
 
 type EditorState =
   | { type: "service" }
+  | { type: "editService"; serviceId: string }
   | { type: "price"; serviceId: string }
+  | { type: "editPrice"; priceId: string; serviceId: string }
   | { type: "supersede"; priceId: string; serviceId: string }
   | { type: "cancel"; priceId: string; serviceId: string }
   | null;
@@ -221,6 +226,14 @@ export function ServicePriceCatalogPage({
     return rows.find((row) => row.service.id === editor.serviceId) ?? null;
   }, [editor, rows]);
 
+  /** A versão de preço que o editor aberto está corrigindo. */
+  const selectedPrice = useMemo(() => {
+    if (!editor || !("priceId" in editor) || !selectedRow) return null;
+    return selectedRow.priceVersions.find(
+      (price) => price.id === editor.priceId,
+    ) ?? null;
+  }, [editor, selectedRow]);
+
   const catalogoConhecido = useMemo(
     () => rows.map((row) => ({
       id: row.service.id,
@@ -300,7 +313,16 @@ export function ServicePriceCatalogPage({
     setError("");
     try {
       if (excluir) {
-        await queueExcluirServico(obraId, serviceId);
+        /*
+         * O serviço cuja criação o servidor recusou sai do aparelho de vez.
+         * Enfileirar uma exclusão para o que não existe do outro lado é um
+         * beco: a transição volta recusada, o serviço fica pendente, e ficar
+         * pendente é justamente o que faz a reconciliação preservá-lo. Cada
+         * clique na lixeira aprofundava o buraco.
+         */
+        if (!(await apagarServicoNuncaAceito(serviceId))) {
+          await queueExcluirServico(obraId, serviceId);
+        }
       } else {
         await queueRestaurarServico(obraId, serviceId);
       }
@@ -566,6 +588,163 @@ export function ServicePriceCatalogPage({
         </form>
       ) : null}
 
+      {/* Corrigir o cadastro não cria registro novo: o identificador continua o
+          mesmo, e é ele que os RDOs, os preços e as medições já citam. Antes
+          disso, consertar um nome errado só era possível excluindo e
+          cadastrando de novo — que troca justamente esse identificador. */}
+      {editor?.type === "editService" && canAdmin && selectedRow ? (
+        <form
+          className="finance-catalog-editor"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            void submit(
+              () => queueUpdateService(obraId, selectedRow.service.id, {
+                code: readText(form, "code"),
+                name: readText(form, "name"),
+                description: readText(form, "description"),
+              }),
+              "Correção salva localmente e incluída na sincronização automática.",
+            );
+          }}
+        >
+          <header>
+            <div>
+              <span>{selectedRow.service.code}</span>
+              <h3>Editar serviço</h3>
+            </div>
+            <button type="button" onClick={() => setEditor(null)}>Fechar</button>
+          </header>
+          <p className="finance-catalog-editor__aviso" role="status">
+            O serviço continua sendo o mesmo: os preços já publicados e os RDOs
+            que o executaram seguem apontando para ele.
+          </p>
+          <div className="finance-catalog-editor__grid">
+            <label>
+              Nome do serviço
+              <input
+                name="name"
+                aria-label="Nome do serviço"
+                required
+                maxLength={160}
+                autoFocus
+                defaultValue={selectedRow.service.name}
+              />
+            </label>
+            <label>
+              Código do serviço
+              <input
+                name="code"
+                required
+                maxLength={80}
+                defaultValue={selectedRow.service.code}
+              />
+            </label>
+            <label className="is-wide">
+              Descrição
+              <textarea
+                name="description"
+                maxLength={500}
+                rows={2}
+                defaultValue={selectedRow.service.description ?? ""}
+              />
+            </label>
+          </div>
+          <button type="submit" disabled={saving}>Salvar offline</button>
+        </form>
+      ) : null}
+
+      {/* Corrigir e substituir respondem a perguntas diferentes. Substituir é o
+          aditivo que mudou o valor a partir de uma data, e guarda as duas
+          versões. Corrigir é o zero a mais digitado ontem: guardar as duas
+          inventaria uma revisão de contrato que nunca houve, e a receita
+          passaria a medir dois períodos por causa de um erro de digitação. */}
+      {editor?.type === "editPrice" && canAdmin && selectedRow && selectedPrice ? (
+        <form
+          className="finance-catalog-editor"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            void submit(
+              () => queueUpdatePrice(obraId, selectedPrice.id, {
+                unitPrice: readText(form, "unitPrice"),
+                contractedQuantity: readText(form, "contractedQuantity"),
+                validFrom: readText(form, "validFrom"),
+                validTo: readText(form, "validTo"),
+                source: readText(form, "source"),
+              }),
+              "Correção salva localmente e incluída na sincronização automática.",
+            );
+          }}
+        >
+          <header>
+            <div>
+              <span>{selectedRow.service.code}</span>
+              <h3>Corrigir preço · versão {selectedPrice.version}</h3>
+            </div>
+            <button type="button" onClick={() => setEditor(null)}>Fechar</button>
+          </header>
+          <p className="finance-catalog-editor__aviso" role="status">
+            A correção reescreve esta versão, sem criar outra. Ela só é aceita
+            enquanto nenhuma execução usou este preço — depois disso, o caminho é{" "}
+            <strong>Substituir</strong>. A unidade ({selectedPrice.unit}) e a
+            moeda não mudam aqui: elas identificam a versão.
+          </p>
+          <div className="finance-catalog-editor__grid">
+            <label>
+              Valor unitário
+              <input
+                name="unitPrice"
+                aria-label="Valor unitário"
+                inputMode="decimal"
+                required
+                autoFocus
+                defaultValue={selectedPrice.unitPrice}
+              />
+            </label>
+            <label>
+              Quantidade contratada
+              <input
+                name="contractedQuantity"
+                aria-label="Quantidade contratada"
+                inputMode="decimal"
+                defaultValue={selectedPrice.contractedQuantity ?? ""}
+              />
+              <small>Opcional — o que o contrato prevê, quando se sabe.</small>
+            </label>
+            <label>
+              Início da vigência
+              <input
+                name="validFrom"
+                aria-label="Início da vigência"
+                type="date"
+                required
+                defaultValue={selectedPrice.validFrom}
+              />
+            </label>
+            <label>
+              Fim da vigência
+              <input
+                name="validTo"
+                type="date"
+                defaultValue={selectedPrice.validTo ?? ""}
+              />
+            </label>
+            <label>
+              Fonte do preço
+              <input
+                name="source"
+                required
+                maxLength={80}
+                defaultValue={selectedPrice.source ?? "CONTRATO_MEDIDO"}
+              />
+              <small>Use letras, números e apenas . _ : -</small>
+            </label>
+          </div>
+          <button type="submit" disabled={saving}>Salvar correção offline</button>
+        </form>
+      ) : null}
+
       {editor?.type === "price" && canAdmin && selectedRow ? (
         <form
           className="finance-catalog-editor"
@@ -606,8 +785,10 @@ export function ServicePriceCatalogPage({
             <p className="finance-catalog-editor__aviso" role="status">
               Este serviço já tem {selectedRow.priceVersions.length}{" "}
               {selectedRow.priceVersions.length === 1 ? "preço" : "preços"} no
-              catálogo. Um preço novo não corrige o anterior — para trocar o
-              valor vigente use <strong>Substituir</strong> no histórico abaixo.
+              catálogo. Um preço novo não corrige o anterior — para consertar o
+              que foi digitado errado use <strong>Corrigir</strong>, e para
+              registrar uma revisão de contrato use <strong>Substituir</strong>,
+              no histórico abaixo.
             </p>
           ) : null}
           <div className="finance-catalog-editor__grid">
@@ -725,9 +906,20 @@ export function ServicePriceCatalogPage({
                 ) : null}
                 <span data-sync={row.service.syncStatus}>{syncLabel(row.service.syncStatus)}</span>
                 {canAdmin && !excluido(row.service) ? (
-                  <button type="button" onClick={() => setEditor({ type: "price", serviceId: row.service.id })}>
-                    Novo preço para {row.service.name}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setEditor({
+                        type: "editService",
+                        serviceId: row.service.id,
+                      })}
+                    >
+                      Editar
+                    </button>
+                    <button type="button" onClick={() => setEditor({ type: "price", serviceId: row.service.id })}>
+                      Novo preço para {row.service.name}
+                    </button>
+                  </>
                 ) : null}
                 {canAdmin ? (
                   <button
@@ -794,10 +986,18 @@ export function ServicePriceCatalogPage({
                     </div>
                     <div><span>Vigência</span><strong>{price.validFrom}</strong><small>{price.effectiveValidTo ? `até ${price.effectiveValidTo}` : "sem término registrado"}</small></div>
                     <div><span>Estado</span><strong>{price.status}</strong><small>{syncLabel(price.syncStatus)}</small></div>
-                    {canAdmin && price.status === "ACTIVE" && price.syncStatus === "SYNCED" ? (
+                    {/* Corrigir aparece antes de sincronizar, porque é aí que o
+                        erro de digitação costuma ser notado. Substituir e
+                        cancelar precisam da versão que o servidor conhece. */}
+                    {canAdmin && price.status === "ACTIVE" ? (
                       <div className="finance-price-version__actions">
-                        <button type="button" onClick={() => setEditor({ type: "supersede", priceId: price.id, serviceId: row.service.id })}>Substituir</button>
-                        <button type="button" onClick={() => setEditor({ type: "cancel", priceId: price.id, serviceId: row.service.id })}>Cancelar</button>
+                        <button type="button" onClick={() => setEditor({ type: "editPrice", priceId: price.id, serviceId: row.service.id })}>Corrigir</button>
+                        {price.syncStatus === "SYNCED" ? (
+                          <>
+                            <button type="button" onClick={() => setEditor({ type: "supersede", priceId: price.id, serviceId: row.service.id })}>Substituir</button>
+                            <button type="button" onClick={() => setEditor({ type: "cancel", priceId: price.id, serviceId: row.service.id })}>Cancelar</button>
+                          </>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>

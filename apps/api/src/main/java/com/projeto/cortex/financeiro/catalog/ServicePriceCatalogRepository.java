@@ -18,6 +18,14 @@ public interface ServicePriceCatalogRepository {
     ServiceCatalogEntry createService(CreateServiceRecord record);
 
     /**
+     * Reescreve código, nome e descrição do serviço, gravando o recibo.
+     *
+     * <p>O identificador não entra na correção: ele é o endereço, e os RDOs,
+     * as versões de preço e as medições já o citam.
+     */
+    ServiceCatalogEntry updateService(UpdateServiceRecord record);
+
+    /**
      * Move o serviço entre ativo e excluído, gravando o recibo da operação.
      *
      * <p>Uma transição só: excluir e restaurar são o mesmo movimento em
@@ -27,6 +35,16 @@ public interface ServicePriceCatalogRepository {
     ServiceCatalogEntry updateServiceExclusion(ServiceExclusionRecord record);
 
     ServicePriceVersion createPrice(CreatePriceRecord record);
+
+    /**
+     * Corrige valor, quantidade, vigência e fonte da versão, no lugar.
+     *
+     * <p>Quem decide se a correção ainda é possível é o banco: o gatilho recusa
+     * a escrita quando alguma execução já citou o preço ou quando ele já foi
+     * substituído ou cancelado. A regra mora lá porque é lá que a corrida entre
+     * dois aparelhos se resolve.
+     */
+    ServicePriceVersion updatePrice(UpdatePriceRecord record);
 
     ServicePriceVersion supersedePrice(CreatePriceRecord record);
 
@@ -54,6 +72,33 @@ public interface ServicePriceCatalogRepository {
             String name,
             String description,
             Instant createdAt
+    ) {
+    }
+
+    record UpdateServiceRecord(
+            String serviceId,
+            String actorId,
+            String clientMutationId,
+            String requestHash,
+            String code,
+            String name,
+            String description,
+            Instant occurredAt
+    ) {
+    }
+
+    record UpdatePriceRecord(
+            String id,
+            String obraId,
+            String actorId,
+            String clientMutationId,
+            String requestHash,
+            BigDecimal unitPrice,
+            BigDecimal contractedQuantity,
+            LocalDate validFrom,
+            LocalDate validTo,
+            String source,
+            Instant occurredAt
     ) {
     }
 

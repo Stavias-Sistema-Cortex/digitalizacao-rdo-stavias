@@ -1905,7 +1905,7 @@ export function RdoCreatePage({
               </div>
 
               <div className="rdo-servico-marcas">
-                <label className="rdo-servico-marca">
+                <label className="checkbox-field rdo-servico-marca">
                   <input
                     type="checkbox"
                     checked={item.retrabalho}
@@ -1919,16 +1919,10 @@ export function RdoCreatePage({
                       )
                     }
                   />
-                  <span>
-                    <strong>Retrabalho</strong>
-                    <small>
-                      Refazer o que já tinha sido executado. Não conta como
-                      produção nova na medição.
-                    </small>
-                  </span>
+                  Retrabalho
                 </label>
 
-                <label className="rdo-servico-marca">
+                <label className="checkbox-field rdo-servico-marca">
                   <input
                     type="checkbox"
                     checked={item.producaoRejeitada}
@@ -1942,12 +1936,7 @@ export function RdoCreatePage({
                       )
                     }
                   />
-                  <span>
-                    <strong>Produção rejeitada</strong>
-                    <small>
-                      Executado e recusado na conferência.
-                    </small>
-                  </span>
+                  Produção rejeitada
                 </label>
               </div>
 

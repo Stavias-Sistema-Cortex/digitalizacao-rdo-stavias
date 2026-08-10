@@ -24,10 +24,11 @@ public class ServicePriceVersionSyncOperationHandler
         implements SyncOperationHandler {
 
     private static final String CREATE = "CRIAR_PRECO_SERVICO";
+    private static final String UPDATE = "ATUALIZAR_PRECO_SERVICO";
     private static final String SUPERSEDE = "SUBSTITUIR_PRECO_SERVICO";
     private static final String CANCEL = "CANCELAR_PRECO_SERVICO";
     private static final Set<String> OPERATIONS = Set.of(
-            CREATE, SUPERSEDE, CANCEL
+            CREATE, UPDATE, SUPERSEDE, CANCEL
     );
 
     private final ServicePriceCatalogService service;
@@ -78,6 +79,7 @@ public class ServicePriceVersionSyncOperationHandler
 
         ServicePriceVersion result = switch (mutation.operacao()) {
             case CREATE -> create(mutation, context, payload, worksiteId, entityId);
+            case UPDATE -> update(mutation, context, payload, worksiteId, entityId);
             case SUPERSEDE -> supersede(
                     mutation, context, payload, worksiteId, entityId
             );
@@ -115,10 +117,18 @@ public class ServicePriceVersionSyncOperationHandler
                     "SERVICE_PRICE_VERSION", result.supersedesId()
             ));
         }
+        /*
+         * Corrigir não é publicar. Um preço corrigido não entrou em vigor agora
+         * — ele passou a dizer o que sempre deveria ter dito —, e chamar isso de
+         * publicação faria a linha do tempo da receita mostrar um preço novo
+         * onde houve conserto de digitação.
+         */
         return new AppliedSyncMutation.AuthoritativeEvent(
-                CANCEL.equals(operation)
-                        ? "SERVICE_PRICE_VERSION_CANCELLED"
-                        : "SERVICE_PRICE_VERSION_PUBLISHED",
+                switch (operation) {
+                    case CANCEL -> "SERVICE_PRICE_VERSION_CANCELLED";
+                    case UPDATE -> "SERVICE_PRICE_VERSION_UPDATED";
+                    default -> "SERVICE_PRICE_VERSION_PUBLISHED";
+                },
                 related
         );
     }
@@ -150,6 +160,35 @@ public class ServicePriceVersionSyncOperationHandler
                         text(payload, "currency", true),
                         decimal(payload, "unitPrice"),
                         decimal(payload, "contractedQuantity"),
+                        date(payload, "validFrom", true),
+                        date(payload, "validTo", false),
+                        text(payload, "source", true)
+                )
+        );
+    }
+
+    /*
+     * A correção não cria linha nova, então não há entidade relacionada a
+     * declarar: ela chega no identificador do próprio preço, como o
+     * cancelamento. Aceitar relações aqui deixaria o cliente sugerir um vínculo
+     * que o servidor não vai gravar.
+     */
+    private ServicePriceVersion update(
+            SyncPushRequest.MutacaoCliente mutation,
+            SyncMutationContext context,
+            JsonNode payload,
+            String worksiteId,
+            String entityId
+    ) {
+        requireNoRelated(mutation.relatedEntities());
+        return service.atualizarPreco(
+                worksiteId,
+                context.actorId(),
+                entityId,
+                new UpdateServicePriceCommand(
+                        mutation.clientMutationId(),
+                        decimal(payload, "unitPrice"),
+                        optionalDecimal(payload, "contractedQuantity"),
                         date(payload, "validFrom", true),
                         date(payload, "validTo", false),
                         text(payload, "source", true)
@@ -299,6 +338,23 @@ public class ServicePriceVersionSyncOperationHandler
         } catch (NumberFormatException exception) {
             throw badRequest(field + " é inválido.");
         }
+    }
+
+    /**
+     * Decimal que pode faltar sem que isso seja erro.
+     *
+     * <p>Versões anteriores à quantidade contratada não têm o campo, e exigi-lo
+     * na correção obrigaria quem só quer consertar o valor a inventar um número
+     * de contrato. Ausência continua sendo ausência; o que não se aceita é texto
+     * que não é número.
+     */
+    private BigDecimal optionalDecimal(JsonNode payload, String field) {
+        JsonNode value = payload.get(field);
+        if (value == null || value.isNull()
+                || (value.isTextual() && value.textValue().isBlank())) {
+            return null;
+        }
+        return decimal(payload, field);
     }
 
     private LocalDate date(JsonNode payload, String field, boolean required) {
