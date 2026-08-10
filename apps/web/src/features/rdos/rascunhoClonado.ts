@@ -111,7 +111,6 @@ function pessoaDaMesmaEquipe(
     selected: true,
     horaInicio: "",
     horaFim: "",
-    percentualDia: "",
     observacoes: "",
   };
 }

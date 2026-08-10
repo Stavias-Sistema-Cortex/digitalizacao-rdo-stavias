@@ -269,7 +269,7 @@ describe("clonar um RDO", () => {
 
     expect(pessoa.horaInicio).toBe("");
     expect(pessoa.horaFim).toBe("");
-    expect(pessoa.percentualDia).toBe("");
+    expect(pessoa.observacoes).toBe("");
   });
 
   /*
