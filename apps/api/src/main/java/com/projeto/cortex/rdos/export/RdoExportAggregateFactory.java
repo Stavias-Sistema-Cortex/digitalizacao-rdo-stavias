@@ -552,8 +552,15 @@ public class RdoExportAggregateFactory {
     ) {
         List<RdoResponse.EquipamentoItem> resolved = new ArrayList<>();
         for (RdoResponse.EquipamentoItem item : copy(items)) {
-            boolean registered =
-                    firstNonBlank(item.assetId(), item.prefixo()) != null;
+            /*
+             * A descrição também identifica uma máquina: a betoneira do
+             * empreiteiro costuma ter nome e não ter placa, e a tela aceita
+             * qualquer um dos dois. Espelha resolvedEquipmentQuantity do
+             * aparelho.
+             */
+            boolean registered = firstNonBlank(
+                    item.assetId(), item.prefixo(), item.descricao()
+            ) != null;
             String linkType = item.tipoVinculo() == null
                     || item.tipoVinculo().isBlank()
                     ? (firstNonBlank(item.assetId()) != null ? "PROPRIO" : "")

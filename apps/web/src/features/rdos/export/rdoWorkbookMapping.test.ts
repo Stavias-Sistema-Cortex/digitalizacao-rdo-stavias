@@ -607,10 +607,17 @@ describe("RDO workbook mapping", () => {
       code: "RDO_EXPORT_INVALID_WORKFORCE_ROW",
     },
     {
+      /*
+       * A descrição também identifica uma máquina — a betoneira do empreiteiro
+       * tem nome e não tem placa —, e a entrada de terceiro aceita qualquer um
+       * dos dois. O que continua sem resposta é a linha que não identifica
+       * máquina nenhuma e não diz quantas foram.
+       */
       section: "equipment",
       mutate(value: RdoWorkbookSnapshot) {
         value.rdo.equipamentos[0].assetId = "";
         value.rdo.equipamentos[0].prefixo = "";
+        value.rdo.equipamentos[0].descricao = "";
         value.rdo.equipamentos[0].quantidade = "";
       },
       code: "RDO_EXPORT_INVALID_EQUIPMENT_ROW",
@@ -618,7 +625,7 @@ describe("RDO workbook mapping", () => {
     {
       section: "service",
       mutate(value: RdoWorkbookSnapshot) {
-        value.rdo.servicosExecutados[0].quantidadeExecutada = "";
+        value.rdo.servicosExecutados[0].servicoNome = "";
       },
       code: "RDO_EXPORT_INVALID_SERVICE_ROW",
     },

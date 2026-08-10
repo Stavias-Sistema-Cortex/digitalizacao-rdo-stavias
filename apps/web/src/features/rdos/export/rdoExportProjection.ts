@@ -162,10 +162,16 @@ function resolvedWorkforceQuantity(item: MaoObraDraft): number | null {
   return firstNonBlank(item.colaboradorId, item.nomeColaborador) ? 1 : null;
 }
 
+/*
+ * A descrição também identifica uma máquina. A entrada de terceiro pede
+ * prefixo ou descrição — a betoneira do empreiteiro costuma ter nome e não ter
+ * placa —, e exigir aqui um dos dois campos que a tela não exige recusava a
+ * exportação inteira por um equipamento que a tela deu por completo.
+ */
 function resolvedEquipmentQuantity(item: EquipamentoDraft): number | null {
   const declared = number(item.quantidade);
   if (declared !== null) return declared;
-  return firstNonBlank(item.assetId, item.prefixo) ? 1 : null;
+  return firstNonBlank(item.assetId, item.prefixo, item.descricao) ? 1 : null;
 }
 
 /*
@@ -235,7 +241,13 @@ function validateOperationalRows(rdo: RdoDraft): void {
   }
   for (const item of rdo.servicosExecutados) {
     if (isBlankService(item)) continue;
-    if (!text(item.servicoNome) || number(item.quantidadeExecutada) === null) error("RDO_EXPORT_INVALID_SERVICE_ROW", "Há linha de serviço sem nome ou quantidade; nenhum item foi omitido.");
+    // A quantidade deixou de ser digitada: ela é o que o trecho, a largura e a
+    // espessura afirmam, na dimensão que a unidade do serviço nomeia. Serviço
+    // medido em tonelada ou em hora não tem medida a derivar do trecho, e
+    // exigi-la aqui recusaria a exportação do dia inteiro por uma linha que o
+    // formulário deu por completa. A linha sai impressa sem o número — que é a
+    // verdade sobre ela — em vez de derrubar o relatório.
+    if (!text(item.servicoNome)) error("RDO_EXPORT_INVALID_SERVICE_ROW", "Há linha de serviço sem nome; nenhum item foi omitido.");
   }
   for (const item of rdo.materiais) {
     if (isBlankMaterial(item)) continue;
