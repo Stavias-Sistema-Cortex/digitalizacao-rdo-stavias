@@ -36,6 +36,24 @@ const LAPIS_SVG =
   'aria-hidden="true" focusable="false">' +
   '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" /></svg>';
 
+/**
+ * "km 206,822 ao 207,100" — ou só um extremo, quando é só isso que se sabe.
+ *
+ * <p>O trecho pela metade continua valendo: um apontamento com o km inicial e
+ * sem o final descreve por onde a frente começou, e esconder isso por não estar
+ * completo apagaria a única referência que a linha tem.
+ */
+function quilometragem(properties: Record<string, unknown>): string | null {
+  const valor = (chave: string): string =>
+    typeof properties[chave] === "string" ? properties[chave].trim() : "";
+  const inicial = valor("kmInicial");
+  const fim = valor("kmFinal");
+  if (inicial && fim) return `km ${inicial} ao ${fim}`;
+  if (inicial) return `a partir do km ${inicial}`;
+  if (fim) return `até o km ${fim}`;
+  return null;
+}
+
 export function popupHtml(properties: Record<string, unknown>): string {
   const titulo =
     typeof properties.nome === "string" && properties.nome
@@ -44,6 +62,11 @@ export function popupHtml(properties: Record<string, unknown>): string {
   const servico = servicoDaFeature({ properties } as never);
   const fase = properties.faseExecucao;
   const detalhes = [
+    // O quilômetro vem primeiro porque é a primeira coisa que se pergunta
+    // olhando para uma linha numa rodovia. Ele não está gravado na geometria:
+    // o servidor o projeta na leitura, a partir da linha de execução do RDO,
+    // que é onde ele mora desde que deixou de existir em dois lugares.
+    quilometragem(properties),
     // O serviço vem antes de qualquer metadado: é o que o segmento REPRESENTA
     // no campo, e era a informação que existia no dado sem aparecer na tela.
     servico && servico !== titulo ? servico : null,

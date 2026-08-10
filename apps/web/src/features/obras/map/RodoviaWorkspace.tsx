@@ -772,7 +772,14 @@ export function RodoviaWorkspace({
         obraId: obra.id,
         rdoId,
         pontos: [inicio, fim],
-        propriedades: propriedadesDaFormaDesenhada(cadastro, extensaoDaLinha),
+        propriedades: propriedadesDaFormaDesenhada(
+          cadastro,
+          extensaoDaLinha,
+          // O desenho passa a dizer de qual linha do RDO ele fala. É o que
+          // permite ao mapa ler o quilômetro lá, em vez de guardar uma
+          // segunda cópia dele aqui.
+          linha.localId,
+        ),
       });
       setRascunho(RASCUNHO_VAZIO);
       setMarcando(null);

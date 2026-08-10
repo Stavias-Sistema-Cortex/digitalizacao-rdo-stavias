@@ -196,3 +196,56 @@ describe("lápis no balão do trecho", () => {
     expect(lixeira(balao)).not.toBeNull();
   });
 });
+
+/**
+ * O quilômetro chega ao balão vindo do apontamento.
+ *
+ * <p>Ele não está gravado na geometria — o servidor o projeta na leitura, a
+ * partir da linha de execução do RDO. Antes disso o trecho aparecia desenhado
+ * no mapa sem dizer de que quilômetro a que quilômetro ele fala, que é a
+ * primeira coisa que se pergunta olhando para uma rodovia.
+ */
+describe("quilômetro no balão do trecho", () => {
+  it("mostra os dois extremos", () => {
+    const balao = popupElement(
+      {
+        categoria: "TRECHO",
+        geometriaId: "geo-1",
+        kmInicial: "206,822",
+        kmFinal: "207,100",
+      },
+      vi.fn(),
+    );
+
+    expect(balao.textContent).toContain("km 206,822 ao 207,100");
+  });
+
+  /*
+   * O trecho pela metade continua valendo: esconder o único extremo conhecido
+   * por não estar completo apagaria a referência que a linha tem.
+   */
+  it("mostra o extremo que existe quando só há um", () => {
+    expect(
+      popupElement(
+        { categoria: "TRECHO", geometriaId: "geo-1", kmInicial: "206,822" },
+        vi.fn(),
+      ).textContent,
+    ).toContain("a partir do km 206,822");
+
+    expect(
+      popupElement(
+        { categoria: "TRECHO", geometriaId: "geo-1", kmFinal: "207,100" },
+        vi.fn(),
+      ).textContent,
+    ).toContain("até o km 207,100");
+  });
+
+  it("não escreve nada sobre quilômetro quando não há nenhum", () => {
+    const balao = popupElement(
+      { categoria: "TRECHO", geometriaId: "geo-1", rodovia: "SP-330" },
+      vi.fn(),
+    );
+
+    expect(balao.textContent).not.toContain("km");
+  });
+});

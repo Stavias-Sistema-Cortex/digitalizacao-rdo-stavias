@@ -87,10 +87,22 @@ export function execucaoDoTrechoDesenhado(input: {
 export function propriedadesDaFormaDesenhada(
   cadastro: CadastroTrecho,
   extensaoDaLinhaM: number | null,
+  /**
+   * A linha de execução que este desenho representa.
+   *
+   * <p>Não é o quilômetro — é o endereço de onde ele mora. A geometria segue
+   * sem guardar km, porque duas cópias divergem no primeiro acerto de uma
+   * delas; mas sem saber de qual linha falar, o mapa também não tinha como
+   * <em>ler</em> o quilômetro do apontamento, e a informação simplesmente não
+   * chegava à tela. O RDO sozinho não bastava: um dia tem várias frentes, e
+   * escolher uma delas por adivinhação seria pior do que não mostrar nada.
+   */
+  execucaoId?: string,
 ): Record<string, unknown> {
   const propriedades: Record<string, unknown> = {
     status: cadastro.status,
   };
+  if (execucaoId?.trim()) propriedades.execucaoId = execucaoId.trim();
   const rodovia = limpo(cadastro.rodovia);
   if (rodovia) propriedades.rodovia = rodovia;
   const sentido = limpo(cadastro.sentido);

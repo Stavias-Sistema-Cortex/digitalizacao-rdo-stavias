@@ -42,7 +42,10 @@ class ObraMapaServiceTest {
             currentUserService,
             memoryPublisher,
             objectMapper,
-            operabilityGuard
+            operabilityGuard,
+            new QuilometroDoApontamento(
+                    mock(org.springframework.jdbc.core.JdbcTemplate.class)
+            )
     );
 
     @Test
