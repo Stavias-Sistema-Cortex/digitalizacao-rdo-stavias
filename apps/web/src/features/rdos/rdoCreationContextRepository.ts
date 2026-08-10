@@ -318,7 +318,7 @@ function text(value: string | null): string {
 function numberOrNull(value: number | string | null): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value !== "string" || !value.trim()) return null;
-  const parsed = Number(value.replace(",", "."));
+  const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 

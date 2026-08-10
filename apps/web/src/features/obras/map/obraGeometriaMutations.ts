@@ -412,3 +412,90 @@ async function descartarGeometriaNaoSincronizada(
   await geometrias.delete(featureId);
   await transaction.done;
 }
+
+/**
+ * Troca a forma de um trecho já desenhado, sem mexer no que ele representa.
+ *
+ * <p>Apagar e desenhar de novo resolvia o traçado errado, mas fazia a
+ * geometria trocar de identidade: quem olhasse o histórico veria um desenho
+ * morto e outro nascido, em vez de uma correção. Redesenhar mantém o mesmo
+ * registro e conta a verdade — a linha estava torta e foi acertada.
+ *
+ * <p>O que a geometria descreve não é tocado. Categoria, objeto e propriedades
+ * seguem como estavam, e o apontamento do RDO não entra nesta conversa: o
+ * quilômetro mora lá, e corrigir o traço no mapa não muda medida nenhuma.
+ *
+ * <p>Exige que o servidor já conheça o desenho. O que nunca subiu não tem
+ * versão-base para comparar do outro lado — e para esse caso o caminho é a
+ * lixeira, que o descarta aqui mesmo.
+ */
+export async function redesenharTrecho(input: {
+  featureId: string;
+  pontos: readonly PontoGeografico[];
+  motivo: string;
+}): Promise<ObraGeometriaLocalRecord> {
+  const razao = input.motivo.trim();
+  if (!razao) {
+    throw new Error("Motivo da alteração geográfica obrigatório.");
+  }
+  if (input.pontos.length < 2) {
+    throw new Error("Um trecho exige ao menos o ponto inicial e o final.");
+  }
+
+  const identity = await geometriaMutationIdentity();
+  const existente = await lerGeometriaLocal(input.featureId);
+  if (!existente) {
+    throw new Error("Geometria não encontrada neste dispositivo.");
+  }
+  if (existente.status !== "ATIVA") {
+    throw new Error("Um desenho encerrado não pode ser redesenhado.");
+  }
+  if (existente.versao <= 0) {
+    throw new Error(
+      "Este desenho ainda não subiu para o servidor. Apague-o e desenhe de novo.",
+    );
+  }
+
+  const agora = new Date().toISOString();
+  const proximo: ObraGeometriaLocalRecord = {
+    ...existente,
+    geometry: {
+      type: "LineString",
+      coordinates: input.pontos.map((ponto) => [ponto.lng, ponto.lat]),
+    },
+    syncStatus: "PENDING_SYNC",
+    updatedAt: agora,
+  };
+
+  await commitLocalMutation({
+    ...identity,
+    obraId: existente.obraId,
+    entityType: "GEOMETRIA_OBRA",
+    entityId: existente.id,
+    entityName: existente.categoria,
+    operation: "UPDATE",
+    transportOperation: "ATUALIZAR_GEOMETRIA_OBRA",
+    baseVersion: existente.versao,
+    occurredAt: agora,
+    previousSnapshot: transportSnapshot(existente),
+    nextSnapshot: { ...transportSnapshot(proximo), motivo: razao },
+    principalSnapshot: { ...proximo },
+    expectedPrincipalSnapshot: { ...existente },
+    eventType: "GEOMETRIA_ATUALIZADA",
+    colaboradorId: identity.userId,
+    relatedEntities: entidadesRelacionadasDaGeometria({
+      obraId: existente.obraId,
+      categoria: existente.categoria,
+      // O registro guarda os dois como anuláveis — geometria de obra pode não
+      // apontar para entidade nenhuma. Vazio aqui vira "sem relação", que é o
+      // que o construtor de relações já sabe tratar.
+      objetoTipo: existente.objetoTipo ?? "",
+      objetoId: existente.objetoId ?? "",
+      geometry: proximo.geometry,
+      fonte: existente.fonte,
+    }),
+    write: () => [{ store: "obra_geometrias", value: proximo, principal: true }],
+  });
+
+  return proximo;
+}

@@ -1,7 +1,9 @@
 import type {
   EquipamentoDraft,
+  MaoObraDraft,
   MaterialDraft,
   RdoDraft,
+  ServicoExecutadoDraft,
 } from "./rdo.types";
 
 /**
@@ -11,11 +13,12 @@ import type {
  * programado, a frota que subiu, quem assina — e nada disso muda por virar a
  * data. Redigitar tudo todo dia é o trabalho que a clonagem apaga.
  *
- * <p>O que ela deliberadamente <em>não</em> traz é a produção: serviços
- * executados, quantidades aplicadas, medidas, clima, fotos. Esses números são a
- * resposta à pergunta "o que aconteceu hoje", e trazê-los preenchidos de ontem
- * transforma a pergunta em sugestão — o apontador confirma sem conferir, e o
- * relatório passa a somar produção que ninguém mediu. É o erro que a clonagem
+ * <p>Ela traz a montagem inteira: a equipe, as frentes de serviço, a frota e
+ * os insumos, com a identidade de cada linha preenchida. O que fica em branco
+ * são os <em>números</em> — quantidades, medidas, horas, clima, fotos. Esses
+ * são a resposta à pergunta "o que aconteceu hoje", e trazê-los preenchidos de
+ * ontem transforma a pergunta em sugestão: o apontador confirma sem conferir, e
+ * o relatório passa a somar produção que ninguém mediu. É o erro que a clonagem
  * existiria para evitar e seria o primeiro a causar.
  *
  * <p>A fronteira entre "repete" e "é do dia" é a única decisão desta função, e
@@ -37,6 +40,75 @@ function equipamentoSemJornada(
     ...item,
     localId: novoId(),
     quantidade: "",
+    horaInicio: "",
+    horaFim: "",
+    observacoes: "",
+  };
+}
+
+/**
+ * Um serviço repete o que é, não quanto foi feito hoje.
+ *
+ * <p>A linha inteira nascia vazia, e refazê-la custava escolher o serviço no
+ * catálogo, o preço, a unidade, a pista, a faixa e o quilômetro — tudo igual
+ * ao do dia anterior, redigitado. Era o maior trabalho de uma clonagem, e o
+ * que menos muda de um dia para o outro numa frente que segue no mesmo trecho.
+ *
+ * <p>O que fica em branco é a resposta a "o que aconteceu hoje": quantidade,
+ * largura e espessura. Trazê-las preenchidas de ontem transformaria a pergunta
+ * em sugestão — o apontador confirma sem conferir, e o relatório passa a somar
+ * produção que ninguém mediu. É o erro que a clonagem existe para evitar e
+ * seria o primeiro a causar.
+ *
+ * <p>O status volta para REGISTRADA: validar é ato de outra pessoa sobre um
+ * dia específico, e herdar a validação de ontem assinaria por ela.
+ */
+function servicoSemAProducaoDoDia(
+  item: ServicoExecutadoDraft,
+  novoId: () => string,
+): ServicoExecutadoDraft {
+  return {
+    ...item,
+    localId: novoId(),
+    quantidadeExecutada: "",
+    larguraM: "",
+    espessuraCm: "",
+    statusValidacao: "REGISTRADA",
+    retrabalho: false,
+    producaoRejeitada: false,
+    observacoes: "",
+  };
+}
+
+/**
+ * A pessoa continua a mesma; o dia dela, não.
+ *
+ * <p>Era o pedido mais direto de quem usa: clonar tinha que trazer as mesmas
+ * pessoas já colocadas da equipe. Elas vinham zeradas aqui e eram
+ * reconstruídas depois a partir do RDO <em>anterior</em> — que numa clonagem
+ * quase nunca é o RDO que se escolheu copiar. Quem clonava o RDO de segunda
+ * para repetir a frente recebia a equipe de sexta.
+ *
+ * <p>A pessoa entra já selecionada, porque foi ela que a clonagem veio buscar.
+ * Hora, percentual e observação nascem em branco: são o dia dela, não a
+ * identidade dela.
+ *
+ * <p>A origem passa a ser o clone, e não o RDO anterior: {@code origemItemId}
+ * apontaria para uma linha de outro documento, e o servidor a lê como herança
+ * declarada. Dizer que veio de onde não veio quebraria a cadeia.
+ */
+function pessoaDaMesmaEquipe(
+  item: MaoObraDraft,
+  novoId: () => string,
+): MaoObraDraft {
+  return {
+    ...item,
+    localId: novoId(),
+    origemItemId: "",
+    sourceRdoId: "",
+    origin: "MANUAL",
+    availability: "AVAILABLE",
+    selected: true,
     horaInicio: "",
     horaFim: "",
     observacoes: "",
@@ -71,15 +143,16 @@ function materialSemQuantidade(
  * <p>Devolve um `RdoDraft` para ser passado como `baseDraft` à criação. Vários
  * campos ficam como estão aqui e são sobrescritos depois por
  * `applyRdoCreationContext` — obra, data, número, RDO anterior, cliente,
- * contrato, rodovia, cidade, UF, mão de obra e apontador vêm todos do contexto
- * versionado do servidor, e é lá que devem vir. Preenchê-los aqui não teria
- * efeito, e confiar que teriam seria o engano fácil.
+ * contrato, rodovia, cidade, UF e apontador vêm todos do contexto versionado do
+ * servidor, e é lá que devem vir. Preenchê-los aqui não teria efeito, e confiar
+ * que teriam seria o engano fácil.
  *
- * <p>A mão de obra é o exemplo que mais engana: o clone não a copia porque
- * `applyRdoCreationContext` a reconstrói de `carryForwardWorkforce`, a partir do
- * RDO anterior canônico e do catálogo autorizado. Copiar aqui seria trabalho
- * jogado fora — e pior, daria a impressão de que a equipe do clone veio do RDO
- * escolhido quando ela vem de outro lugar.
+ * <p>A mão de obra é a exceção, e foi onde a clonagem enganava. Ela também vinha
+ * do contexto, reconstruída de `carryForwardWorkforce` a partir do RDO
+ * <em>anterior</em> — que numa clonagem quase nunca é o RDO que se escolheu
+ * copiar. Quem clonava o RDO de segunda para repetir a frente recebia a equipe
+ * de sexta. Agora a equipe vem do clone, e `applyRdoCreationContext` respeita a
+ * que já está no rascunho.
  */
 export function rascunhoClonadoDe(
   origem: RdoDraft,
@@ -113,11 +186,8 @@ export function rascunhoClonadoDe(
     programacaoId: "",
 
     // O dia: tudo o que responde "o que aconteceu hoje" nasce vazio.
-    servicosExecutados: [],
-    alocacoesColaboradores: [],
     controlesGeometricos: [],
     attachments: [],
-    maoObra: [],
     condicaoManha: "",
     condicaoTarde: "",
     condicaoNoite: "",
@@ -129,7 +199,20 @@ export function rascunhoClonadoDe(
     // não foi importado de lugar nenhum, e dizer que foi falsificaria a origem.
     importEvidence: null,
 
-    // O que se repete: a frota e os insumos, sem os números do dia.
+    // O que se repete: a equipe, as frentes de serviço, a frota e os
+    // insumos — tudo sem os números do dia.
+    maoObra: origem.maoObra.map((item) => pessoaDaMesmaEquipe(item, novoId)),
+    alocacoesColaboradores: origem.alocacoesColaboradores.map((item) => ({
+      ...item,
+      localId: novoId(),
+      horaInicio: "",
+      horaFim: "",
+      percentualDia: "" as const,
+      observacoes: "",
+    })),
+    servicosExecutados: origem.servicosExecutados.map((item) =>
+      servicoSemAProducaoDoDia(item, novoId),
+    ),
     equipamentos: origem.equipamentos.map((item) =>
       equipamentoSemJornada(item, novoId),
     ),
@@ -160,6 +243,17 @@ export function resumoDoQueOCloneTraz(origem: RdoDraft): string {
   ) {
     partes.push("trecho programado");
   }
+  const pessoas = origem.maoObra.filter((item) => item.selected).length;
+  if (pessoas > 0) {
+    partes.push(pessoas === 1 ? "1 pessoa da equipe" : `${pessoas} pessoas da equipe`);
+  }
+  if (origem.servicosExecutados.length > 0) {
+    partes.push(
+      origem.servicosExecutados.length === 1
+        ? "1 frente de serviço"
+        : `${origem.servicosExecutados.length} frentes de serviço`,
+    );
+  }
   if (origem.equipamentos.length > 0) {
     partes.push(
       origem.equipamentos.length === 1
@@ -181,5 +275,5 @@ export function resumoDoQueOCloneTraz(origem: RdoDraft): string {
   if (partes.length === 0) {
     return "Este RDO não tem nada que valha copiar.";
   }
-  return `Traz ${partes.join(", ")}. Serviços, quantidades e clima ficam em branco.`;
+  return `Traz ${partes.join(", ")}. As quantidades, as medidas, as horas e o clima ficam em branco.`;
 }

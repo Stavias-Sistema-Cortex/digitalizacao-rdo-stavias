@@ -85,6 +85,7 @@ function rdoDeOntem(): RdoDraft {
         localId: "mo1",
         colaboradorId: "col-1",
         nomeColaborador: "Adão",
+        selected: true,
       },
     ] as RdoDraft["maoObra"],
     attachments: [
@@ -110,12 +111,49 @@ describe("clonar um RDO", () => {
   });
 
   /*
-   * O motivo pelo qual o usuário pediu a clonagem com essa ressalva explícita:
-   * produção herdada vira produção confirmada sem conferência.
+   * A linha inteira nascia vazia, e refazê-la custava escolher o serviço no
+   * catálogo, o preço, a unidade, a pista, a faixa e o quilômetro — tudo igual
+   * ao do dia anterior. Era o maior trabalho de uma clonagem.
    */
-  it("não traz nenhum serviço executado", () => {
-    expect(rascunhoClonadoDe(rdoDeOntem(), idsSequenciais()).servicosExecutados)
-      .toEqual([]);
+  it("traz a frente de serviço com a identidade preenchida", () => {
+    const clone = rascunhoClonadoDe(rdoDeOntem(), idsSequenciais());
+
+    expect(clone.servicosExecutados).toHaveLength(1);
+    expect(clone.servicosExecutados[0]).toMatchObject({
+      serviceId: "srv-1",
+      servicoNome: "Fresagem",
+      trechoInicial: "400",
+      trechoFinal: "398",
+    });
+  });
+
+  /*
+   * E deixa em branco só os números: produção herdada vira produção
+   * confirmada sem conferência, que é o erro que a clonagem existe para
+   * evitar.
+   */
+  it("deixa em branco os números do dia no serviço copiado", () => {
+    const [servico] = rascunhoClonadoDe(
+      rdoDeOntem(),
+      idsSequenciais(),
+    ).servicosExecutados;
+
+    expect(servico.quantidadeExecutada).toBe("");
+    expect(servico.larguraM).toBe("");
+    expect(servico.espessuraCm).toBe("");
+  });
+
+  /*
+   * Validar é ato de outra pessoa sobre um dia específico. Herdar a validação
+   * de ontem assinaria por ela — e, com preço, viraria receita medida.
+   */
+  it("devolve o serviço copiado ao estado de registrado", () => {
+    const [servico] = rascunhoClonadoDe(
+      rdoDeOntem(),
+      idsSequenciais(),
+    ).servicosExecutados;
+
+    expect(servico.statusValidacao).toBe("REGISTRADA");
   });
 
   it("não traz clima, pluviometria, observação nem condição do dia", () => {
@@ -207,13 +245,44 @@ describe("clonar um RDO", () => {
   });
 
   /*
-   * A mão de obra não vem daqui: applyRdoCreationContext a reconstrói do RDO
-   * anterior canônico e do catálogo autorizado. Copiá-la faria a equipe parecer
-   * herdada do RDO escolhido quando ela vem de outro lugar.
+   * O pedido mais direto de quem usa: clonar tem que trazer as mesmas pessoas
+   * já colocadas da equipe. Elas vinham zeradas e eram reconstruídas do RDO
+   * ANTERIOR — que numa clonagem quase nunca é o RDO escolhido para copiar.
+   * Quem clonava o de segunda para repetir a frente recebia a equipe de sexta.
    */
-  it("deixa a mão de obra para o contexto de criação montar", () => {
-    expect(rascunhoClonadoDe(rdoDeOntem(), idsSequenciais()).maoObra)
-      .toEqual([]);
+  it("traz as mesmas pessoas da equipe, já selecionadas", () => {
+    const clone = rascunhoClonadoDe(rdoDeOntem(), idsSequenciais());
+
+    expect(clone.maoObra).toHaveLength(1);
+    expect(clone.maoObra[0]).toMatchObject({
+      colaboradorId: "col-1",
+      nomeColaborador: "Adão",
+      selected: true,
+    });
+  });
+
+  /*
+   * A identidade dela repete; o dia dela, não.
+   */
+  it("deixa em branco a jornada da pessoa copiada", () => {
+    const [pessoa] = rascunhoClonadoDe(rdoDeOntem(), idsSequenciais()).maoObra;
+
+    expect(pessoa.horaInicio).toBe("");
+    expect(pessoa.horaFim).toBe("");
+    expect(pessoa.observacoes).toBe("");
+  });
+
+  /*
+   * `origemItemId` apontaria para a linha de outro documento, e o servidor a
+   * lê como herança declarada. Dizer que veio de onde não veio quebraria a
+   * cadeia.
+   */
+  it("não alega que a pessoa foi herdada do RDO anterior", () => {
+    const [pessoa] = rascunhoClonadoDe(rdoDeOntem(), idsSequenciais()).maoObra;
+
+    expect(pessoa.origemItemId).toBe("");
+    expect(pessoa.sourceRdoId).toBe("");
+    expect(pessoa.origin).toBe("MANUAL");
   });
 
   it("não se apresenta como documento importado", () => {
@@ -248,7 +317,10 @@ describe("resumo do que o clone traz", () => {
     expect(resumo).toContain("trecho programado");
     expect(resumo).toContain("1 equipamento");
     expect(resumo).toContain("1 material");
-    expect(resumo).toContain("Serviços, quantidades e clima ficam em branco");
+    expect(resumo).toContain("1 frente de serviço");
+    expect(resumo).toContain(
+      "As quantidades, as medidas, as horas e o clima ficam em branco",
+    );
   });
 
   it("avisa quando não há nada que valha copiar", () => {

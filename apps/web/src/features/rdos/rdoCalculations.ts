@@ -3,6 +3,7 @@ import type {
   MaterialDraft,
   NumericInput,
 } from "./rdo.types";
+import { numeroDigitado } from "../../lib/numeros/numeroDigitado";
 
 export interface ControleGeometricoCalculo {
   espessuraMediaCm: number | null;
@@ -94,8 +95,7 @@ export function parseKm(value: string): number | null {
   if (!texto) {
     return null;
   }
-  const parsed = Number(texto.replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : null;
+  return numeroDigitado(texto);
 }
 
 /**

@@ -400,7 +400,8 @@ class PostgresqlObraGeometriaSyncIT {
                 currentUser,
                 new ObraGeometriaMemoryPublisher(memory),
                 mapper,
-                new ObraOperabilityGuard(obraRepository)
+                new ObraOperabilityGuard(obraRepository),
+                new QuilometroDoApontamento(jdbc)
         );
         SyncService service = new SyncService(
                 jdbc,

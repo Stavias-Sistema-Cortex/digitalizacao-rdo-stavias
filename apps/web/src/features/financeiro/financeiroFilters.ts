@@ -6,6 +6,7 @@ import type {
   FinanceManualOperator,
   FinanceManualRow,
 } from "./financeiro.types";
+import { numeroDigitado } from "../../lib/numeros/numeroDigitado";
 
 const MAX_MANUAL_RULES = 20;
 
@@ -206,8 +207,8 @@ function compareText(value: string, rule: FinanceManualFilter): boolean {
 }
 
 function compareNumber(value: number, rule: FinanceManualFilter): boolean {
-  const first = Number(rule.value.replace(",", "."));
-  const second = Number(rule.secondValue.replace(",", "."));
+  const first = numeroDigitado(rule.value) ?? Number.NaN;
+  const second = numeroDigitado(rule.secondValue) ?? Number.NaN;
   if (!Number.isFinite(value) || !Number.isFinite(first)) return false;
   if (rule.operator === "EQUALS") return value === first;
   if (rule.operator === "GREATER_THAN") return value > first;

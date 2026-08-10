@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { ExtremoDoTrecho, PontoGeografico } from "./rascunhoDoTrecho";
+import { numeroDigitado } from "../../../lib/numeros/numeroDigitado";
 
 interface CampoDeExtremoProps {
   extremo: ExtremoDoTrecho;
@@ -15,13 +16,6 @@ const ROTULO: Readonly<Record<ExtremoDoTrecho, string>> = Object.freeze({
   INICIO: "Início",
   FIM: "Fim",
 });
-
-function numeroDigitado(texto: string): number | null {
-  const limpo = texto.trim().replace(",", ".");
-  if (!limpo) return null;
-  const valor = Number(limpo);
-  return Number.isFinite(valor) ? valor : null;
-}
 
 function comoTexto(valor: number | undefined): string {
   return valor === undefined ? "" : String(valor);

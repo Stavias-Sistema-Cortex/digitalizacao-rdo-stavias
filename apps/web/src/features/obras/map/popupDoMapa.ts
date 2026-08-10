@@ -29,6 +29,31 @@ const LIXEIRA_SVG =
   'aria-hidden="true" focusable="false">' +
   '<path d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v6M14 11v6" /></svg>';
 
+/** Lápis, pelo mesmo motivo da lixeira: nada é buscado de fora. */
+const LAPIS_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+  'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
+  'aria-hidden="true" focusable="false">' +
+  '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" /></svg>';
+
+/**
+ * "km 206,822 ao 207,100" — ou só um extremo, quando é só isso que se sabe.
+ *
+ * <p>O trecho pela metade continua valendo: um apontamento com o km inicial e
+ * sem o final descreve por onde a frente começou, e esconder isso por não estar
+ * completo apagaria a única referência que a linha tem.
+ */
+function quilometragem(properties: Record<string, unknown>): string | null {
+  const valor = (chave: string): string =>
+    typeof properties[chave] === "string" ? properties[chave].trim() : "";
+  const inicial = valor("kmInicial");
+  const fim = valor("kmFinal");
+  if (inicial && fim) return `km ${inicial} ao ${fim}`;
+  if (inicial) return `a partir do km ${inicial}`;
+  if (fim) return `até o km ${fim}`;
+  return null;
+}
+
 export function popupHtml(properties: Record<string, unknown>): string {
   const titulo =
     typeof properties.nome === "string" && properties.nome
@@ -37,6 +62,11 @@ export function popupHtml(properties: Record<string, unknown>): string {
   const servico = servicoDaFeature({ properties } as never);
   const fase = properties.faseExecucao;
   const detalhes = [
+    // O quilômetro vem primeiro porque é a primeira coisa que se pergunta
+    // olhando para uma linha numa rodovia. Ele não está gravado na geometria:
+    // o servidor o projeta na leitura, a partir da linha de execução do RDO,
+    // que é onde ele mora desde que deixou de existir em dois lugares.
+    quilometragem(properties),
     // O serviço vem antes de qualquer metadado: é o que o segmento REPRESENTA
     // no campo, e era a informação que existia no dado sem aparecer na tela.
     servico && servico !== titulo ? servico : null,
@@ -112,6 +142,53 @@ function rotuloDoRemovivel(properties: Record<string, unknown>): string {
     : "ponto operacional";
 }
 
+/**
+ * O que pode ter o traçado corrigido.
+ *
+ * <p>Apagar e desenhar de novo já resolvia a linha torta, mas conta outra
+ * história: o histórico passa a ver um desenho morto e outro nascido, em vez
+ * de uma correção — e o desenho novo é outro registro, que precisa ser
+ * descrito de novo por inteiro. Corrigir mantém o mesmo trecho.
+ *
+ * <p>Só o trecho tem traçado a corrigir: o ponto operacional é uma coordenada
+ * só, e remarcá-la é remarcar a posição, não redesenhar uma forma.
+ *
+ * <p>O que já saiu do mapa fica fora. Uma linha encerrada continua desenhada
+ * como histórico, e o servidor recusa alterá-la — oferecer o lápis ali seria
+ * oferecer um botão que só sabe falhar.
+ */
+export function trechoPodeSerRedesenhado(
+  properties: Record<string, unknown>,
+): boolean {
+  return (
+    properties.categoria === "TRECHO" &&
+    geometriaDoBalao(properties) !== null &&
+    !properties.validoAte
+  );
+}
+
+export function redesenhoDoBalao(
+  properties: Record<string, unknown>,
+  aoRedesenhar: ((id: string) => void) | null,
+): HTMLButtonElement | null {
+  const id = geometriaDoBalao(properties);
+  if (!id || !aoRedesenhar || !trechoPodeSerRedesenhado(properties)) {
+    return null;
+  }
+  const rotulo = "Corrigir o traçado deste trecho";
+  const botao = document.createElement("button");
+  botao.type = "button";
+  botao.className = "mapa-balao-redesenhar";
+  botao.title = rotulo;
+  botao.setAttribute("aria-label", rotulo);
+  botao.innerHTML = LAPIS_SVG;
+  botao.addEventListener("click", (evento) => {
+    evento.stopPropagation();
+    aoRedesenhar(id);
+  });
+  return botao;
+}
+
 export function lixeiraDoBalao(
   properties: Record<string, unknown>,
   aoRemover: ((id: string) => void) | null,
@@ -140,10 +217,16 @@ export function lixeiraDoBalao(
 export function popupElement(
   properties: Record<string, unknown>,
   aoRemover: ((id: string) => void) | null,
+  aoRedesenhar: ((id: string) => void) | null = null,
 ): HTMLElement {
   const raiz = document.createElement("div");
   raiz.className = "mapa-balao";
   raiz.innerHTML = popupHtml(properties);
+  // O lápis vem antes da lixeira: corrigir é o que quase sempre se quer ao
+  // olhar para uma linha errada, e apagar é a saída de quem não quer o
+  // desenho de jeito nenhum.
+  const lapis = redesenhoDoBalao(properties, aoRedesenhar);
+  if (lapis) raiz.appendChild(lapis);
   const lixeira = lixeiraDoBalao(properties, aoRemover);
   if (lixeira) raiz.appendChild(lixeira);
   return raiz;

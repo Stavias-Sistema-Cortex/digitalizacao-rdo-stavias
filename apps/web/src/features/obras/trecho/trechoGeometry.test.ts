@@ -688,3 +688,110 @@ describe("projecaoDoDispositivo", () => {
     ]);
   });
 });
+
+/**
+ * Vários serviços no mesmo quilômetro é o caso normal, não a exceção.
+ *
+ * <p>Um dia de obra frequentemente frésa, imprima e capeia o mesmo trecho, e
+ * cada um desses é uma linha do RDO. Todos caíam no mesmo trilho absoluto da
+ * pista, com o mesmo `left` e a mesma `width`: o último desenhado cobria os
+ * anteriores por inteiro. O trabalho estava registrado e sumia da única tela
+ * que existe para mostrá-lo.
+ */
+describe("serviços que disputam o mesmo quilômetro", () => {
+  const escala = calcularEscalaKm([
+    segmento({ id: "base", kmInicial: 170, kmFinal: 180 }),
+  ])!;
+
+  function naMesmaPista(
+    ...intervalos: readonly (readonly [string, number, number])[]
+  ) {
+    return pistasDoTrecho(
+      intervalos.map(([id, kmInicial, kmFinal]) =>
+        segmento({ id, servicoNome: id, kmInicial, kmFinal }),
+      ),
+      escala,
+    )[0];
+  }
+
+  it("empilha em camadas os que se sobrepõem", () => {
+    const pista = naMesmaPista(
+      ["fresagem", 172, 175],
+      ["binder", 172, 175],
+      ["capa", 172, 175],
+    );
+
+    expect(pista.camadas).toBe(3);
+    expect(pista.blocos.map((bloco) => bloco.camada).sort()).toEqual([0, 1, 2]);
+  });
+
+  /*
+   * O esquemático não engorda à toa: quem não disputa quilômetro continua no
+   * leito, e a pista fica com a altura de sempre.
+   */
+  it("mantém no leito os que não se cruzam", () => {
+    const pista = naMesmaPista(
+      ["fresagem", 170, 172],
+      ["binder", 175, 178],
+    );
+
+    expect(pista.camadas).toBe(1);
+    expect(pista.blocos.every((bloco) => bloco.camada === 0)).toBe(true);
+  });
+
+  it("sobe só o que precisa quando a sobreposição é parcial", () => {
+    const pista = naMesmaPista(
+      ["fresagem", 170, 174],
+      ["binder", 173, 177],
+      ["capa", 178, 180],
+    );
+
+    expect(pista.camadas).toBe(2);
+    // A capa não cruza a fresagem, então volta para o leito em vez de abrir
+    // uma terceira camada.
+    const porServico = new Map(
+      pista.blocos.map((bloco) => [bloco.segmento.id, bloco.camada]),
+    );
+    expect(porServico.get("fresagem")).toBe(0);
+    expect(porServico.get("binder")).toBe(1);
+    expect(porServico.get("capa")).toBe(0);
+  });
+
+  /*
+   * Duas leituras da mesma obra precisam desenhar a mesma figura, senão a tela
+   * dança a cada sincronização.
+   */
+  it("desenha a mesma figura independentemente da ordem de chegada", () => {
+    const umaOrdem = naMesmaPista(
+      ["fresagem", 172, 175],
+      ["binder", 172, 175],
+    );
+    const outraOrdem = naMesmaPista(
+      ["binder", 172, 175],
+      ["fresagem", 172, 175],
+    );
+
+    const camadas = (pista: typeof umaOrdem) =>
+      pista.blocos.map((bloco) => `${bloco.segmento.id}:${bloco.camada}`);
+    expect(camadas(umaOrdem)).toEqual(camadas(outraOrdem));
+  });
+
+  it("nenhum bloco fica escondido atrás de outro", () => {
+    const pista = naMesmaPista(
+      ["fresagem", 172, 175],
+      ["binder", 173, 176],
+      ["capa", 174, 177],
+      ["selagem", 172, 177],
+    );
+
+    for (const um of pista.blocos) {
+      for (const outro of pista.blocos) {
+        if (um === outro || um.camada !== outro.camada) continue;
+        const seCruzam =
+          um.inicio < outro.inicio + outro.largura &&
+          outro.inicio < um.inicio + um.largura;
+        expect(seCruzam).toBe(false);
+      }
+    }
+  });
+});

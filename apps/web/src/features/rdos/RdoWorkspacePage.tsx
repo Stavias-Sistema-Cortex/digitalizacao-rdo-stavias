@@ -46,6 +46,7 @@ import {
   captureRdoExportSessionGuard,
   type RdoExportSessionGuard,
 } from "./rdoExportSessionGuard";
+import { reconciliarRdosDoServidor } from "./rdosDoServidor";
 
 type WorkspaceMode =
   | {
@@ -104,6 +105,21 @@ export function RdoWorkspacePage() {
 
       try {
         const guard = captureRdoExportSessionGuard();
+        /*
+         * O servidor entra antes da leitura local, não no lugar dela.
+         *
+         * O banco deste aparelho é por pessoa — o nome dele deriva de
+         * {ownerId, escopo} —, então a lista mostrava só o que este aparelho
+         * havia criado. Quem abria a própria conta numa obra em que outra
+         * pessoa apontava via a tela vazia, com acesso à obra e com os RDOs já
+         * sincronizados, e não tinha como descobrir o porquê.
+         *
+         * A reconciliação nunca derruba a abertura da tela: sem rede ela
+         * simplesmente não traz nada, e o que está no aparelho continua sendo
+         * servido — que é o contrato do modo offline.
+         */
+        await reconciliarRdosDoServidor().catch(() => undefined);
+        if (generation !== loadGenerationRef.current) return;
         const [
           localRecords,
           localEvents,

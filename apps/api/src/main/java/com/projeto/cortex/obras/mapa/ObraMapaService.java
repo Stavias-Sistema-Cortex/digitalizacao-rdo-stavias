@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -45,6 +46,7 @@ public class ObraMapaService {
     private final ObraGeometriaMemoryPublisher memoryPublisher;
     private final ObjectMapper objectMapper;
     private final ObraOperabilityGuard operabilityGuard;
+    private final QuilometroDoApontamento quilometroDoApontamento;
 
     public ObraMapaService(
             ObraRepository obraRepository,
@@ -52,7 +54,8 @@ public class ObraMapaService {
             CurrentUserService currentUserService,
             ObraGeometriaMemoryPublisher memoryPublisher,
             ObjectMapper objectMapper,
-            ObraOperabilityGuard operabilityGuard
+            ObraOperabilityGuard operabilityGuard,
+            QuilometroDoApontamento quilometroDoApontamento
     ) {
         this.obraRepository = obraRepository;
         this.featureRepository = featureRepository;
@@ -60,21 +63,23 @@ public class ObraMapaService {
         this.memoryPublisher = memoryPublisher;
         this.objectMapper = objectMapper;
         this.operabilityGuard = operabilityGuard;
+        this.quilometroDoApontamento = quilometroDoApontamento;
     }
 
     @Transactional(readOnly = true)
     public ObraMapaResponse buscarMapa(String obraId) {
         currentUserService.requireWorksiteAccess(obraId);
         Obra obra = requireWorksiteForRead(obraId);
+        List<ObraGeometriaResponse> features = featureRepository
+                .findByObraIdAndStatusOrderByValidoDesdeAscIdAsc(obraId, "ATIVA")
+                .stream()
+                .map(this::toResponse)
+                .toList();
         return new ObraMapaResponse(
                 new ObraMapaResponse.ObraLocalizacaoResponse(
                         obra.getId(), obra.getNome(), obra.getLatitude(), obra.getLongitude()
                 ),
-                featureRepository
-                        .findByObraIdAndStatusOrderByValidoDesdeAscIdAsc(obraId, "ATIVA")
-                        .stream()
-                        .map(this::toResponse)
-                        .toList()
+                quilometroDoApontamento.projetarEm(features)
         );
     }
 

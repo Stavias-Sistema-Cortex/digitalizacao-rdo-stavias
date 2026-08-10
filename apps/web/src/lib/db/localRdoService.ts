@@ -72,6 +72,7 @@ import {
   commitLocalMutation,
   type LocalMutationDomainWrite,
 } from "../sync/localMutationCoordinator";
+import { numeroDigitado } from "../numeros/numeroDigitado";
 
 export interface SaveRdoDraftResult {
   rdo: LocalRdoRecord;
@@ -509,15 +510,15 @@ function entityName(value: string | null | undefined): string | null {
   return value.trim();
 }
 
+/*
+ * A quantidade executada é digitada em campo e vira receita do outro lado.
+ *
+ * Era lida com `replace(",", ".")`, que recusa "1.234,56" e — pior — aceita
+ * "1.234" como 1,234. Uma quantidade mil vezes menor não falha em lugar
+ * nenhum: multiplica pelo preço, fecha a medição e sai como receita medida.
+ */
 function numberFromText(value: string): number | null {
-  const normalized = value.trim().replace(",", ".");
-
-  if (!normalized) {
-    return null;
-  }
-
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
+  return numeroDigitado(value);
 }
 
 function numberFromInput(value: string | number): number | null {
@@ -619,7 +620,11 @@ function buildServicoExecutadoPayload(
     itemContratualId: nullIfEmpty(
       item.itemContratualId,
     ),
-    quantidadeExecutada: item.quantidadeExecutada,
+    // `""` não é número, e o envelope canônico o entregaria ao servidor como
+    // texto vazio. Ausência vira null, que é o que o servidor lê como "não
+    // medido" — e não como recusa.
+    quantidadeExecutada:
+      item.quantidadeExecutada === "" ? null : item.quantidadeExecutada,
     unidade: nullIfEmpty(item.unidade),
     trechoInicial: nullIfEmpty(item.trechoInicial),
     trechoFinal: nullIfEmpty(item.trechoFinal),
@@ -719,6 +724,23 @@ function isServicoExecutadoEmpty(
   );
 }
 
+/**
+ * A linha que sobe.
+ *
+ * <p>Duas condições, e cada uma tem uma razão diferente.
+ *
+ * <p>A quantidade deixou de ser exigida. Ela era, e a linha apontada sem medida
+ * desaparecia do envio sem nada dizer a quem a preencheu — quantidade ausente é
+ * "aconteceu, não medi", que é um fato registrável, e o servidor a lê como
+ * zero.
+ *
+ * <p>O serviço do catálogo continua sendo. Não é preciosismo do formulário: a
+ * entrada sem identidade de catálogo é reservada à importação histórica, que
+ * passa por controle de procedência, e o servidor recusa a porta normal. Como a
+ * recusa é 400 — terminal, que a fila não reenvia —, mandar a linha assim
+ * custaria o RDO inteiro. Ela fica no aparelho até alguém escolher o serviço,
+ * que é a única coisa que a completa.
+ */
 function isServicoExecutadoSyncable(
   item: ServicoExecutadoDraft,
 ): boolean {
@@ -726,7 +748,7 @@ function isServicoExecutadoSyncable(
     return false;
   }
 
-  return item.quantidadeExecutada !== "";
+  return item.serviceId.trim() !== "";
 }
 
 function isAlocacaoEmpty(

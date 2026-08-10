@@ -16,7 +16,7 @@ import {
   TOKEN_POR_FASE,
 } from "./execucaoDoTrecho";
 import { mapboxAccessToken, type MapProvider } from "./mapProvider";
-import { lixeiraDoBalao } from "./popupDoMapa";
+import { lixeiraDoBalao, redesenhoDoBalao } from "./popupDoMapa";
 import {
   idDaFeicao,
   rastreadorDeBalao,
@@ -62,6 +62,8 @@ interface MountOptions {
   onFalhaDeBasemap?: () => void;
   /** Pedido de remoção do ponto operacional aberto no balão. */
   onRemoverPonto?: ((id: string) => void) | null;
+  /** Pedido de correção do traçado do trecho aberto no balão. */
+  onRedesenharTrecho?: ((id: string) => void) | null;
 }
 
 const SOURCE_ID = "cortex-operational";
@@ -311,6 +313,7 @@ function enquadrar(
 function popupContent(
   properties: Record<string, unknown>,
   aoRemoverPonto: ((id: string) => void) | null,
+  aoRedesenharTrecho: ((id: string) => void) | null,
 ): HTMLDivElement {
   const container = document.createElement("div");
   container.className = "operational-map-popup mapa-balao";
@@ -342,8 +345,11 @@ function popupContent(
     origem.textContent = `Origem: ${rotuloDaFonte(properties.fonte)}`;
     container.append(origem);
   }
-  // A mesma lixeira do painel Leaflet, pela mesma regra: apagar o ponto num
-  // mapa apaga nos dois, porque os dois leem a mesma geometria.
+  // O mesmo lápis e a mesma lixeira do painel Leaflet, pela mesma regra:
+  // corrigir ou apagar num mapa vale nos dois, porque os dois leem a mesma
+  // geometria.
+  const lapis = redesenhoDoBalao(properties, aoRedesenharTrecho);
+  if (lapis) container.append(lapis);
   const lixeira = lixeiraDoBalao(properties, aoRemoverPonto);
   if (lixeira) container.append(lixeira);
   return container;
@@ -413,6 +419,7 @@ function addOperationalLayers(
   features: OperationalFeatureCollection,
   criarPopup: () => GlPopupCompativel,
   aoRemoverPonto: ((id: string) => void) | null,
+  aoRedesenharTrecho: ((id: string) => void) | null,
 ): RastreadorDeBalao {
   map.addSource(SOURCE_ID, {
     type: "geojson",
@@ -552,7 +559,9 @@ function addOperationalLayers(
       const properties = event.features?.[0]?.properties ?? {};
       const popup = criarPopup()
         .setLngLat(event.lngLat)
-        .setDOMContent(popupContent(properties, aoRemoverPonto));
+        .setDOMContent(
+          popupContent(properties, aoRemoverPonto, aoRedesenharTrecho),
+        );
       popup.addTo(map as never);
       balao.abrir(popup, idDaFeicao(properties));
     });
@@ -717,6 +726,7 @@ function prepararMapa(
         options.features,
         extensao.criarPopup,
         options.onRemoverPonto ?? null,
+        options.onRedesenharTrecho ?? null,
       );
       enquadrado = enquadrar(map, options.features);
       if (options.mode === "3d" && volume) {

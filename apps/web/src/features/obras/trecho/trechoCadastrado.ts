@@ -1,4 +1,5 @@
 import { quilometroDeTexto } from "./trechoLocal";
+import { decimalDigitado } from "../../../lib/numeros/numeroDigitado";
 
 /**
  * O que a pessoa preenche ao desenhar um trecho no mapa.
@@ -71,7 +72,7 @@ function limpo(valor: string): string | null {
 }
 
 function numeroPositivo(valor: string): number | null {
-  const texto = valor.trim().replace(",", ".");
+  const texto = decimalDigitado(valor) ?? "";
   if (!texto) return null;
   const numero = Number(texto);
   return Number.isFinite(numero) && numero > 0 ? numero : null;

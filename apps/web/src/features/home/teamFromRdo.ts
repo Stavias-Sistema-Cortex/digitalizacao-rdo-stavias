@@ -1,4 +1,5 @@
 import type { LocalRdoRecord } from "../../lib/db/db.types";
+import { numeroDigitado } from "../../lib/numeros/numeroDigitado";
 
 export interface TeamEntry {
   cargo: string;
@@ -11,7 +12,7 @@ function parseQuantidade(value: unknown): number {
   }
 
   if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value.replace(",", "."));
+    const parsed = numeroDigitado(value) ?? Number.NaN;
     return Number.isFinite(parsed) ? parsed : 0;
   }
 

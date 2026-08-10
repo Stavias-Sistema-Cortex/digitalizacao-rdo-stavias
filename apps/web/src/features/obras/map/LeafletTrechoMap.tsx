@@ -70,6 +70,12 @@ interface LeafletTrechoMapProps {
    * <p>Nulo esconde a lixeira.
    */
   onRemoverPonto?: ((id: string) => void) | null;
+  /**
+   * Pedido de correção do traçado do trecho aberto no balão.
+   *
+   * <p>Nulo esconde o lápis.
+   */
+  onRedesenharTrecho?: ((id: string) => void) | null;
 }
 
 
@@ -139,6 +145,7 @@ export function LeafletTrechoMap({
   marcando = null,
   onPontoMarcado,
   onRemoverPonto = null,
+  onRedesenharTrecho = null,
 }: LeafletTrechoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
@@ -151,7 +158,9 @@ export function LeafletTrechoMap({
   // redesenhada a cada render: sem a referência, a lixeira chamaria a função
   // que valia no desenho anterior.
   const aoRemoverRef = useRef(onRemoverPonto);
+  const aoRedesenharRef = useRef(onRedesenharTrecho);
   const podeRemover = Boolean(onRemoverPonto);
+  const podeRedesenhar = Boolean(onRedesenharTrecho);
   const enquadramentoRef = useRef<string | null>(null);
   // O movimento veio do outro mapa: devolvê-lo faria o par oscilar.
   const impondoCameraRef = useRef(false);
@@ -166,6 +175,7 @@ export function LeafletTrechoMap({
     marcandoRef.current = marcando;
     aoMarcarRef.current = onPontoMarcado;
     aoRemoverRef.current = onRemoverPonto;
+    aoRedesenharRef.current = onRedesenharTrecho;
   });
 
   useEffect(() => {
@@ -396,6 +406,7 @@ export function LeafletTrechoMap({
           popupElement(
             (feature.properties ?? {}) as Record<string, unknown>,
             aoRemoverRef.current ?? null,
+            aoRedesenharRef.current ?? null,
           ),
           { closeButton: false },
         );
@@ -418,7 +429,7 @@ export function LeafletTrechoMap({
     if (bounds.isValid()) {
       map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
     }
-  }, [features, estado, podeRemover]);
+  }, [features, estado, podeRemover, podeRedesenhar]);
 
   /*
    * Redesenha o rascunho a partir do que foi recebido.

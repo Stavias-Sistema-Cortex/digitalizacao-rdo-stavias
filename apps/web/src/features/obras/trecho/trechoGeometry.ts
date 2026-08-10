@@ -136,6 +136,16 @@ export interface BlocoSegmento {
   inicio: number;
   /** Largura em porcentagem. */
   largura: number;
+  /**
+   * Em que camada da pista o bloco é desenhado.
+   *
+   * <p>Zero é o leito; cada número acima é uma camada empilhada sobre ele. Um
+   * dia de obra tem várias frentes no mesmo quilômetro — fresagem e binder no
+   * mesmo trecho, num mesmo RDO —, e todas caíam no mesmo trilho absoluto: o
+   * último bloco desenhado cobria os anteriores por inteiro. O trabalho estava
+   * lá, registrado, e sumia da única tela que existe para mostrá-lo.
+   */
+  camada: number;
 }
 
 export interface PistaEsquematica {
@@ -144,6 +154,8 @@ export interface PistaEsquematica {
   sentido: string;
   faixa: string;
   blocos: BlocoSegmento[];
+  /** Quantas camadas a pista precisa para não esconder nenhum bloco. */
+  camadas: number;
 }
 
 /** Largura mínima de bloco, em porcentagem, para permanecer visível e clicável. */
@@ -343,6 +355,8 @@ export function blocoDoSegmento(
     segmento,
     inicio,
     largura: Math.min(largura, 100 - inicio),
+    // O leito, até que a pista descubra que há disputa pelo quilômetro.
+    camada: 0,
   };
 }
 
@@ -381,8 +395,12 @@ export function pistasDoTrecho(
     if (existente) {
       existente.blocos.push(bloco);
     } else {
-      pistas.set(id, { id, sentido, faixa, blocos: [bloco] });
+      pistas.set(id, { id, sentido, faixa, blocos: [bloco], camadas: 1 });
     }
+  }
+
+  for (const pista of pistas.values()) {
+    empilharSemEsconder(pista);
   }
 
   return [...pistas.values()].sort((a, b) =>
@@ -390,6 +408,49 @@ export function pistasDoTrecho(
       ? a.faixa.localeCompare(b.faixa, "pt-BR")
       : a.sentido.localeCompare(b.sentido, "pt-BR"),
   );
+}
+
+/**
+ * Distribui os blocos da pista em camadas para que nenhum esconda outro.
+ *
+ * <p>Vários serviços no mesmo quilômetro são o caso normal, não a exceção: um
+ * dia de obra frequentemente frésa, imprima e capeia o mesmo trecho, e cada um
+ * desses é uma linha do RDO. Desenhados no mesmo trilho absoluto, eles se
+ * cobriam — e o que sobrava na tela era só o último, como se os outros não
+ * tivessem acontecido.
+ *
+ * <p>A regra é a mais simples que resolve: percorre os blocos da esquerda para
+ * a direita e põe cada um na primeira camada onde ele não toca o anterior.
+ * Blocos que não se cruzam continuam na mesma camada — o esquemático não
+ * engorda à toa —, e só quem realmente disputa o mesmo quilômetro sobe.
+ *
+ * <p>A ordem é por posição, e o desempate é pelo id: duas leituras da mesma
+ * obra precisam desenhar a mesma figura, senão a tela dança a cada
+ * sincronização.
+ */
+function empilharSemEsconder(pista: PistaEsquematica): void {
+  const ordenados = [...pista.blocos].sort((um, outro) =>
+    um.inicio === outro.inicio
+      ? um.segmento.id.localeCompare(outro.segmento.id)
+      : um.inicio - outro.inicio,
+  );
+  /** Onde cada camada termina, para saber se o próximo bloco cabe nela. */
+  const fimDaCamada: number[] = [];
+
+  for (const bloco of ordenados) {
+    const fim = bloco.inicio + bloco.largura;
+    let camada = fimDaCamada.findIndex((limite) => bloco.inicio >= limite);
+    if (camada === -1) {
+      camada = fimDaCamada.length;
+      fimDaCamada.push(fim);
+    } else {
+      fimDaCamada[camada] = fim;
+    }
+    bloco.camada = camada;
+  }
+
+  pista.blocos = ordenados;
+  pista.camadas = Math.max(1, fimDaCamada.length);
 }
 
 /**

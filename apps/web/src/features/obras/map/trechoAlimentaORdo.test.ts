@@ -140,3 +140,49 @@ describe("o desenho alimenta o RDO", () => {
     );
   });
 });
+
+/**
+ * O desenho não guarda o quilômetro, mas passa a dizer onde ele mora.
+ *
+ * <p>A geometria seguir sem km foi decisão deliberada: duas cópias divergem no
+ * primeiro acerto de uma delas. Só que sem saber de qual linha falar, o mapa
+ * também não tinha como <em>ler</em> o quilômetro do apontamento, e a
+ * informação simplesmente não chegava à tela — o trecho aparecia desenhado sem
+ * a primeira coisa que se pergunta olhando para uma rodovia.
+ *
+ * <p>O elo é o endereço, não o valor. Ele permite a leitura sem recriar a
+ * divergência.
+ */
+describe("o elo entre o desenho e a linha do RDO", () => {
+  it("registra qual execução o desenho representa", () => {
+    const propriedades = propriedadesDaFormaDesenhada(
+      cadastro(),
+      null,
+      "linha-abc",
+    );
+
+    expect(propriedades.execucaoId).toBe("linha-abc");
+  });
+
+  /*
+   * O quilômetro continua fora: é ele que mora no apontamento, e gravá-lo aqui
+   * seria refazer exatamente a divergência que a migração eliminou.
+   */
+  it("continua sem guardar o quilômetro", () => {
+    const propriedades = propriedadesDaFormaDesenhada(
+      cadastro({ kmInicial: "172", kmFinal: "171" }),
+      null,
+      "linha-abc",
+    );
+
+    expect(propriedades.kmInicial).toBeUndefined();
+    expect(propriedades.kmFinal).toBeUndefined();
+  });
+
+  it("não inventa o elo quando ninguém o informou", () => {
+    expect(propriedadesDaFormaDesenhada(cadastro(), null).execucaoId)
+      .toBeUndefined();
+    expect(propriedadesDaFormaDesenhada(cadastro(), null, "  ").execucaoId)
+      .toBeUndefined();
+  });
+});

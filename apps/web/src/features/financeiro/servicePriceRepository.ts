@@ -12,6 +12,7 @@ import {
   updateSyncState,
 } from "../../lib/db/syncStateRepository";
 import { commitLocalMutation } from "../../lib/sync/localMutationCoordinator";
+import { decimalDigitado } from "../../lib/numeros/numeroDigitado";
 import type {
   FinancialPermission,
   FinanceCapabilities,
@@ -101,8 +102,16 @@ function optionalText(
   return normalized;
 }
 
+/*
+ * O preço é digitado por gente no Brasil, e o servidor só entende ponto.
+ *
+ * A tradução mora em `decimalDigitado` porque a versão que existia aqui —
+ * `replace(",", ".")` — recusava "1.234,56", que está certo, e aceitava
+ * "1.234" como 1,234: mil vezes menos, sem aviso, gravado como valor unitário
+ * e propagado dali até a receita medida.
+ */
 function decimalText(value: string): string {
-  const normalized = value.trim().replace(",", ".");
+  const normalized = decimalDigitado(value) ?? "";
   if (!/^\d{1,14}(?:\.\d{1,4})?$/.test(normalized)) {
     throw new Error("Informe um valor unitário válido com até quatro casas decimais.");
   }
@@ -110,7 +119,7 @@ function decimalText(value: string): string {
 }
 
 function contractedQuantityText(value: string): string {
-  const normalized = value.trim().replace(",", ".");
+  const normalized = decimalDigitado(value) ?? "";
   if (
     !/^\d{1,15}(?:\.\d{1,3})?$/.test(normalized) ||
     /^0+(?:\.0+)?$/.test(normalized)

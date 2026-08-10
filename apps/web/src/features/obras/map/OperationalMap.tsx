@@ -69,6 +69,13 @@ interface OperationalMapProps {
    * precisar trocar de painel para tirar uma marcação errada da tela.
    */
   onRemoverPonto?: ((id: string) => void) | null;
+  /**
+   * Pedido de correção do traçado do trecho aberto no balão deste painel.
+   *
+   * <p>Vale o mesmo da remoção: é a mesma geometria dos dois lados, e quem
+   * está com este painel aberto corrige a linha aqui.
+   */
+  onRedesenharTrecho?: ((id: string) => void) | null;
 }
 
 function firstCoordinate(
@@ -108,6 +115,7 @@ function MapCanvas({
   camera,
   onCamera,
   onRemoverPonto,
+  onRedesenharTrecho,
 }: {
   provider: MapProvider;
   features: OperationalFeatureCollection;
@@ -117,6 +125,7 @@ function MapCanvas({
   camera: CameraDaObra | null;
   onCamera: ((camera: CameraDaObra) => void) | null;
   onRemoverPonto: ((id: string) => void) | null;
+  onRedesenharTrecho: ((id: string) => void) | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<OperationalMapController | null>(null);
@@ -195,11 +204,13 @@ function MapCanvas({
   const centerRef = useRef(center);
   const modeRef = useRef(mode);
   const aoRemoverRef = useRef(onRemoverPonto);
+  const aoRedesenharRef = useRef(onRedesenharTrecho);
   useEffect(() => {
     featuresRef.current = features;
     centerRef.current = center;
     modeRef.current = mode;
     aoRemoverRef.current = onRemoverPonto;
+    aoRedesenharRef.current = onRedesenharTrecho;
   });
 
   /**
@@ -244,6 +255,7 @@ function MapCanvas({
       // O mapa é montado uma vez; o balão precisa chamar o destino corrente,
       // e não o que valia na montagem.
       onRemoverPonto: (id) => aoRemoverRef.current?.(id),
+      onRedesenharTrecho: (id) => aoRedesenharRef.current?.(id),
       onRuntimeError: (message) => {
         if (!cancelled && !trocando) setError(message);
       },
@@ -403,6 +415,7 @@ export function OperationalMap({
   onCamera = null,
   filtro = FILTRO_VAZIO,
   onRemoverPonto = null,
+  onRedesenharTrecho = null,
 }: OperationalMapProps) {
   const defaultProvider = useMemo(() => resolveMapProvider(), []);
   const providers = useMemo(() => availableMapProviders(), []);
@@ -541,6 +554,7 @@ export function OperationalMap({
           camera={camera}
           onCamera={onCamera}
           onRemoverPonto={onRemoverPonto}
+          onRedesenharTrecho={onRedesenharTrecho}
         />
       )}
 

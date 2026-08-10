@@ -1,21 +1,32 @@
 /*
  * O balão do mapa, igual nos dois painéis.
  *
- * A lixeira fica no canto do balão, encostada no título do ponto: é ali que se
- * sabe qual marcação está sendo apagada — e os dois mapas mostram a mesma
- * geometria, então a ação precisa parecer a mesma nos dois. Discreta em
- * repouso e vermelha ao toque: apagar não é o que o balão convida a fazer, é o
- * que ele permite quando alguém já decidiu.
+ * As ações ficam no canto do balão, encostadas no título: é ali que se sabe de
+ * qual marcação se trata — e os dois mapas mostram a mesma geometria, então
+ * elas precisam parecer as mesmas nos dois. Discretas em repouso e coloridas ao
+ * toque: nem corrigir nem apagar é o que o balão convida a fazer; é o que ele
+ * permite quando alguém já decidiu.
+ *
+ * O lápis vem antes da lixeira porque quase sempre é ele o que se quer diante
+ * de uma linha errada: corrigir mantém o trecho, apagar joga fora o desenho e
+ * o que ele já dizia.
  */
 .mapa-balao {
   position: relative;
 }
 
-.mapa-balao:has(.mapa-balao-remover) {
+.mapa-balao:has(.mapa-balao-remover),
+.mapa-balao:has(.mapa-balao-redesenhar) {
   padding-right: 26px;
 }
 
-.mapa-balao-remover {
+/* Com os dois lado a lado, o texto do balão precisa do dobro de recuo. */
+.mapa-balao:has(.mapa-balao-remover):has(.mapa-balao-redesenhar) {
+  padding-right: 52px;
+}
+
+.mapa-balao-remover,
+.mapa-balao-redesenhar {
   position: absolute;
   top: -2px;
   right: -4px;
@@ -32,7 +43,13 @@
   cursor: pointer;
 }
 
-.mapa-balao-remover svg {
+/* Quando os dois existem, o lápis cede o canto à lixeira e senta ao lado. */
+.mapa-balao:has(.mapa-balao-remover) .mapa-balao-redesenhar {
+  right: 22px;
+}
+
+.mapa-balao-remover svg,
+.mapa-balao-redesenhar svg {
   width: 15px;
   height: 15px;
 }
@@ -41,4 +58,10 @@
 .mapa-balao-remover:focus-visible {
   border-color: var(--color-danger);
   color: var(--color-danger);
+}
+
+.mapa-balao-redesenhar:hover,
+.mapa-balao-redesenhar:focus-visible {
+  border-color: var(--color-brand-yellow);
+  color: var(--color-text);
 }
