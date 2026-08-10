@@ -226,8 +226,11 @@ class RdoLinhaIncompletaNaoDerrubaORdoIT {
     private String inserirObra(String sufixo) {
         String id = UUID.randomUUID().toString();
         jdbc.update(
-                "INSERT INTO obra (id, nome, status) VALUES (?, ?, 'ATIVA')",
-                id, "Obra " + sufixo
+                """
+                INSERT INTO obra (id, codigo_contrato, nome, status)
+                VALUES (?, ?, ?, 'ATIVA')
+                """,
+                id, "CTR-" + id, "Obra " + sufixo
         );
         return id;
     }
