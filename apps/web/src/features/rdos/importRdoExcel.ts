@@ -15,9 +15,14 @@ import {
   createEmptyRdo,
 } from "./createEmptyRdo";
 import {
-  extractBoundedPdfLines,
+  extractBoundedPdfContent,
   type PdfDocumentForTextExtraction,
 } from "./boundedPdfTextExtraction";
+import {
+  interpretarRdoManuscrito,
+  normalizarRotulo,
+  type PaginaReconhecida,
+} from "./rdoManuscrito";
 import type {
   CondicaoClimatica,
   ControleGeometricoDraft,
@@ -195,13 +200,34 @@ async function importarRdoPdf(
   preenchidoPorSessao: string,
   bytes: Uint8Array,
 ): Promise<RdoImportResult> {
-  const lines = await extractPdfLines(bytes);
+  const { lines, paginas } = await extractPdfContent(bytes);
   const textoExtraido = lines.join("\n").trim();
 
   if (!textoExtraido) {
     throw new RdoImportSafeError(
-      "Não encontrei texto selecionável neste PDF. Para PDF escaneado, será necessário OCR antes da importação.",
+      "Este PDF é uma digitalização: não há texto para ler, só a imagem da folha. "
+        + "Reconhecer letra de mão exige um motor de leitura, que ainda não está "
+        + "ligado neste ambiente.",
     );
+  }
+
+  /*
+   * O formulário de papel tem lugar certo para cada coisa, e é isso que
+   * permite ler a tabela inteira — quem é contratado, quem é terceiro, qual
+   * máquina é locada — em vez de só os poucos campos rotulados que a leitura
+   * linha a linha alcança. Fora do formulário, segue a leitura genérica.
+   */
+  if (ehFormularioDeRdoEmPapel(lines)) {
+    const leitura = interpretarRdoManuscrito(paginas);
+    leitura.draft.preenchidoPor = preenchidoPorSessao;
+    return {
+      draft: leitura.draft,
+      summary: `Importado de ${file.name}: formulário de RDO reconhecido, ${leitura.camposLidos.length} campos lidos.`,
+      warnings: [
+        "Confira campo a campo antes de salvar: o que veio do papel é proposta, não lançamento.",
+        ...leitura.pendencias,
+      ],
+    };
   }
 
   const draft = createEmptyRdo();
@@ -294,9 +320,20 @@ async function importarRdoPdf(
   };
 }
 
-async function extractPdfLines(
+const ANCORAS_DO_FORMULARIO = [
+  "RELATORIO DIARIO DE OBRA",
+  "MAO DE OBRA",
+  "PRODUCAO SEGMENTOS",
+];
+
+function ehFormularioDeRdoEmPapel(lines: readonly string[]): boolean {
+  const texto = normalizarRotulo(lines.join(" "));
+  return ANCORAS_DO_FORMULARIO.every((ancora) => texto.includes(ancora));
+}
+
+async function extractPdfContent(
   bytes: Uint8Array,
-): Promise<string[]> {
+): Promise<{ lines: string[]; paginas: PaginaReconhecida[] }> {
   let loadingTask: {
     promise: Promise<PdfDocumentForTextExtraction>;
     destroy: () => Promise<void>;
@@ -311,7 +348,7 @@ async function extractPdfLines(
       data: bytes,
     });
     const document = await loadingTask.promise;
-    return await extractBoundedPdfLines(document);
+    return await extractBoundedPdfContent(document);
   } catch (error: unknown) {
     if (error instanceof RdoImportResourceError) {
       throw error;

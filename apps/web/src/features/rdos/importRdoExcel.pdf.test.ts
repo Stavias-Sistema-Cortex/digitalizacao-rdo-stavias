@@ -71,7 +71,7 @@ describe("RDO PDF import", () => {
       selectablePdfFile([], "rdo-escaneado.pdf"),
       "Sessão atual",
     )).rejects.toThrow(
-      "Não encontrei texto selecionável neste PDF. Para PDF escaneado, será necessário OCR antes da importação.",
+      /digitalização: não há texto para ler.*motor de leitura/s,
     );
   });
 
