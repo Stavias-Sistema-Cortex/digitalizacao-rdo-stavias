@@ -592,8 +592,16 @@ describe("RDO workbook mapping", () => {
 
   it.each([
     {
+      /*
+       * A linha sem quantidade só é parcial quando também não identifica
+       * ninguém: a pessoa escolhida na lista e a máquina do parque valem uma
+       * sem precisar do dígito. O que continua sem resposta é o cargo solto —
+       * "Apontador" sem nome e sem número não diz quantos foram.
+       */
       section: "workforce",
       mutate(value: RdoWorkbookSnapshot) {
+        value.rdo.maoObra[0].colaboradorId = "";
+        value.rdo.maoObra[0].nomeColaborador = "";
         value.rdo.maoObra[0].quantidade = "";
       },
       code: "RDO_EXPORT_INVALID_WORKFORCE_ROW",
@@ -601,6 +609,8 @@ describe("RDO workbook mapping", () => {
     {
       section: "equipment",
       mutate(value: RdoWorkbookSnapshot) {
+        value.rdo.equipamentos[0].assetId = "";
+        value.rdo.equipamentos[0].prefixo = "";
         value.rdo.equipamentos[0].quantidade = "";
       },
       code: "RDO_EXPORT_INVALID_EQUIPMENT_ROW",

@@ -144,6 +144,49 @@ export function rdoExportEquipmentOwnership(value: string): "OWNED" | "NON_OWNED
   }
 }
 
+/*
+ * A linha que se identifica sozinha vale um.
+ *
+ * <p>A escolha em lista dupla põe uma pessoa por linha e uma máquina por
+ * linha, e não pede quantidade — nesse modelo o número não foi esquecido, ele
+ * é um. Exigir o dígito ali barrava a exportação de todo RDO montado pela
+ * tela, que é como todos são montados hoje.
+ *
+ * <p>A tolerância para na linha que não identifica ninguém: "Rasteleiro" sem
+ * nome e sem quantidade não diz quantos rasteleiros foram, e supor um seria
+ * inventar. Essa continua exigindo o número.
+ */
+function resolvedWorkforceQuantity(item: MaoObraDraft): number | null {
+  const declared = number(item.quantidade);
+  if (declared !== null) return declared;
+  return firstNonBlank(item.colaboradorId, item.nomeColaborador) ? 1 : null;
+}
+
+function resolvedEquipmentQuantity(item: EquipamentoDraft): number | null {
+  const declared = number(item.quantidade);
+  if (declared !== null) return declared;
+  return firstNonBlank(item.assetId, item.prefixo) ? 1 : null;
+}
+
+/*
+ * O parque é o que a obra tem, e o formulário só oferece duas colunas —
+ * própria ou de terceiro. Máquina escolhida do parque entra como própria, que
+ * é o que o cadastro afirma ao listá-la ali; o campo Vínculo segue aberto para
+ * quem precise corrigir. A máquina digitada à mão, sem cadastro atrás, não tem
+ * o que a situe: essa continua exigindo o vínculo declarado.
+ */
+function resolvedEquipmentLinkType(item: EquipamentoDraft): string {
+  return text(item.tipoVinculo) || (text(item.assetId) ? "PROPRIO" : "");
+}
+
+function resolvedEquipmentRow(item: EquipamentoDraft): EquipamentoDraft {
+  return {
+    ...item,
+    tipoVinculo: resolvedEquipmentLinkType(item),
+    quantidade: resolvedEquipmentQuantity(item) ?? item.quantidade,
+  };
+}
+
 function isBlankWorkforce(item: MaoObraDraft): boolean {
   return !firstNonBlank(item.origemItemId, item.sourceRdoId, item.colaboradorId, item.nomeColaborador, item.cargo, item.tipoVinculo, item.horaInicio, item.horaFim, item.observacoes) && number(item.quantidade) === null;
 }
@@ -183,12 +226,12 @@ function nonEmptyService(item: ServicoExecutadoDraft): boolean {
 function validateOperationalRows(rdo: RdoDraft): void {
   for (const item of rdo.maoObra) {
     if (!item.selected || isBlankWorkforce(item)) continue;
-    if (!firstNonBlank(item.cargo, item.nomeColaborador) || number(item.quantidade) === null) error("RDO_EXPORT_INVALID_WORKFORCE_ROW", "Há linha de mão de obra sem cargo/nome ou quantidade; nenhum valor foi inventado.");
+    if (!firstNonBlank(item.cargo, item.nomeColaborador) || resolvedWorkforceQuantity(item) === null) error("RDO_EXPORT_INVALID_WORKFORCE_ROW", "Há linha de mão de obra sem cargo/nome ou quantidade; nenhum valor foi inventado.");
   }
   for (const item of rdo.equipamentos) {
     if (isBlankEquipment(item)) continue;
-    if (!text(item.descricao) || number(item.quantidade) === null) error("RDO_EXPORT_INVALID_EQUIPMENT_ROW", "Há linha de equipamento sem descrição ou quantidade; nenhum valor foi inventado.");
-    rdoExportEquipmentOwnership(item.tipoVinculo);
+    if (!text(item.descricao) || resolvedEquipmentQuantity(item) === null) error("RDO_EXPORT_INVALID_EQUIPMENT_ROW", "Há linha de equipamento sem descrição ou quantidade; nenhum valor foi inventado.");
+    rdoExportEquipmentOwnership(resolvedEquipmentLinkType(item));
   }
   for (const item of rdo.servicosExecutados) {
     if (isBlankService(item)) continue;
@@ -208,7 +251,7 @@ function groupWorkforce(items: MaoObraDraft[]): RdoExportWorkforceGroup[] {
     const subcontracted = isSubcontracted(item.tipoVinculo);
     const key = `${normalize(role)}|${subcontracted}`;
     const previous = grouped.get(key);
-    const quantity = number(item.quantidade);
+    const quantity = resolvedWorkforceQuantity(item);
     if (quantity === null) error("RDO_EXPORT_INVALID_WORKFORCE_ROW", "Quantidade da mão de obra ausente.");
     grouped.set(key, { role: previous?.role ?? role, subcontracted, quantity: (previous?.quantity ?? 0) + quantity });
   }
@@ -332,7 +375,7 @@ export function buildRdoExportProjection(snapshot: RdoWorkbookSnapshot): RdoExpo
   const { rdo } = snapshot;
   validateOperationalRows(rdo);
   const workforce = groupWorkforce(rdo.maoObra);
-  const equipment = rdo.equipamentos.filter(nonEmptyEquipment);
+  const equipment = rdo.equipamentos.filter(nonEmptyEquipment).map(resolvedEquipmentRow);
   const geometry = rdo.controlesGeometricos.filter(nonEmptyGeometry);
   const services = rdo.servicosExecutados.filter(nonEmptyService);
   const materials = materialRows(rdo.materiais);
