@@ -167,9 +167,11 @@ public class RdoDraftUpdateService {
                     apontador_colaborador_id = ?,
                     encarregado_obra = ?,
                     fiscalizacao_campo = ?,
+                    status = 'RASCUNHO',
+                    enviado_em = NULL,
                     versao_linha = versao_linha + 1
                 WHERE id = ?
-                  AND status = 'RASCUNHO'
+                  AND status IN ('RASCUNHO', 'ENVIADO')
                 """;
         if (expectedEntityVersion != null) {
             updateSql += """
@@ -286,13 +288,28 @@ public class RdoDraftUpdateService {
         return queryService.buscarPorId(rdoId);
     }
 
+    /**
+     * O RDO entregue continua editável; o cancelado, não.
+     *
+     * <p>Antes só RASCUNHO podia ser editado, e um erro percebido depois do
+     * envio não tinha conserto: nem no aparelho, nem aqui. Editar um RDO já
+     * entregue agora o reabre — volta a RASCUNHO e perde a data de envio —,
+     * porque um documento em correção não é um documento entregue, e
+     * continuar chamando de entregue o que mudou depois seria mentir para
+     * quem lê o status. A correção fica no histórico de alterações, e o RDO
+     * precisa ser enviado de novo.
+     *
+     * <p>Cancelado é a única porta fechada: ali a decisão foi não existir, e
+     * reabrir por edição desfaria essa decisão sem que ninguém a revisse.
+     */
     private void validarRdoEditavel(
             RdoChangeAuditService.RdoAuditSnapshot snapshot
     ) {
-        if (!"RASCUNHO".equals(snapshot.status())) {
+        if (!"RASCUNHO".equals(snapshot.status())
+                && !"ENVIADO".equals(snapshot.status())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Apenas RDO em RASCUNHO pode ser editado."
+                    "Um RDO cancelado não pode ser editado."
             );
         }
     }

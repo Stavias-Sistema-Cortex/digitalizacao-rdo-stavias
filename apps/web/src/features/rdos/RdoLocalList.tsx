@@ -1111,10 +1111,9 @@ export function RdoLocalList({
                       type="button"
                       className="secondary-button"
                       onClick={() => onOpen(record)}
-                      disabled={record.statusRdo === "ENVIADO"}
                     >
                       {record.statusRdo === "ENVIADO"
-                        ? "RDO enviado"
+                        ? "Corrigir RDO enviado"
                         : "Continuar RDO"}
                     </button>
                   )}
