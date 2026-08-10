@@ -164,7 +164,7 @@ describe("lista de mão de obra do RDO", () => {
     });
   });
 
-  it("mantém quem perdeu o vínculo à vista, dizendo por quê, e não deixa marcar", () => {
+  it("mantém à vista quem saiu do quadro, dizendo por quê, e não deixa marcar", () => {
     render(
       <RdoWorkforceEditor
         draft={draft()}
@@ -177,7 +177,53 @@ describe("lista de mão de obra do RDO", () => {
     const caixa = caixaDe("Histórico");
     expect(caixa).toBeDisabled();
     expect(caixa).not.toBeChecked();
-    expect(screen.getByText("Indisponível nesta obra")).toBeVisible();
+    expect(screen.getByText("Sem cadastro ativo")).toBeVisible();
+  });
+
+  /*
+   * A lista deixou de ser "quem está autorizado nesta obra" e passou a ser o
+   * quadro inteiro: quem trabalhou naquele dia trabalhou, e o RDO registra o
+   * que aconteceu em vez de decidir quem podia ter estado lá. Estar na obra
+   * virou ordem, não permissão — sem essa separação, achar o ajudante da
+   * própria frente custaria rolar por gente de outra obra.
+   */
+  it("separa quem está na obra de quem está em outras, sem esconder ninguém", () => {
+    render(
+      <RdoWorkforceEditor
+        draft={{ ...draft(), maoObra: [] }}
+        collaborators={[
+          { ...catalog[0], naObra: true },
+          { ...catalog[1], naObra: false },
+        ]}
+        sourceRdoNumber={null}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Nesta obra")).toBeVisible();
+    expect(screen.getByText("Em outras obras")).toBeVisible();
+    // Quem está em outra obra aparece e pode ser marcado: é o ponto todo.
+    expect(caixaDe("Bruno")).toBeEnabled();
+  });
+
+  /*
+   * Contexto guardado antes desta versão não traz `naObra`. Ler a ausência como
+   * "está na obra" preserva o significado antigo — naquele contexto, todo mundo
+   * que aparecia estava mesmo vinculado — e evita que quem está offline veja a
+   * frente inteira migrar para "Em outras obras".
+   */
+  it("trata contexto antigo, sem a marca de obra, como sendo desta obra", () => {
+    render(
+      <RdoWorkforceEditor
+        draft={{ ...draft(), maoObra: [] }}
+        collaborators={catalog}
+        sourceRdoNumber={null}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Nesta obra")).toBeVisible();
+    expect(screen.queryByText("Em outras obras")).toBeNull();
   });
 
   /*

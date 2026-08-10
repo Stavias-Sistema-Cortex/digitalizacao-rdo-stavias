@@ -244,7 +244,18 @@ class PostgresqlRdoCreationContextIT {
                 .filteredOn(item -> item.collaboratorId().equals(historica))
                 .singleElement().extracting(RdoContextResponse.PreviousWorkforceItem::availability)
                 .isEqualTo("UNAVAILABLE");
+        /*
+         * A lista deixou de ser só a da obra: ela traz o quadro inteiro, e
+         * estar na obra virou marca em vez de filtro. O que a asserção guarda
+         * agora é a marca — quem tem vínculo vem marcado, e ninguém mais vem.
+         */
         assertThat(response.colaboradores())
+                .filteredOn(item -> item.id().equals(vinculada))
+                .singleElement()
+                .extracting(RdoContextResponse.ColaboradorContexto::naObra)
+                .isEqualTo(true);
+        assertThat(response.colaboradores())
+                .filteredOn(RdoContextResponse.ColaboradorContexto::naObra)
                 .extracting(RdoContextResponse.ColaboradorContexto::id)
                 .containsExactly(vinculada);
         assertThat(response.equipamentos())
@@ -324,7 +335,17 @@ class PostgresqlRdoCreationContextIT {
         RdoContextResponse response = new RdoContextService(jdbc)
                 .buscarContexto(obraId, SELECTED_DATE);
 
-        assertThat(response.colaboradores()).hasSize(301);
+        /*
+         * A contagem de colaboradores deixou de ser a da obra e passou a ser a
+         * do quadro inteiro, que num banco compartilhado entre testes não é um
+         * número fixo. O que este teste guarda continua inteiro: as 301 pessoas
+         * vinculadas aparecem, todas marcadas como da obra, e a cobertura
+         * declara devolvido igual a total — que é o que "não trunca" quer
+         * dizer.
+         */
+        assertThat(response.colaboradores())
+                .filteredOn(RdoContextResponse.ColaboradorContexto::naObra)
+                .hasSize(301);
         assertThat(response.equipamentos()).hasSize(301);
         assertThat(response.coverage().colaboradores())
                 .extracting(
@@ -332,7 +353,13 @@ class PostgresqlRdoCreationContextIT {
                         RdoContextResponse.CoverageSection::total,
                         RdoContextResponse.CoverageSection::returned,
                         RdoContextResponse.CoverageSection::complete
-                ).containsExactly("COMPLETE", 301L, 301L, true);
+                ).containsExactly(
+                        "COMPLETE",
+                        (long) response.colaboradores().size(),
+                        (long) response.colaboradores().size(),
+                        true
+                );
+        assertThat(response.colaboradores().size()).isGreaterThanOrEqualTo(301);
         assertThat(response.coverage().equipamentos().status()).isEqualTo("COMPLETE");
         assertThat(response.coverage().serviceCatalog().status()).isEqualTo("COMPLETE");
         assertThat(response.coverage().priceCatalog().status()).isEqualTo("COMPLETE");
@@ -2498,6 +2525,7 @@ class PostgresqlRdoCreationContextIT {
                 .buscarContexto(obra, SELECTED_DATE);
 
         assertThat(response.colaboradores())
+                .filteredOn(RdoContextResponse.ColaboradorContexto::naObra)
                 .extracting(RdoContextResponse.ColaboradorContexto::id)
                 .containsExactlyInAnyOrder(
                         porVinculo, soNaEquipeA, soNaEquipeB, nasDuasEquipes);
@@ -2507,12 +2535,19 @@ class PostgresqlRdoCreationContextIT {
                 .filteredOn(item -> item.id().equals(nasDuasEquipes))
                 .hasSize(1);
 
-        // Vigência dos dois lados: equipe arquivada, alocação encerrada e
-        // membro removido não autorizam mais ninguém a ser apontado.
+        /*
+         * Vigência dos dois lados continua valendo — mudou o que ela decide.
+         * Equipe arquivada, alocação encerrada e membro removido não ligam mais
+         * ninguém a esta obra, e por isso essas pessoas descem para o fim da
+         * lista. Elas não somem: quem trabalhou na frente hoje pode ser
+         * apontado, e o vínculo formal é assunto de outra tela.
+         */
         assertThat(response.colaboradores())
-                .extracting(RdoContextResponse.ColaboradorContexto::id)
-                .doesNotContain(
-                        deEquipeArquivada, removidoDaEquipe, deEquipeQueSaiuDaObra);
+                .filteredOn(item -> List.of(
+                        deEquipeArquivada, removidoDaEquipe, deEquipeQueSaiuDaObra
+                ).contains(item.id()))
+                .hasSize(3)
+                .allSatisfy(item -> assertThat(item.naObra()).isFalse());
     }
 
     /*

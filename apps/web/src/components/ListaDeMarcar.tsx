@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { Fragment, useId, useMemo, useState } from "react";
 
 import "./ListaDeMarcar.css";
 
@@ -33,6 +33,15 @@ export interface ItemDeMarcar {
   aviso?: string | null;
   /** Só quem foi somado à mão pode sair de vez; o resto se desmarca. */
   removivel?: boolean;
+  /**
+   * Cabeçalho que separa esta linha das anteriores.
+   *
+   * <p>Existe para a lista que ficou grande demais para ser lida de cima a
+   * baixo — a de pessoas, que passou a trazer o quadro inteiro da empresa. Sem
+   * a separação, achar o ajudante da própria frente custaria rolar por gente de
+   * outra obra. A busca continua alcançando todos os grupos.
+   */
+  grupo?: string | null;
 }
 
 export interface ListaDeMarcarProps {
@@ -107,9 +116,14 @@ export function ListaDeMarcar({
         </p>
       ) : (
         <ul className="lista-de-marcar__itens" aria-label={rotulo}>
-          {visiveis.map((item) => (
+          {visiveis.map((item, indice) => (
+            <Fragment key={item.id}>
+              {item.grupo && item.grupo !== visiveis[indice - 1]?.grupo ? (
+                <li className="lista-de-marcar__grupo" aria-hidden="true">
+                  {item.grupo}
+                </li>
+              ) : null}
             <li
-              key={item.id}
               className={
                 item.marcado
                   ? "lista-de-marcar__item lista-de-marcar__item--marcado"
@@ -152,6 +166,7 @@ export function ListaDeMarcar({
                 </button>
               ) : null}
             </li>
+            </Fragment>
           ))}
         </ul>
       )}

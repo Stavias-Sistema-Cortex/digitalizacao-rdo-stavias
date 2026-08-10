@@ -110,8 +110,28 @@ public record RdoContextResponse(
             String codigoColaborador,
             String nome,
             String papelNaObra,
-            String nomePerfil
+            String nomePerfil,
+            /**
+             * Se a pessoa está ligada a esta obra — por vínculo direto ou por
+             * equipe alocada.
+             *
+             * <p>Deixou de decidir quem aparece e passou a decidir a ordem: a
+             * lista traz o quadro inteiro, e quem está na obra vem primeiro,
+             * porque é quem o apontamento do dia quase sempre procura.
+             */
+            boolean naObra
     ) {
+
+        /** Assinatura anterior à abertura da lista para toda a empresa. */
+        public ColaboradorContexto(
+                String id,
+                String codigoColaborador,
+                String nome,
+                String papelNaObra,
+                String nomePerfil
+        ) {
+            this(id, codigoColaborador, nome, papelNaObra, nomePerfil, true);
+        }
     }
 
     /**
