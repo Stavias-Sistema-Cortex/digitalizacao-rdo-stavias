@@ -160,6 +160,24 @@ function assertTemporalWindow(
   }
 }
 
+/**
+ * "Não dá para calcular" é resposta confirmada, não resposta recusada.
+ *
+ * <p>Esta verificação existe para uma coisa: nenhum número de receita chega à
+ * tela do Financeiro sem o servidor ter confirmado que ele é a projeção
+ * vigente da obra. Ela cobrava, junto, que o cálculo tivesse dado certo — e
+ * enquanto o snapshot de dados insuficientes ficava fora da corrente isso não
+ * fazia diferença, porque ele nunca era o atual.
+ *
+ * <p>Agora ele é, e é assim que a obra deixa de exibir a projeção de um RDO já
+ * apagado. Se a exigência continuasse, o efeito seria o oposto do pretendido: o
+ * servidor passaria a dizer corretamente "faltam dados" e a tela responderia
+ * com um erro, sem mostrar nem o motivo nem o que falta preencher.
+ *
+ * <p>O que não se afrouxa é a exigência de ser o snapshot vigente. Um snapshot
+ * vencido não vale como resposta — dele sairia exatamente o número velho que
+ * esta tela precisa parar de mostrar.
+ */
 function assertConfirmedPdor(
   value: unknown,
   expectedWorksiteId: string,
@@ -174,10 +192,11 @@ function assertConfirmedPdor(
       "O servidor retornou um PDOR fora da obra financeira solicitada.",
     );
   }
+  const calculated = value.statusExecucao === "SUCCESS";
   if (
     typeof value.id !== "string" ||
     !UUID_PATTERN.test(value.id) ||
-    value.statusExecucao !== "SUCCESS" ||
+    (!calculated && value.statusExecucao !== "INSUFFICIENT_DATA") ||
     value.current !== true ||
     value.stale !== false
   ) {
@@ -191,6 +210,25 @@ function assertConfirmedPdor(
     !validTimestamp(value.executedAtUtc) ||
     typeof value.algorithmVersion !== "string" ||
     !value.algorithmVersion.trim() ||
+    !isRecord(value.assumptions) ||
+    !Array.isArray(evidenceIds) ||
+    evidenceIds.some((id) => typeof id !== "string" || !id.trim()) ||
+    new Set(evidenceIds).size !== evidenceIds.length
+  ) {
+    throw new Error(
+      "A proveniência de receita do snapshot PDOR está incompleta.",
+    );
+  }
+  if (!calculated) {
+    /*
+     * Sem cálculo não há receita para conferir: percentis, cobertura e
+     * high-water descrevem uma projeção que este snapshot não fez. Exigi-los
+     * aqui seria cobrar do "faltam dados" a prova de um número que ele não
+     * afirma ter.
+     */
+    return;
+  }
+  if (
     !Number.isSafeInteger(value.evidenceHighWaterMark) ||
     (value.evidenceHighWaterMark as number) < 0 ||
     typeof coverageCode !== "string" ||
@@ -199,11 +237,7 @@ function assertConfirmedPdor(
         FinancePdorRevenueCacheRecord["provenance"]["coverageCode"],
         "NO_CURRENT_SNAPSHOT"
       >,
-    ) ||
-    !Array.isArray(evidenceIds) ||
-    evidenceIds.some((id) => typeof id !== "string" || !id.trim()) ||
-    new Set(evidenceIds).size !== evidenceIds.length ||
-    !isRecord(value.assumptions)
+    )
   ) {
     throw new Error(
       "A proveniência de receita do snapshot PDOR está incompleta.",
