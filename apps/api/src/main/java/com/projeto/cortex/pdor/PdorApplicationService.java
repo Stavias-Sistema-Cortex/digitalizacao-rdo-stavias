@@ -169,22 +169,54 @@ public class PdorApplicationService {
     ) {
         Obra obra = localizarObra(obraIdentifier);
         PdorInputBundle inputs = inputLoader.load(obra, referenceDate);
-        String idempotencyKey = calculateIdempotencyKey(inputs);
 
-        return snapshotRepository.findByIdempotencyKey(idempotencyKey)
-                .map(snapshot -> {
-                    publicationService.repairOntology(
-                            () -> registrarNoGrafo(snapshot, obra)
-                    );
-                    return toResponse(snapshot, obra, true);
-                })
-                .orElseGet(() -> calcularNovoSnapshot(
-                        obra,
-                        inputs,
-                        triggerType,
-                        originEventId,
-                        idempotencyKey
-                ));
+        PdorSnapshot current = snapshotRepository
+                .findCurrentByObraId(obra.getId())
+                .orElse(null);
+        if (current != null && jaRefleteAsEntradas(current, inputs)) {
+            publicationService.repairOntology(
+                    () -> registrarNoGrafo(current, obra)
+            );
+            return toResponse(current, obra, true);
+        }
+
+        return calcularNovoSnapshot(obra, inputs, triggerType, originEventId);
+    }
+
+    /**
+     * Repetição é o mesmo cálculo, não a mesma conta feita outra vez.
+     *
+     * <p>A pergunta era "algum snapshot já teve estas entradas?", e a resposta
+     * vinha da chave de idempotência, única na tabela inteira. Enquanto as
+     * entradas de uma obra só andam para a frente isso funciona. Mas elas
+     * voltam: apagar um RDO devolve a obra ao estado anterior à sua criação, e
+     * as entradas passam a somar exatamente o que já somavam antes.
+     *
+     * <p>Aí a busca encontrava um snapshot antigo — vencido, fora da corrente —
+     * e o devolvia como se nada houvesse a fazer. Nenhum snapshot novo era
+     * publicado, e o atual continuava sendo o que fora calculado com o RDO
+     * ainda vivo. O valor do apagado ficava na tela para sempre, e apertar
+     * "recalcular" reencontrava o mesmo snapshot antigo e não mudava nada.
+     *
+     * <p>A pergunta certa é outra: "o que está publicado como atual já reflete
+     * estas entradas?". Se reflete, não há o que fazer. Se não reflete — seja
+     * porque as entradas avançaram, seja porque voltaram —, a obra precisa de
+     * um snapshot novo ocupando a posição de atual.
+     *
+     * <p>A comparação usa a versão de dados, que é o resumo das entradas, mais
+     * as três versões de código que entram no cálculo. Sem elas, subir um
+     * modelo novo não recalcularia nada.
+     */
+    private boolean jaRefleteAsEntradas(
+            PdorSnapshot snapshot,
+            PdorInputBundle inputs
+    ) {
+        return snapshot.dataVersion() != null
+                && snapshot.dataVersion().equals(calculateDataVersion(inputs))
+                && PdorEngine.MODEL_VERSION.equals(snapshot.modelVersion())
+                && REVENUE_ALGORITHM_VERSION.equals(snapshot.algorithmVersion())
+                && PdorEngine.ASSUMPTIONS_VERSION
+                        .equals(snapshot.assumptionsVersion());
     }
 
     public PdorResultadoResponse buscarAtual(String obraIdentifier) {
@@ -257,12 +289,12 @@ public class PdorApplicationService {
             Obra obra,
             PdorInputBundle inputs,
             PdorTriggerType triggerType,
-            String originEventId,
-            String idempotencyKey
+            String originEventId
     ) {
         PdorSnapshot previous = snapshotRepository.findCurrentByObraId(obra.getId())
                 .or(() -> snapshotRepository.findLatestByObraId(obra.getId()))
                 .orElse(null);
+        String idempotencyKey = calculateIdempotencyKey(inputs, previous);
         PdorExecutionInitiator initiator = initiatorResolver == null
                 ? PdorExecutionInitiator.process()
                 : initiatorResolver.resolve();
@@ -794,9 +826,37 @@ public class PdorApplicationService {
     }
 
     String calculateIdempotencyKey(PdorInputBundle inputs) {
+        return calculateIdempotencyKey(inputs, null);
+    }
+
+    /**
+     * A chave identifica uma publicação, e não um estado do mundo.
+     *
+     * <p>Ela é única na tabela inteira, o que é certo: dois disparos
+     * simultâneos do mesmo evento calculam a mesma chave, um insere, o outro
+     * esbarra e lê o que o primeiro gravou. É essa colisão que impede o
+     * snapshot duplicado.
+     *
+     * <p>Mas as entradas de uma obra voltam ao que já foram — apague o RDO e
+     * elas somam de novo o que somavam antes dele. Com a chave saindo só das
+     * entradas, a publicação nova colidia com um snapshot vencido de meses
+     * atrás, e o conflito era lido como "já calculei isto", deixando a obra sem
+     * atualizar. O predecessor entra na chave justamente para separar as duas
+     * situações: mesmo estado do mundo em pontos diferentes da história são
+     * publicações diferentes, enquanto dois disparos concorrentes enxergam o
+     * mesmo predecessor e continuam colidindo, como devem.
+     */
+    String calculateIdempotencyKey(
+            PdorInputBundle inputs,
+            PdorSnapshot predecessor
+    ) {
         try {
+            Map<String, Object> payload = idempotencyPayload(inputs);
+            if (predecessor != null) {
+                payload.put("supersedes", predecessor.id());
+            }
             String json = objectMapper.writeValueAsString(
-                    canonicalize(idempotencyPayload(inputs))
+                    canonicalize(payload)
             );
             byte[] hash = MessageDigest.getInstance("SHA-256")
                     .digest(json.getBytes(StandardCharsets.UTF_8));

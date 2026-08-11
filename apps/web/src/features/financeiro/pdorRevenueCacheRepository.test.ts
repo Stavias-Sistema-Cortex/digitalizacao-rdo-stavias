@@ -302,6 +302,78 @@ describe("PDOR revenue cache", () => {
     expect(offline.provenance.coverageCode).toBe("NO_CURRENT_SNAPSHOT");
   });
 
+  /*
+   * Apagar o RDO que sustentava a projeção deixa a obra sem entrada
+   * suficiente, e é esse snapshot que passa a ser o atual — é assim que o
+   * número calculado sobre o RDO morto sai da tela.
+   *
+   * A verificação exigia SUCCESS junto com "é o atual", e as duas coisas
+   * andavam juntas só porque o snapshot de dados insuficientes nunca era o
+   * atual. Deixando a exigência de pé, o servidor passaria a responder
+   * corretamente "faltam dados" e a tela devolveria um erro, escondendo tanto o
+   * motivo quanto a lista do que falta preencher.
+   */
+  it("aceita o snapshot de dados insuficientes quando ele é o atual", async () => {
+    const semDados: ObraPdor = {
+      ...PDOR,
+      statusExecucao: "INSUFFICIENT_DATA",
+      statusExecucaoLabel: "Dados insuficientes",
+      erroExecucao: "Dados insuficientes para calcular o PDOR.",
+      receitaPrevistaFinal: null,
+      p10: null,
+      p50: null,
+      p80: null,
+      p95: null,
+      probabilidadeAbaixoContrato: null,
+      confianca: null,
+      evidencias: [],
+      evidenceIds: [],
+      evidenceHighWaterMark: null,
+      dadosAusentes: [{
+        code: "",
+        label: "Consumo real de material",
+        detail: null,
+        field: "materialConsumption",
+        availability: "ABSENT",
+      }],
+    };
+
+    const online = await loadPdorRevenueSnapshot(request(), {
+      online: true,
+      now: FETCHED_AT_MS,
+      fetchCurrent: async () => semDados,
+    });
+
+    expect(online.pdor?.statusExecucao).toBe("INSUFFICIENT_DATA");
+    expect(online.mode).toBe("ONLINE");
+
+    // E ele fica no cache, para a mesma resposta valer offline.
+    setOfflineSession(profile(OWNER_A));
+    const offline = await loadPdorRevenueSnapshot(request(), {
+      online: false,
+      now: FETCHED_AT_MS + 1,
+    });
+    expect(offline.pdor?.statusExecucao).toBe("INSUFFICIENT_DATA");
+    expect(offline.mode).toBe("OFFLINE_CACHE");
+  });
+
+  /*
+   * O que continua valendo: um snapshot vencido não é resposta. Dele sairia
+   * exatamente o número velho que esta tela precisa parar de mostrar.
+   */
+  it("recusa o snapshot de dados insuficientes que já não é o atual", async () => {
+    await expect(loadPdorRevenueSnapshot(request(), {
+      online: true,
+      now: FETCHED_AT_MS,
+      fetchCurrent: async () => ({
+        ...PDOR,
+        statusExecucao: "INSUFFICIENT_DATA",
+        current: false,
+        stale: true,
+      }),
+    })).rejects.toThrow(/snapshot PDOR atual/i);
+  });
+
   it("usa o cache somente em falha real de transporte", async () => {
     await loadPdorRevenueSnapshot(request(), {
       online: true,

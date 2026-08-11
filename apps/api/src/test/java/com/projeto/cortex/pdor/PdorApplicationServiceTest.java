@@ -492,6 +492,64 @@ class PdorApplicationServiceTest {
                 .isEqualByComparingTo(new BigDecimal("390000.00"));
     }
 
+    /*
+     * Apagar o RDO devolve a obra ao estado anterior à sua criação, e as
+     * entradas voltam a somar exatamente o que somavam antes dele.
+     *
+     * Enquanto a repetição era decidida pela chave de idempotência — única na
+     * tabela inteira —, esse retorno reencontrava o snapshot antigo, vencido,
+     * e o devolvia como se não houvesse nada a fazer. Nada era publicado, e o
+     * atual continuava sendo o snapshot calculado com o RDO ainda vivo: o valor
+     * do apagado ficava na tela, e apertar "recalcular" só reencontrava o mesmo
+     * snapshot antigo.
+     */
+    @Test
+    void shouldPublishAgainWhenInputsReturnToAnAlreadyCalculatedState() {
+        PdorResultadoResponse antes =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+
+        inputLoader.bundle = validBundle(obra, "390000.00");
+        PdorResultadoResponse comORdo =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+
+        inputLoader.bundle = validBundle(obra, "350000.00");
+        PdorResultadoResponse depoisDeApagar =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+
+        assertThat(depoisDeApagar.id())
+                .isNotEqualTo(antes.id())
+                .isNotEqualTo(comORdo.id());
+        assertThat(depoisDeApagar.snapshotExistente()).isFalse();
+        assertThat(snapshotRepository.findCurrentByObraId(obra.getId()))
+                .map(PdorSnapshot::id)
+                .contains(depoisDeApagar.id());
+        assertThat(snapshotRepository.findById(depoisDeApagar.id())
+                .orElseThrow()
+                .inputs()
+                .get("measuredRevenue")
+                .decimalValue())
+                .isEqualByComparingTo(new BigDecimal("350000.00"));
+        // O histórico continua intacto: três publicações, nenhuma reescrita.
+        assertThat(snapshotRepository.size()).isEqualTo(3);
+    }
+
+    /*
+     * O outro lado da mesma moeda: enquanto nada muda, recalcular não pode
+     * empilhar snapshot novo a cada disparo de evento.
+     */
+    @Test
+    void shouldNotPublishAgainWhileTheCurrentSnapshotStillReflectsTheInputs() {
+        PdorResultadoResponse first =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+
+        PdorResultadoResponse again =
+                service.calcular("CW38386", null, PdorTriggerType.EVENT, "e-1");
+
+        assertThat(again.id()).isEqualTo(first.id());
+        assertThat(again.snapshotExistente()).isTrue();
+        assertThat(snapshotRepository.size()).isEqualTo(1);
+    }
+
     @Test
     void shouldRecoverExistingSnapshotWhenUniqueConstraintWinsRace() {
         snapshotRepository.duplicateNextInsert = true;

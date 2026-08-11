@@ -156,6 +156,9 @@ describe("ressalva da receita prevista sem distribuição", () => {
     );
 
     expect(html).toContain("teto do contrato");
+    // E a faixa some: "Faixa R$ 0 a R$ 0" embaixo de noventa e três milhões
+    // não informa nada — é a contradição escrita por extenso.
+    expect(html).not.toContain("Faixa");
   });
 
   it("não avisa nada quando a simulação produziu faixa", () => {
@@ -164,5 +167,99 @@ describe("ressalva da receita prevista sem distribuição", () => {
     );
 
     expect(html).not.toContain("teto do contrato");
+    expect(html).toContain("Faixa");
+  });
+});
+
+/*
+ * O painel abria com cinco blocos de justificativa embaixo dos números —
+ * fatores de risco, dados ausentes, limitações, alertas, recomendações,
+ * proveniência —, todos expandidos. A pergunta da tela é "quanto esta obra deve
+ * faturar", e o número que a responde ficava espremido no topo de uma parede de
+ * texto. Nada foi jogado fora; tudo passou para trás de uma porta fechada.
+ */
+describe("a justificativa fica atrás de uma porta", () => {
+  it("recolhe fatores, listas e proveniência num só detalhe fechado", () => {
+    const html = renderToStaticMarkup(
+      <PdorPanel pdor={pdorDeExemplo()} loading={false} error={null} />,
+    );
+
+    const detalhe = html.slice(html.indexOf("<details"));
+    expect(html).toContain("Como este número foi calculado");
+    // Fechado: sem `open`, o navegador não mostra nada disso de saída.
+    expect(detalhe).not.toContain("<details open");
+    // E continua tudo lá dentro, para quem for auditar.
+    expect(detalhe).toContain("Principais fatores de risco");
+    expect(detalhe).toContain("Capacidade de mão de obra em horas");
+    expect(detalhe).toContain("Revisar fatores de risco");
+    expect(detalhe).toContain("PDOR-ASSUMPTIONS-0.2.0");
+    expect(detalhe).toContain("evidence-1");
+  });
+
+  it("o número e a faixa continuam fora da porta", () => {
+    const html = renderToStaticMarkup(
+      <PdorPanel pdor={pdorDeExemplo()} loading={false} error={null} />,
+    );
+
+    const antesDaPorta = html.slice(0, html.indexOf("<details"));
+    expect(antesDaPorta).toContain("Receita prevista final");
+    expect(antesDaPorta).toContain("Risco de ficar abaixo do contrato");
+    expect(antesDaPorta).toContain("Alto");
+  });
+
+  /*
+   * "O risco permaneceu estável" era o caso mais comum, e não é notícia:
+   * ocupava uma linha inteira acima do número para dizer que nada mudou.
+   */
+  it("só anuncia a comparação quando o risco se mexeu", () => {
+    const estavel = renderToStaticMarkup(
+      <PdorPanel
+        pdor={{
+          ...pdorDeExemplo(),
+          comparacaoAnterior: {
+            available: true,
+            riskDirection: "ESTAVEL",
+            previousSnapshotId: "snap-0",
+            changedInputCount: 11,
+          },
+        }}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    expect(estavel).not.toContain("permaneceu estável");
+    expect(estavel).not.toContain("11 entradas mudaram");
+  });
+});
+
+/*
+ * Apagar o RDO que sustentava a projeção deixa a obra sem entrada suficiente, e
+ * é esse o estado que passa a ocupar a posição de atual. A tela precisa dizer o
+ * que falta preencher — sem enterrar a resposta atrás da porta do detalhe, que
+ * é para quem quer auditar, não para quem está diante de um cálculo que não
+ * saiu.
+ */
+describe("cálculo que não saiu", () => {
+  it("deixa aberto o que falta preencher e recolhe o resto", () => {
+    const html = renderToStaticMarkup(
+      <PdorPanel
+        pdor={{
+          ...pdorDeExemplo(),
+          statusExecucao: "INSUFFICIENT_DATA",
+          statusExecucaoLabel: "Dados insuficientes",
+        }}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    const antesDaPorta = html.slice(0, html.indexOf("<details"));
+    expect(antesDaPorta).toContain("Dados insuficientes");
+    expect(antesDaPorta).toContain("Falta preencher");
+    expect(antesDaPorta).toContain("Capacidade de mão de obra em horas");
+    // E a mesma lista não se repete lá dentro.
+    expect(html.slice(html.indexOf("<details")))
+      .not.toContain("Dados ausentes ou ambíguos");
   });
 });

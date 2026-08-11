@@ -2534,6 +2534,15 @@ textarea:focus {
     auto-fit,
     minmax(170px, 1fr)
   );
+  /*
+   * Cada cartão tem a altura do que carrega.
+   *
+   * O padrão do grid é esticar todos até o mais alto. Como o primeiro cartão
+   * traz o número, a faixa e às vezes uma ressalva, os outros três — que têm
+   * uma linha cada — ganhavam o mesmo tamanho e ficavam com um palmo de vazio
+   * embaixo do valor.
+   */
+  align-items: start;
   gap: 10px;
   margin: 14px 0 0;
 }
@@ -2660,12 +2669,133 @@ textarea:focus {
  * Os dois números são o que o modelo produziu, e apresentá-los lado a lado sem
  * dizer isso faz o painel se contradizer na cara de quem lê.
  */
-.obras-pdor-ressalva {
+/*
+ * A ressalva explica o número; não disputa com ele. Saía em negrito escuro,
+ * do mesmo peso do valor e ocupando mais linhas que ele.
+ */
+.obras-pdor-grid dd.obras-pdor-ressalva {
   margin: 6px 0 0;
-  color: #7a5b00;
-  font-size: 0.72rem;
-  font-weight: 600;
+  color: #8a6d1e;
+  font-size: 0.66rem;
+  font-weight: 400;
   line-height: 1.45;
+}
+
+/*
+ * Uma porta só para a justificativa inteira.
+ *
+ * Fatores de risco, dados ausentes, limitações, alertas, recomendações e
+ * proveniência ficavam todos abertos abaixo dos números — mais de vinte
+ * parágrafos numa tela cuja pergunta é "quanto esta obra deve faturar". Nada
+ * saiu; tudo passou para trás desta porta, fechada, que se abre quando a
+ * pergunta vira "por quê".
+ */
+.obras-pdor-detalhe {
+  margin-top: 18px;
+  border-top: 1px solid #e3e8e5;
+  padding-top: 12px;
+}
+
+.obras-pdor-detalhe > summary {
+  cursor: pointer;
+  color: #4a5b52;
+  font-size: 0.74rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.obras-pdor-detalhe > summary::-webkit-details-marker {
+  display: none;
+}
+
+.obras-pdor-detalhe > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  color: #93a29a;
+}
+
+.obras-pdor-detalhe[open] > summary::before {
+  content: "▾";
+}
+
+.obras-pdor-detalhe-corpo {
+  padding-top: 14px;
+}
+
+/*
+ * A proveniência é uma tabela de versões: pares curtos, lidos de relance. Ela
+ * saía sem estilo nenhum, como uma lista de definição crua do navegador.
+ */
+.obras-pdor-proveniencia {
+  display: grid;
+  /*
+   * Os valores são identificadores longos e indivisíveis —
+   * NO_ACCEPTED_EVIDENCE, PDOR-ASSUMPTIONS-0.2.0, um timestamp UTC. Em coluna
+   * estreita eles quebram no meio da palavra e param de se ler.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px 20px;
+  margin: 16px 0 0;
+}
+
+.obras-pdor-proveniencia div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #eef2f0;
+  padding-bottom: 4px;
+}
+
+.obras-pdor-proveniencia dt {
+  color: #718078;
+  font-size: 0.68rem;
+}
+
+.obras-pdor-proveniencia dd {
+  margin: 0;
+  color: #25342d;
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-align: right;
+  word-break: break-word;
+}
+
+.obras-pdor-evidence-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.obras-pdor-evidence-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.66rem;
+}
+
+.obras-pdor-evidence-list strong {
+  color: #718078;
+  font-weight: 500;
+}
+
+.obras-pdor-evidence-list code {
+  color: #25342d;
+  word-break: break-all;
+}
+
+.obras-pdor-assumptions {
+  margin: 12px 0 0;
+  border-radius: 10px;
+  background: #f5f7f6;
+  padding: 10px 12px;
+  overflow-x: auto;
+  color: #4a5b52;
+  font-size: 0.66rem;
+  line-height: 1.5;
 }
 
 @media (max-width: 620px) {
