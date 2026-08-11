@@ -165,16 +165,25 @@ export function FinancePdorSection({
 
   return (
     <section className="finance-pdor-section">
+      {/*
+        O botão saía com o desenho padrão do navegador: não havia regra nenhuma
+        para este bloco, e um botão sem estilo é justamente o que destoa de
+        tudo em volta. A ação secundária do Córtex já existe e é esta — vale
+        usá-la, não fazer outra parecida.
+      */}
       <div className="finance-pdor-acoes">
         <button
           type="button"
+          className="secondary-button"
           onClick={() => void recalcular()}
           disabled={recalculando || loading}
         >
           {recalculando ? "Recalculando…" : "Recalcular previsão"}
         </button>
         {avisoDoRecalculo ? (
-          <span role="status">{avisoDoRecalculo}</span>
+          <span className="finance-pdor-aviso" role="status">
+            {avisoDoRecalculo}
+          </span>
         ) : null}
       </div>
       {snapshot ? (

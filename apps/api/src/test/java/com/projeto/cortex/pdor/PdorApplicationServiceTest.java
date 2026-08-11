@@ -534,6 +534,53 @@ class PdorApplicationServiceTest {
     }
 
     /*
+     * A obra não anda só para a frente, e não anda uma vez só.
+     *
+     * O RDO é apagado, outro é lançado, esse também é apagado. A cada volta as
+     * entradas repetem exatamente um estado que já existiu, e é aí que a chave
+     * de idempotência — única na tabela inteira — colide com um snapshot
+     * vencido. Uma vez isso deixava a obra congelada no valor do RDO morto;
+     * repetido, deixaria para sempre.
+     *
+     * O que este teste prende: a cada volta a posição de atual é ocupada por um
+     * snapshot novo, com o estado certo, e o histórico só cresce.
+     */
+    @Test
+    void shouldSurviveRepeatedDeletionAndRecreationOfTheSameRdo() {
+        List<String> atuais = new ArrayList<>();
+
+        for (int volta = 0; volta < 3; volta++) {
+            inputLoader.bundle = validBundle(obra, "350000.00");
+            PdorResultadoResponse comRdo =
+                    service.calcular("CW38386", null, PdorTriggerType.EVENT, null);
+            assertThat(comRdo.statusExecucao()).isEqualTo("SUCCESS");
+            assertThat(snapshotRepository.findCurrentByObraId(obra.getId()))
+                    .map(PdorSnapshot::id)
+                    .contains(comRdo.id());
+
+            inputLoader.bundle = insufficientBundle(obra);
+            PdorResultadoResponse semRdo =
+                    service.calcular("CW38386", null, PdorTriggerType.EVENT, null);
+            assertThat(semRdo.statusExecucao()).isEqualTo("INSUFFICIENT_DATA");
+            assertThat(snapshotRepository.findCurrentByObraId(obra.getId()))
+                    .map(PdorSnapshot::id)
+                    .contains(semRdo.id());
+
+            atuais.add(comRdo.id());
+            atuais.add(semRdo.id());
+        }
+
+        // Seis publicações, todas distintas: nenhuma volta reaproveitou o
+        // snapshot vencido de uma volta anterior.
+        assertThat(atuais).doesNotHaveDuplicates();
+        assertThat(snapshotRepository.size()).isEqualTo(6);
+        // E um único atual, que é o último — a corrente nunca se partiu.
+        assertThat(snapshotRepository.findCurrentByObraId(obra.getId()))
+                .map(PdorSnapshot::id)
+                .contains(atuais.get(atuais.size() - 1));
+    }
+
+    /*
      * O outro lado da mesma moeda: enquanto nada muda, recalcular não pode
      * empilhar snapshot novo a cada disparo de evento.
      */

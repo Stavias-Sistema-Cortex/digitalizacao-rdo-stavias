@@ -246,6 +246,32 @@
   color: var(--color-muted);
 }
 
+/*
+ * A linha de ação do PDOR.
+ *
+ * O botão saía com o desenho padrão do navegador — não havia regra nenhuma
+ * para este bloco, e um botão sem estilo é justamente o que destoa de tudo em
+ * volta. Ele passou a usar a ação secundária do Córtex, que já existe; aqui
+ * fica só o arranjo da linha.
+ *
+ * A confirmação divide a linha com o botão e desce quando a tela aperta, em
+ * vez de espremê-lo. Ela é o retorno de uma ação que acabou de acontecer:
+ * precisa ser lida uma vez e sair da frente, e por isso é discreta.
+ */
+.finance-pdor-acoes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 16px;
+}
+
+.finance-pdor-aviso {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--color-muted);
+}
+
 .finance-revenue-provenance {
   display: grid;
   gap: 2px;

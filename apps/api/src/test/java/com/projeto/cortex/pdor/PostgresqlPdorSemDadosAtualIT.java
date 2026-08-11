@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -94,6 +95,52 @@ class PostgresqlPdorSemDadosAtualIT {
                 Integer.class,
                 obraId
         )).isEqualTo(2);
+    }
+
+    /*
+     * A obra oscila, e oscila mais de uma vez: apaga o RDO, lança outro, apaga
+     * de novo. Cada volta troca quem ocupa a posição de atual, e é o banco que
+     * garante as duas metades disso — o índice único de um atual por obra e o
+     * gatilho que só admite a transição atual → vencido. Nenhum teste de
+     * unidade alcança nenhum dos dois.
+     */
+    @Test
+    void aObraPodeAlternarEntreCalculadoESemDadosQuantasVezesForPreciso() {
+        String obraId = obra("oscila");
+        List<String> publicados = new ArrayList<>();
+
+        for (int volta = 0; volta < 3; volta++) {
+            String comRdo = id();
+            repository.replaceCurrent(snapshot(
+                    comRdo, obraId, PdorExecutionStatus.SUCCESS, null
+            ));
+            assertThat(currentSnapshotId(obraId)).isEqualTo(comRdo);
+
+            String semRdo = id();
+            repository.replaceCurrent(snapshot(
+                    semRdo,
+                    obraId,
+                    PdorExecutionStatus.INSUFFICIENT_DATA,
+                    "Dados insuficientes para calcular o PDOR."
+            ));
+            assertThat(currentSnapshotId(obraId)).isEqualTo(semRdo);
+
+            publicados.add(comRdo);
+            publicados.add(semRdo);
+        }
+
+        // Exatamente um atual — o índice único nunca foi violado nem contornado.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM pdor_snapshot WHERE obra_id = ? AND is_current",
+                Integer.class,
+                obraId
+        )).isEqualTo(1);
+        // E todo o resto ficou no histórico, vencido, sem nada reescrito.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM pdor_snapshot WHERE obra_id = ? AND is_stale",
+                Integer.class,
+                obraId
+        )).isEqualTo(publicados.size() - 1);
     }
 
     /*
