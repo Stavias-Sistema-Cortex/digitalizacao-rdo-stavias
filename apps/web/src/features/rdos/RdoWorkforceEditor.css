@@ -12,6 +12,23 @@
   margin-top: 14px;
 }
 
+/*
+ * O anel de foco do select é grosso, e o botão logo abaixo entrava debaixo
+ * dele: encostados, os dois pareciam um só controle sobreposto. A folga é o
+ * bastante para o anel caber inteiro entre um e outro.
+ */
+.rdo-workforce-dica {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-muted, #66706b);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.rdo-workforce-manual-toggle {
+  margin-top: 16px;
+}
+
 .rdo-workforce-manual-add {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) auto;

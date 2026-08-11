@@ -635,3 +635,44 @@
     transition: none;
   }
 }
+
+/*
+ * Os RDOs saem agrupados por obra, como as APIs os organizam.
+ *
+ * O cabeçalho é uma faixa fina e discreta: ele separa contratos, e não compete
+ * com o número do RDO, que continua sendo o que se procura na lista.
+ */
+.rdo-grupo-obra {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rdo-grupo-obra + .rdo-grupo-obra {
+  margin-top: 8px;
+}
+
+.rdo-grupo-obra__cabecalho {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border-strong, #bccac5);
+}
+
+.rdo-grupo-obra__cabecalho h2 {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rdo-grupo-obra__cabecalho span {
+  color: var(--color-muted, #66706b);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}

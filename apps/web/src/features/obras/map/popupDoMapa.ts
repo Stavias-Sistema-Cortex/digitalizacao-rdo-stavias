@@ -131,8 +131,24 @@ export function geometriaPodeSairDoMapa(
   return (
     (properties.categoria === "PONTO_OPERACIONAL" ||
       properties.categoria === "TRECHO") &&
+    !ehDerivadaDoEixo(properties) &&
     geometriaDoBalao(properties) !== null
   );
+}
+
+/**
+ * A linha que o eixo derivou não é desenho, e por isso não tem lixeira.
+ *
+ * <p>Ela não existe como registro: nasce na leitura, do quilômetro que mora no
+ * apontamento do RDO. Não há o que apagar — apagá-la teria de significar apagar
+ * o apontamento, e apagar um trabalho a partir do mapa é decisão que não cabe
+ * a um clique numa linha. Quem quer tirar o trecho tira o quilômetro no RDO, e
+ * a linha some junto na consulta seguinte.
+ */
+export function ehDerivadaDoEixo(
+  properties: Record<string, unknown>,
+): boolean {
+  return properties.derivadoDoEixo === true;
 }
 
 /** O nome do que a lixeira remove, para o rótulo dizer a verdade. */
@@ -160,22 +176,38 @@ function rotuloDoRemovivel(properties: Record<string, unknown>): string {
 export function trechoPodeSerRedesenhado(
   properties: Record<string, unknown>,
 ): boolean {
-  return (
-    properties.categoria === "TRECHO" &&
-    geometriaDoBalao(properties) !== null &&
-    !properties.validoAte
-  );
+  if (properties.categoria !== "TRECHO" || properties.validoAte) {
+    return false;
+  }
+  /*
+   * A linha derivada corrige por outro caminho: ela não tem geometria a
+   * reescrever, e sim um quilômetro. Arrastar os extremos vira quilômetro pela
+   * régua do eixo e é escrito no apontamento do RDO — que é onde ele mora.
+   * Para isso ela precisa dizer de qual linha de serviço fala.
+   */
+  if (ehDerivadaDoEixo(properties)) {
+    return typeof properties.execucaoId === "string"
+        && properties.execucaoId.trim() !== "";
+  }
+  return geometriaDoBalao(properties) !== null;
 }
 
 export function redesenhoDoBalao(
   properties: Record<string, unknown>,
   aoRedesenhar: ((id: string) => void) | null,
 ): HTMLButtonElement | null {
-  const id = geometriaDoBalao(properties);
-  if (!id || !aoRedesenhar || !trechoPodeSerRedesenhado(properties)) {
+  if (!aoRedesenhar || !trechoPodeSerRedesenhado(properties)) {
     return null;
   }
-  const rotulo = "Corrigir o traçado deste trecho";
+  // Vale para as duas: a derivada não tem geometria gravada, mas a feição
+  // carrega o mesmo campo, e nele vai o id que aponta para a linha de serviço.
+  const id = geometriaDoBalao(properties);
+  if (!id) {
+    return null;
+  }
+  const rotulo = ehDerivadaDoEixo(properties)
+    ? "Corrigir o quilômetro deste trecho no RDO"
+    : "Corrigir o traçado deste trecho";
   const botao = document.createElement("button");
   botao.type = "button";
   botao.className = "mapa-balao-redesenhar";

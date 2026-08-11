@@ -51,6 +51,7 @@ public class ObraMapaService {
     private final ObjectMapper objectMapper;
     private final ObraOperabilityGuard operabilityGuard;
     private final QuilometroDoApontamento quilometroDoApontamento;
+    private final TrechoApoiadoNoEixo trechoApoiadoNoEixo;
 
     public ObraMapaService(
             ObraRepository obraRepository,
@@ -59,7 +60,8 @@ public class ObraMapaService {
             ObraGeometriaMemoryPublisher memoryPublisher,
             ObjectMapper objectMapper,
             ObraOperabilityGuard operabilityGuard,
-            QuilometroDoApontamento quilometroDoApontamento
+            QuilometroDoApontamento quilometroDoApontamento,
+            TrechoApoiadoNoEixo trechoApoiadoNoEixo
     ) {
         this.obraRepository = obraRepository;
         this.featureRepository = featureRepository;
@@ -68,6 +70,7 @@ public class ObraMapaService {
         this.objectMapper = objectMapper;
         this.operabilityGuard = operabilityGuard;
         this.quilometroDoApontamento = quilometroDoApontamento;
+        this.trechoApoiadoNoEixo = trechoApoiadoNoEixo;
     }
 
     @Transactional(readOnly = true)
@@ -83,7 +86,15 @@ public class ObraMapaService {
                 new ObraMapaResponse.ObraLocalizacaoResponse(
                         obra.getId(), obra.getNome(), obra.getLatitude(), obra.getLongitude()
                 ),
-                quilometroDoApontamento.projetarEm(features)
+                // Duas projeções na leitura, na ordem em que se completam: o
+                // quilômetro entra nos desenhos que já existem, e o eixo desenha
+                // o que foi apontado por quilômetro e nunca teve traço. Nenhuma
+                // das duas grava nada — acertar o RDO muda o mapa na consulta
+                // seguinte, que é a única reconciliação que precisa existir.
+                trechoApoiadoNoEixo.projetarEm(
+                        obraId,
+                        quilometroDoApontamento.projetarEm(features)
+                )
         );
     }
 

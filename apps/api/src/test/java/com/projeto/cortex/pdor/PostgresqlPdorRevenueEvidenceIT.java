@@ -235,6 +235,45 @@ class PostgresqlPdorRevenueEvidenceIT {
                 .isEqualByComparingTo("10.000");
     }
 
+    /*
+     * Apagar o RDO tira do PDOR o que ele apontou.
+     *
+     * Cancelar marca `rdo.cancelado_em` e não toca nas linhas de execução —
+     * elas seguem com `cancelada = FALSE`, porque ninguém cancelou a linha,
+     * cancelou-se o documento inteiro. Sem atravessar o RDO, a produção do dia
+     * apagado continuava somando, e a projeção seguia contando um trabalho que
+     * a obra já tinha desfeito.
+     */
+    @Test
+    void oRdoApagadoDeixaDeContarNoPdor() {
+        Obra obra = Obra.criar(
+                "PDOR-RDO-APAGADO", null, null, "Obra PDOR apagado", null,
+                null, null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+        apontamentoSemReceita(fixture, "40.000");
+
+        PdorInputBundle antes = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+        assertThat((BigDecimal) antes.inputs().get("reportedExecutedQuantity"))
+                .isEqualByComparingTo("40.000");
+
+        jdbc.update("""
+                UPDATE rdo
+                SET status = 'CANCELADA', cancelado_em = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                """, fixture.rdoId());
+
+        PdorInputBundle depois = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+
+        assertThat(depois.inputs().get("reportedExecutedQuantity")).isNull();
+        assertThat(depois.inputs().get("actualExecutedQuantity")).isNull();
+        assertThat(depois.evidenceReferences())
+                .extracting(PdorEvidenceReference::entityType)
+                .doesNotContain("EXECUCAO_SERVICO_RDO");
+    }
+
     private static void apontamentoSemReceita(
             Fixture fixture,
             String quantity

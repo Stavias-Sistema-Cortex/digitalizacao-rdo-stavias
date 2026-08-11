@@ -45,6 +45,10 @@ class ObraMapaServiceTest {
             operabilityGuard,
             new QuilometroDoApontamento(
                     mock(org.springframework.jdbc.core.JdbcTemplate.class)
+            ),
+            new TrechoApoiadoNoEixo(
+                    mock(org.springframework.jdbc.core.JdbcTemplate.class),
+                    new ObjectMapper()
             )
     );
 

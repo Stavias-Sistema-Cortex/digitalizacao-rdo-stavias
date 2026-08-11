@@ -6,7 +6,8 @@ import {
   PROPRIEDADE_DERIVADA,
   apoiarTrechosNoEixo,
   lerEixoDaColecao,
-  rdosComDesenhoProprio,
+  rdosJaNoMapa,
+  kmDoPonto,
   recortarEixoPorKm,
   type EixoDaObra,
 } from "./eixoDaObra";
@@ -233,8 +234,13 @@ describe("apoiarTrechosNoEixo", () => {
   });
 });
 
-describe("rdosComDesenhoProprio", () => {
-  it("não conta a linha que o próprio eixo derivou", () => {
+describe("rdosJaNoMapa", () => {
+  /*
+   * A mesma derivação roda na API, que é onde ela pertence. Se o aparelho
+   * ignorasse a linha que o servidor já mandou, ele desenharia a segunda por
+   * cima — o mesmo trabalho duas vezes, levemente deslocado.
+   */
+  it("conta também a linha que a API já derivou", () => {
     const derivada = {
       type: "Feature" as const,
       id: "eixo:seg-1",
@@ -253,6 +259,63 @@ describe("rdosComDesenhoProprio", () => {
       },
     };
 
-    expect(rdosComDesenhoProprio(colecao(derivada)).size).toBe(0);
+    expect([...rdosJaNoMapa(colecao(derivada))]).toEqual(["rdo-1"]);
+  });
+
+  it("não repete o apontamento que a API já desenhou", () => {
+    const derivada = {
+      type: "Feature" as const,
+      id: "eixo:seg-1",
+      geometry: {
+        type: "LineString" as const,
+        coordinates: [
+          [0.4, 0],
+          [0.8, 0],
+        ],
+      },
+      properties: {
+        categoria: "TRECHO",
+        [PROPRIEDADE_DERIVADA]: true,
+        objetoTipo: "RDO",
+        objetoId: "rdo-1",
+      },
+    };
+
+    const resultado = apoiarTrechosNoEixo(
+      colecao(FEICAO_DO_EIXO, derivada),
+      [segmento()],
+    );
+
+    expect(resultado.features).toHaveLength(2);
+  });
+});
+
+/*
+ * A volta do caminho: arrastar um extremo no mapa tem de virar quilômetro no
+ * apontamento, senão a correção no mapa não corrigiria nada — o traço mudaria
+ * e o RDO seguiria afirmando o quilômetro velho.
+ */
+describe("kmDoPonto", () => {
+  it("lê o quilômetro de um ponto sobre o eixo", () => {
+    expect(kmDoPonto(EIXO, [0.4, 0]) as number).toBeCloseTo(102, 1);
+    expect(kmDoPonto(EIXO, [1.6, 0]) as number).toBeCloseTo(108, 1);
+  });
+
+  it("projeta no eixo o ponto solto ao lado dele", () => {
+    // Quem arrasta raramente solta em cima do traço; a régua resolve.
+    expect(kmDoPonto(EIXO, [0.4, 0.01]) as number).toBeCloseTo(102, 1);
+  });
+
+  it("prende nas pontas o que caiu além do eixo", () => {
+    expect(kmDoPonto(EIXO, [-1, 0]) as number).toBeCloseTo(100, 1);
+    expect(kmDoPonto(EIXO, [5, 0]) as number).toBeCloseTo(110, 1);
+  });
+
+  it("fecha o ciclo com o desenho: km vira ponto e o ponto volta ao km", () => {
+    const recorte = recortarEixoPorKm(EIXO, 103, 107);
+    expect(kmDoPonto(EIXO, recorte![0]) as number).toBeCloseTo(103, 2);
+    expect(
+      kmDoPonto(EIXO, recorte![recorte!.length - 1]) as number,
+    ).toBeCloseTo(107, 2);
   });
 });

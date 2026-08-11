@@ -261,6 +261,69 @@ export function recortarEixoPorKm(
 }
 
 /**
+ * O quilômetro de um ponto qualquer, projetado sobre o eixo.
+ *
+ * É a volta do caminho: arrastar um extremo no mapa tem de virar quilômetro no
+ * apontamento, senão a correção no mapa não seria correção coisa nenhuma — o
+ * traço mudaria e o RDO seguiria afirmando o quilômetro velho.
+ *
+ * O ponto é projetado no segmento mais próximo do eixo, e é essa projeção que
+ * vale. Quem arrasta o extremo raramente o solta exatamente sobre o traço, e
+ * exigir precisão de pixel para aceitar a correção seria cobrar do dedo o que a
+ * régua já sabe fazer.
+ *
+ * A conta é a mesma do desenho, ao contrário: distância acumulada até a
+ * projeção, dividida pelo comprimento, mapeada na amplitude quilométrica.
+ */
+export function kmDoPonto(
+  eixo: EixoDaObra,
+  ponto: Coordenada,
+): number | null {
+  const percurso = percorrer(eixo.coordenadas);
+  if (percurso.comprimento <= 0) {
+    return null;
+  }
+
+  let melhorDistancia = Number.POSITIVE_INFINITY;
+  let melhorAoLongo = 0;
+  for (let i = 1; i < eixo.coordenadas.length; i += 1) {
+    const a = eixo.coordenadas[i - 1];
+    const b = eixo.coordenadas[i];
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const denominador = dx * dx + dy * dy;
+    /*
+     * A projeção é feita em graus, e não sobre a esfera. Num segmento de eixo
+     * — dezenas de metros a poucos quilômetros — a diferença entre as duas é
+     * muito menor que a mão de quem arrasta o ponto. Já a distância AO LONGO
+     * do eixo, que é a que vira quilômetro, continua medida em Haversine.
+     */
+    const fracao =
+      denominador <= 0
+        ? 0
+        : Math.min(
+            1,
+            Math.max(
+              0,
+              ((ponto[0] - a[0]) * dx + (ponto[1] - a[1]) * dy) / denominador,
+            ),
+          );
+    const projetado: Coordenada = [a[0] + dx * fracao, a[1] + dy * fracao];
+    const afastamento = distanciaM(ponto, projetado);
+    if (afastamento < melhorDistancia) {
+      melhorDistancia = afastamento;
+      melhorAoLongo =
+        percurso.acumulado[i - 1] + distanciaM(a, projetado);
+    }
+  }
+
+  const proporcao = melhorAoLongo / percurso.comprimento;
+  return (
+    eixo.kmInicial + proporcao * (eixo.kmFinal - eixo.kmInicial)
+  );
+}
+
+/**
  * Um trecho só se apoia no eixo quando declara os dois quilômetros.
  * Um extremo isolado descreveria um ponto, não um trecho percorrido.
  */
@@ -276,9 +339,10 @@ function posicionavel(segmento: SegmentoTrecho): boolean {
 /**
  * Traduz os apontamentos do RDO em linhas apoiadas no eixo.
  *
- * O que já foi desenhado à mão fica de fora: o desenho é a posição declarada
- * por quem estava lá, e sobrepor a ela uma linha derivada mostraria o mesmo
- * trabalho duas vezes, em lugares levemente diferentes.
+ * O que o mapa já mostra fica de fora — o desenho feito à mão, que é a posição
+ * declarada por quem estava lá, e a linha que a própria API já derivou.
+ * Sobrepor a elas uma segunda linha mostraria o mesmo trabalho duas vezes, em
+ * lugares levemente diferentes.
  *
  * A feição derivada carrega a mesma categoria `TRECHO` das desenhadas, para
  * herdar cor, legenda e filtro sem exceção nenhuma, e a vigência recebe a data
@@ -287,14 +351,14 @@ function posicionavel(segmento: SegmentoTrecho): boolean {
 export function feicoesApoiadasNoEixo(
   eixo: EixoDaObra,
   segmentos: readonly SegmentoTrecho[],
-  rdosJaDesenhados: ReadonlySet<string> = new Set(),
+  rdosJaNoMapa: ReadonlySet<string> = new Set(),
 ): OperationalFeature[] {
   const feicoes: OperationalFeature[] = [];
   for (const segmento of segmentos) {
     if (segmento.origem === "PROGRAMACAO" || !posicionavel(segmento)) {
       continue;
     }
-    if (segmento.rdoId && rdosJaDesenhados.has(segmento.rdoId)) {
+    if (segmento.rdoId && rdosJaNoMapa.has(segmento.rdoId)) {
       continue;
     }
     const recorte = recortarEixoPorKm(
@@ -315,6 +379,10 @@ export function feicoesApoiadasNoEixo(
         eixoId: eixo.id,
         objetoTipo: "RDO",
         objetoId: segmento.rdoId,
+        // A linha de execução de onde o quilômetro veio. É por ela que uma
+        // correção feita no mapa acha o apontamento para reescrever — e é o
+        // mesmo nome que a API usa na feição que ela deriva.
+        execucaoId: segmento.id,
         servico: segmento.servicoNome,
         numeroRdo: segmento.numeroRdo,
         sentido: segmento.sentido,
@@ -333,16 +401,21 @@ export function feicoesApoiadasNoEixo(
   return feicoes;
 }
 
-/** RDOs que já têm desenho próprio no mapa e não precisam do eixo. */
-export function rdosComDesenhoProprio(
+/**
+ * RDOs que o mapa já mostra — desenhados à mão ou derivados pelo servidor.
+ *
+ * A mesma derivação roda na API, que é onde ela pertence: assim qualquer
+ * consumidor do mapa vê o trecho, e não só esta tela. O que sobra para o
+ * aparelho é o apontamento que ainda não subiu — o RDO preenchido em campo,
+ * que o servidor não tem como conhecer. Contar as duas origens aqui é o que
+ * impede a mesma linha de aparecer duas vezes, levemente deslocada.
+ */
+export function rdosJaNoMapa(
   collection: OperationalFeatureCollection,
 ): Set<string> {
   const rdos = new Set<string>();
   for (const feature of collection.features) {
-    if (
-      feature.properties.categoria !== "TRECHO" ||
-      feature.properties[PROPRIEDADE_DERIVADA] === true
-    ) {
+    if (feature.properties.categoria !== "TRECHO") {
       continue;
     }
     const objetoTipo = feature.properties.objetoTipo;
@@ -372,7 +445,7 @@ export function apoiarTrechosNoEixo(
   const derivadas = feicoesApoiadasNoEixo(
     eixo,
     segmentos,
-    rdosComDesenhoProprio(collection),
+    rdosJaNoMapa(collection),
   );
   if (derivadas.length === 0) {
     return collection;
