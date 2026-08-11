@@ -187,6 +187,7 @@ public class ServicePriceVersionSyncOperationHandler
                 entityId,
                 new UpdateServicePriceCommand(
                         mutation.clientMutationId(),
+                        text(payload, "unit", true),
                         decimal(payload, "unitPrice"),
                         optionalDecimal(payload, "contractedQuantity"),
                         date(payload, "validFrom", true),

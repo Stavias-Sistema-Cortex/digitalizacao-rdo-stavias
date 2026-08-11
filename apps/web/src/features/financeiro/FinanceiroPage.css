@@ -524,6 +524,28 @@
   color: var(--color-ink);
 }
 
+/*
+ * O acesso aos excluídos é discreto de propósito: quem clicou na lixeira quis
+ * que o serviço sumisse, e a saída de volta não pode competir com a lista.
+ */
+.finance-service-catalog__excluidos {
+  justify-self: end;
+  margin-top: 2px;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.finance-service-catalog__excluidos:hover {
+  color: var(--color-ink);
+}
+
 .finance-service-catalog__notice {
   margin: 0;
   border-left: 3px solid var(--color-brand-yellow);

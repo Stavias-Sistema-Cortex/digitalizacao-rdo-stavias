@@ -327,10 +327,24 @@ public class PostgresqlServicePriceCatalogRepository
         rejectConcurrentMutationReplay(
                 record.actorId(), record.clientMutationId()
         );
+        /*
+         * A tranca é a da unidade de destino, não a da atual: é lá que o número
+         * da versão vai ser tirado, e é lá que dois aparelhos corrigindo ao
+         * mesmo tempo se encontrariam.
+         */
+        jdbc.query(
+                "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                resultSet -> null,
+                String.join(":", "service_price", record.obraId(),
+                        serviceOfPrice(record), record.unit(), "BRL")
+        );
+        int nextVersion = versaoDaCorrecao(record);
         try {
             jdbc.update("""
                     UPDATE service_price_version
-                    SET valor_unitario = ?,
+                    SET unidade = ?,
+                        versao = ?,
+                        valor_unitario = ?,
                         quantidade_contratada = ?,
                         vigencia_inicio = ?,
                         vigencia_fim = ?,
@@ -338,6 +352,8 @@ public class PostgresqlServicePriceCatalogRepository
                         commit_revision = cortex_next_service_catalog_revision()
                     WHERE id = ? AND obra_id = ?
                     """,
+                    record.unit(),
+                    nextVersion,
                     record.unitPrice(),
                     record.contractedQuantity(),
                     record.validFrom(),
@@ -575,6 +591,53 @@ public class PostgresqlServicePriceCatalogRepository
             throw exception;
         }
         return findPrice(record.obraId(), record.id()).orElseThrow();
+    }
+
+    /** O serviço a que o preço pertence, para montar a chave da tranca. */
+    private String serviceOfPrice(UpdatePriceRecord record) {
+        String serviceId = jdbc.queryForObject("""
+                SELECT service_id FROM service_price_version
+                WHERE id = ? AND obra_id = ?
+                """, String.class, record.id(), record.obraId());
+        if (serviceId == null) {
+            throw new IllegalStateException(
+                    "Preço desapareceu entre a leitura e a correção."
+            );
+        }
+        return serviceId;
+    }
+
+    /**
+     * O número que a versão passa a ter depois da correção.
+     *
+     * <p>Ele é contado por obra, serviço, unidade e moeda. Corrigir a unidade é
+     * mudar de sequência, e o número antigo pode já pertencer a outro preço lá
+     * — daí o próximo livre. Sem mudança de unidade o número fica: renumerar
+     * uma versão que ninguém pediu para mover confundiria o histórico.
+     */
+    private int versaoDaCorrecao(UpdatePriceRecord record) {
+        Integer versao = jdbc.queryForObject("""
+                SELECT CASE
+                    WHEN atual.unidade = ? THEN atual.versao
+                    ELSE COALESCE((
+                        SELECT max(destino.versao)
+                        FROM service_price_version destino
+                        WHERE destino.obra_id = atual.obra_id
+                          AND destino.service_id = atual.service_id
+                          AND destino.unidade = ?
+                          AND destino.moeda = atual.moeda
+                    ), 0) + 1
+                END
+                FROM service_price_version atual
+                WHERE atual.id = ? AND atual.obra_id = ?
+                """, Integer.class,
+                record.unit(), record.unit(), record.id(), record.obraId());
+        if (versao == null) {
+            throw new IllegalStateException(
+                    "Preço desapareceu entre a leitura e a correção."
+            );
+        }
+        return versao;
     }
 
     private void lockPriceKey(CreatePriceRecord record) {

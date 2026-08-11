@@ -16,11 +16,17 @@ import java.time.LocalDate;
  * <p>Por isso ela vale enquanto o registro não produziu consequência. Assim que
  * uma execução copia o valor para dentro de si, o preço deixa de ser cadastro e
  * passa a ser a prova do quanto aquela execução vale — e o banco recusa a
- * correção. Unidade e moeda também não vêm aqui: elas fazem parte do endereço da
- * versão, e trocá-las é apontar para outro preço.
+ * correção.
+ *
+ * <p>A unidade vem junto porque ela é o erro mais comum a corrigir: antes de o
+ * cadastro aceitar expoente, todo serviço medido em área ou volume entrava como
+ * metro linear, que era o que passava. Ela muda sob a mesma guarda do resto, e
+ * arrasta consigo o número da versão — que é contado por unidade. A moeda fica
+ * de fora: ela é BRL e só.
  */
 public record UpdateServicePriceCommand(
         String clientMutationId,
+        String unit,
         BigDecimal unitPrice,
         BigDecimal contractedQuantity,
         LocalDate validFrom,

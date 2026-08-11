@@ -88,6 +88,44 @@ describe("ServicePriceCatalogPage", () => {
       .toBeInTheDocument();
   });
 
+  /*
+   * Excluir e continuar vendo é a contradição que fazia a pessoa clicar na
+   * lixeira de novo, e de novo. O registro continua existindo para o histórico
+   * que os RDOs citam; o que ele deixa de fazer é ocupar a lista.
+   */
+  it("tira da lista o serviço excluído e o traz de volta sob pedido", async () => {
+    mocks.listLocalServiceCatalog.mockResolvedValue([
+      ...LOCAL_ROWS,
+      {
+        service: {
+          ...LOCAL_ROWS[0].service,
+          id: "00000000-0000-4000-8000-000000000303",
+          code: "FREASGEM",
+          name: "Freasgem",
+          status: "EXCLUIDO",
+        },
+        priceVersions: [],
+      },
+    ]);
+
+    render(
+      <ServicePriceCatalogPage
+        obraId={OBRA_ID}
+        permissions={["FINANCEIRO_VISUALIZAR", "FINANCEIRO_ADMINISTRAR"]}
+      />,
+    );
+
+    expect(await screen.findByText("Pavimentação CBUQ")).toBeInTheDocument();
+    expect(screen.queryByText("Freasgem")).not.toBeInTheDocument();
+    expect(screen.getByText("1 serviço visível")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver 1 excluído" }));
+
+    expect(await screen.findByText("Freasgem")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ocultar excluídos" }))
+      .toBeInTheDocument();
+  });
+
   it("queues a real catalog mutation for an authorized administrator", async () => {
     render(
       <ServicePriceCatalogPage

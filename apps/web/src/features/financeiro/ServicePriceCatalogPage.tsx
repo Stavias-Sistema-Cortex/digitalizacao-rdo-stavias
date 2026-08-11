@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { LOCAL_MUTATION_QUEUED_EVENT } from "../../lib/sync/localMutationCoordinator";
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
@@ -150,7 +157,11 @@ export function ServicePriceCatalogPage({
   // ajuda quem não tem a convenção na cabeça e nunca sobrescreve uma decisão.
   const [codigoEditadoAMao, setCodigoEditadoAMao] = useState(false);
   const [comPrecoInicial, setComPrecoInicial] = useState(false);
+  // Excluído é excluído: sai da lista. Quem precisar trazer de volta pede para
+  // ver, e aí ele reaparece com o botão de restaurar.
+  const [mostrarExcluidos, setMostrarExcluidos] = useState(false);
   const unidadesId = useId();
+  const editorRef = useRef<HTMLDivElement | null>(null);
   const canAdmin = permissions.includes("FINANCEIRO_ADMINISTRAR");
 
   const loadLocal = useCallback(async (search = query) => {
@@ -225,6 +236,32 @@ export function ServicePriceCatalogPage({
     if (!editor || editor.type === "service") return null;
     return rows.find((row) => row.service.id === editor.serviceId) ?? null;
   }, [editor, rows]);
+
+  /*
+   * O que a lista mostra. Um serviço excluído sai de vista — foi o que se
+   * pediu ao clicar na lixeira —, e continua existindo para o histórico que os
+   * RDOs citam. Quem precisar restaurá-lo pede para ver os excluídos.
+   */
+  const visiveis = useMemo(
+    () => mostrarExcluidos ? rows : rows.filter((row) => !excluido(row.service)),
+    [rows, mostrarExcluidos],
+  );
+  const quantosExcluidos = useMemo(
+    () => rows.filter((row) => excluido(row.service)).length,
+    [rows],
+  );
+
+  /*
+   * Os formulários abrem acima da lista. Com meia dúzia de serviços, clicar em
+   * "Editar" no terceiro deles abria um formulário fora da tela, e o botão
+   * passava por morto — nada acontecia onde a pessoa estava olhando.
+   */
+  useEffect(() => {
+    if (!editor) return;
+    // Opcional porque o DOM dos testes não implementa rolagem: sem rolar, o
+    // formulário continua lá e correto — só não vem ao encontro dos olhos.
+    editorRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [editor]);
 
   /** A versão de preço que o editor aberto está corrigindo. */
   const selectedPrice = useMemo(() => {
@@ -381,7 +418,20 @@ export function ServicePriceCatalogPage({
           <strong>{typeof navigator !== "undefined" && !navigator.onLine
             ? "Dados locais"
             : "Sincronização automática"}</strong>
-          <span>{rows.length} {rows.length === 1 ? "serviço visível" : "serviços visíveis"}</span>
+          <span>{visiveis.length} {visiveis.length === 1 ? "serviço visível" : "serviços visíveis"}</span>
+          {quantosExcluidos > 0 ? (
+            <button
+              type="button"
+              className="finance-service-catalog__excluidos"
+              onClick={() => setMostrarExcluidos((atual) => !atual)}
+            >
+              {mostrarExcluidos
+                ? "Ocultar excluídos"
+                : `Ver ${quantosExcluidos} ${
+                    quantosExcluidos === 1 ? "excluído" : "excluídos"
+                  }`}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -391,6 +441,7 @@ export function ServicePriceCatalogPage({
         <p className="finance-loading" role="status">Carregando catálogo preservado…</p>
       ) : null}
 
+      <div ref={editorRef} className="finance-catalog-editors">
       {editor?.type === "service" && canAdmin ? (
         <form
           className="finance-catalog-editor"
@@ -667,6 +718,7 @@ export function ServicePriceCatalogPage({
             const form = new FormData(event.currentTarget);
             void submit(
               () => queueUpdatePrice(obraId, selectedPrice.id, {
+                unit: normalizarUnidade(readText(form, "unit")),
                 unitPrice: readText(form, "unitPrice"),
                 contractedQuantity: readText(form, "contractedQuantity"),
                 validFrom: readText(form, "validFrom"),
@@ -687,10 +739,25 @@ export function ServicePriceCatalogPage({
           <p className="finance-catalog-editor__aviso" role="status">
             A correção reescreve esta versão, sem criar outra. Ela só é aceita
             enquanto nenhuma execução usou este preço — depois disso, o caminho é{" "}
-            <strong>Substituir</strong>. A unidade ({selectedPrice.unit}) e a
-            moeda não mudam aqui: elas identificam a versão.
+            <strong>Substituir</strong>. Trocar a unidade renumera a versão, que
+            é contada por unidade; a moeda continua sendo BRL.
           </p>
           <div className="finance-catalog-editor__grid">
+            <label>
+              Unidade
+              <input
+                name="unit"
+                aria-label="Unidade"
+                required
+                maxLength={30}
+                list={unidadesId}
+                defaultValue={selectedPrice.unit}
+              />
+              <small>
+                Corrija aqui o que entrou como M antes de o cadastro aceitar
+                M² e M³.
+              </small>
+            </label>
             <label>
               Valor unitário
               <input
@@ -698,7 +765,6 @@ export function ServicePriceCatalogPage({
                 aria-label="Valor unitário"
                 inputMode="decimal"
                 required
-                autoFocus
                 defaultValue={selectedPrice.unitPrice}
               />
             </label>
@@ -885,14 +951,23 @@ export function ServicePriceCatalogPage({
         </form>
       ) : null}
 
-      {!loading && rows.length === 0 ? (
+      </div>
+
+      {!loading && visiveis.length === 0 ? (
         <div className="finance-empty">
-                    <div><h3>Nenhum serviço encontrado</h3><p>O catálogo permanece vazio até um registro real ser criado ou sincronizado.</p></div>
+          <div>
+            <h3>Nenhum serviço encontrado</h3>
+            <p>
+              {quantosExcluidos > 0
+                ? "Todos os serviços deste catálogo estão excluídos. Use “Ver excluídos” para trazer algum de volta."
+                : "O catálogo permanece vazio até um registro real ser criado ou sincronizado."}
+            </p>
+          </div>
         </div>
       ) : null}
 
       <div className="finance-service-list">
-        {rows.map((row) => (
+        {visiveis.map((row) => (
           <article key={row.service.id} className="finance-service-row">
             <header>
               <div>
