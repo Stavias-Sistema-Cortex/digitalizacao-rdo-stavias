@@ -474,6 +474,21 @@ public class PdorApplicationService {
         );
     }
 
+    /**
+     * "Não dá para calcular" também é o estado atual da obra.
+     *
+     * <p>Este snapshot nascia fora da corrente — {@code current = false} —, e
+     * o efeito era o oposto do pretendido. A intenção era não destruir a última
+     * projeção boa com uma de "sem dados"; o resultado é que a projeção velha
+     * seguia sendo a atual depois de o dado que a sustentava desaparecer.
+     * Apagar o único RDO da obra deixava na tela, para sempre, um valor
+     * calculado sobre uma produção que a obra já tinha desfeito.
+     *
+     * <p>A leitura honesta é a inversa: quando as entradas somem, o que a obra
+     * tem hoje é ausência de entrada. A projeção anterior não é apagada — o
+     * {@code replaceCurrent} a mantém no histórico, marcada como vencida —, ela
+     * apenas deixa de ser apresentada como se ainda valesse.
+     */
     private PdorSnapshot buildInsufficientDataSnapshot(
             PdorInputBundle inputs,
             PdorTriggerType triggerType,
@@ -525,7 +540,7 @@ public class PdorApplicationService {
                 objectMapper.valueToTree(Map.of(
                         "version", PdorEngine.ASSUMPTIONS_VERSION
                 )),
-                false
+                true
         );
     }
 
