@@ -152,6 +152,103 @@ describe("RDOs do servidor no aparelho de quem tem acesso", () => {
   });
 
   /*
+   * Apagar tem de significar a mesma coisa nos dois caminhos.
+   *
+   * A lista esconde o RDO apagado por `canceladoEm`, não pelo status. O
+   * cabeçalho reconciliado trazia o status certo e o carimbo vazio, então todo
+   * RDO apagado voltava para a primeira página a cada abertura da tela, como
+   * se estivesse vivo — e voltava de novo depois de apagado outra vez.
+   */
+  it("carimba o RDO que o servidor diz apagado, para ele não voltar à lista", async () => {
+    respondeComLista([resumo({ status: "CANCELADA" })]);
+    api.autoritativo.mockResolvedValue({
+      kind: "FOUND",
+      version: 4,
+      rdo: {
+        id: RDO_REMOTO,
+        obraId: OBRA_ID,
+        numeroRdo: "RDO-0017",
+        dataRdo: "2026-08-09",
+        status: "CANCELADA",
+      },
+    });
+
+    await reconciliarRdosDoServidor();
+
+    const database = await getCortexDb();
+    const guardado = await database.get("rdos", RDO_REMOTO);
+    expect(guardado?.statusRdo).toBe("CANCELADA");
+    expect(guardado?.canceladoEm).toBe("2026-08-09T18:00:00.000Z");
+  });
+
+  /*
+   * O outro lado: cancelar no servidor um RDO que este aparelho já conhecia
+   * vivo chegava pelo caminho do detalhe, com o status novo e o carimbo antigo
+   * — vazio. O efeito era o mesmo, por outra porta.
+   */
+  it("carimba também quando o RDO era vivo aqui e foi apagado lá", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", {
+      id: RDO_REMOTO,
+      obraId: OBRA_ID,
+      programacaoId: null,
+      numeroRdo: "RDO-0017",
+      dataRdo: "2026-08-09",
+      statusRdo: "ENVIADO",
+      canceladoEm: null,
+      syncStatus: "SYNCED",
+      versaoEntidade: 3,
+      payload: { id: RDO_REMOTO, obraId: OBRA_ID },
+      createdAt: "2026-08-09T12:00:00.000Z",
+      updatedAt: "2026-08-09T12:00:00.000Z",
+    } as LocalRdoRecord);
+    respondeComLista([resumo({ status: "CANCELADA" })]);
+    api.autoritativo.mockResolvedValue({
+      kind: "FOUND",
+      version: 5,
+      rdo: {
+        id: RDO_REMOTO,
+        obraId: OBRA_ID,
+        numeroRdo: "RDO-0017",
+        dataRdo: "2026-08-09",
+        status: "CANCELADA",
+      },
+    });
+
+    await reconciliarRdosDoServidor();
+
+    const guardado = await (await getCortexDb()).get("rdos", RDO_REMOTO);
+    expect(guardado?.statusRdo).toBe("CANCELADA");
+    expect(guardado?.canceladoEm).toBe("2026-08-09T18:00:00.000Z");
+  });
+
+  /* Restaurar é o caminho de volta, e limpa o carimbo. */
+  it("tira o carimbo quando o RDO volta a valer no servidor", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", {
+      id: RDO_REMOTO,
+      obraId: OBRA_ID,
+      programacaoId: null,
+      numeroRdo: "RDO-0017",
+      dataRdo: "2026-08-09",
+      statusRdo: "CANCELADA",
+      canceladoEm: "2026-08-09T15:00:00.000Z",
+      syncStatus: "SYNCED",
+      versaoEntidade: 3,
+      payload: { id: RDO_REMOTO, obraId: OBRA_ID },
+      createdAt: "2026-08-09T12:00:00.000Z",
+      updatedAt: "2026-08-09T12:00:00.000Z",
+    } as LocalRdoRecord);
+    respondeComLista([resumo()]);
+
+    await reconciliarRdosDoServidor();
+
+    const guardado = await (await getCortexDb()).get("rdos", RDO_REMOTO);
+    expect(guardado?.statusRdo).toBe("ENVIADO");
+    expect(guardado?.canceladoEm).toBeNull();
+  });
+
+  /*
    * A trava que mais importa. Registro pendente é o apontamento do dia de
    * alguém que ainda não subiu — e o servidor, por definição, não sabe dele.
    * Escrever por cima apagaria trabalho de campo.

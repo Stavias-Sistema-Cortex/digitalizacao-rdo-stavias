@@ -111,6 +111,29 @@ function statusLocal(status: string): LocalRdoRecord["statusRdo"] {
 }
 
 /**
+ * O carimbo que faz o RDO apagado sumir da lista.
+ *
+ * <p>É `canceladoEm` — não o status — que a lista lê para esconder o que foi
+ * apagado. A reconciliação trazia o status certo e o carimbo vazio, então todo
+ * RDO apagado voltava para a primeira página a cada abertura, como se
+ * estivesse vivo. Apagar tem de significar a mesma coisa nos dois caminhos.
+ *
+ * <p>O carimbo local prevalece quando existe, porque é o do cancelamento de
+ * verdade. Faltando ele, vale o do resumo: a hora exata não vem na listagem, e
+ * inventar "agora" faria um RDO apagado meses atrás parecer recém-apagado a
+ * cada reconciliação. Restaurar limpa o carimbo, que é o caminho de volta.
+ */
+function carimboDeCancelamento(
+  status: LocalRdoRecord["statusRdo"],
+  local: LocalRdoRecord | undefined,
+  resumo: RdoResumoRemoto,
+  agora: string,
+): string | null {
+  if (status !== "CANCELADA") return null;
+  return local?.canceladoEm ?? resumo.atualizadoEm ?? agora;
+}
+
+/**
  * O registro que o cabeçalho sozinho já sustenta.
  *
  * <p>Serve para o documento aparecer na lista antes de o conteúdo chegar. O
@@ -121,13 +144,15 @@ function registroDoCabecalho(
   resumo: RdoResumoRemoto,
   agora: string,
 ): LocalRdoRecord {
+  const status = statusLocal(resumo.status);
   return {
     id: resumo.id,
     obraId: resumo.obraId,
     programacaoId: null,
     numeroRdo: resumo.numeroRdo,
     dataRdo: resumo.dataRdo,
-    statusRdo: statusLocal(resumo.status),
+    statusRdo: status,
+    canceladoEm: carimboDeCancelamento(status, undefined, resumo, agora),
     syncStatus: "SYNCED",
     // Sem versão: o conteúdo ainda não chegou, e declarar uma versão que não
     // foi conferida deixaria uma edição futura nascer sobre base falsa.
@@ -221,13 +246,22 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
     // cima agora apagaria uma edição que nasceu depois da decisão.
     if (!podeReceberDoServidor(local)) continue;
 
+    const statusDetalhado = statusLocal(
+      texto(autoritativo.rdo.status) || remoto.status,
+    );
     await database.put("rdos", {
       ...(local ?? registroDoCabecalho(remoto, agora)),
       id: remoto.id,
       obraId: remoto.obraId,
       numeroRdo: remoto.numeroRdo || texto(autoritativo.rdo.numeroRdo),
       dataRdo: remoto.dataRdo,
-      statusRdo: statusLocal(texto(autoritativo.rdo.status) || remoto.status),
+      statusRdo: statusDetalhado,
+      // Um RDO cancelado no servidor depois de este aparelho já o conhecer
+      // chegava por aqui com o status novo e o carimbo antigo — vazio —, e
+      // continuava na lista. Restaurado, o carimbo sai e ele volta.
+      canceladoEm: carimboDeCancelamento(
+        statusDetalhado, local, remoto, agora,
+      ),
       programacaoId: texto(autoritativo.rdo.programacaoId) || null,
       syncStatus: "SYNCED",
       versaoEntidade: autoritativo.version,
