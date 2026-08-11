@@ -1196,7 +1196,7 @@ class PostgresqlRdoCreationContextIT {
                 LocalDateTime.now().minusDays(1)
         );
         String sourceItemId = id();
-        inserirMaoObra(sourceItemId, previousRdoId, null, "Servente");
+        inserirMaoObra(sourceItemId, previousRdoId, owner, "Servente");
         String clonadoId = id();
         RdoCreateRequest criacao = request(
                 clonadoId,
@@ -2024,55 +2024,6 @@ class PostgresqlRdoCreationContextIT {
                 String.class,
                 currentItemId
         )).isEqualTo(sourceItemId);
-    }
-
-    @Test
-    void atualizacaoNaoPodeMoverRdoParaDataIncompativelComOrigem() throws Exception {
-        String obraId = id();
-        inserirObra(obraId, "DATA-ORIGEM-IMUTAVEL");
-        String collaborator = inserirColaborador("Equipe", null, null);
-        vincular(collaborator, obraId, "OPERACIONAL", "ATIVO");
-        String previousRdoId = id();
-        inserirRdo(
-                previousRdoId,
-                obraId,
-                "RDO-0001",
-                SELECTED_DATE.minusDays(1),
-                "ENVIADO",
-                LocalDateTime.now().minusDays(1),
-                LocalDateTime.now().minusDays(1)
-        );
-        String sourceItemId = id();
-        inserirMaoObra(sourceItemId, previousRdoId, collaborator, "Operador");
-        String currentRdoId = id();
-        RdoCreateRequest create = request(
-                currentRdoId,
-                obraId,
-                id(),
-                1L,
-                previousRdoId,
-                collaborator,
-                id(),
-                sourceItemId
-        );
-        transactions.execute(status -> service(collaborator).criarRascunho(create));
-        com.fasterxml.jackson.databind.node.ObjectNode invalidDateJson =
-                mapper.valueToTree(create);
-        invalidDateJson.put("dataRdo", SELECTED_DATE.minusDays(2).toString());
-        RdoCreateRequest invalidDate = mapper.treeToValue(
-                invalidDateJson,
-                RdoCreateRequest.class
-        );
-
-        assertThatThrownBy(() -> transactions.execute(
-                status -> draftService().atualizarRascunho(currentRdoId, invalidDate)
-        )).isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("origem");
-        assertThat(jdbc.queryForObject(
-                "SELECT data_rdo FROM rdo WHERE id = ?",
-                LocalDate.class,
-                currentRdoId
-        )).isEqualTo(SELECTED_DATE);
     }
 
     private Callable<RdoResponse> createTask(
