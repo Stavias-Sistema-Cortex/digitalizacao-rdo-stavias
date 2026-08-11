@@ -52,18 +52,41 @@ describe("carry-forward determinístico da equipe", () => {
   });
 
   /*
-   * Para quem saiu da obra o retrato é a única evidência de quem trabalhou
-   * naquele dia. Apagá-lo abriria um buraco no histórico.
+   * A equipe é uma das duas portas de autorização da obra, e apagá-la fecha
+   * essa porta. A linha cinza e desmarcada reaparecia todo dia, e não havia
+   * como tirá-la a não ser uma a uma — a equipe tinha sido apagada e os
+   * membros seguiam escritos no RDO seguinte, e no seguinte.
+   *
+   * O RDO de ontem continua guardando quem trabalhou ontem. O que para é a
+   * repetição para a frente.
    */
-  it("mantém o retrato de quem não está mais no catálogo", () => {
+  it("não repete para a frente quem perdeu a autorização", () => {
+    const rows = carryForwardWorkforce(
+      [
+        previous("worker-a"),
+        previous("worker-sumido", {
+          nameSnapshot: "JOSE QUE SAIU",
+          availability: "UNAVAILABLE",
+        }),
+      ],
+      catalog,
+      (() => {
+        const ids = ["linha-1", "linha-2"];
+        return () => ids.shift() ?? "linha-extra";
+      })(),
+    );
+
+    expect(rows.map((row) => row.colaboradorId)).toEqual(["worker-a"]);
+  });
+
+  it("também não repete quem simplesmente saiu do catálogo da obra", () => {
     const rows = carryForwardWorkforce(
       [previous("worker-sumido", { nameSnapshot: "JOSE QUE SAIU" })],
       catalog,
       () => "linha-1",
     );
 
-    expect(rows[0].nomeColaborador).toBe("JOSE QUE SAIU");
-    expect(rows[0].availability).toBe("UNAVAILABLE");
+    expect(rows).toEqual([]);
   });
 
   /*
@@ -96,15 +119,25 @@ describe("carry-forward determinístico da equipe", () => {
     expect(rows.map((row) => row.localId)).toEqual(["new-a", "new-b"]);
   });
 
-  it("mantém proveniência indisponível, mas desmarca a pessoa", () => {
-    const [row] = carryForwardWorkforce([previous("historical")], []);
+  /*
+   * Nome digitado à mão nunca dependeu de equipe nenhuma, e é a única
+   * evidência de que aquela pessoa esteve na frente de serviço. Ele continua
+   * atravessando, com a proveniência inteira.
+   */
+  it("preserva a proveniência do nome digitado à mão", () => {
+    const [row] = carryForwardWorkforce(
+      [previous(null, { nameSnapshot: "AJUDANTE CONTRATADO NO DIA" })],
+      [],
+      () => "linha-1",
+    );
 
     expect(row).toMatchObject({
-      colaboradorId: "historical",
+      colaboradorId: "",
       sourceRdoId: source,
-      origemItemId: "item-historical",
-      selected: false,
-      availability: "UNAVAILABLE",
+      origemItemId: "item-unknown",
+      selected: true,
+      availability: "AVAILABLE",
+      nomeColaborador: "AJUDANTE CONTRATADO NO DIA",
     });
   });
 

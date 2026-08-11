@@ -45,6 +45,30 @@ export function carryForwardWorkforce(
     const available = collaboratorId
       ? Boolean(current) && availability !== "UNAVAILABLE"
       : Boolean(item.nameSnapshot?.trim()) && availability !== "UNAVAILABLE";
+
+    /*
+     * Quem perdeu a autorização não atravessa para o RDO de hoje.
+     *
+     * A equipe é uma das duas portas de autorização da obra, e apagá-la fecha
+     * essa porta — o servidor já devolve essas pessoas como indisponíveis. A
+     * herança, porém, criava a linha assim mesmo, desmarcada e cinza, e ela
+     * reaparecia todo dia: a equipe tinha sido apagada e os membros seguiam
+     * escritos no RDO seguinte, e no seguinte, sem nenhum jeito de tirá-los a
+     * não ser um a um.
+     *
+     * O RDO de ontem continua guardando quem trabalhou ontem — nada do
+     * histórico é tocado. O que para é a repetição para a frente. Quem voltar
+     * a ser autorizado entra pelo "Adicionar colaborador", que é a porta de
+     * quem escolhe, em vez de aparecer sozinho.
+     *
+     * Nome digitado à mão é outra coisa e continua vindo: ele nunca dependeu
+     * de equipe nenhuma, e é a única evidência de que aquela pessoa esteve na
+     * frente de serviço.
+     */
+    if (collaboratorId && !available) {
+      continue;
+    }
+
     rows.push({
       ...createEmptyMaoObra(),
       localId: createId(),

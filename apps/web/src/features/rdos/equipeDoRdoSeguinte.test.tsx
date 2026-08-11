@@ -198,11 +198,14 @@ describe("equipe do RDO seguinte", () => {
   });
 
   /**
-   * Quem saiu da obra entre um RDO e outro não pode ser apontado hoje, mas
-   * também não pode sumir: a linha fica visível e travada, senão o apontamento
-   * de ontem viraria um buraco sem explicação.
+   * Quem saiu da obra entre um RDO e outro não atravessa.
+   *
+   * A linha travada e cinza reaparecia todo dia, e apagar a equipe deixava
+   * seus membros escritos no RDO seguinte, e no seguinte, sem jeito de
+   * tirá-los a não ser um a um. O RDO de ontem continua guardando quem
+   * trabalhou ontem — o que para é a repetição para a frente.
    */
-  it("mantém visível e travado quem não está mais autorizado", () => {
+  it("não repete para a frente quem não está mais autorizado", () => {
     const anterior = equipeDoRdoAnterior();
     anterior.push({
       sourceRdoId: "rdo-0001",
@@ -219,13 +222,15 @@ describe("equipe do RDO seguinte", () => {
     });
 
     const herdada = carryForwardWorkforce(anterior, CATALOGO);
-    const diego = herdada.find(
-      (linha) => linha.colaboradorId === "worker-desligado",
-    );
 
-    expect(diego).toBeDefined();
-    expect(diego?.availability).toBe("UNAVAILABLE");
-    expect(diego?.selected).toBe(false);
-    expect(diego?.nomeColaborador).toBe("Diego");
+    expect(
+      herdada.some((linha) => linha.colaboradorId === "worker-desligado"),
+    ).toBe(false);
+    // Quem continua autorizado atravessa normalmente: o corte é só de quem
+    // perdeu a porta de entrada na obra.
+    expect(herdada.map((linha) => linha.nomeColaborador)).toEqual([
+      "Ana",
+      "Bruno",
+    ]);
   });
 });
