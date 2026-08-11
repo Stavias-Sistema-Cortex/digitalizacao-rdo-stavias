@@ -397,6 +397,43 @@
   opacity: 0.72;
 }
 
+/*
+ * Duas perguntas, dois recursos.
+ *
+ * O estado — programado, pendente, rascunho, executado, validado — continua na
+ * TEXTURA: o ângulo da hachura, a espessura do traço, o contorno. O serviço
+ * passa a dar a COR e o PASSO. Antes só o estado pintava, e dois serviços no
+ * mesmo estado saíam idênticos: numa pista com duas faixas empilhadas era
+ * preciso ler as letras para saber qual era qual.
+ *
+ * `--trecho-cor` nasce com a cor do estado e é trocada pela cor do serviço
+ * quando o bloco tem timbre. Bloco sem timbre — o programado, que é do plano e
+ * não de um serviço apontado — segue exatamente como era.
+ */
+.trecho-bloco {
+  --trecho-cor: var(--execucao-executado);
+  --trecho-passo: 5px;
+}
+
+.trecho-bloco[data-timbre="1"] { --trecho-cor: var(--trecho-servico-1); --trecho-passo: 5px; }
+.trecho-bloco[data-timbre="2"] { --trecho-cor: var(--trecho-servico-2); --trecho-passo: 7px; }
+.trecho-bloco[data-timbre="3"] { --trecho-cor: var(--trecho-servico-3); --trecho-passo: 4px; }
+.trecho-bloco[data-timbre="4"] { --trecho-cor: var(--trecho-servico-4); --trecho-passo: 8px; }
+.trecho-bloco[data-timbre="5"] { --trecho-cor: var(--trecho-servico-5); --trecho-passo: 6px; }
+.trecho-bloco[data-timbre="6"] { --trecho-cor: var(--trecho-servico-6); --trecho-passo: 9px; }
+
+/*
+ * O ângulo separa os serviços mesmo em preto e branco, ou para quem não
+ * distingue as cores entre si. Cor sozinha não pode ser o único portador da
+ * diferença.
+ */
+.trecho-bloco[data-timbre="1"] { --trecho-angulo: 135deg; }
+.trecho-bloco[data-timbre="2"] { --trecho-angulo: 45deg; }
+.trecho-bloco[data-timbre="3"] { --trecho-angulo: 90deg; }
+.trecho-bloco[data-timbre="4"] { --trecho-angulo: 0deg; }
+.trecho-bloco[data-timbre="5"] { --trecho-angulo: 115deg; }
+.trecho-bloco[data-timbre="6"] { --trecho-angulo: 65deg; }
+
 /* Programado: hachura, porque é intenção e não execução. */
 
 .trecho-bloco--programado {
@@ -414,35 +451,45 @@
    neutra — é trabalho real, mas o servidor ainda não o viu. */
 .trecho-bloco--pendente {
   background: repeating-linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--execucao-pendente) 46%, transparent),
-    color-mix(in srgb, var(--execucao-pendente) 46%, transparent) 5px,
-    color-mix(in srgb, var(--execucao-pendente) 24%, transparent) 5px,
-    color-mix(in srgb, var(--execucao-pendente) 24%, transparent) 10px
+    var(--trecho-angulo, 135deg),
+    color-mix(in srgb, var(--trecho-cor) 46%, transparent),
+    color-mix(in srgb, var(--trecho-cor) 46%, transparent) var(--trecho-passo),
+    color-mix(in srgb, var(--trecho-cor) 22%, transparent) var(--trecho-passo),
+    color-mix(in srgb, var(--trecho-cor) 22%, transparent)
+      calc(var(--trecho-passo) * 2)
   );
   border-style: dashed;
   border-color: color-mix(in srgb, white 62%, transparent);
   color: var(--trecho-legenda-forte);
 }
 
+.trecho-bloco--pendente:not([data-timbre]) {
+  --trecho-cor: var(--execucao-pendente);
+}
+
 /* Rascunho: contorno vazado, porque a equipe ainda está lançando. */
 .trecho-bloco--rascunho {
   background: repeating-linear-gradient(
-    135deg,
+    var(--trecho-angulo, 135deg),
     transparent,
-    transparent 5px,
-    color-mix(in srgb, var(--execucao-executado) 40%, transparent) 5px,
-    color-mix(in srgb, var(--execucao-executado) 40%, transparent) 10px
+    transparent var(--trecho-passo),
+    color-mix(in srgb, var(--trecho-cor) 44%, transparent) var(--trecho-passo),
+    color-mix(in srgb, var(--trecho-cor) 44%, transparent)
+      calc(var(--trecho-passo) * 2)
   );
-  border-color: color-mix(in srgb, var(--execucao-executado) 76%, transparent);
+  border-color: color-mix(in srgb, var(--trecho-cor) 76%, transparent);
   color: var(--trecho-legenda-forte);
 }
 
+/*
+ * Executado é superfície cheia — o trabalho aconteceu, e a leitura precisa ser
+ * sólida. A cor é a do serviço; o degradê continua sendo o que diz "cheio".
+ */
 .trecho-bloco--executado {
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--execucao-executado) 88%, white),
-    var(--execucao-executado)
+    color-mix(in srgb, var(--trecho-cor) 88%, white),
+    var(--trecho-cor)
   );
   color: var(--color-ink);
 }
