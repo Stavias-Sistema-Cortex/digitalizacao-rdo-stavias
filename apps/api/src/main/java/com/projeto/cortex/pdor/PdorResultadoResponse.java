@@ -31,6 +31,26 @@ public record PdorResultadoResponse(
         String riscoLabel,
         @JsonSerialize(using = ExactDecimalJsonSerializer.class)
         BigDecimal receitaEstimadaFinal,
+        /*
+         * A receita prevista final é o RAC ponderado — a mesma cifra que o
+         * bloco de evidências publica. Ela sai aqui como campo próprio porque
+         * o histórico é lido por máquina, e cavar dentro de `racs` para montar
+         * um gráfico é acoplar o consumidor à ordem interna do mapa.
+         */
+        @JsonSerialize(using = ExactDecimalJsonSerializer.class)
+        BigDecimal receitaPrevistaFinal,
+        /*
+         * As três medidas físicas que o gráfico da Home acompanha, elevadas de
+         * dentro de `inputs` para o corpo da resposta. Produção realizada é a
+         * que tem receita aceita; produção apontada é a que o RDO declarou,
+         * sem preço nem validação. Elas divergem de propósito.
+         */
+        @JsonSerialize(using = ExactDecimalJsonSerializer.class)
+        BigDecimal producaoPlanejada,
+        @JsonSerialize(using = ExactDecimalJsonSerializer.class)
+        BigDecimal producaoRealizada,
+        @JsonSerialize(using = ExactDecimalJsonSerializer.class)
+        BigDecimal producaoApontada,
         @JsonSerialize(contentUsing = ExactDecimalJsonSerializer.class)
         Map<String, BigDecimal> racs,
         @JsonSerialize(using = ExactDecimalJsonSerializer.class)
@@ -104,6 +124,10 @@ public record PdorResultadoResponse(
                 snapshot.riskLevel(),
                 riskLabel(snapshot.riskLevel()),
                 snapshot.revenueP50(),
+                snapshot.racWeighted(),
+                decimalInput(snapshot.inputs(), "totalPlannedQuantity"),
+                decimalInput(snapshot.inputs(), "actualExecutedQuantity"),
+                decimalInput(snapshot.inputs(), "reportedExecutedQuantity"),
                 racs,
                 snapshot.revenueP10(),
                 snapshot.revenueP50(),
@@ -143,6 +167,22 @@ public record PdorResultadoResponse(
                 snapshot.stale(),
                 snapshot.current()
         );
+    }
+
+    /**
+     * Lê um número de dentro do mapa de entradas persistido no snapshot.
+     *
+     * As entradas do PDOR vivem em `inputs_json`, não em colunas: é lá que
+     * cabe uma entrada nova sem migração. Ausência e não-número devolvem null
+     * — nunca zero — porque zero é uma medida, e inventá-la aqui apagaria a
+     * diferença entre "não mediu" e "mediu nada".
+     */
+    private static BigDecimal decimalInput(JsonNode inputs, String field) {
+        if (inputs == null || !inputs.hasNonNull(field)) {
+            return null;
+        }
+        JsonNode value = inputs.get(field);
+        return value.isNumber() ? value.decimalValue() : null;
     }
 
     private static String calibrationLabel(String value) {

@@ -67,13 +67,16 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 finance.acceptedQuantity(),
                 contractAuthority
         );
+        ProducaoApontada apontada = buscarProducaoApontada(
+                obra.getId(), referenceDate
+        );
         TeamStats team = buscarTeamStats(obra.getId(), referenceDate);
         int activeGeospatialFeatureCount =
                 buscarActiveGeospatialFeatureCount(obra.getId(), referenceDate);
         WeatherStats weather = buscarWeatherStats(obra.getId(), referenceDate);
 
         QuantityChoice quantity =
-                escolherQuantidade(programacao, rdo, serviceQuantity);
+                escolherQuantidade(programacao, rdo, serviceQuantity, apontada);
 
         Map<String, Object> inputs = new LinkedHashMap<>();
         Map<String, PdorInputOrigin> origins = new LinkedHashMap<>();
@@ -109,51 +112,67 @@ public class RealPdorInputLoader implements PdorInputLoader {
             );
         }
 
-        PdorDataAvailability measuredRevenueAvailability =
-                finance.hasRevenueData()
-                        ? PdorDataAvailability.DIRECT
-                        : PdorDataAvailability.ABSENT;
+        /*
+         * Zero medido é um fato, não uma lacuna.
+         *
+         * Uma obra que apontou produção e ainda não teve nenhuma evidência
+         * aceita mediu, até aqui, exatamente R$ 0,00 — e é no começo, antes da
+         * primeira medição, que a projeção mais serve. Tratar essa ausência
+         * como dado faltante travava o PDOR justamente aí, e o que aparecia na
+         * tela era vazio, sem dizer o que faltava.
+         *
+         * A régua da receita não muda: continua sendo só evidência
+         * ACCEPTED_EXACT, validada contra o evento canônico. O que muda é a
+         * leitura da ausência — ela vira zero declarado, com origem DERIVED e
+         * o aviso preservado, em vez de derrubar o cálculo inteiro.
+         */
         put(
                 inputs,
                 origins,
                 missing,
                 "measuredRevenue",
                 "Receita medida acumulada",
-                measuredRevenueAvailability,
-                finance.hasRevenueData() ? finance.measuredRevenue() : null,
+                finance.hasRevenueData()
+                        ? PdorDataAvailability.DIRECT
+                        : PdorDataAvailability.DERIVED,
+                finance.hasRevenueData()
+                        ? finance.measuredRevenue()
+                        : BigDecimal.ZERO,
                 "execucao_servico_rdo.revenue_amount + cortex_evento_operacional.commit_seq",
                 finance.hasRevenueData()
                         ? "Soma exata de evidências ACCEPTED_EXACT validadas contra o evento ontológico canônico."
-                        : "Não há evidência de receita aceita com identidade e evento canônicos válidos.",
+                        : "Nenhuma evidência de receita aceita até a referência; a receita medida acumulada é zero.",
                 true
         );
         if (!finance.hasRevenueData()) {
             warnings.add(
-                    "Receita medida ausente; o PDOR não será calculado sem esse dado financeiro."
+                    "Nenhuma receita foi medida até a data de referência; a projeção se apoia na produção física, não em receita observada."
             );
         }
 
-        PdorDataAvailability validatedRevenueAvailability =
-                finance.hasRevenueData()
-                        ? PdorDataAvailability.DIRECT
-                        : PdorDataAvailability.ABSENT;
         put(
                 inputs,
                 origins,
                 missing,
                 "validatedRevenue",
                 "Receita validada acumulada",
-                validatedRevenueAvailability,
-                finance.hasRevenueData() ? finance.validatedRevenue() : null,
+                finance.hasRevenueData()
+                        ? PdorDataAvailability.DIRECT
+                        : PdorDataAvailability.DERIVED,
+                finance.hasRevenueData()
+                        ? finance.validatedRevenue()
+                        : BigDecimal.ZERO,
                 "execucao_servico_rdo.revenue_amount + cortex_evento_operacional.commit_seq",
                 finance.hasRevenueData()
                         ? "Receita aceita em execuções VALIDADA, sem rejeição, retrabalho ou cancelamento."
-                        : "Não há receita aceita validada para a obra.",
+                        : "Nenhuma receita aceita e validada até a referência; o acumulado é zero.",
                 true
         );
-        if (!finance.hasRevenueData()) {
+        if (!finance.hasRevenueData() && finance.eligibleRows() > 0) {
             warnings.add(
-                    "Receita validada ausente; o PDOR não usará estimativas financeiras substitutas."
+                    "Há " + finance.eligibleRows()
+                            + " execuções validadas sem evidência de receita aceita;"
+                            + " falta preço vigente ou identidade canônica completa para medi-las."
             );
         }
 
@@ -289,12 +308,49 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 "Quantidade executada real",
                 actualExecuted == null ? PdorDataAvailability.ABSENT : PdorDataAvailability.DERIVED,
                 actualExecuted,
-                quantity == null ? "rdo_controle_geometrico" : quantity.actualSource(),
+                quantity == null ? "execucao_servico_rdo" : quantity.actualSource(),
                 actualExecuted == null
-                        ? "Não há produção real compatível registrada em controles geométricos de RDO."
-                        : "Produção real agregada a partir dos controles geométricos de RDO.",
+                        ? "Não há produção executada registrada nos RDOs até a data de referência."
+                        : "Produção executada agregada a partir de "
+                                + quantity.actualSource() + ".",
                 true
         );
+
+        /*
+         * Produção apontada: o que o RDO diz que foi executado.
+         *
+         * É medida física, e ela existe antes de qualquer preço — o apontador
+         * registra o que a frente fez sem saber se o serviço já tem versão de
+         * preço vigente. Por isso ela é índice próprio, ao lado da produção
+         * com receita aceita, e não uma correção dela: as duas medem coisas
+         * diferentes e divergem de propósito enquanto a medição não fecha.
+         */
+        put(
+                inputs,
+                origins,
+                missing,
+                "reportedExecutedQuantity",
+                "Produção apontada nos RDOs",
+                positive(apontada.quantidade())
+                        ? PdorDataAvailability.DIRECT
+                        : PdorDataAvailability.ABSENT,
+                positive(apontada.quantidade()) ? apontada.quantidade() : null,
+                "execucao_servico_rdo.quantidade_executada",
+                positive(apontada.quantidade())
+                        ? "Soma das quantidades executadas em "
+                                + apontada.linhas()
+                                + " linhas de serviço dos RDOs, sem exigir preço,"
+                                + " validação ou evidência de receita."
+                        : "Nenhuma linha de serviço com quantidade executada até a referência.",
+                false
+        );
+        if (apontada.unidades() > 1) {
+            warnings.add(
+                    "A produção apontada soma " + apontada.unidades()
+                            + " unidades de medida distintas; ela serve de"
+                            + " rastro físico, não de grandeza homogênea."
+            );
+        }
 
         if (programacao.incompleteQuantityRows() > 0) {
             warnings.add(
@@ -498,7 +554,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 "Produtividade real",
                 productivity.available() ? PdorDataAvailability.DERIVED : PdorDataAvailability.ABSENT,
                 productivity.available() ? productivity.actual() : null,
-                "rdo_controle_geometrico",
+                quantity == null ? "execucao_servico_rdo" : quantity.actualSource(),
                 "Quantidade executada real dividida pelos dias decorridos.",
                 false
         );
@@ -668,8 +724,12 @@ public class RealPdorInputLoader implements PdorInputLoader {
         PdorInputBundle.SourceValues sourceValues =
                 new PdorInputBundle.SourceValues(
                         finance.hasContractData() ? finance.contractValue() : null,
-                        finance.hasRevenueData() ? finance.measuredRevenue() : null,
-                        finance.hasRevenueData() ? finance.validatedRevenue() : null,
+                        finance.hasRevenueData()
+                                ? finance.measuredRevenue()
+                                : BigDecimal.ZERO,
+                        finance.hasRevenueData()
+                                ? finance.validatedRevenue()
+                                : BigDecimal.ZERO,
                         toDouble(totalPlanned),
                         toDouble(plannedUntilReference),
                         toDouble(actualExecuted),
@@ -1609,10 +1669,45 @@ public class RealPdorInputLoader implements PdorInputLoader {
         );
     }
 
+    /**
+     * Produção que os RDOs apontaram, sem passar pela régua da receita.
+     *
+     * Retrabalho e produção rejeitada ficam de fora: refazer não é avançar, e
+     * o que foi rejeitado não foi entregue. Fora isso, nenhuma exigência de
+     * preço, validação ou evidência — é o que a frente declarou ter feito.
+     */
+    private ProducaoApontada buscarProducaoApontada(
+            String obraId,
+            LocalDate referenceDate
+    ) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT
+                    SUM(quantidade_executada) AS quantidade,
+                    COUNT(*) AS linhas,
+                    COUNT(DISTINCT unidade_medida) AS unidades
+                FROM execucao_servico_rdo
+                WHERE obra_id = ?
+                  AND data_execucao <= ?
+                  AND cancelada = FALSE
+                  AND producao_rejeitada = FALSE
+                  AND retrabalho = FALSE
+                """,
+                (rs, rowNumber) -> new ProducaoApontada(
+                        valueOrZero(rs.getBigDecimal("quantidade")),
+                        rs.getInt("linhas"),
+                        rs.getInt("unidades")
+                ),
+                obraId,
+                referenceDate
+        );
+    }
+
     private QuantityChoice escolherQuantidade(
             ProgramacaoStats programacao,
             RdoStats rdo,
-            ServiceQuantityStats serviceQuantity
+            ServiceQuantityStats serviceQuantity,
+            ProducaoApontada apontada
     ) {
         if (
                 serviceQuantity != null
@@ -1629,6 +1724,31 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     serviceQuantity.totalPlanned(),
                     serviceQuantity.totalPlanned(),
                     serviceQuantity.actualExecuted()
+            );
+        }
+
+        /*
+         * Há contrato e há produção apontada, mas nenhuma medição fechou
+         * ainda. A produção física é o que o RDO afirma ter executado — vale
+         * como avanço mesmo sem preço, e é ela que sustenta a projeção até a
+         * primeira evidência de receita ser aceita.
+         */
+        if (
+                serviceQuantity != null
+                        && positive(serviceQuantity.totalPlanned())
+                        && apontada != null
+                        && positive(apontada.quantidade())
+        ) {
+            return new QuantityChoice(
+                    serviceQuantity.legacyFallback()
+                            ? "ITEM_CONTRATUAL_LEGACY"
+                            : "SERVICE_CATALOG_CONTRACT",
+                    serviceQuantity.plannedSource(),
+                    "execucao_servico_rdo.quantidade_executada"
+                            + " (apontada)",
+                    serviceQuantity.totalPlanned(),
+                    serviceQuantity.totalPlanned(),
+                    apontada.quantidade()
             );
         }
 
@@ -1935,6 +2055,13 @@ public class RealPdorInputLoader implements PdorInputLoader {
             BigDecimal actualExecuted,
             String plannedSource,
             boolean legacyFallback
+    ) {
+    }
+
+    private record ProducaoApontada(
+            BigDecimal quantidade,
+            int linhas,
+            int unidades
     ) {
     }
 

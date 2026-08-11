@@ -853,6 +853,11 @@ export interface PrevisaoSnapshotRecord {
   statusExecucao: string;
   producaoPlanejada: number | null;
   producaoRealizada: number | null;
+  /**
+   * Produção que os RDOs apontaram, sem exigir preço nem receita aceita.
+   * Registros gravados antes deste campo existirem não a têm.
+   */
+  producaoApontada: number | null;
   custoRealizado: number | null;
   custoPrevistoFinal: number | null;
   receitaPrevistaFinal: number | null;

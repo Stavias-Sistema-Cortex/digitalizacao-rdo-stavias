@@ -10,18 +10,21 @@ import {
 function snapshot(
   partial: Partial<PrevisaoSnapshotRecord>,
 ): PrevisaoSnapshotRecord {
+  // Espalhado por cima dos padrões, e não com `??`, para que um null
+  // explícito no caso continue null em vez de cair no valor de fábrica.
   return {
-    id: partial.id ?? crypto.randomUUID(),
+    id: crypto.randomUUID(),
     obraId: "obra-1",
-    dataReferencia: partial.dataReferencia ?? "2026-06-15",
-    statusExecucao: partial.statusExecucao ?? "CALCULADO",
-    producaoPlanejada: partial.producaoPlanejada ?? 500,
-    producaoRealizada: partial.producaoRealizada ?? 240,
-    custoRealizado: partial.custoRealizado ?? 40,
-    custoPrevistoFinal: partial.custoPrevistoFinal ?? 90,
-    receitaPrevistaFinal:
-      partial.receitaPrevistaFinal ?? 120,
+    dataReferencia: "2026-06-15",
+    statusExecucao: "CALCULADO",
+    producaoPlanejada: 500,
+    producaoRealizada: 240,
+    producaoApontada: 400,
+    custoRealizado: 40,
+    custoPrevistoFinal: 90,
+    receitaPrevistaFinal: 120,
     updatedAt: "2026-07-06T12:00:00.000Z",
+    ...partial,
   };
 }
 
@@ -66,6 +69,38 @@ describe("buildMonthlySeries", () => {
     expect(points[1].fisicoPct).toBe(48);
     expect(points[1].pdorPct).toBe(12);
     expect(points[1]).not.toHaveProperty("custoPct");
+  });
+
+  it("mede a produção apontada contra o mesmo planejado, sem misturá-la ao avanço medido", () => {
+    const points = buildMonthlySeries(
+      [
+        snapshot({
+          dataReferencia: "2026-06-10",
+          producaoPlanejada: 500,
+          producaoRealizada: 100,
+          producaoApontada: 350,
+        }),
+      ],
+      1000,
+    );
+
+    expect(points[0].fisicoPct).toBe(20);
+    expect(points[0].apontadaPct).toBe(70);
+  });
+
+  it("deixa a produção apontada em branco no registro antigo que não a tem", () => {
+    const points = buildMonthlySeries(
+      [
+        snapshot({
+          dataReferencia: "2026-06-10",
+          producaoApontada: null,
+        }),
+      ],
+      1000,
+    );
+
+    expect(points[0].apontadaPct).toBeNull();
+    expect(points[0].fisicoPct).toBe(48);
   });
 
   it("pdor fica nulo sem valor contratual", () => {
