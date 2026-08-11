@@ -271,6 +271,176 @@ class SyncMutationTraceValidationTest {
         verify(handler).apply(eq(mutation), any());
     }
 
+    /*
+     * O gêmeo do teste acima, pelo lado da entidade principal.
+     *
+     * A exceção do catálogo global existia só para a entidade relacionada,
+     * porque até o serviço ganhar estado de saída não havia operação nenhuma
+     * sobre ele além de criar. Quando excluir, restaurar e corrigir passaram a
+     * existir, cada uma delas vinda de obra diferente da que cadastrou voltava
+     * com "Entidade principal pertence a outra obra" — e recusa de exclusão é a
+     * pior que existe: a fila não reenvia recusa terminal, e o serviço fica sem
+     * ninguém que consiga tirá-lo do caminho.
+     */
+    @Test
+    void acceptsExcludingAServiceAuthorizedByAnotherWorksite() throws Exception {
+        String actorId = UUID.randomUUID().toString();
+        String deviceId = UUID.randomUUID().toString();
+        String obraId = UUID.randomUUID().toString();
+        String serviceAuthorizingWorksite = UUID.randomUUID().toString();
+        String serviceId = UUID.randomUUID().toString();
+        String correlationId = UUID.randomUUID().toString();
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("id", serviceId);
+        payload.put("obraId", obraId);
+
+        SyncPushRequest.MutacaoCliente mutation = new SyncPushRequest.MutacaoCliente(
+                UUID.randomUUID().toString(),
+                "SERVICE",
+                serviceId,
+                "EXCLUIR_SERVICO_CATALOGO",
+                0L,
+                payload,
+                LocalDateTime.parse("2026-08-11T12:00:00"),
+                correlationId,
+                13,
+                deviceId,
+                actorId,
+                obraId,
+                "SERVICE",
+                serviceId,
+                "TRANSITION",
+                0L,
+                List.of("id", "obraId"),
+                OCCURRED_AT,
+                new SyncPushRequest.MutationTrace(
+                        actorId,
+                        deviceId,
+                        List.of(obraId),
+                        correlationId,
+                        null,
+                        UUID.randomUUID().toString(),
+                        sha256("{\"id\":\"" + serviceId
+                                + "\",\"obraId\":\"" + obraId + "\"}")
+                ),
+                new SyncPushRequest.FieldPatch(payload, mapper.createObjectNode()),
+                List.of(),
+                List.of()
+        );
+
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        SyncOperationHandler handler = mock(SyncOperationHandler.class);
+        when(handler.entityType()).thenReturn("SERVICE");
+        when(handler.operations()).thenReturn(Set.of("EXCLUIR_SERVICO_CATALOGO"));
+        when(currentUser.requireUserId()).thenReturn(actorId);
+        when(currentUser.allowedObraIds(actorId)).thenReturn(Optional.of(Set.of(obraId)));
+        when(jdbc.queryForObject(
+                anyString(), eq(Integer.class), eq(deviceId), eq(actorId)
+        )).thenReturn(1);
+        // A obra guardada no catálogo é a que autorizou a criação — outra, aqui.
+        when(jdbc.queryForObject(
+                contains("FROM catalogo_servico"), eq(String.class), eq(serviceId)
+        )).thenReturn(serviceAuthorizingWorksite);
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        SyncService service = new SyncService(
+                jdbc,
+                mapper,
+                immediateTransactions(),
+                new SyncOperationRegistry(List.of(handler)),
+                currentUser,
+                mock(FinancialAccessService.class)
+        );
+
+        service.push(new SyncPushRequest(deviceId, List.of(mutation)));
+
+        verify(handler).apply(eq(mutation), any());
+    }
+
+    /*
+     * O preço continua preso à sua obra. Ele é o único do par que é por obra —
+     * a versão de uma obra não se corrige nem se cancela a partir de outra —, e
+     * abrir a exceção do catálogo larga demais levaria isso junto.
+     */
+    @Test
+    void stillRefusesAPriceVersionThatBelongsToAnotherWorksite() throws Exception {
+        String actorId = UUID.randomUUID().toString();
+        String deviceId = UUID.randomUUID().toString();
+        String obraId = UUID.randomUUID().toString();
+        String priceWorksite = UUID.randomUUID().toString();
+        String priceId = UUID.randomUUID().toString();
+        String correlationId = UUID.randomUUID().toString();
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("id", priceId);
+        payload.put("obraId", obraId);
+
+        SyncPushRequest.MutacaoCliente mutation = new SyncPushRequest.MutacaoCliente(
+                UUID.randomUUID().toString(),
+                "SERVICE_PRICE_VERSION",
+                priceId,
+                "ATUALIZAR_PRECO_SERVICO",
+                0L,
+                payload,
+                LocalDateTime.parse("2026-08-11T12:00:00"),
+                correlationId,
+                13,
+                deviceId,
+                actorId,
+                obraId,
+                "SERVICE_PRICE_VERSION",
+                priceId,
+                "UPDATE",
+                0L,
+                List.of("id", "obraId"),
+                OCCURRED_AT,
+                new SyncPushRequest.MutationTrace(
+                        actorId,
+                        deviceId,
+                        List.of(obraId),
+                        correlationId,
+                        null,
+                        UUID.randomUUID().toString(),
+                        sha256("{\"id\":\"" + priceId
+                                + "\",\"obraId\":\"" + obraId + "\"}")
+                ),
+                new SyncPushRequest.FieldPatch(payload, mapper.createObjectNode()),
+                List.of(),
+                List.of()
+        );
+
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        SyncOperationHandler handler = mock(SyncOperationHandler.class);
+        when(handler.entityType()).thenReturn("SERVICE_PRICE_VERSION");
+        when(handler.operations()).thenReturn(Set.of("ATUALIZAR_PRECO_SERVICO"));
+        when(currentUser.requireUserId()).thenReturn(actorId);
+        when(currentUser.allowedObraIds(actorId)).thenReturn(Optional.of(Set.of(obraId)));
+        when(jdbc.queryForObject(
+                anyString(), eq(Integer.class), eq(deviceId), eq(actorId)
+        )).thenReturn(1);
+        when(jdbc.queryForObject(
+                contains("FROM service_price_version"), eq(String.class), eq(priceId)
+        )).thenReturn(priceWorksite);
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        SyncService service = new SyncService(
+                jdbc,
+                mapper,
+                immediateTransactions(),
+                new SyncOperationRegistry(List.of(handler)),
+                currentUser,
+                mock(FinancialAccessService.class)
+        );
+
+        SyncPushResponse response =
+                service.push(new SyncPushRequest(deviceId, List.of(mutation)));
+
+        assertThat(response.resultados()).singleElement().satisfies(result ->
+                assertThat(result.erro()).contains("pertence a outra obra"));
+        verify(handler, never()).apply(any(), any());
+    }
+
     @Test
     void acceptsCanonicalTaskCreateWithRelatedWorksiteBeforeHandler()
             throws Exception {
