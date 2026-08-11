@@ -42,6 +42,14 @@ public record RdoContextResponse(
         );
     }
 
+    /**
+     * @param kmInicialEixo quilômetro que o eixo da obra declara na primeira
+     *        ponta, ou {@code null} quando não há eixo cadastrado ou ele ainda
+     *        não tem quilômetro. É o que o RDO novo usa para já nascer com o
+     *        trecho preenchido, e continua editável — o RDO é quem decide o
+     *        número final.
+     * @param kmFinalEixo o mesmo, na outra ponta.
+     */
     public record ObraContexto(
             String id,
             String codigoContrato,
@@ -52,7 +60,9 @@ public record RdoContextResponse(
             String uf,
             String rodovia,
             String status,
-            long version
+            long version,
+            BigDecimal kmInicialEixo,
+            BigDecimal kmFinalEixo
     ) {
     }
 

@@ -87,7 +87,7 @@ class RdoContextControllerAuthorizationMockMvcTest {
         when(service.buscarContexto("obra-a", data, "beta")).thenReturn(new RdoContextResponse(
                 new RdoContextResponse.ObraContexto(
                         "obra-a", "CTR-A", "CW-A", "Obra A", "Cliente",
-                        "Cidade", "SP", "SP-001", "ATIVA", 7L
+                        "Cidade", "SP", "SP-001", "ATIVA", 7L, null, null
                 ),
                 data,
                 "RDO-0042",

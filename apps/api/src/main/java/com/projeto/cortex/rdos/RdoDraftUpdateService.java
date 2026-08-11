@@ -2,6 +2,9 @@ package com.projeto.cortex.rdos;
 
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
+import com.projeto.cortex.obras.mapa.QuilometroDoEixo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,7 +25,11 @@ import java.util.UUID;
 @Service
 public class RdoDraftUpdateService {
 
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(RdoDraftUpdateService.class);
+
     private final JdbcTemplate jdbcTemplate;
+    private final QuilometroDoEixo quilometroDoEixo;
     private final RdoQueryService queryService;
     private final RdoAssetEligibilityService assetEligibilityService;
     private final RdoMemoryPublisher memoryPublisher;
@@ -46,6 +53,14 @@ public class RdoDraftUpdateService {
             ObraOperabilityGuard obraOperabilityGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
+        /*
+         * Montado aqui porque tudo de que ele precisa já chega neste construtor,
+         * e nenhum dos dez colaboradores desta lista tem opinião sobre eixo.
+         */
+        this.quilometroDoEixo = new QuilometroDoEixo(
+                jdbcTemplate,
+                new com.fasterxml.jackson.databind.ObjectMapper()
+        );
         this.queryService = queryService;
         this.assetEligibilityService = assetEligibilityService;
         this.memoryPublisher = memoryPublisher;
@@ -235,6 +250,24 @@ public class RdoDraftUpdateService {
                     "O RDO não está mais disponível para edição."
             );
         }
+
+        /*
+         * O RDO manda no quilômetro do eixo.
+         *
+         * <p>O eixo é a régua da obra: uma linha só, sobre a qual todo
+         * apontamento é projetado para virar trecho no mapa. Quem corrige o
+         * trecho interditado aqui está corrigindo a régua, e é assim que o dono
+         * do sistema decidiu — a hierarquia é do RDO para dizer o dado final.
+         *
+         * <p>Fica depois da gravação confirmada, e só aí: se o UPDATE não
+         * pegou, o RDO não afirmou nada, e um eixo reescrito por uma edição que
+         * não aconteceu seria pior do que nenhuma reescrita.
+         *
+         * <p>Só RDO vivo reescreve. O cancelado sai da conta do PDOR e some do
+         * mapa; deixá-lo encolher a régua da obra faria o teste apagado de hoje
+         * mudar a posição de todo trecho antigo, para sempre.
+         */
+        reescreverQuilometroDoEixo(rdoId, request);
 
         reconciliarMaoObra(rdoId, request.obraId(), request.maoObra());
         reconciliarEquipamentos(rdoId, request.obraId(), request.equipamentos());
@@ -1077,6 +1110,75 @@ public class RdoDraftUpdateService {
         }
 
         return null;
+    }
+
+    /**
+     * Leva ao eixo da obra o quilômetro que este RDO acabou de declarar.
+     *
+     * <p>O trecho interditado é texto livre — "km 206,822", "estaca 120", o que
+     * o campo aceitar. Só o que se lê como número vira quilômetro de eixo; o
+     * resto é anotação de quem sinaliza a pista e não tem como virar régua.
+     * Quando qualquer uma das duas pontas não se lê, nada é reescrito: meia
+     * régua é pior do que a régua antiga.
+     *
+     * <p>Falha aqui não derruba a gravação do RDO. O RDO é o fato; o eixo é uma
+     * projeção que se apoia nele. Deixar o apontamento do campo ser recusado
+     * porque o rótulo de uma linha no mapa não pôde ser atualizado inverteria
+     * essa ordem.
+     */
+    private void reescreverQuilometroDoEixo(String rdoId, RdoCreateRequest request) {
+        if (rdoEstaCancelado(rdoId)) {
+            return;
+        }
+        BigDecimal kmInicial = quilometroLegivel(request.kmInicialInterditado());
+        BigDecimal kmFinal = quilometroLegivel(request.kmFinalInterditado());
+        if (kmInicial == null || kmFinal == null) {
+            return;
+        }
+        try {
+            quilometroDoEixo.reescrever(
+                    request.obraId(),
+                    kmInicial,
+                    kmFinal,
+                    "RDO:" + rdoId
+            );
+        } catch (RuntimeException exception) {
+            LOGGER.warn(
+                    "RDO {} salvo, mas o eixo da obra {} não pôde receber o quilômetro.",
+                    rdoId,
+                    request.obraId(),
+                    exception
+            );
+        }
+    }
+
+    private boolean rdoEstaCancelado(String rdoId) {
+        Boolean cancelado = jdbcTemplate.queryForObject(
+                "SELECT cancelado_em IS NOT NULL FROM rdo WHERE id = ?",
+                Boolean.class,
+                rdoId
+        );
+        return Boolean.TRUE.equals(cancelado);
+    }
+
+    /**
+     * O número que dá para ler de um campo que aceita qualquer coisa.
+     *
+     * <p>Aceita vírgula como separador decimal, que é como o quilômetro é
+     * escrito aqui, e descarta o que sobrar de texto em volta. Não sendo
+     * número, devolve {@code null} — e quem chamou desiste da reescrita em vez
+     * de inventar posição.
+     */
+    private static BigDecimal quilometroLegivel(String valor) {
+        if (valor == null || valor.isBlank()) {
+            return null;
+        }
+        String limpo = valor.strip().replace(".", "").replace(',', '.');
+        try {
+            return new BigDecimal(limpo);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private String nuloSeVazio(String valor) {

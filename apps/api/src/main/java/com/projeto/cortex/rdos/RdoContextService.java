@@ -2,6 +2,7 @@ package com.projeto.cortex.rdos;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.obras.mapa.QuilometroDoEixo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
@@ -16,6 +17,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import javax.sql.DataSource;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -39,6 +41,7 @@ public class RdoContextService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final RdoCreationPayloadHasher payloadHasher;
+    private final QuilometroDoEixo quilometroDoEixo;
     private final TransactionTemplate snapshotTransactions;
     private final Clock clock;
 
@@ -77,6 +80,13 @@ public class RdoContextService {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.payloadHasher = new RdoCreationPayloadHasher(objectMapper);
+        /*
+         * Montado aqui, e não injetado, porque tudo de que ele precisa já está
+         * nesta lista. Recebê-lo pelo construtor obrigaria a mexer nas quatro
+         * assinaturas que os testes usam para montar o serviço, e nenhuma
+         * delas tem opinião sobre eixo.
+         */
+        this.quilometroDoEixo = new QuilometroDoEixo(jdbcTemplate, objectMapper);
         this.clock = clock;
         this.snapshotTransactions = new TransactionTemplate(transactionManager);
         this.snapshotTransactions.setPropagationBehavior(
@@ -517,7 +527,25 @@ public class RdoContextService {
         return dataSource;
     }
 
+    /**
+     * O RDO novo nasce sabendo o quilômetro da obra.
+     *
+     * <p>O eixo é cadastrado uma vez e é a régua sobre a qual todo apontamento
+     * vira trecho no mapa. Quem abria um RDO tinha de redigitar esse
+     * quilômetro de cabeça, e o que ficava em branco ficava em branco para
+     * sempre — o campo não se preenche sozinho depois.
+     *
+     * <p>Vem preenchido e editável: a sugestão poupa a digitação, e o número
+     * que fica é sempre o que o RDO disser.
+     */
     private RdoContextResponse.ObraContexto buscarObra(String obraId) {
+        QuilometroDoEixo.Faixa eixo = quilometroDoEixo.faixaVigente(obraId);
+        BigDecimal kmInicialEixo = eixo != null && eixo.declarada()
+                ? eixo.kmInicial()
+                : null;
+        BigDecimal kmFinalEixo = eixo != null && eixo.declarada()
+                ? eixo.kmFinal()
+                : null;
         try {
             return jdbcTemplate.queryForObject(
                     """
@@ -546,7 +574,9 @@ public class RdoContextService {
                             rs.getString("uf"),
                             rs.getString("rodovia"),
                             rs.getString("status"),
-                            rs.getLong("versao_linha")
+                            rs.getLong("versao_linha"),
+                            kmInicialEixo,
+                            kmFinalEixo
                     ),
                     obraId
             );

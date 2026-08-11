@@ -41,6 +41,8 @@ function context(
       rodovia: "SP-041",
       status: "ATIVA",
       version: 7,
+      kmInicialEixo: null,
+      kmFinalEixo: null,
     },
     data: "2026-07-22",
     nextNumberSuggestion: "RDO-0042",
@@ -397,5 +399,64 @@ describe("contexto obra-data do novo RDO", () => {
     expect(nextRosterFocusIndex("ArrowUp", 0, 3)).toBe(2);
     expect(nextRosterFocusIndex("Home", 2, 3)).toBe(0);
     expect(nextRosterFocusIndex("End", 0, 3)).toBe(2);
+  });
+});
+
+/*
+ * O eixo é cadastrado uma vez e é a régua sobre a qual todo apontamento vira
+ * trecho no mapa. Quem abria um RDO redigitava esse quilômetro de cabeça, e o
+ * que ficava em branco ficava em branco para sempre — o campo não se preenche
+ * sozinho depois.
+ */
+describe("quilômetro do eixo no RDO novo", () => {
+  it("nasce preenchido com o que o eixo declara, em pt-BR", () => {
+    const draft = applyRdoCreationContext(
+      createEmptyRdo(),
+      context({
+        obra: {
+          ...context().obra,
+          kmInicialEixo: 206.822,
+          kmFinalEixo: 214.5,
+        },
+      }),
+    );
+
+    expect(draft.kmInicialInterditado).toBe("206,822");
+    expect(draft.kmFinalInterditado).toBe("214,500");
+  });
+
+  /*
+   * A sugestão poupa digitação; ela não decide. Um rascunho que já traz
+   * quilômetro está afirmando o trecho — vale para a clonagem e para o
+   * rascunho retomado, que não pode ter o digitado sobrescrito pela régua.
+   */
+  it("não sobrescreve o quilômetro que o rascunho já trazia", () => {
+    const comTrecho = {
+      ...createEmptyRdo(),
+      kmInicialInterditado: "300,000",
+      kmFinalInterditado: "301,000",
+    };
+
+    const draft = applyRdoCreationContext(
+      comTrecho,
+      context({
+        obra: {
+          ...context().obra,
+          kmInicialEixo: 206.822,
+          kmFinalEixo: 214.5,
+        },
+      }),
+    );
+
+    expect(draft.kmInicialInterditado).toBe("300,000");
+    expect(draft.kmFinalInterditado).toBe("301,000");
+  });
+
+  // Sem eixo cadastrado não há o que sugerir, e sugerir zero seria pior.
+  it("deixa em branco quando a obra não tem eixo", () => {
+    const draft = applyRdoCreationContext(createEmptyRdo(), context());
+
+    expect(draft.kmInicialInterditado).toBe("");
+    expect(draft.kmFinalInterditado).toBe("");
   });
 });
