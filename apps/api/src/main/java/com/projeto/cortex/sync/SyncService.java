@@ -93,6 +93,19 @@ public class SyncService {
             "SOLICITACAO_INTEGRACAO",
             "COLABORADOR"
     );
+    /**
+     * Entidades cuja obra registrada é procedência, não dono.
+     *
+     * <p>O catálogo de serviços é corporativo: um serviço cadastrado numa obra
+     * aparece e se usa em todas, e {@code obra_autorizadora_id} guarda apenas
+     * quem o criou. Comparar essa obra com a do envelope recusaria toda
+     * operação vinda de outra frente — o que já estava previsto para a entidade
+     * relacionada e faltava para a principal.
+     *
+     * <p>O preço fica de fora de propósito: ele é por obra, e a versão de uma
+     * obra não se toca a partir de outra.
+     */
+    private static final Set<String> CATALOGO_CORPORATIVO_GLOBAL = Set.of("SERVICE");
     private static final Set<String> CANONICAL_ONLY_TRANSPORT_OPERATIONS =
             Set.of(
                     "ATUALIZAR_OBRA",
@@ -1827,6 +1840,28 @@ public class SyncService {
             return;
         }
         String storedWorksite = entityWorksite(mutacao.entityType(), mutacao.entityId());
+        /*
+         * A mesma regra que a entidade relacionada já aplicava, e pelo mesmo
+         * motivo: o catálogo de serviços é uma referência corporativa global, e
+         * a obra guardada nele registra quem autorizou a criação — procedência,
+         * não dono. Um serviço cadastrado numa obra aparece e se usa em todas.
+         *
+         * Aqui a exceção faltava porque, até o serviço ganhar estado de saída,
+         * não existia operação nenhuma sobre ele além de criar. Assim que
+         * excluir, restaurar e corrigir passaram a existir, toda uma delas vinda
+         * de obra diferente da que cadastrou voltava recusada — e recusa de
+         * exclusão é a pior que existe: a fila não reenvia recusa terminal, e o
+         * registro fica sem ninguém que consiga tirá-lo do caminho.
+         *
+         * Quem pode mexer continua decidido onde sempre esteve: o escopo
+         * autenticado da mutação, conferido acima, e a permissão financeira
+         * administrativa na obra declarada, conferida pelo handler. A entidade
+         * foi resolvida na linha de cima, então referência inexistente continua
+         * sendo recusada.
+         */
+        if (CATALOGO_CORPORATIVO_GLOBAL.contains(mutacao.entityType())) {
+            return;
+        }
         if (!mutacao.obraId().equals(storedWorksite)) {
             throw rejection("PRINCIPAL_ENTITY_SCOPE", "Entidade principal pertence a outra obra.");
         }
@@ -1903,7 +1938,7 @@ public class SyncService {
             // armazenada nele registra quem autorizou sua criação; não limita em
             // quais obras o serviço pode receber uma versão de preço. Ainda
             // resolvemos a entidade acima para rejeitar referências inexistentes.
-            if ("SERVICE".equals(related.tipo())) {
+            if (CATALOGO_CORPORATIVO_GLOBAL.contains(related.tipo())) {
                 continue;
             }
             if (!mutacao.obraId().equals(relatedWorksite)) {
