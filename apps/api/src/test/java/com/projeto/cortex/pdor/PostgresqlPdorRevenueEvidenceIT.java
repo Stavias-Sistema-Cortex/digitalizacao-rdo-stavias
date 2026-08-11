@@ -172,6 +172,99 @@ class PostgresqlPdorRevenueEvidenceIT {
                 .hasMessageContaining("PDOR_CALCULATION_FAILURE_IMMUTABLE");
     }
 
+    /*
+     * O caso do primeiro RDO: contrato cadastrado, produção apontada e
+     * nenhuma medição fechada ainda.
+     *
+     * Antes, receita medida ausente era lacuna obrigatória e o PDOR devolvia
+     * vazio — justamente no começo da obra, quando a projeção mais serve. A
+     * régua da receita não mudou; o que mudou é que zero medido passou a ser
+     * lido como fato, e a produção apontada sustenta o avanço físico.
+     */
+    @Test
+    void projetaComProducaoApontadaQuandoNenhumaReceitaFoiMedidaAinda() {
+        Obra obra = Obra.criar(
+                "PDOR-APONTADA", null, null, "Obra PDOR apontada", null, null,
+                null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+        apontamentoSemReceita(fixture, "30.000");
+        apontamentoSemReceita(fixture, "12.000");
+
+        PdorInputBundle input = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+
+        assertThat(input.missingRequiredFields()).isEmpty();
+        assertThat(input.canCalculate()).isTrue();
+        assertThat(input.sourceValues().measuredRevenue())
+                .isEqualByComparingTo("0");
+        assertThat(input.sourceValues().validatedRevenue())
+                .isEqualByComparingTo("0");
+        assertThat(input.revenueCoverageCode())
+                .isEqualTo("NO_ACCEPTED_EVIDENCE");
+        assertThat(input.sourceValues().actualExecutedQuantity())
+                .isEqualTo(42.0d);
+        assertThat((BigDecimal) input.inputs().get("reportedExecutedQuantity"))
+                .isEqualByComparingTo("42.000");
+        assertThat(input.origins().get("actualExecutedQuantity").source())
+                .contains("apontada");
+        assertThat(input.origins().get("measuredRevenue").availability())
+                .isEqualTo(PdorDataAvailability.DERIVED);
+    }
+
+    /*
+     * Produção rejeitada e retrabalho não entram: o que foi recusado não foi
+     * entregue, e refazer não é avançar.
+     */
+    @Test
+    void producaoApontadaIgnoraRetrabalhoEProducaoRejeitada() {
+        Obra obra = Obra.criar(
+                "PDOR-APONTADA-FILTRO", null, null, "Obra PDOR filtro", null,
+                null, null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+        apontamentoSemReceita(fixture, "10.000");
+        apontamento(fixture, "7.000", true, false, false);
+        apontamento(fixture, "5.000", false, true, false);
+        apontamento(fixture, "3.000", false, false, true);
+
+        PdorInputBundle input = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+
+        assertThat((BigDecimal) input.inputs().get("reportedExecutedQuantity"))
+                .isEqualByComparingTo("10.000");
+    }
+
+    private static void apontamentoSemReceita(
+            Fixture fixture,
+            String quantity
+    ) {
+        apontamento(fixture, quantity, false, false, false);
+    }
+
+    private static void apontamento(
+            Fixture fixture,
+            String quantity,
+            boolean retrabalho,
+            boolean producaoRejeitada,
+            boolean cancelada
+    ) {
+        String executionId = id();
+        jdbc.update("""
+                INSERT INTO execucao_servico_rdo (
+                    id, rdo_id, obra_id, servico_nome, item_contratual_id,
+                    service_id, quantidade_executada, unidade_medida,
+                    data_execucao, status_validacao, estado_receita,
+                    retrabalho, producao_rejeitada, cancelada, fonte,
+                    chave_execucao, revenue_coverage_code
+                ) VALUES (?, ?, ?, 'PDOR service', NULL, ?, ?, 'M2', ?,
+                          'REGISTRADA', 'PRODUCAO_REGISTRADA', ?, ?, ?,
+                          'PDOR_IT', ?, 'UNPRICED_REGISTERED')
+                """, executionId, fixture.rdoId(), fixture.obraId(),
+                fixture.serviceId(), new BigDecimal(quantity), REFERENCE_DATE,
+                retrabalho, producaoRejeitada, cancelada, key(executionId));
+    }
+
     private static Fixture fixture(Obra obra) {
         String actorId = id();
         String rdoId = id();
@@ -190,11 +283,21 @@ class PostgresqlPdorRevenueEvidenceIT {
                 "INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo) VALUES (?, ?, 'RDO-PDOR', ?)",
                 rdoId, obra.getId(), REFERENCE_DATE
         );
+        /*
+         * O código do serviço é único no catálogo inteiro, e não por obra: a
+         * unicidade é sobre `lower(codigo)`. Um código fixo aqui só funciona
+         * enquanto a classe tiver um único teste — o segundo a montar o cenário
+         * esbarra no primeiro, porque o contêiner é o mesmo.
+         */
         jdbc.update("""
                 INSERT INTO catalogo_servico (
                     id, codigo, nome, status, obra_autorizadora_id, criado_por
-                ) VALUES (?, 'PDOR.SERVICE', 'PDOR service', 'ACTIVE', ?, ?)
-                """, serviceId, obra.getId(), actorId);
+                ) VALUES (?, ?, 'PDOR service', 'ACTIVE', ?, ?)
+                """,
+                serviceId,
+                "PDOR.SERVICE." + obra.getCodigoContrato(),
+                obra.getId(),
+                actorId);
         jdbc.update("""
                 INSERT INTO service_price_version (
                     id, obra_id, service_id, unidade, moeda, versao,

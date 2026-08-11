@@ -69,6 +69,19 @@ function Bloco({
   return (
     <div
       className={`trecho-bloco trecho-bloco--${estado.toLowerCase()}`}
+      /*
+       * O timbre também vai no bloco, não só na tarja do rótulo.
+       *
+       * A superfície dizia apenas o estado — programado, rascunho, executado —,
+       * então dois serviços diferentes no mesmo estado saíam idênticos, e a
+       * única diferença entre eles era o quadradinho de cor ao lado do nome.
+       * Numa pista com duas faixas empilhadas isso obriga a ler as letras para
+       * saber o que é o quê.
+       *
+       * Agora as duas coisas cabem: o estado continua na textura — o ângulo e o
+       * traço da hachura —, e o serviço passa a dar a cor e o passo dela.
+       */
+      data-timbre={timbre ?? undefined}
       style={{
         left: `${bloco.inicio}%`,
         width: `${bloco.largura}%`,

@@ -46,14 +46,26 @@ export interface ObraArquivadaApi {
 
 export interface PrevisaoHistoricoApi {
   id: string;
-  obraId: string;
+  /**
+   * A obra vem como objeto: a resposta do PDOR não expõe `obraId` solto,
+   * justamente para não deixar escapar o formato interno do snapshot.
+   */
+  obra: { id: string | null } | null;
   dataReferencia: string | null;
   statusExecucao: string | null;
   producaoPlanejada: number | string | null;
   producaoRealizada: number | string | null;
+  producaoApontada: number | string | null;
   custoRealizado: number | string | null;
   custoPrevistoFinal: number | string | null;
   receitaPrevistaFinal: number | string | null;
+}
+
+/**
+ * O histórico do PDOR é paginado: vem `{ items, page, size, ... }`.
+ */
+interface PrevisaoHistoricoPaginaApi {
+  items: PrevisaoHistoricoApi[] | null;
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -90,5 +102,13 @@ export async function buscarHistoricoPrevisao(
   const response = await apiFetch(
     `/obras/${encodeURIComponent(obraId)}/previsao-financeira/historico?page=${page}&size=${size}`,
   );
-  return readJson<PrevisaoHistoricoApi[]>(response);
+  const pagina =
+    await readJson<PrevisaoHistoricoPaginaApi>(response);
+
+  /*
+   * Uma resposta sem `items` não é lista vazia disfarçada: percorrer o
+   * envelope como se fosse array estourava aqui e derrubava a hidratação
+   * inteira da obra, deixando o gráfico permanentemente sem histórico.
+   */
+  return Array.isArray(pagina?.items) ? pagina.items : [];
 }

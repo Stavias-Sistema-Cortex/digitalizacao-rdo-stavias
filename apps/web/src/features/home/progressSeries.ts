@@ -5,6 +5,7 @@ export type ChartPeriod = "3M" | "6M" | "12M" | "ALL";
 export interface MonthlyPoint {
   month: string;
   fisicoPct: number | null;
+  apontadaPct: number | null;
   pdorPct: number | null;
 }
 
@@ -66,6 +67,15 @@ export function buildMonthlySeries(
       month,
       fisicoPct: ratioPct(
         snapshot.producaoRealizada,
+        snapshot.producaoPlanejada,
+      ),
+      /*
+       * Produção apontada é linha própria, não substituta do avanço físico:
+       * enquanto a medição não fecha, ela costuma correr na frente, e é
+       * justamente essa distância que interessa ver.
+       */
+      apontadaPct: ratioPct(
+        snapshot.producaoApontada,
         snapshot.producaoPlanejada,
       ),
       pdorPct: ratioPct(

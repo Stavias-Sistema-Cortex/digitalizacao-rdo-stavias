@@ -58,19 +58,21 @@ export function snapshotRecordFromApi(
   nowIso: string,
 ): PrevisaoSnapshotRecord | null {
   const dataReferencia = textOrNull(api.dataReferencia);
+  const obraId = textOrNull(api.obra?.id ?? null);
 
-  if (!api.id || !api.obraId || !dataReferencia) {
+  if (!api.id || !obraId || !dataReferencia) {
     return null;
   }
 
   return {
     id: api.id,
-    obraId: api.obraId,
+    obraId,
     dataReferencia,
     statusExecucao:
       textOrNull(api.statusExecucao) ?? "CALCULADO",
     producaoPlanejada: toNumberOrNull(api.producaoPlanejada),
     producaoRealizada: toNumberOrNull(api.producaoRealizada),
+    producaoApontada: toNumberOrNull(api.producaoApontada),
     // The current financial product is revenue-only. Keep the legacy local
     // schema fields empty so an old response cannot reintroduce cost data into
     // the active Home cache.

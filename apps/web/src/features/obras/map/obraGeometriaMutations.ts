@@ -183,6 +183,59 @@ export async function registrarTrechoDesenhado(input: {
 }
 
 /**
+ * Registra o eixo da obra — a rodovia desenhada uma vez, com quilômetro nas
+ * pontas.
+ *
+ * <p>Desenhar era tarefa por RDO: quem apontava pelo quilômetro, que é como a
+ * obra fala, não via nada no mapa. O eixo inverte o gesto — traça-se a rodovia
+ * uma vez, diz-se o quilômetro de cada extremidade, e todo apontamento com
+ * quilômetro passa a se apoiar sozinho sobre ela.
+ *
+ * <p>O eixo é cadastro da obra, não medida de trabalho: ele não cria RDO, não
+ * lança serviço e não afirma execução nenhuma. É a régua, e só.
+ */
+export async function registrarEixoDaObra(input: {
+  obraId: string;
+  pontos: readonly PontoGeografico[];
+  kmInicial: number;
+  kmFinal: number;
+  rodovia?: string | null;
+}): Promise<ObraGeometriaLocalRecord> {
+  if (input.pontos.length < 2) {
+    throw new Error("O eixo exige ao menos o ponto inicial e o final.");
+  }
+  if (!Number.isFinite(input.kmInicial) || !Number.isFinite(input.kmFinal)) {
+    throw new Error("Informe o quilômetro das duas pontas do eixo.");
+  }
+  // Sem amplitude não há régua: os dois extremos no mesmo quilômetro não dizem
+  // onde cai nenhum ponto entre eles, e o eixo não sustentaria trecho algum.
+  if (input.kmInicial === input.kmFinal) {
+    throw new Error(
+      "As duas pontas do eixo não podem estar no mesmo quilômetro.",
+    );
+  }
+  return enfileirarNovaGeometria(
+    {
+      obraId: input.obraId,
+      categoria: "EIXO_OBRA",
+      objetoTipo: "OBRA",
+      objetoId: input.obraId,
+      geometry: {
+        type: "LineString",
+        coordinates: input.pontos.map((ponto) => [ponto.lng, ponto.lat]),
+      },
+      properties: {
+        kmInicial: input.kmInicial,
+        kmFinal: input.kmFinal,
+        rodovia: input.rodovia ?? null,
+      },
+      fonte: "GESTAO_MAPA",
+    },
+    "REGISTRAR_GEOMETRIA_OBRA",
+  );
+}
+
+/**
  * Registra a posição observada em campo pela PWA.
  *
  * Guarda a precisão informada pelo dispositivo junto do ponto, para que a

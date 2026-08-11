@@ -141,6 +141,7 @@ export function snapshotRecordFromPayload(
       toTextOrNull(payload.statusExecucao) ?? "CALCULADO",
     producaoPlanejada: toNumberOrNull(payload.producaoPlanejada),
     producaoRealizada: toNumberOrNull(payload.producaoRealizada),
+    producaoApontada: toNumberOrNull(payload.producaoApontada),
     custoRealizado: toNumberOrNull(payload.custoRealizado),
     custoPrevistoFinal: toNumberOrNull(payload.custoPrevistoFinal),
     receitaPrevistaFinal: toNumberOrNull(payload.receitaPrevistaFinal),

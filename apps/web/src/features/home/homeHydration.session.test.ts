@@ -118,11 +118,12 @@ describe("worksite hydration session boundary", () => {
       mocks.current = "session-b";
       return [{
         id: "snapshot-old-session",
-        obraId: "obra-1",
+        obra: { id: "obra-1" },
         dataReferencia: "2026-07-28",
         statusExecucao: "CALCULADO",
         producaoPlanejada: 10,
         producaoRealizada: 8,
+        producaoApontada: 9,
         custoRealizado: null,
         custoPrevistoFinal: null,
         receitaPrevistaFinal: 1200,

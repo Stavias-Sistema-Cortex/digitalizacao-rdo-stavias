@@ -41,10 +41,14 @@ import { carregarMapaObra, type LeituraMapaObra } from "./obraMapApi";
 import {
   encerrarGeometria,
   redesenharTrecho,
+  registrarEixoDaObra,
   registrarPontoDeCampo,
   registrarTrechoDesenhado,
   type GeometriaVisivelNoMapa,
 } from "./obraGeometriaMutations";
+import { apoiarTrechosNoEixo, lerEixoDaColecao } from "./eixoDaObra";
+import type { SegmentoTrecho } from "../trecho/trechoGeometry";
+import { quilometroDigitado } from "../../../lib/numeros/quilometroDigitado";
 import { hojeIso } from "./execucaoDoTrecho";
 import { resolverRdoDoTrecho } from "./rdoDoTrechoDesenhado";
 import {
@@ -78,6 +82,18 @@ interface RodoviaWorkspaceProps {
    * enquanto a obra não tem coordenada nem geometria.
    */
   endereco?: EnderecoDaObra;
+  /**
+   * Apontamentos do trecho, já recortados pelo período que o esquemático
+   * aplica. É deles que saem as linhas apoiadas no eixo — o quilômetro
+   * declarado no RDO desenhando no mapa sem que ninguém tenha desenhado ali.
+   */
+  segmentos?: readonly SegmentoTrecho[];
+  /**
+   * Dia observado no esquemático. Quando o operador escolhe um dia lá, o mapa
+   * o acompanha: duas metades da mesma tela mostrando dias diferentes seria
+   * pior do que não filtrar.
+   */
+  dataObservada?: string | null;
 }
 
 type EstadoLeitura =
@@ -215,6 +231,8 @@ export function RodoviaWorkspace({
   obra,
   podeDesenhar,
   endereco,
+  segmentos,
+  dataObservada,
 }: RodoviaWorkspaceProps) {
   const [estado, setEstado] = useState<EstadoLeitura>({ fase: "carregando" });
   const [aviso, setAviso] = useState<string | null>(null);
@@ -235,6 +253,21 @@ export function RodoviaWorkspace({
   const [marcacoesNoMapa, setMarcacoesNoMapa] = useState(0);
   const [cadastro, setCadastro] = useState<CadastroTrecho>(CADASTRO_VAZIO);
   const [salvandoCadastro, setSalvandoCadastro] = useState(false);
+  /*
+   * Cadastro do eixo da obra.
+   *
+   * Desenhar era tarefa por RDO, e quem apontava pelo quilômetro — que é como
+   * a obra fala — não via nada no mapa. O eixo inverte o gesto: a rodovia é
+   * traçada uma vez, com o quilômetro de cada ponta, e todo apontamento passa
+   * a se apoiar sozinho sobre ela.
+   *
+   * Reusa a mesma marcação de extremos do trecho de propósito. São dois
+   * gestos com a mesma mecânica, e duplicá-la faria os dois divergirem no
+   * primeiro acerto de um deles.
+   */
+  const [cadastrandoEixo, setCadastrandoEixo] = useState(false);
+  const [kmDoEixo, setKmDoEixo] = useState({ inicial: "", final: "" });
+  const [salvandoEixo, setSalvandoEixo] = useState(false);
   /*
    * Remoção de ponto operacional.
    *
@@ -373,13 +406,29 @@ export function RodoviaWorkspace({
     };
   }, [leitura, encerradosAgora]);
 
-  const colecaoCompleta = useMemo(
+  const colecaoPersistida = useMemo(
     () =>
       buildOperationalFeatureCollection(
         worksite,
         leituraVisivel?.dados.features ?? [],
       ),
     [worksite, leituraVisivel?.dados.features],
+  );
+  /*
+   * O que foi apontado pelo quilômetro entra aqui, apoiado no eixo.
+   *
+   * Nada é gravado: a linha é derivada na leitura, a partir da régua que o
+   * eixo oferece e do quilômetro que já mora no RDO. Guardá-la criaria uma
+   * segunda cópia da posição, que passaria a divergir do apontamento no
+   * primeiro acerto de um dos dois.
+   */
+  const colecaoCompleta = useMemo(
+    () => apoiarTrechosNoEixo(colecaoPersistida, segmentos ?? []),
+    [colecaoPersistida, segmentos],
+  );
+  const eixo = useMemo(
+    () => lerEixoDaColecao(colecaoPersistida),
+    [colecaoPersistida],
   );
   // O recorte é decidido aqui, no pai dos dois mapas, e desce pronto para
   // ambos: recortar em cada metade permitiria que elas mostrassem obras
@@ -506,6 +555,24 @@ export function RodoviaWorkspace({
     return total > 0 ? total : null;
   }, [colecao.features]);
 
+  /*
+   * O dia escolhido no esquemático recorta o mapa junto.
+   *
+   * Duas metades da mesma tela mostrando dias diferentes seria pior do que não
+   * filtrar nada. A escolha de fora é acompanhada durante a própria
+   * renderização, e não por efeito: sincronizar estado por efeito encadeia uma
+   * segunda renderização a cada troca de dia, com o mapa piscando o dia
+   * anterior no meio do caminho.
+   *
+   * O controle de dia do mapa continua valendo entre uma troca e outra — o
+   * acompanhamento só acontece quando o dia de fora muda de verdade.
+   */
+  const [diaDeFora, setDiaDeFora] = useState(dataObservada ?? "");
+  if (dataObservada !== undefined && (dataObservada ?? "") !== diaDeFora) {
+    setDiaDeFora(dataObservada ?? "");
+    setFiltro((atual) => ({ ...atual, data: dataObservada ?? "" }));
+  }
+
   const emCadastro =
     marcando !== null || rascunho.inicio !== null || rascunho.fim !== null;
 
@@ -595,6 +662,82 @@ export function RodoviaWorkspace({
     setLocalIdDaLinha(crypto.randomUUID());
     setAviso(null);
   }, []);
+
+  const abrirCadastroDoEixo = useCallback(() => {
+    setAviso(null);
+    setCadastro(CADASTRO_VAZIO);
+    setRascunho(RASCUNHO_VAZIO);
+    setKmDoEixo({ inicial: "", final: "" });
+    setCadastrandoEixo(true);
+    setMarcando("INICIO");
+  }, []);
+
+  const cancelarCadastroDoEixo = useCallback(() => {
+    setCadastrandoEixo(false);
+    setRascunho(RASCUNHO_VAZIO);
+    setMarcando(null);
+    setKmDoEixo({ inicial: "", final: "" });
+    setAviso(null);
+  }, []);
+
+  /**
+   * Grava o eixo.
+   *
+   * O eixo é cadastro da obra, não medida de trabalho: não abre RDO, não
+   * lança serviço e não afirma execução nenhuma. Por isso o caminho aqui é
+   * bem mais curto que o do trecho desenhado — ele grava uma geometria e para.
+   */
+  const salvarEixo = useCallback(async () => {
+    const { inicio, fim } = rascunho;
+    if (!inicio || !fim) {
+      setAviso(
+        "Marque as duas pontas do eixo antes de cadastrá-lo. Um extremo sozinho não descreve a rodovia.",
+      );
+      return;
+    }
+    const kmInicial = quilometroDigitado(kmDoEixo.inicial);
+    const kmFinal = quilometroDigitado(kmDoEixo.final);
+    if (kmInicial === null || kmFinal === null) {
+      setAviso(
+        "Informe o quilômetro das duas pontas. Sem eles o eixo não é régua de nada.",
+      );
+      return;
+    }
+    if (kmInicial === kmFinal) {
+      setAviso(
+        "As duas pontas não podem estar no mesmo quilômetro: não haveria como posicionar nada entre elas.",
+      );
+      return;
+    }
+    setSalvandoEixo(true);
+    try {
+      await registrarEixoDaObra({
+        obraId: obra.id,
+        pontos: [inicio, fim],
+        kmInicial,
+        kmFinal,
+        rodovia: rodoviaDaObra ?? null,
+      });
+      setCadastrandoEixo(false);
+      setRascunho(RASCUNHO_VAZIO);
+      setMarcando(null);
+      setKmDoEixo({ inicial: "", final: "" });
+      setAviso(
+        "Eixo cadastrado neste dispositivo. Os trechos apontados por quilômetro já se apoiam nele.",
+      );
+      recarregar();
+    } catch (motivo: unknown) {
+      // O que foi marcado permanece: uma falha de gravação não pode custar as
+      // duas pontas que acabaram de ser posicionadas na rodovia.
+      setAviso(
+        motivo instanceof Error
+          ? motivo.message
+          : "Não foi possível cadastrar o eixo.",
+      );
+    } finally {
+      setSalvandoEixo(false);
+    }
+  }, [kmDoEixo, obra.id, rascunho, recarregar, rodoviaDaObra]);
 
   /*
    * Correção do traçado.
@@ -880,7 +1023,7 @@ export function RodoviaWorkspace({
           >
             {capturando ? "Lendo o GPS…" : "Registrar posição"}
           </button>
-          {podeDesenhar && !trechoEmCorrecao ? (
+          {podeDesenhar && !trechoEmCorrecao && !cadastrandoEixo ? (
             <button
               type="button"
               className={
@@ -904,6 +1047,31 @@ export function RodoviaWorkspace({
                 : emCadastro
                   ? "Continuar o desenho"
                   : "Desenhar trecho"}
+            </button>
+          ) : null}
+          {/*
+            O eixo se cadastra uma vez. Com ele de pé, o botão sai da barra:
+            oferecê-lo de novo convidaria a uma segunda régua para a mesma
+            rodovia, e duas réguas discordando é pior do que nenhuma.
+          */}
+          {podeDesenhar && !trechoEmCorrecao && !emCadastro && !eixo ? (
+            <button
+              type="button"
+              className={
+                cadastrandoEixo
+                  ? "rodovia-desenho-botao rodovia-desenho-botao--ativo"
+                  : "rodovia-desenho-botao"
+              }
+              aria-pressed={cadastrandoEixo}
+              onClick={() => {
+                if (cadastrandoEixo) {
+                  cancelarCadastroDoEixo();
+                  return;
+                }
+                abrirCadastroDoEixo();
+              }}
+            >
+              {cadastrandoEixo ? "Parar de marcar" : "Cadastrar o eixo"}
             </button>
           ) : null}
         </div>
@@ -1026,7 +1194,105 @@ export function RodoviaWorkspace({
         </form>
       ) : null}
 
-      {emCadastro && !trechoEmCorrecao ? (
+      {/*
+        O eixo é a régua da obra, e não um trabalho: ele não abre RDO, não
+        lança serviço e não afirma execução nenhuma. Por isso o formulário
+        pede duas coisas só — onde a rodovia começa e termina no mapa, e em
+        que quilômetro cada ponta está.
+      */}
+      {cadastrandoEixo ? (
+        <form
+          className="rodovia-cadastro rodovia-cadastro--eixo"
+          aria-label="Cadastro do eixo da obra"
+          noValidate
+          onSubmit={(evento) => {
+            evento.preventDefault();
+            void salvarEixo();
+          }}
+        >
+          <header>
+            <div>
+              <p className="eyebrow">Eixo da obra</p>
+              <h3>Trace a rodovia uma vez e diga o quilômetro das pontas</h3>
+            </div>
+            <span>
+              {extensaoDaLinha === null
+                ? "Marque as duas pontas do eixo"
+                : `${new Intl.NumberFormat("pt-BR", {
+                    maximumFractionDigits: 0,
+                  }).format(extensaoDaLinha)} m traçados`}
+            </span>
+          </header>
+
+          <div className="rodovia-cadastro__extremos">
+            <CampoDeExtremo
+              key={`EIXO:INICIO:${marcacoesNoMapa}`}
+              extremo="INICIO"
+              valor={rascunho.inicio}
+              marcando={marcando === "INICIO"}
+              onAlterar={(ponto) => alterarExtremo("INICIO", ponto)}
+              onMarcarNoMapa={() => marcarExtremo("INICIO")}
+            />
+            <CampoDeExtremo
+              key={`EIXO:FIM:${marcacoesNoMapa}`}
+              extremo="FIM"
+              valor={rascunho.fim}
+              marcando={marcando === "FIM"}
+              onAlterar={(ponto) => alterarExtremo("FIM", ponto)}
+              onMarcarNoMapa={() => marcarExtremo("FIM")}
+            />
+          </div>
+
+          <div className="rodovia-cadastro__grade">
+            <label>
+              Km na ponta inicial
+              <input
+                value={kmDoEixo.inicial}
+                inputMode="decimal"
+                placeholder="172 ou 309+400"
+                onChange={(evento) =>
+                  setKmDoEixo((atual) => ({
+                    ...atual,
+                    inicial: evento.target.value,
+                  }))}
+              />
+            </label>
+            <label>
+              Km na ponta final
+              <input
+                value={kmDoEixo.final}
+                inputMode="decimal"
+                placeholder="196"
+                onChange={(evento) =>
+                  setKmDoEixo((atual) => ({
+                    ...atual,
+                    final: evento.target.value,
+                  }))}
+              />
+            </label>
+          </div>
+
+          <footer>
+            <button type="button" onClick={cancelarCadastroDoEixo}>
+              Descartar o eixo
+            </button>
+            <button
+              type="submit"
+              className="is-primary"
+              disabled={salvandoEixo}
+            >
+              {salvandoEixo ? "Cadastrando…" : "Cadastrar o eixo"}
+            </button>
+          </footer>
+          <small>
+            O eixo não lança serviço nem abre RDO — ele é só a régua. Com ele
+            de pé, todo trecho apontado por quilômetro aparece no mapa sozinho,
+            sem precisar ser desenhado.
+          </small>
+        </form>
+      ) : null}
+
+      {emCadastro && !trechoEmCorrecao && !cadastrandoEixo ? (
         <form
           className="rodovia-cadastro"
           aria-label="Cadastro do trecho desenhado"

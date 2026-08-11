@@ -8,8 +8,13 @@ import type {
 const SERIES = [
   {
     key: "fisicoPct",
-    label: "Avanço físico",
+    label: "Avanço físico medido",
     color: "#0e857a",
+  },
+  {
+    key: "apontadaPct",
+    label: "Produção apontada",
+    color: "#4b7bb5",
   },
   {
     key: "pdorPct",

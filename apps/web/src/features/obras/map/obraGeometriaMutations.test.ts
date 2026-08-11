@@ -44,6 +44,7 @@ vi.mock("./obraGeoCacheRepository", () => ({
 
 const {
   encerrarGeometria,
+  registrarEixoDaObra,
   registrarPontoDeCampo,
   registrarTrechoDesenhado,
 } = await import("./obraGeometriaMutations");
@@ -440,5 +441,92 @@ describe("encerrarGeometria", () => {
     await expect(encerrarGeometria("inexistente", "motivo")).rejects.toThrow(
       /não encontrada neste dispositivo/,
     );
+  });
+});
+
+/*
+ * O eixo é a régua da obra: traçado uma vez, com quilômetro nas pontas, para
+ * que todo apontamento por quilômetro se apoie nele sem precisar ser desenhado.
+ */
+describe("registrarEixoDaObra", () => {
+  const PONTOS = [
+    { lat: -22.43, lng: -47.56 },
+    { lat: -22.44, lng: -47.35 },
+  ];
+
+  it("grava a linha com a quilometragem das pontas nas propriedades", async () => {
+    await registrarEixoDaObra({
+      obraId: "obra-1",
+      pontos: PONTOS,
+      kmInicial: 100,
+      kmFinal: 110,
+      rodovia: "SP-310",
+    });
+
+    const mutacao = ultimaMutacao();
+    expect(mutacao.entityType).toBe("GEOMETRIA_OBRA");
+    expect(mutacao.operation).toBe("CREATE");
+    expect(mutacao.transportOperation).toBe("REGISTRAR_GEOMETRIA_OBRA");
+    const snapshot = mutacao.nextSnapshot as Record<string, unknown>;
+    expect(snapshot.categoria).toBe("EIXO_OBRA");
+    expect(snapshot.objetoTipo).toBe("OBRA");
+    expect(snapshot.objetoId).toBe("obra-1");
+    expect(snapshot.properties).toMatchObject({
+      kmInicial: 100,
+      kmFinal: 110,
+      rodovia: "SP-310",
+    });
+    expect(snapshot.geometry).toEqual({
+      type: "LineString",
+      coordinates: [
+        [-47.56, -22.43],
+        [-47.35, -22.44],
+      ],
+    });
+  });
+
+  it("é cadastro da obra, e não afirma execução: relaciona só a obra", async () => {
+    await registrarEixoDaObra({
+      obraId: "obra-1",
+      pontos: PONTOS,
+      kmInicial: 100,
+      kmFinal: 110,
+    });
+
+    expect(ultimaMutacao().relatedEntities).toEqual([
+      { tipo: "OBRA", id: "obra-1" },
+    ]);
+  });
+
+  it("recusa as duas pontas no mesmo quilômetro, que não posicionariam nada", async () => {
+    await expect(
+      registrarEixoDaObra({
+        obraId: "obra-1",
+        pontos: PONTOS,
+        kmInicial: 100,
+        kmFinal: 100,
+      }),
+    ).rejects.toThrow(/mesmo quilômetro/i);
+    expect(commitLocalMutation).not.toHaveBeenCalled();
+  });
+
+  it("recusa a linha de um ponto só e o quilômetro ausente", async () => {
+    await expect(
+      registrarEixoDaObra({
+        obraId: "obra-1",
+        pontos: [PONTOS[0]],
+        kmInicial: 100,
+        kmFinal: 110,
+      }),
+    ).rejects.toThrow(/ponto inicial e o final/i);
+    await expect(
+      registrarEixoDaObra({
+        obraId: "obra-1",
+        pontos: PONTOS,
+        kmInicial: Number.NaN,
+        kmFinal: 110,
+      }),
+    ).rejects.toThrow(/quilômetro das duas pontas/i);
+    expect(commitLocalMutation).not.toHaveBeenCalled();
   });
 });

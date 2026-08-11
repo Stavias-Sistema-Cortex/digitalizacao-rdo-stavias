@@ -7,7 +7,10 @@ vi.mock("../../lib/api/apiClient", async (importActual) => ({
   apiFetch: mocks.apiFetch,
 }));
 
-import { buscarObrasArquivadas } from "./homeApi";
+import {
+  buscarHistoricoPrevisao,
+  buscarObrasArquivadas,
+} from "./homeApi";
 
 describe("Home worksite API", () => {
   beforeEach(() => {
@@ -27,5 +30,38 @@ describe("Home worksite API", () => {
       expect.objectContaining({ id: "obra-1" }),
     ]);
     expect(mocks.apiFetch).toHaveBeenCalledWith("/obras/arquivadas");
+  });
+
+  it("abre o envelope paginado do histórico de previsão", async () => {
+    mocks.apiFetch.mockResolvedValue(
+      new Response(JSON.stringify({
+        items: [
+          { id: "snap-1", obra: { id: "obra-1" } },
+          { id: "snap-2", obra: { id: "obra-1" } },
+        ],
+        page: 0,
+        size: 100,
+        totalElements: 2,
+      }), { status: 200 }),
+    );
+
+    await expect(
+      buscarHistoricoPrevisao("obra-1"),
+    ).resolves.toEqual([
+      expect.objectContaining({ id: "snap-1" }),
+      expect.objectContaining({ id: "snap-2" }),
+    ]);
+  });
+
+  it("devolve lista vazia quando o envelope não traz itens", async () => {
+    mocks.apiFetch.mockResolvedValue(
+      new Response(JSON.stringify({ page: 0, size: 100 }), {
+        status: 200,
+      }),
+    );
+
+    await expect(
+      buscarHistoricoPrevisao("obra-1"),
+    ).resolves.toEqual([]);
   });
 });

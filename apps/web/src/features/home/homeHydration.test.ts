@@ -42,11 +42,12 @@ describe("snapshotRecordFromApi", () => {
     const ok = snapshotRecordFromApi(
       {
         id: "snap-1",
-        obraId: "obra-1",
+        obra: { id: "obra-1" },
         dataReferencia: "2026-06-30",
         statusExecucao: "CALCULADO",
         producaoPlanejada: 500,
         producaoRealizada: 240,
+        producaoApontada: 410,
         custoRealizado: 40,
         custoPrevistoFinal: 90,
         receitaPrevistaFinal: 120,
@@ -56,11 +57,12 @@ describe("snapshotRecordFromApi", () => {
     const missing = snapshotRecordFromApi(
       {
         id: "snap-2",
-        obraId: "obra-1",
+        obra: { id: "obra-1" },
         dataReferencia: null,
         statusExecucao: null,
         producaoPlanejada: null,
         producaoRealizada: null,
+        producaoApontada: null,
         custoRealizado: null,
         custoPrevistoFinal: null,
         receitaPrevistaFinal: null,
@@ -70,6 +72,8 @@ describe("snapshotRecordFromApi", () => {
 
     expect(ok).toMatchObject({
       dataReferencia: "2026-06-30",
+      producaoRealizada: 240,
+      producaoApontada: 410,
       custoRealizado: null,
       custoPrevistoFinal: null,
       receitaPrevistaFinal: 120,
