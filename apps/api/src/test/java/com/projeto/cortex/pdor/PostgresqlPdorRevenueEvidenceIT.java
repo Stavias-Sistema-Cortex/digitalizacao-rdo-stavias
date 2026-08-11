@@ -283,11 +283,21 @@ class PostgresqlPdorRevenueEvidenceIT {
                 "INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo) VALUES (?, ?, 'RDO-PDOR', ?)",
                 rdoId, obra.getId(), REFERENCE_DATE
         );
+        /*
+         * O código do serviço é único no catálogo inteiro, e não por obra: a
+         * unicidade é sobre `lower(codigo)`. Um código fixo aqui só funciona
+         * enquanto a classe tiver um único teste — o segundo a montar o cenário
+         * esbarra no primeiro, porque o contêiner é o mesmo.
+         */
         jdbc.update("""
                 INSERT INTO catalogo_servico (
                     id, codigo, nome, status, obra_autorizadora_id, criado_por
-                ) VALUES (?, 'PDOR.SERVICE', 'PDOR service', 'ACTIVE', ?, ?)
-                """, serviceId, obra.getId(), actorId);
+                ) VALUES (?, ?, 'PDOR service', 'ACTIVE', ?, ?)
+                """,
+                serviceId,
+                "PDOR.SERVICE." + obra.getCodigoContrato(),
+                obra.getId(),
+                actorId);
         jdbc.update("""
                 INSERT INTO service_price_version (
                     id, obra_id, service_id, unidade, moeda, versao,
