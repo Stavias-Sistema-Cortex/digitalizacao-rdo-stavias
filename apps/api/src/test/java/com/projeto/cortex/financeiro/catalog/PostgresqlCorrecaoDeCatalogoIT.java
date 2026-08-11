@@ -230,12 +230,15 @@ class PostgresqlCorrecaoDeCatalogoIT {
                         mutation(), "DUAS." + sufixo(), "Serviço com duas", null
                 )
         ));
+        // Com fim de vigência: a versão em área precisa deixar espaço no
+        // calendário para a que vai ser corrigida, senão a sobreposição que o
+        // gatilho recusa é real e não tem nada a ver com a renumeração.
         ServicePriceVersion emArea = inTx(() -> servico.createPrice(
                 obra, ator, catalogo.id(),
                 new CreateServicePriceCommand(
                         mutation(), "M²", "BRL", new BigDecimal("125.0000"),
-                        new BigDecimal("800.000"), VIGENCIA, null,
-                        "CONTRATO_MEDIDO"
+                        new BigDecimal("800.000"), VIGENCIA,
+                        VIGENCIA.plusMonths(6), "CONTRATO_MEDIDO"
                 )
         ));
         ServicePriceVersion emLinear = inTx(() -> servico.createPrice(
