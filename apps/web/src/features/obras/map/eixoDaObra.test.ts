@@ -6,7 +6,7 @@ import {
   PROPRIEDADE_DERIVADA,
   apoiarTrechosNoEixo,
   lerEixoDaColecao,
-  rdosComDesenhoProprio,
+  rdosJaNoMapa,
   recortarEixoPorKm,
   type EixoDaObra,
 } from "./eixoDaObra";
@@ -233,8 +233,13 @@ describe("apoiarTrechosNoEixo", () => {
   });
 });
 
-describe("rdosComDesenhoProprio", () => {
-  it("não conta a linha que o próprio eixo derivou", () => {
+describe("rdosJaNoMapa", () => {
+  /*
+   * A mesma derivação roda na API, que é onde ela pertence. Se o aparelho
+   * ignorasse a linha que o servidor já mandou, ele desenharia a segunda por
+   * cima — o mesmo trabalho duas vezes, levemente deslocado.
+   */
+  it("conta também a linha que a API já derivou", () => {
     const derivada = {
       type: "Feature" as const,
       id: "eixo:seg-1",
@@ -253,6 +258,33 @@ describe("rdosComDesenhoProprio", () => {
       },
     };
 
-    expect(rdosComDesenhoProprio(colecao(derivada)).size).toBe(0);
+    expect([...rdosJaNoMapa(colecao(derivada))]).toEqual(["rdo-1"]);
+  });
+
+  it("não repete o apontamento que a API já desenhou", () => {
+    const derivada = {
+      type: "Feature" as const,
+      id: "eixo:seg-1",
+      geometry: {
+        type: "LineString" as const,
+        coordinates: [
+          [0.4, 0],
+          [0.8, 0],
+        ],
+      },
+      properties: {
+        categoria: "TRECHO",
+        [PROPRIEDADE_DERIVADA]: true,
+        objetoTipo: "RDO",
+        objetoId: "rdo-1",
+      },
+    };
+
+    const resultado = apoiarTrechosNoEixo(
+      colecao(FEICAO_DO_EIXO, derivada),
+      [segmento()],
+    );
+
+    expect(resultado.features).toHaveLength(2);
   });
 });

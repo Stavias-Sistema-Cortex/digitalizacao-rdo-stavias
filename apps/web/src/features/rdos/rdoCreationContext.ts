@@ -275,6 +275,39 @@ export function setRosterApontador(
   };
 }
 
+/**
+ * Sugere como apontador quem está preenchendo o RDO.
+ *
+ * <p>Quase sempre é a mesma pessoa, e deixar "Sem apontador" como padrão
+ * transformava isso num campo a lembrar de preencher — esquecível justamente
+ * por ser óbvio. A sugestão só entra quando ninguém foi escolhido ainda e a
+ * pessoa está marcada na equipe do dia: fora disso o campo continua como
+ * estava, e quem quiser trocar troca.
+ *
+ * <p>Não é imposição. Uma vez escolhido — inclusive "Sem apontador", que é uma
+ * escolha — este caminho não mexe mais.
+ */
+export function sugerirApontador(
+  draft: RdoDraft,
+  colaboradorId: string,
+): RdoDraft {
+  const candidato = colaboradorId.trim();
+  if (!candidato || draft.apontadorColaboradorId.trim()) {
+    return draft;
+  }
+  const row = draft.maoObra.find(
+    (item) => item.colaboradorId === candidato && item.selected,
+  );
+  if (!row) {
+    return draft;
+  }
+  return {
+    ...draft,
+    apontadorColaboradorId: candidato,
+    apontadorRdo: row.nomeColaborador,
+  };
+}
+
 export function contextPresentation(
   context: RdoCreationContextLookup,
   now = new Date(),

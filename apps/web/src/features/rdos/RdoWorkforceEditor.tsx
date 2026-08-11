@@ -6,7 +6,9 @@ import {
   removeRosterMember,
   setRosterApontador,
   setRosterSelected,
+  sugerirApontador,
 } from "./rdoCreationContext";
+import { getSession } from "../auth/authSession";
 import { avisoDeApontamentoRepetido } from "./apontadosEmOutroRdo";
 import { createEmptyMaoObra } from "./createEmptyRdo";
 import type { MaoObraDraft, RdoDraft } from "./rdo.types";
@@ -65,6 +67,26 @@ export function RdoWorkforceEditor({
   const [newCollaboratorName, setNewCollaboratorName] = useState("");
   const [somandoAMao, setSomandoAMao] = useState(false);
   const newCollaboratorId = useId();
+
+  /*
+   * O apontador nasce sendo quem está preenchendo.
+   *
+   * Quase sempre é a mesma pessoa, e "Sem apontador" como padrão fazia disso um
+   * campo a lembrar de preencher — esquecível justamente por ser óbvio. A
+   * sugestão é aplicada durante a renderização, e não por efeito: sincronizar
+   * estado por efeito encadeia uma segunda renderização e o campo pisca vazio
+   * no meio do caminho.
+   *
+   * `sugerirApontador` não mexe em nada quando já há escolha feita — inclusive
+   * a escolha de não ter apontador —, então isto roda uma vez e para.
+   */
+  const sugerido = sugerirApontador(
+    draft,
+    getSession()?.colaboradorId ?? "",
+  );
+  if (sugerido !== draft) {
+    onChange(sugerido);
+  }
 
   const noRascunho = useMemo(
     () =>
@@ -235,6 +257,12 @@ export function RdoWorkforceEditor({
             ))}
           </select>
         </label>
+        {/* Fora do label de propósito: dentro, a dica entraria no nome
+            acessível do campo, e quem usa leitor de tela ouviria a frase
+            inteira toda vez que passasse pelo select. */}
+        <small className="rdo-workforce-dica">
+          Vem preenchido com quem está lançando; dá para trocar.
+        </small>
       </div>
 
       {/* Somar alguém à mão fica atrás de um botão: é a exceção — o ajudante

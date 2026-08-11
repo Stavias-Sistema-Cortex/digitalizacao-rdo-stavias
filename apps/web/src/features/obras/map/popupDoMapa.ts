@@ -131,8 +131,24 @@ export function geometriaPodeSairDoMapa(
   return (
     (properties.categoria === "PONTO_OPERACIONAL" ||
       properties.categoria === "TRECHO") &&
+    !ehDerivadaDoEixo(properties) &&
     geometriaDoBalao(properties) !== null
   );
+}
+
+/**
+ * A linha que o eixo derivou não é desenho, e por isso não tem lixeira.
+ *
+ * <p>Ela não existe como registro: nasce na leitura, do quilômetro que mora no
+ * apontamento do RDO. Não há o que apagar — apagá-la teria de significar apagar
+ * o apontamento, e apagar um trabalho a partir do mapa é decisão que não cabe
+ * a um clique numa linha. Quem quer tirar o trecho tira o quilômetro no RDO, e
+ * a linha some junto na consulta seguinte.
+ */
+export function ehDerivadaDoEixo(
+  properties: Record<string, unknown>,
+): boolean {
+  return properties.derivadoDoEixo === true;
 }
 
 /** O nome do que a lixeira remove, para o rótulo dizer a verdade. */
@@ -162,6 +178,10 @@ export function trechoPodeSerRedesenhado(
 ): boolean {
   return (
     properties.categoria === "TRECHO" &&
+    // A linha derivada ainda não sabe voltar para o RDO: corrigir o traçado
+    // dela teria de reescrever o quilômetro do apontamento, e enquanto esse
+    // caminho não existe o lápis só saberia falhar.
+    !ehDerivadaDoEixo(properties) &&
     geometriaDoBalao(properties) !== null &&
     !properties.validoAte
   );

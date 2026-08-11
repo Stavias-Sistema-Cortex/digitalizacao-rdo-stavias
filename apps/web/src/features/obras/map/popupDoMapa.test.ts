@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 
-import { popupElement } from "./popupDoMapa";
+import {
+  geometriaPodeSairDoMapa,
+  lixeiraDoBalao,
+  popupElement,
+  redesenhoDoBalao,
+  trechoPodeSerRedesenhado,
+} from "./popupDoMapa";
 
 function lixeira(elemento: HTMLElement): HTMLButtonElement | null {
   return elemento.querySelector("button.mapa-balao-remover");
@@ -247,5 +253,42 @@ describe("quilômetro no balão do trecho", () => {
     );
 
     expect(balao.textContent).not.toContain("km");
+  });
+});
+
+/*
+ * A linha que o eixo derivou não é desenho: ela nasce na leitura, do
+ * quilômetro que mora no apontamento. Apagá-la teria de significar apagar o
+ * apontamento, e isso não cabe a um clique numa linha do mapa.
+ */
+describe("linha derivada do eixo", () => {
+  const derivada = {
+    categoria: "TRECHO",
+    derivadoDoEixo: true,
+    geometriaId: "eixo:execucao-1",
+    objetoTipo: "RDO",
+    objetoId: "rdo-1",
+  };
+
+  it("não oferece lixeira", () => {
+    expect(geometriaPodeSairDoMapa(derivada)).toBe(false);
+    expect(lixeiraDoBalao(derivada, () => {})).toBeNull();
+  });
+
+  it("não oferece o lápis enquanto ele não souber voltar ao RDO", () => {
+    expect(trechoPodeSerRedesenhado(derivada)).toBe(false);
+    expect(redesenhoDoBalao(derivada, () => {})).toBeNull();
+  });
+
+  it("o trecho desenhado à mão continua com os dois", () => {
+    const desenhado = {
+      categoria: "TRECHO",
+      geometriaId: "geo-1",
+      objetoTipo: "RDO",
+      objetoId: "rdo-1",
+    };
+
+    expect(geometriaPodeSairDoMapa(desenhado)).toBe(true);
+    expect(trechoPodeSerRedesenhado(desenhado)).toBe(true);
   });
 });
