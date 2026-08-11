@@ -166,11 +166,15 @@ class PdorControllerMockMvcTest {
                 .andExpect(jsonPath("$.triggerType").doesNotExist())
                 .andExpect(jsonPath("$.createdAt").doesNotExist());
 
+        // "Não dá para calcular" é o estado atual da obra, e ocupa a corrente:
+        // arquivá-lo fora dela deixava a projeção velha na tela depois de o
+        // dado que a sustentava desaparecer.
         ArgumentCaptor<PdorSnapshot> snapshotCaptor =
                 ArgumentCaptor.forClass(PdorSnapshot.class);
-        verify(snapshotRepository).insert(snapshotCaptor.capture());
+        verify(snapshotRepository).replaceCurrent(snapshotCaptor.capture());
         assertThat(snapshotCaptor.getValue().executionStatus())
                 .isEqualTo(PdorExecutionStatus.INSUFFICIENT_DATA);
+        assertThat(snapshotCaptor.getValue().current()).isTrue();
         assertThat(snapshotCaptor.getValue().revenueP50()).isNull();
     }
 

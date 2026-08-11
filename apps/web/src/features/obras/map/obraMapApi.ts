@@ -145,6 +145,26 @@ export interface LeituraMapaObra {
  * declarada, para que a tela informe que está mostrando o que já tinha em vez de
  * fingir que consultou agora.
  */
+/**
+ * O que o servidor deriva na leitura e o dispositivo não tem como guardar.
+ *
+ * <p>A regra "o que o dispositivo sabe manda" existe para o que ele pode ser
+ * dono: geometria gravada, que ele cria, encerra e reconcilia. A linha apoiada
+ * no eixo não é nada disso — ela nasce na leitura, a partir do quilômetro que
+ * mora no RDO, e por isso nunca entra no armazenamento local.
+ *
+ * <p>Sem esta separação, bastava o aparelho conhecer uma geometria qualquer
+ * daquela obra para a resposta inteira do servidor ser descartada, e o trecho
+ * apontado por quilômetro sumia do mapa sem nada explicando por quê. Era o
+ * caso de toda obra já usada: a localização da própria obra já é uma geometria
+ * conhecida.
+ */
+function derivadas(features: readonly ObraMapFeature[]): ObraMapFeature[] {
+  return features.filter(
+    (feature) => feature.properties.derivadoDoEixo === true,
+  );
+}
+
 export async function carregarMapaObra(
   obra: WorksiteMapPoint,
 ): Promise<LeituraMapaObra> {
@@ -172,11 +192,9 @@ export async function carregarMapaObra(
     return {
       dados: {
         obra: dados.obra,
-        features: locais === null
+        features: locais === null || conhecidas === 0
           ? dados.features
-          : conhecidas > 0
-            ? locais.map(featureDoRegistro)
-            : dados.features,
+          : [...locais.map(featureDoRegistro), ...derivadas(dados.features)],
       },
       origem: "REDE",
       obtidoEm: agora,

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 import { AUTH_SESSION_CHANGED_EVENT } from "../auth/authSession";
 import { PdorPanel } from "../obras/PdorPanel";
+import { recalcularPdor } from "../obras/obrasApi";
 import {
   loadPdorRevenueSnapshot,
   type PdorRevenueSnapshot,
@@ -128,8 +129,54 @@ export function FinancePdorSection({
     };
   }, []);
 
+  /*
+   * Recalcular à mão.
+   *
+   * <p>O cálculo já era disparado por evento — a cada mudança de RDO —, e essa
+   * era a única porta. Só que o snapshot é cache: quando o que ele projetava
+   * deixa de existir e nenhum RDO muda depois disso, a projeção velha fica na
+   * tela sem nada que a tire de lá. Apagar o último RDO da obra era exatamente
+   * esse caso.
+   *
+   * <p>Recalcular não inventa dado: relê a obra como ela está agora. Se as
+   * entradas sumiram, o resultado é "dados insuficientes" — que é a resposta
+   * correta, no lugar de um número que já não descreve nada.
+   */
+  const [recalculando, setRecalculando] = useState(false);
+  const [avisoDoRecalculo, setAvisoDoRecalculo] = useState<string | null>(null);
+
+  async function recalcular() {
+    setRecalculando(true);
+    setAvisoDoRecalculo(null);
+    try {
+      await recalcularPdor(obraId);
+      setAvisoDoRecalculo("Previsão recalculada com os dados de agora.");
+      setAutomaticRefreshVersion((version) => version + 1);
+    } catch (motivo: unknown) {
+      setAvisoDoRecalculo(
+        motivo instanceof Error
+          ? motivo.message
+          : "Não foi possível recalcular a previsão agora.",
+      );
+    } finally {
+      setRecalculando(false);
+    }
+  }
+
   return (
     <section className="finance-pdor-section">
+      <div className="finance-pdor-acoes">
+        <button
+          type="button"
+          onClick={() => void recalcular()}
+          disabled={recalculando || loading}
+        >
+          {recalculando ? "Recalculando…" : "Recalcular previsão"}
+        </button>
+        {avisoDoRecalculo ? (
+          <span role="status">{avisoDoRecalculo}</span>
+        ) : null}
+      </div>
       {snapshot ? (
         <div
           className={`finance-revenue-provenance is-${

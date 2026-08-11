@@ -218,6 +218,41 @@ class PdorApplicationServiceTest {
         );
     }
 
+    /*
+     * "Não dá para calcular" é o estado atual da obra, e tem de ocupar a
+     * corrente.
+     *
+     * <p>O snapshot de dados insuficientes nascia fora dela, com a intenção de
+     * não destruir a última projeção boa. O efeito era o oposto: apagar o único
+     * RDO da obra deixava na tela, para sempre, um valor calculado sobre uma
+     * produção que a obra já tinha desfeito — o recálculo rodava, o resultado
+     * era arquivado, e a projeção velha seguia sendo a atual.
+     */
+    @Test
+    void oSnapshotSemDadosOcupaACorrenteEVenceOAnterior() {
+        PdorResultadoResponse comDados =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        assertThat(comDados.statusExecucao()).isEqualTo("SUCCESS");
+
+        inputLoader.bundle = insufficientBundle(obra);
+        PdorResultadoResponse semDados =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+
+        assertThat(semDados.statusExecucao()).isEqualTo("INSUFFICIENT_DATA");
+        PdorSnapshot atual = snapshotRepository
+                .findCurrentByObraId(obra.getId())
+                .orElseThrow();
+        assertThat(atual.executionStatus())
+                .isEqualTo(PdorExecutionStatus.INSUFFICIENT_DATA);
+        assertThat(atual.current()).isTrue();
+        // A projeção anterior não é apagada: ela sai da corrente e fica no
+        // histórico, marcada como vencida.
+        PdorSnapshot anterior = snapshotRepository.findById(comDados.id())
+                .orElseThrow();
+        assertThat(anterior.current()).isFalse();
+        assertThat(anterior.stale()).isTrue();
+    }
+
     @Test
     void shouldCreateInsufficientDataSnapshotWithoutSilentFinancialZero() {
         inputLoader.bundle = insufficientBundle(obra);
