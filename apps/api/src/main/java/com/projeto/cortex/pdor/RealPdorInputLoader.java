@@ -947,10 +947,15 @@ public class RealPdorInputLoader implements PdorInputLoader {
         addEvidence(
                 evidence,
                 """
-                SELECT id, criado_em AS observed_at
-                FROM execucao_servico_rdo
-                WHERE obra_id = ? AND cancelada = FALSE AND data_execucao <= ?
-                ORDER BY data_execucao DESC, id
+                SELECT execution.id, execution.criado_em AS observed_at
+                FROM execucao_servico_rdo execution
+                JOIN rdo
+                  ON rdo.id = execution.rdo_id
+                 AND rdo.cancelado_em IS NULL
+                WHERE execution.obra_id = ?
+                  AND execution.cancelada = FALSE
+                  AND execution.data_execucao <= ?
+                ORDER BY execution.data_execucao DESC, execution.id
                 LIMIT 50
                 """,
                 "EXECUCAO_SERVICO_RDO", "execucao_servico_rdo", "PRODUCAO_E_RECEITA",
@@ -1464,6 +1469,9 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 """
                 SELECT COUNT(*)
                 FROM execucao_servico_rdo execution
+                JOIN rdo
+                  ON rdo.id = execution.rdo_id
+                 AND rdo.cancelado_em IS NULL
                 WHERE execution.obra_id = ?
                   AND execution.data_execucao <= ?
                   AND execution.cancelada = FALSE
@@ -1490,6 +1498,9 @@ public class RealPdorInputLoader implements PdorInputLoader {
                        execution.quantidade_executada,
                        event.commit_seq
                 FROM execucao_servico_rdo execution
+                JOIN rdo
+                  ON rdo.id = execution.rdo_id
+                 AND rdo.cancelado_em IS NULL
                 JOIN cortex_evento_operacional event
                   ON event.id = execution.revenue_event_id
                  AND event.tipo_entidade = 'RDO_EXECUTION'
@@ -1648,11 +1659,14 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 """
                 SELECT
                     COUNT(*) AS execution_count,
-                    COUNT(DISTINCT unidade_medida) AS execution_unit_count
-                FROM execucao_servico_rdo
-                WHERE obra_id = ?
-                  AND data_execucao <= ?
-                  AND cancelada = FALSE
+                    COUNT(DISTINCT execution.unidade_medida) AS execution_unit_count
+                FROM execucao_servico_rdo execution
+                JOIN rdo
+                  ON rdo.id = execution.rdo_id
+                 AND rdo.cancelado_em IS NULL
+                WHERE execution.obra_id = ?
+                  AND execution.data_execucao <= ?
+                  AND execution.cancelada = FALSE
                 """,
                 (rs, rowNumber) -> new ServiceQuantityStats(
                         contractAuthority.authorityCount(),
@@ -1675,6 +1689,12 @@ public class RealPdorInputLoader implements PdorInputLoader {
      * Retrabalho e produção rejeitada ficam de fora: refazer não é avançar, e
      * o que foi rejeitado não foi entregue. Fora isso, nenhuma exigência de
      * preço, validação ou evidência — é o que a frente declarou ter feito.
+     *
+     * O RDO apagado leva junto o que ele apontou. Apagar o RDO marca
+     * `rdo.cancelado_em` e não toca nas linhas de execução — elas continuam com
+     * `cancelada = FALSE`, porque ninguém cancelou a linha, cancelou-se o
+     * documento inteiro. Todas as leituras do PDOR sobre execução atravessam o
+     * RDO por isso: sem esse salto, o dia apagado seguiria contando.
      */
     private ProducaoApontada buscarProducaoApontada(
             String obraId,
@@ -1683,15 +1703,18 @@ public class RealPdorInputLoader implements PdorInputLoader {
         return jdbcTemplate.queryForObject(
                 """
                 SELECT
-                    SUM(quantidade_executada) AS quantidade,
+                    SUM(execution.quantidade_executada) AS quantidade,
                     COUNT(*) AS linhas,
-                    COUNT(DISTINCT unidade_medida) AS unidades
-                FROM execucao_servico_rdo
-                WHERE obra_id = ?
-                  AND data_execucao <= ?
-                  AND cancelada = FALSE
-                  AND producao_rejeitada = FALSE
-                  AND retrabalho = FALSE
+                    COUNT(DISTINCT execution.unidade_medida) AS unidades
+                FROM execucao_servico_rdo execution
+                JOIN rdo
+                  ON rdo.id = execution.rdo_id
+                 AND rdo.cancelado_em IS NULL
+                WHERE execution.obra_id = ?
+                  AND execution.data_execucao <= ?
+                  AND execution.cancelada = FALSE
+                  AND execution.producao_rejeitada = FALSE
+                  AND execution.retrabalho = FALSE
                 """,
                 (rs, rowNumber) -> new ProducaoApontada(
                         valueOrZero(rs.getBigDecimal("quantidade")),
