@@ -78,6 +78,11 @@
    * linear, de modo que os três leiam a mesma obra com a mesma cor.
    */
   --map-trecho: var(--color-brand-yellow);
+  /*
+   * O eixo é o leito da rodovia, desenhado uma vez: cor de base, sob os
+   * trechos, para servir de referência sem competir com o avanço do dia.
+   */
+  --map-eixo-obra: var(--color-graphite);
   --map-localizacao-obra: var(--color-ink);
   --map-perimetro-obra: var(--color-focus);
   --map-frente-trabalho: var(--color-danger);

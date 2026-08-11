@@ -170,11 +170,18 @@ export function ObraTrechoSection({
 
   return (
     <div className="obras-trecho">
+      {/*
+        Os apontamentos descem para o mapa já recortados pelo período: é o que
+        faz o quilômetro digitado no RDO desenhar sobre o eixo, e o dia
+        escolhido aqui embaixo recortar as duas metades da tela juntas.
+      */}
       <RodoviaWorkspace
         key={obra.id}
         obra={obra}
         podeDesenhar={podeDesenhar}
         endereco={endereco}
+        segmentos={projecao?.segmentos}
+        dataObservada={evolucaoAte ?? diaSelecionado}
       />
       {projecao && leitura ? (
         <TrechoEsquematico

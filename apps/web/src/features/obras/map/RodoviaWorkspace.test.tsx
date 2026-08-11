@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +15,7 @@ import type { LeituraMapaObra } from "./obraMapApi";
 
 const carregarMapaObra = vi.hoisted(() => vi.fn());
 const registrarTrechoDesenhado = vi.hoisted(() => vi.fn());
+const registrarEixoDaObra = vi.hoisted(() => vi.fn());
 const encerrarGeometria = vi.hoisted(() => vi.fn());
 const redesenharTrecho = vi.hoisted(() => vi.fn());
 const resolverRdoDoTrecho = vi.hoisted(() => vi.fn());
@@ -76,6 +78,7 @@ vi.mock("./obraMapApi", () => ({ carregarMapaObra }));
 vi.mock("./obraGeometriaMutations", () => ({
   encerrarGeometria,
   redesenharTrecho,
+  registrarEixoDaObra,
   registrarTrechoDesenhado,
 }));
 vi.mock("./rdoDoTrechoDesenhado", () => ({ resolverRdoDoTrecho }));
@@ -160,6 +163,8 @@ beforeEach(() => {
   sessao.papelAcesso = "ALFA";
   carregarMapaObra.mockReset();
   registrarTrechoDesenhado.mockReset();
+  registrarEixoDaObra.mockReset();
+  registrarEixoDaObra.mockResolvedValue({ id: "eixo-1" });
   encerrarGeometria.mockReset();
   encerrarGeometria.mockResolvedValue({ id: "ponto-1" });
   redesenharTrecho.mockReset();
@@ -995,5 +1000,221 @@ describe("RodoviaWorkspace", () => {
         screen.getByRole("button", { name: "Salvar o traçado" }),
       ).toBeEnabled();
     });
+  });
+});
+
+/*
+ * O eixo da obra: a rodovia traçada uma vez, com quilômetro nas pontas.
+ *
+ * Até aqui um trecho só existia no mapa se alguém o tivesse desenhado ali. Quem
+ * apontava pelo quilômetro — que é como a obra fala — não via nada.
+ */
+describe("RodoviaWorkspace · eixo da obra", () => {
+  const user = userEvent.setup();
+
+  const FEICAO_DO_EIXO = {
+    id: "eixo-1",
+    categoria: "EIXO_OBRA",
+    objetoTipo: "OBRA",
+    objetoId: "obra-1",
+    geometry: {
+      type: "LineString" as const,
+      coordinates: [
+        [-47.6, -22.4],
+        [-47.4, -22.4],
+      ],
+    },
+    properties: { kmInicial: 100, kmFinal: 110 },
+    fonte: "GESTAO_MAPA",
+    versao: 1,
+    validoDesde: "2026-03-01T12:00:00.000Z",
+    validoAte: null,
+  };
+
+  function segmento(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "seg-1",
+      origem: "EXECUCAO_SERVICO",
+      rdoId: "rdo-9",
+      numeroRdo: "RDO-0009",
+      data: "2026-03-04",
+      servicoNome: "Fresagem",
+      subtrecho: null,
+      sentido: "Norte",
+      pista: null,
+      faixa: "1",
+      kmInicial: 102,
+      kmFinal: 104,
+      estacaInicial: null,
+      estacaFinal: null,
+      extensaoM: 2000,
+      larguraM: null,
+      areaM2: null,
+      massaTonelada: null,
+      status: null,
+      rdoStatus: "ENVIADA",
+      procedencia: "SERVIDOR",
+      pistaInferida: false,
+      ...overrides,
+    };
+  }
+
+  it("cadastra o eixo com o quilômetro das duas pontas", async () => {
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    await user.click(
+      screen.getByRole("button", { name: "Cadastrar o eixo" }),
+    );
+    marcar("INICIO", INICIO);
+    marcar("FIM", FIM);
+    const formulario = await screen.findByRole("form", {
+      name: /Cadastro do eixo da obra/i,
+    });
+    await user.type(
+      within(formulario).getByLabelText(/Km na ponta inicial/i),
+      "100",
+    );
+    await user.type(
+      within(formulario).getByLabelText(/Km na ponta final/i),
+      "110",
+    );
+    await user.click(
+      within(formulario).getByRole("button", { name: "Cadastrar o eixo" }),
+    );
+
+    await waitFor(() =>
+      expect(registrarEixoDaObra).toHaveBeenCalledWith(
+        expect.objectContaining({
+          obraId: "obra-1",
+          kmInicial: 100,
+          kmFinal: 110,
+          pontos: [INICIO, FIM],
+        }),
+      ),
+    );
+  });
+
+  it("recusa as duas pontas no mesmo quilômetro, que não seria régua de nada", async () => {
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    await user.click(
+      screen.getByRole("button", { name: "Cadastrar o eixo" }),
+    );
+    marcar("INICIO", INICIO);
+    marcar("FIM", FIM);
+    const formulario = await screen.findByRole("form", {
+      name: /Cadastro do eixo da obra/i,
+    });
+    await user.type(
+      within(formulario).getByLabelText(/Km na ponta inicial/i),
+      "100",
+    );
+    await user.type(
+      within(formulario).getByLabelText(/Km na ponta final/i),
+      "100",
+    );
+    await user.click(
+      within(formulario).getByRole("button", { name: "Cadastrar o eixo" }),
+    );
+
+    await screen.findByText(/mesmo quilômetro/i);
+    expect(registrarEixoDaObra).not.toHaveBeenCalled();
+  });
+
+  it("não oferece cadastrar um segundo eixo para a mesma rodovia", async () => {
+    carregarMapaObra.mockResolvedValue(
+      leitura({ dados: { obra, features: [FEICAO_DO_EIXO] } }),
+    );
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    expect(
+      screen.queryByRole("button", { name: "Cadastrar o eixo" }),
+    ).toBeNull();
+  });
+
+  it("apoia no eixo o trecho que só foi apontado por quilômetro", async () => {
+    carregarMapaObra.mockResolvedValue(
+      leitura({ dados: { obra, features: [FEICAO_DO_EIXO] } }),
+    );
+    render(
+      <RodoviaWorkspace
+        obra={obra}
+        podeDesenhar
+        segmentos={[segmento()] as never}
+      />,
+    );
+    await screen.findByTestId("mapa-leaflet");
+
+    await waitFor(() =>
+      expect(
+        leaflet.ultimasFeatures.features.some(
+          (feature) => feature.id === "eixo:seg-1",
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("sem eixo cadastrado, o apontamento continua sem lugar no mapa", async () => {
+    render(
+      <RodoviaWorkspace
+        obra={obra}
+        podeDesenhar
+        segmentos={[segmento()] as never}
+      />,
+    );
+    await screen.findByTestId("mapa-leaflet");
+
+    expect(
+      leaflet.ultimasFeatures.features.some(
+        (feature) => feature.id === "eixo:seg-1",
+      ),
+    ).toBe(false);
+  });
+
+  /*
+   * Duas metades da mesma tela mostrando dias diferentes seria pior do que não
+   * filtrar nada: o dia escolhido no esquemático recorta o mapa junto.
+   */
+  it("acompanha o dia observado no esquemático", async () => {
+    carregarMapaObra.mockResolvedValue(
+      leitura({ dados: { obra, features: [FEICAO_DO_EIXO] } }),
+    );
+    const { rerender } = render(
+      <RodoviaWorkspace
+        obra={obra}
+        podeDesenhar
+        segmentos={[segmento()] as never}
+        dataObservada={null}
+      />,
+    );
+    await screen.findByTestId("mapa-leaflet");
+    await waitFor(() =>
+      expect(
+        leaflet.ultimasFeatures.features.some(
+          (feature) => feature.id === "eixo:seg-1",
+        ),
+      ).toBe(true),
+    );
+
+    rerender(
+      <RodoviaWorkspace
+        obra={obra}
+        podeDesenhar
+        segmentos={[segmento()] as never}
+        dataObservada="2026-03-03"
+      />,
+    );
+
+    // O apontamento é do dia 4; olhando o dia 3, ele ainda não existia.
+    await waitFor(() =>
+      expect(
+        leaflet.ultimasFeatures.features.some(
+          (feature) => feature.id === "eixo:seg-1",
+        ),
+      ).toBe(false),
+    );
   });
 });

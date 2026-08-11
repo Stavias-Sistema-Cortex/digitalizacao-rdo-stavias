@@ -25,7 +25,11 @@ public class ObraMapaService {
     private static final Set<String> CATEGORIES = Set.of(
             "LOCALIZACAO_OBRA", "PERIMETRO_OBRA", "TRECHO", "PONTO_OPERACIONAL",
             "FRENTE_TRABALHO", "EQUIPAMENTO", "EVENTO", "RDO", "OCORRENCIA",
-            "PROGRAMACAO"
+            "PROGRAMACAO",
+            // O leito da rodovia, cadastrado uma vez: é a régua sobre a qual os
+            // quilômetros apontados nos RDOs se posicionam, e não uma
+            // afirmação de execução.
+            "EIXO_OBRA"
     );
     private static final Set<String> POINT_CATEGORIES = Set.of(
             "LOCALIZACAO_OBRA", "PONTO_OPERACIONAL", "EQUIPAMENTO", "EVENTO",
@@ -316,6 +320,15 @@ public class ObraMapaService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Trechos e frentes exigem linha ou polígono."
+            );
+        }
+        // O eixo é o leito da rodovia percorrido de ponta a ponta. Um polígono
+        // descreveria área, e área não tem começo nem fim — sem eles não há
+        // sobre o que apoiar um quilômetro.
+        if (category.equals("EIXO_OBRA") && !geometryType.equals("LINESTRING")) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O eixo da obra exige uma linha com começo e fim."
             );
         }
     }
