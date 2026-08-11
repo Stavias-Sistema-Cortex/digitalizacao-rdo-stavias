@@ -1170,6 +1170,73 @@ class PostgresqlRdoCreationContextIT {
         )).isZero();
     }
 
+    /*
+     * Duplicar para trás é o gesto de quem esqueceu de lançar um dia e usa um
+     * RDO posterior como molde. `previous_rdo_id` é procedência, não cronologia
+     * — ele diz de onde o rascunho foi copiado, não que aquilo veio antes.
+     *
+     * A regra que comparava as duas datas recusava isso com 400, que é
+     * terminal: a fila não reenvia, e o RDO inteiro ficava travado sem que nada
+     * na tela dissesse qual campo era o culpado.
+     */
+    @Test
+    void aceitaClonarParaUmaDataAnteriorADoRdoDeOrigem() throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "CLONE-PARA-TRAS");
+        String owner = inserirColaborador("Apontador do clone", null, null);
+        vincular(owner, obraId, "APONTADOR", "ATIVO");
+        String previousRdoId = id();
+        inserirRdo(
+                previousRdoId,
+                obraId,
+                "RDO-0001",
+                SELECTED_DATE,
+                "ENVIADO",
+                LocalDateTime.now().minusDays(1),
+                LocalDateTime.now().minusDays(1)
+        );
+        String sourceItemId = id();
+        inserirMaoObra(sourceItemId, previousRdoId, null, "Servente");
+        String clonadoId = id();
+        RdoCreateRequest criacao = request(
+                clonadoId,
+                obraId,
+                id(),
+                1L,
+                previousRdoId,
+                owner,
+                id(),
+                sourceItemId
+        );
+        transactions.execute(status -> service(owner).criarRascunho(criacao));
+
+        LocalDate diaEsquecido = SELECTED_DATE.minusDays(3);
+        ObjectNode paraTras = mapper.valueToTree(criacao);
+        paraTras.put("dataRdo", diaEsquecido.toString());
+        RdoCreateRequest atualizacao = mapper.treeToValue(
+                paraTras,
+                RdoCreateRequest.class
+        );
+
+        RdoDraftUpdateService updateService = draftService();
+        transactions.execute(
+                status -> updateService.atualizarRascunho(clonadoId, atualizacao)
+        );
+
+        assertThat(jdbc.queryForObject(
+                "SELECT data_rdo FROM rdo WHERE id = ?",
+                LocalDate.class,
+                clonadoId
+        )).isEqualTo(diaEsquecido);
+        // A procedência continua onde estava: mudar a data não desfaz de onde
+        // o rascunho veio.
+        assertThat(jdbc.queryForObject(
+                "SELECT previous_rdo_id FROM rdo WHERE id = ?",
+                String.class,
+                clonadoId
+        )).isEqualTo(previousRdoId);
+    }
+
     @Test
     void herdaMaoDeObraManualDoMesmoDiaEPermiteEditarOuExcluirNoNovoRdo()
             throws Exception {

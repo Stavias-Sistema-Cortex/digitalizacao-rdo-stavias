@@ -323,20 +323,15 @@ public class RdoDraftUpdateService {
                 """
                 SELECT current_rdo.previous_rdo_id,
                        current_rdo.creation_context_version,
-                       current_rdo.client_mutation_id,
-                       previous_rdo.data_rdo AS previous_rdo_date
+                       current_rdo.client_mutation_id
                 FROM rdo current_rdo
-                LEFT JOIN rdo previous_rdo
-                  ON previous_rdo.id = current_rdo.previous_rdo_id
-                 AND previous_rdo.obra_id = current_rdo.obra_id
                 WHERE current_rdo.id = ?
                   AND current_rdo.obra_id = ?
                 """,
                 (rs, rowNum) -> new CreationProvenance(
                         rs.getString("previous_rdo_id"),
                         rs.getObject("creation_context_version", Long.class),
-                        rs.getString("client_mutation_id"),
-                        rs.getObject("previous_rdo_date", java.time.LocalDate.class)
+                        rs.getString("client_mutation_id")
                 ),
                 rdoId,
                 obraId
@@ -356,13 +351,24 @@ public class RdoDraftUpdateService {
                     "A proveniência de criação do RDO não pode ser alterada."
             );
         }
-        if (persisted.previousRdoDate() != null
-                && request.dataRdo().isBefore(persisted.previousRdoDate())) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "A data do RDO não pode ser anterior ao RDO de origem."
-            );
-        }
+        /*
+         * A data não é conferida contra a do RDO de origem, e a regra que fazia
+         * isso saiu daqui.
+         *
+         * `previous_rdo_id` é procedência, não cronologia: ele diz de onde o
+         * rascunho foi copiado, não que aquilo aconteceu antes. Duplicar um RDO
+         * para uma data anterior é o gesto de quem esqueceu de lançar um dia e
+         * usa o de hoje como molde — o caso mais comum de clonagem para trás, e
+         * exatamente o que a regra recusava.
+         *
+         * E recusava da pior forma possível: 400 é terminal, a fila não reenvia,
+         * então o RDO inteiro ficava travado sem que nada na tela dissesse qual
+         * campo era o culpado. Uma regra de conveniência não pode ter esse peso.
+         *
+         * O que de fato precisa de ordem continua tendo: a herança de itens do
+         * RDO anterior confere obra, colaborador e item de origem logo abaixo, e
+         * o banco garante que origem e destino são da mesma obra.
+         */
     }
 
     private long versaoEntidadeAtual(String rdoId) {
@@ -1124,8 +1130,7 @@ public class RdoDraftUpdateService {
     private record CreationProvenance(
             String previousRdoId,
             Long creationContextVersion,
-            String clientMutationId,
-            java.time.LocalDate previousRdoDate
+            String clientMutationId
     ) {
     }
 }
