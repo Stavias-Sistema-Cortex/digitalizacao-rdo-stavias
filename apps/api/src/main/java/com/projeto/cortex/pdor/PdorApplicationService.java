@@ -290,11 +290,18 @@ public class PdorApplicationService {
             );
         }
 
-        PdorSnapshot snapshot = baseSnapshot.withExplainability(
-                calculateDataVersion(inputs),
-                explainabilityBuilder.build(baseSnapshot, inputs, previous),
-                initiator
-        );
+        PdorSnapshot snapshot;
+        try {
+            snapshot = baseSnapshot.withExplainability(
+                    calculateDataVersion(inputs),
+                    explainabilityBuilder.build(baseSnapshot, inputs, previous),
+                    initiator
+            );
+        } catch (RuntimeException exception) {
+            throw recordCalculationFailure(
+                    obra, inputs, previous, triggerType, initiator, exception
+            );
+        }
 
         try {
             publicationService.publish(
@@ -306,6 +313,27 @@ public class PdorApplicationService {
             return snapshotRepository.findByIdempotencyKey(idempotencyKey)
                     .map(existing -> toResponse(existing, obra, true))
                     .orElseThrow(() -> exception);
+        } catch (RuntimeException exception) {
+            /*
+             * Falhar ao publicar é falhar o cálculo, e tem de sair pela mesma
+             * porta.
+             *
+             * <p>Só o conflito de chave era tratado aqui. Qualquer outra falha
+             * — o banco recusando a transição do snapshot, a ontologia
+             * recusando o evento — subia crua: o cliente recebia um 500 sem
+             * mensagem e sem identificador de correlação, e o registro da
+             * falha nunca era gravado. Não havia por onde começar a
+             * investigar.
+             *
+             * <p>Pior: o recálculo automático engole RuntimeException de
+             * propósito, para que uma projeção derivada nunca derrube o RDO
+             * aceito. Com a falha escapando por aqui, cada recálculo disparado
+             * por mudança de RDO morria em silêncio, e a projeção velha
+             * continuava na tela sem que nada explicasse por quê.
+             */
+            throw recordCalculationFailure(
+                    obra, inputs, previous, triggerType, initiator, exception
+            );
         }
     }
 

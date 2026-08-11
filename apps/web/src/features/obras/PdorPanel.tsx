@@ -90,6 +90,24 @@ function mensagemDeExecucao(pdor: ObraPdor): string {
   );
 }
 
+/**
+ * O número da manchete contradiz a própria faixa.
+ *
+ * <p>Sem nenhuma medição o índice de captura é zero: a projeção direta cai no
+ * valor contratual inteiro, e a simulação, que precisa de receita observada,
+ * devolve percentis zerados. Os dois valores são o que o modelo produziu — o
+ * que não pode acontecer é apresentá-los lado a lado sem dizer isso.
+ */
+function semDistribuicao(pdor: ObraPdor): boolean {
+  const previsto = pdor.receitaPrevistaFinal ?? pdor.p50;
+  return (
+    previsto !== null &&
+    previsto > 0 &&
+    (pdor.p50 === null || pdor.p50 === 0) &&
+    (pdor.p95 === null || pdor.p95 === 0)
+  );
+}
+
 function ExplanationList({
   title,
   items,
@@ -104,6 +122,10 @@ function ExplanationList({
       <ul>
         {items.slice(0, 5).map((item, index) => (
           <li key={item.code || item.field || `${item.label}-${index}`}>
+            {/* O rótulo e a explicação eram dois elementos em linha, sem nada
+                entre eles: na tela saía "Consumo real de materialSoma das
+                quantidades…", uma frase emendada na outra. A explicação passa
+                a ocupar a própria linha, que é onde ela se lê. */}
             <strong>{item.label}</strong>
             {item.detail ? <span>{item.detail}</span> : null}
           </li>
@@ -175,6 +197,15 @@ export function PdorPanel({ pdor, loading, error }: PdorPanelProps) {
                 Faixa {formatCurrency(pdor.p10)} a {formatCurrency(pdor.p95)} ·
                 P50 {formatCurrency(pdor.p50)}
               </dd>
+              {/* A ressalva fica junto do número, e não enterrada numa lista
+                  embaixo: sem ela o painel se contradiz na cara de quem lê. */}
+              {semDistribuicao(pdor) ? (
+                <dd className="obras-pdor-ressalva">
+                  Sem nenhuma receita medida, a simulação não tem de onde tirar
+                  percentis e a projeção direta cai no valor contratual inteiro.
+                  Leia este número como teto do contrato, não como previsão.
+                </dd>
+              ) : null}
             </div>
             <div>
               <dt>Risco de ficar abaixo do contrato</dt>

@@ -131,3 +131,38 @@ describe("PdorPanel", () => {
     expect(html).toContain("A origem de receita não respondeu.");
   });
 });
+
+/*
+ * A manchete pode contradizer a própria faixa: sem nenhuma medição, o índice
+ * de captura é zero, a projeção direta cai no valor contratual inteiro e a
+ * simulação devolve percentis zerados. Os dois números são o que o modelo
+ * produziu — o que não pode é apresentá-los lado a lado sem dizer isso.
+ */
+describe("ressalva da receita prevista sem distribuição", () => {
+  it("avisa quando o número é teto de contrato, não previsão", () => {
+    const html = renderToStaticMarkup(
+      <PdorPanel
+        pdor={{
+          ...pdorDeExemplo(),
+          receitaPrevistaFinal: 93147130,
+          p10: 0,
+          p50: 0,
+          p80: 0,
+          p95: 0,
+        }}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    expect(html).toContain("teto do contrato");
+  });
+
+  it("não avisa nada quando a simulação produziu faixa", () => {
+    const html = renderToStaticMarkup(
+      <PdorPanel pdor={pdorDeExemplo()} loading={false} error={null} />,
+    );
+
+    expect(html).not.toContain("teto do contrato");
+  });
+});
