@@ -176,26 +176,38 @@ function rotuloDoRemovivel(properties: Record<string, unknown>): string {
 export function trechoPodeSerRedesenhado(
   properties: Record<string, unknown>,
 ): boolean {
-  return (
-    properties.categoria === "TRECHO" &&
-    // A linha derivada ainda não sabe voltar para o RDO: corrigir o traçado
-    // dela teria de reescrever o quilômetro do apontamento, e enquanto esse
-    // caminho não existe o lápis só saberia falhar.
-    !ehDerivadaDoEixo(properties) &&
-    geometriaDoBalao(properties) !== null &&
-    !properties.validoAte
-  );
+  if (properties.categoria !== "TRECHO" || properties.validoAte) {
+    return false;
+  }
+  /*
+   * A linha derivada corrige por outro caminho: ela não tem geometria a
+   * reescrever, e sim um quilômetro. Arrastar os extremos vira quilômetro pela
+   * régua do eixo e é escrito no apontamento do RDO — que é onde ele mora.
+   * Para isso ela precisa dizer de qual linha de serviço fala.
+   */
+  if (ehDerivadaDoEixo(properties)) {
+    return typeof properties.execucaoId === "string"
+        && properties.execucaoId.trim() !== "";
+  }
+  return geometriaDoBalao(properties) !== null;
 }
 
 export function redesenhoDoBalao(
   properties: Record<string, unknown>,
   aoRedesenhar: ((id: string) => void) | null,
 ): HTMLButtonElement | null {
-  const id = geometriaDoBalao(properties);
-  if (!id || !aoRedesenhar || !trechoPodeSerRedesenhado(properties)) {
+  if (!aoRedesenhar || !trechoPodeSerRedesenhado(properties)) {
     return null;
   }
-  const rotulo = "Corrigir o traçado deste trecho";
+  // Vale para as duas: a derivada não tem geometria gravada, mas a feição
+  // carrega o mesmo campo, e nele vai o id que aponta para a linha de serviço.
+  const id = geometriaDoBalao(properties);
+  if (!id) {
+    return null;
+  }
+  const rotulo = ehDerivadaDoEixo(properties)
+    ? "Corrigir o quilômetro deste trecho no RDO"
+    : "Corrigir o traçado deste trecho";
   const botao = document.createElement("button");
   botao.type = "button";
   botao.className = "mapa-balao-redesenhar";

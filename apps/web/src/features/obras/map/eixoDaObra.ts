@@ -261,6 +261,69 @@ export function recortarEixoPorKm(
 }
 
 /**
+ * O quilômetro de um ponto qualquer, projetado sobre o eixo.
+ *
+ * É a volta do caminho: arrastar um extremo no mapa tem de virar quilômetro no
+ * apontamento, senão a correção no mapa não seria correção coisa nenhuma — o
+ * traço mudaria e o RDO seguiria afirmando o quilômetro velho.
+ *
+ * O ponto é projetado no segmento mais próximo do eixo, e é essa projeção que
+ * vale. Quem arrasta o extremo raramente o solta exatamente sobre o traço, e
+ * exigir precisão de pixel para aceitar a correção seria cobrar do dedo o que a
+ * régua já sabe fazer.
+ *
+ * A conta é a mesma do desenho, ao contrário: distância acumulada até a
+ * projeção, dividida pelo comprimento, mapeada na amplitude quilométrica.
+ */
+export function kmDoPonto(
+  eixo: EixoDaObra,
+  ponto: Coordenada,
+): number | null {
+  const percurso = percorrer(eixo.coordenadas);
+  if (percurso.comprimento <= 0) {
+    return null;
+  }
+
+  let melhorDistancia = Number.POSITIVE_INFINITY;
+  let melhorAoLongo = 0;
+  for (let i = 1; i < eixo.coordenadas.length; i += 1) {
+    const a = eixo.coordenadas[i - 1];
+    const b = eixo.coordenadas[i];
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const denominador = dx * dx + dy * dy;
+    /*
+     * A projeção é feita em graus, e não sobre a esfera. Num segmento de eixo
+     * — dezenas de metros a poucos quilômetros — a diferença entre as duas é
+     * muito menor que a mão de quem arrasta o ponto. Já a distância AO LONGO
+     * do eixo, que é a que vira quilômetro, continua medida em Haversine.
+     */
+    const fracao =
+      denominador <= 0
+        ? 0
+        : Math.min(
+            1,
+            Math.max(
+              0,
+              ((ponto[0] - a[0]) * dx + (ponto[1] - a[1]) * dy) / denominador,
+            ),
+          );
+    const projetado: Coordenada = [a[0] + dx * fracao, a[1] + dy * fracao];
+    const afastamento = distanciaM(ponto, projetado);
+    if (afastamento < melhorDistancia) {
+      melhorDistancia = afastamento;
+      melhorAoLongo =
+        percurso.acumulado[i - 1] + distanciaM(a, projetado);
+    }
+  }
+
+  const proporcao = melhorAoLongo / percurso.comprimento;
+  return (
+    eixo.kmInicial + proporcao * (eixo.kmFinal - eixo.kmInicial)
+  );
+}
+
+/**
  * Um trecho só se apoia no eixo quando declara os dois quilômetros.
  * Um extremo isolado descreveria um ponto, não um trecho percorrido.
  */
@@ -316,6 +379,10 @@ export function feicoesApoiadasNoEixo(
         eixoId: eixo.id,
         objetoTipo: "RDO",
         objetoId: segmento.rdoId,
+        // A linha de execução de onde o quilômetro veio. É por ela que uma
+        // correção feita no mapa acha o apontamento para reescrever — e é o
+        // mesmo nome que a API usa na feição que ela deriva.
+        execucaoId: segmento.id,
         servico: segmento.servicoNome,
         numeroRdo: segmento.numeroRdo,
         sentido: segmento.sentido,

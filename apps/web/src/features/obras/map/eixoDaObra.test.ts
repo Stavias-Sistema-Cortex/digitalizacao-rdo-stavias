@@ -7,6 +7,7 @@ import {
   apoiarTrechosNoEixo,
   lerEixoDaColecao,
   rdosJaNoMapa,
+  kmDoPonto,
   recortarEixoPorKm,
   type EixoDaObra,
 } from "./eixoDaObra";
@@ -286,5 +287,35 @@ describe("rdosJaNoMapa", () => {
     );
 
     expect(resultado.features).toHaveLength(2);
+  });
+});
+
+/*
+ * A volta do caminho: arrastar um extremo no mapa tem de virar quilômetro no
+ * apontamento, senão a correção no mapa não corrigiria nada — o traço mudaria
+ * e o RDO seguiria afirmando o quilômetro velho.
+ */
+describe("kmDoPonto", () => {
+  it("lê o quilômetro de um ponto sobre o eixo", () => {
+    expect(kmDoPonto(EIXO, [0.4, 0]) as number).toBeCloseTo(102, 1);
+    expect(kmDoPonto(EIXO, [1.6, 0]) as number).toBeCloseTo(108, 1);
+  });
+
+  it("projeta no eixo o ponto solto ao lado dele", () => {
+    // Quem arrasta raramente solta em cima do traço; a régua resolve.
+    expect(kmDoPonto(EIXO, [0.4, 0.01]) as number).toBeCloseTo(102, 1);
+  });
+
+  it("prende nas pontas o que caiu além do eixo", () => {
+    expect(kmDoPonto(EIXO, [-1, 0]) as number).toBeCloseTo(100, 1);
+    expect(kmDoPonto(EIXO, [5, 0]) as number).toBeCloseTo(110, 1);
+  });
+
+  it("fecha o ciclo com o desenho: km vira ponto e o ponto volta ao km", () => {
+    const recorte = recortarEixoPorKm(EIXO, 103, 107);
+    expect(kmDoPonto(EIXO, recorte![0]) as number).toBeCloseTo(103, 2);
+    expect(
+      kmDoPonto(EIXO, recorte![recorte!.length - 1]) as number,
+    ).toBeCloseTo(107, 2);
   });
 });

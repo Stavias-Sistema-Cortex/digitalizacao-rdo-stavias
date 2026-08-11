@@ -698,6 +698,38 @@ export function RdoLocalList({
     syncFilter,
   ]);
 
+  /*
+   * Os RDOs saem agrupados por obra, como as APIs os organizam.
+   *
+   * Numa lista corrida, dois contratos diferentes se intercalam por data e a
+   * pergunta comum — "o que a obra tal lançou" — vira trabalho de leitura. O
+   * agrupamento não reordena nada dentro do grupo: a ordenação e os filtros
+   * que já existiam continuam mandando, e o grupo só recolhe o que é da mesma
+   * obra sem quebrar a sequência.
+   */
+  const gruposPorObra = useMemo(() => {
+    const grupos = new Map<
+      string,
+      { obraId: string; rotulo: string; registros: typeof filteredRecords }
+    >();
+    for (const record of filteredRecords) {
+      const atual = grupos.get(record.obraId);
+      if (atual) {
+        atual.registros.push(record);
+        continue;
+      }
+      grupos.set(record.obraId, {
+        obraId: record.obraId,
+        rotulo:
+          cachedWorksites.get(record.obraId)?.nome ||
+          asText(payload(record).contrato) ||
+          record.obraId,
+        registros: [record],
+      });
+    }
+    return [...grupos.values()];
+  }, [cachedWorksites, filteredRecords]);
+
   const metrics = {
     trechos: filteredRecords.reduce(
       (total, record) => total + trechosDoRdo(record).length,
@@ -928,7 +960,17 @@ export function RdoLocalList({
             </section>
           ) : null}
 
-          {filteredRecords.map((record) => {
+          {gruposPorObra.map((grupo) => (
+            <section className="rdo-grupo-obra" key={grupo.obraId}>
+              <header className="rdo-grupo-obra__cabecalho">
+                <h2>{grupo.rotulo}</h2>
+                <span>
+                  {grupo.registros.length === 1
+                    ? "1 RDO"
+                    : `${grupo.registros.length} RDOs`}
+                </span>
+              </header>
+              {grupo.registros.map((record) => {
             const data = payload(record);
             const rdoAttachments = attachmentsByRdo.get(record.id) ?? [];
             const people = collaborators(record);
@@ -1175,7 +1217,9 @@ export function RdoLocalList({
                 </div>
               </article>
             );
-          })}
+              })}
+            </section>
+          ))}
         </div>
 
         {/* A Memória é um atalho, não uma coluna: 320px de tela voltam

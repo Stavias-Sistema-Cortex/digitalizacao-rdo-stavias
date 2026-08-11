@@ -47,6 +47,7 @@ import {
   type GeometriaVisivelNoMapa,
 } from "./obraGeometriaMutations";
 import { apoiarTrechosNoEixo, lerEixoDaColecao } from "./eixoDaObra";
+import { corrigirKmPeloMapa } from "./corrigirKmPeloMapa";
 import type { SegmentoTrecho } from "../trecho/trechoGeometry";
 import { quilometroDigitado } from "../../../lib/numeros/quilometroDigitado";
 import { hojeIso } from "./execucaoDoTrecho";
@@ -753,6 +754,17 @@ export function RodoviaWorkspace({
    */
   const [trechoEmCorrecao, setTrechoEmCorrecao] = useState<string | null>(null);
   const [salvandoCorrecao, setSalvandoCorrecao] = useState(false);
+  /*
+   * A linha derivada corrige por outro caminho.
+   *
+   * <p>Ela não tem geometria a reescrever: nasce na leitura, do quilômetro que
+   * mora no apontamento. Arrastar seus extremos vira quilômetro pela régua do
+   * eixo e é escrito na linha de serviço do RDO — que é onde ele sempre
+   * morou. Gravar geometria aqui recriaria a segunda cópia da posição que o
+   * eixo existe para evitar.
+   */
+  const [corrigindoKmDoApontamento, setCorrigindoKmDoApontamento] =
+    useState(false);
 
   const corrigirTracado = useCallback(
     (id: string) => {
@@ -775,6 +787,9 @@ export function RodoviaWorkspace({
         setAviso("Este desenho não é uma linha com dois extremos.");
         return;
       }
+      setCorrigindoKmDoApontamento(
+        feature?.properties.derivadoDoEixo === true,
+      );
       setAviso(null);
       setTrechoEmCorrecao(id);
       setRascunho(extremos);
@@ -788,6 +803,7 @@ export function RodoviaWorkspace({
 
   const cancelarCorrecao = useCallback(() => {
     setTrechoEmCorrecao(null);
+    setCorrigindoKmDoApontamento(false);
     setRascunho(RASCUNHO_VAZIO);
     setMarcando(null);
     setAviso(null);
@@ -802,6 +818,45 @@ export function RodoviaWorkspace({
     setSalvandoCorrecao(true);
     setAviso(null);
     try {
+      if (corrigindoKmDoApontamento) {
+        /*
+         * Corrigir a linha derivada é corrigir o quilômetro do apontamento.
+         * O RDO precisa ser da obra aberta no mapa: escrever quilômetro no
+         * RDO de outra obra é o tipo de engano que ninguém percebe depois.
+         */
+        const feature = colecaoCompleta.features.find(
+          (candidata) => candidata.id === trechoEmCorrecao,
+        );
+        const execucaoId = feature?.properties.execucaoId;
+        const rdoId = feature?.properties.objetoId;
+        if (
+          !eixo ||
+          typeof execucaoId !== "string" ||
+          typeof rdoId !== "string"
+        ) {
+          throw new Error(
+            "Este trecho não diz de qual linha do RDO ele fala.",
+          );
+        }
+        const km = await corrigirKmPeloMapa({
+          obraId: obra.id,
+          rdoId,
+          execucaoId,
+          eixo,
+          inicio,
+          fim,
+        });
+        setTrechoEmCorrecao(null);
+        setCorrigindoKmDoApontamento(false);
+        setRascunho(RASCUNHO_VAZIO);
+        setMarcando(null);
+        setAviso(
+          `Quilômetro corrigido no RDO: km ${km.kmInicial} a ${km.kmFinal}.`
+            + " A correção sobe sozinha na próxima sincronização.",
+        );
+        recarregar();
+        return;
+      }
       await redesenharTrecho({
         featureId: trechoEmCorrecao,
         pontos: [inicio, fim],
@@ -825,7 +880,15 @@ export function RodoviaWorkspace({
     } finally {
       setSalvandoCorrecao(false);
     }
-  }, [rascunho, recarregar, trechoEmCorrecao]);
+  }, [
+    colecaoCompleta.features,
+    corrigindoKmDoApontamento,
+    eixo,
+    obra.id,
+    rascunho,
+    recarregar,
+    trechoEmCorrecao,
+  ]);
 
   const salvarCadastro = useCallback(async () => {
     const { inicio, fim } = rascunho;
@@ -1144,7 +1207,11 @@ export function RodoviaWorkspace({
         >
           <header>
             <div>
-              <p className="eyebrow">Corrigindo o traçado</p>
+              <p className="eyebrow">
+                {corrigindoKmDoApontamento
+                  ? "Corrigindo o quilômetro"
+                  : "Corrigindo o traçado"}
+              </p>
               <h3>Marque de novo o extremo que ficou fora do lugar</h3>
             </div>
             <span>
@@ -1184,12 +1251,17 @@ export function RodoviaWorkspace({
               className="is-primary"
               disabled={salvandoCorrecao}
             >
-              {salvandoCorrecao ? "Corrigindo…" : "Salvar o traçado"}
+              {salvandoCorrecao
+                ? "Corrigindo…"
+                : corrigindoKmDoApontamento
+                  ? "Salvar o quilômetro no RDO"
+                  : "Salvar o traçado"}
             </button>
           </footer>
           <small>
-            É o mesmo trecho: a rodovia, o sentido, a faixa e o apontamento do
-            RDO seguem como estão. Só a forma desenhada muda.
+            {corrigindoKmDoApontamento
+              ? "Esta linha não é desenho: ela vem do quilômetro apontado no RDO. Mover os extremos reescreve esse quilômetro no apontamento, e nada de geometria é gravado."
+              : "É o mesmo trecho: a rodovia, o sentido, a faixa e o apontamento do RDO seguem como estão. Só a forma desenhada muda."}
           </small>
         </form>
       ) : null}

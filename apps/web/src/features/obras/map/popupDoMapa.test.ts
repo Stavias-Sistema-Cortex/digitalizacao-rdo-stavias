@@ -266,6 +266,7 @@ describe("linha derivada do eixo", () => {
     categoria: "TRECHO",
     derivadoDoEixo: true,
     geometriaId: "eixo:execucao-1",
+    execucaoId: "execucao-1",
     objetoTipo: "RDO",
     objetoId: "rdo-1",
   };
@@ -275,9 +276,16 @@ describe("linha derivada do eixo", () => {
     expect(lixeiraDoBalao(derivada, () => {})).toBeNull();
   });
 
-  it("não oferece o lápis enquanto ele não souber voltar ao RDO", () => {
-    expect(trechoPodeSerRedesenhado(derivada)).toBe(false);
-    expect(redesenhoDoBalao(derivada, () => {})).toBeNull();
+  it("oferece o lápis, que corrige o quilômetro no RDO", () => {
+    expect(trechoPodeSerRedesenhado(derivada)).toBe(true);
+    const botao = redesenhoDoBalao(derivada, () => {});
+    expect(botao?.title).toContain("quilômetro");
+  });
+
+  it("sem a linha de serviço, o lápis não teria o que reescrever", () => {
+    const semExecucao = { ...derivada, execucaoId: "" };
+    expect(trechoPodeSerRedesenhado(semExecucao)).toBe(false);
+    expect(redesenhoDoBalao(semExecucao, () => {})).toBeNull();
   });
 
   it("o trecho desenhado à mão continua com os dois", () => {
