@@ -196,6 +196,7 @@ describe("preço corrigido no lugar", () => {
     await semear();
 
     await queueUpdatePrice(OBRA_ID, PRECO_ID, {
+      unit: "M²",
       unitPrice: "50,00",
       contractedQuantity: "1.200",
       validFrom: "2026-08-07",
@@ -228,12 +229,13 @@ describe("preço corrigido no lugar", () => {
     );
   });
 
-  /* Unidade e moeda são o endereço da versão: trocá-las apontaria para outro
-     preço, então a correção nem as recebe. */
-  it("preserva unidade e moeda da versão corrigida", async () => {
+  /* A moeda é BRL e continua fora da correção; a ausência de quantidade
+     contratada continua sendo ausência, não um zero inventado. */
+  it("preserva a moeda e aceita ficar sem quantidade contratada", async () => {
     await semear();
 
     await queueUpdatePrice(OBRA_ID, PRECO_ID, {
+      unit: "M²",
       unitPrice: "50,00",
       contractedQuantity: "",
       validFrom: "2026-08-07",
@@ -250,6 +252,38 @@ describe("preço corrigido no lugar", () => {
   });
 
   /*
+   * O conserto que motivou tudo isto: antes de o cadastro aceitar expoente,
+   * todo serviço medido em área entrava como metro linear, porque "M" era o
+   * único que passava. A unidade muda na própria versão, sem criar outra.
+   */
+  it("corrige a unidade que entrou como metro linear", async () => {
+    await semear(servico(), preco({ unit: "M" }));
+
+    await queueUpdatePrice(OBRA_ID, PRECO_ID, {
+      unit: "m2",
+      unitPrice: "50,00",
+      contractedQuantity: "1200",
+      validFrom: "2026-08-07",
+      validTo: null,
+      source: "CONTRATO_MEDIDO",
+    });
+
+    const database = await getCortexDb();
+    const versoes = await database.getAllFromIndex(
+      "service_price_versions",
+      "by-worksite-service",
+      [OBRA_ID, SERVICO_ID],
+    );
+    expect(versoes).toHaveLength(1);
+    expect(versoes[0]).toMatchObject({
+      id: PRECO_ID,
+      unit: "M²",
+      currency: "BRL",
+      syncStatus: "PENDING_SYNC",
+    });
+  });
+
+  /*
    * A correção é para o erro de digitação, não para o histórico. Uma versão já
    * encerrada tem sucessor ou cancelamento apontando para ela, e reescrevê-la
    * deslocaria a vigência de quem veio depois.
@@ -259,6 +293,7 @@ describe("preço corrigido no lugar", () => {
 
     await expect(
       queueUpdatePrice(OBRA_ID, PRECO_ID, {
+        unit: "M²",
         unitPrice: "50,00",
         contractedQuantity: "",
         validFrom: "2026-08-07",
@@ -276,6 +311,7 @@ describe("preço corrigido no lugar", () => {
 
     await expect(
       queueUpdatePrice(OBRA_ID, PRECO_ID, {
+        unit: "M²",
         unitPrice: "50,00",
         contractedQuantity: "",
         validFrom: "2026-08-07",
@@ -303,6 +339,7 @@ describe("preço corrigido no lugar", () => {
     });
 
     await queueUpdatePrice(OBRA_ID, criado.entityId, {
+      unit: "M²",
       unitPrice: "50,00",
       contractedQuantity: "1200",
       validFrom: "2027-01-04",

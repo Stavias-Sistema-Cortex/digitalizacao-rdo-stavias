@@ -154,7 +154,7 @@ class PostgresqlCorrecaoDeCatalogoIT {
 
         ServicePriceVersion corrigido = inTx(() -> servico.atualizarPreco(
                 obra, ator, preco.id(), new UpdateServicePriceCommand(
-                        mutation(), new BigDecimal("50.0000"),
+                        mutation(), "M2", new BigDecimal("50.0000"),
                         new BigDecimal("1200.000"), VIGENCIA, null,
                         "CONTRATO_MEDIDO"
                 )
@@ -170,6 +170,139 @@ class PostgresqlCorrecaoDeCatalogoIT {
                 "SELECT count(*) FROM service_price_version WHERE service_id = ?",
                 Integer.class, catalogo.id()
         )).isEqualTo(1);
+    }
+
+    /*
+     * O conserto que motivou abrir a unidade: antes de a V74 aceitar expoente,
+     * todo serviço medido em área entrava como metro linear, porque "M" era o
+     * único símbolo que passava. A unidade muda na própria versão — e arrasta o
+     * número, que é contado por unidade.
+     */
+    @Test
+    void corrigeAUnidadeQueEntrouComoMetroLinear() {
+        String obra = insertWorksite("UNIDADE-ERRADA");
+        String ator = insertActor("Dono da unidade");
+        ServicePriceCatalogService servico = service();
+        ServiceCatalogEntry catalogo = inTx(() -> servico.createService(
+                obra, ator, new CreateServiceCommand(
+                        mutation(), "UNID." + sufixo(), "Serviço em área", null
+                )
+        ));
+        ServicePriceVersion preco = inTx(() -> servico.createPrice(
+                obra, ator, catalogo.id(),
+                new CreateServicePriceCommand(
+                        mutation(), "M", "BRL", new BigDecimal("125.0000"),
+                        new BigDecimal("800.000"), VIGENCIA, null,
+                        "CONTRATO_MEDIDO"
+                )
+        ));
+
+        ServicePriceVersion corrigido = inTx(() -> servico.atualizarPreco(
+                obra, ator, preco.id(), new UpdateServicePriceCommand(
+                        mutation(), "M²", new BigDecimal("125.0000"),
+                        new BigDecimal("800.000"), VIGENCIA, null,
+                        "CONTRATO_MEDIDO"
+                )
+        ));
+
+        assertThat(corrigido.id()).isEqualTo(preco.id());
+        assertThat(corrigido.unit()).isEqualTo("M²");
+        assertThat(corrigido.status()).isEqualTo("ACTIVE");
+        // Uma versão só: corrigir a unidade não publica preço novo.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM service_price_version WHERE service_id = ?",
+                Integer.class, catalogo.id()
+        )).isEqualTo(1);
+    }
+
+    /*
+     * Mudar de unidade é entrar noutra sequência de versões, onde o número
+     * antigo pode já pertencer a outro preço. Sem renumerar, a correção
+     * esbarraria na unicidade de obra+serviço+unidade+moeda+versão.
+     */
+    @Test
+    void renumeraAVersaoAoEntrarNumaUnidadeQueJaTemPreco() {
+        String obra = insertWorksite("UNIDADE-OCUPADA");
+        String ator = insertActor("Dono das duas unidades");
+        ServicePriceCatalogService servico = service();
+        ServiceCatalogEntry catalogo = inTx(() -> servico.createService(
+                obra, ator, new CreateServiceCommand(
+                        mutation(), "DUAS." + sufixo(), "Serviço com duas", null
+                )
+        ));
+        ServicePriceVersion emArea = inTx(() -> servico.createPrice(
+                obra, ator, catalogo.id(),
+                new CreateServicePriceCommand(
+                        mutation(), "M²", "BRL", new BigDecimal("125.0000"),
+                        new BigDecimal("800.000"), VIGENCIA, null,
+                        "CONTRATO_MEDIDO"
+                )
+        ));
+        ServicePriceVersion emLinear = inTx(() -> servico.createPrice(
+                obra, ator, catalogo.id(),
+                new CreateServicePriceCommand(
+                        mutation(), "M", "BRL", new BigDecimal("42.0000"),
+                        new BigDecimal("800.000"), VIGENCIA, null,
+                        "CONTRATO_MEDIDO"
+                )
+        ));
+        assertThat(emArea.version()).isEqualTo(1);
+        assertThat(emLinear.version()).isEqualTo(1);
+
+        ServicePriceVersion corrigido = inTx(() -> servico.atualizarPreco(
+                obra, ator, emLinear.id(), new UpdateServicePriceCommand(
+                        mutation(), "M²", new BigDecimal("42.0000"),
+                        new BigDecimal("800.000"), VIGENCIA.plusYears(1), null,
+                        "CONTRATO_MEDIDO"
+                )
+        ));
+
+        assertThat(corrigido.id()).isEqualTo(emLinear.id());
+        assertThat(corrigido.unit()).isEqualTo("M²");
+        assertThat(corrigido.version()).isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*) FROM service_price_version
+                WHERE service_id = ? AND unidade = 'M'
+                """,
+                Integer.class, catalogo.id()
+        )).isZero();
+    }
+
+    /*
+     * A unidade é parte da chave estrangeira pela qual a execução cita o preço.
+     * Depois que uma medição aceita a copiou, corrigi-la diria que a execução
+     * mediu em área o que foi medido em metro linear.
+     */
+    @Test
+    void recusaTrocarAUnidadeDepoisQueUmaExecucaoCitouOPreco() {
+        String obra = insertWorksite("UNIDADE-USADA");
+        String ator = insertActor("Dono da unidade usada");
+        ServicePriceCatalogService servico = service();
+        ServiceCatalogEntry catalogo = inTx(() -> servico.createService(
+                obra, ator, new CreateServiceCommand(
+                        mutation(), "USOU." + sufixo(), "Serviço medido", null
+                )
+        ));
+        ServicePriceVersion preco = inTx(() -> servico.createPrice(
+                obra, ator, catalogo.id(),
+                precoCommand("125.0000", VIGENCIA, null)
+        ));
+        insertAcceptedExecution(obra, catalogo.id(), preco.id());
+
+        assertThatThrownBy(() -> inTx(() -> servico.atualizarPreco(
+                obra, ator, preco.id(), new UpdateServicePriceCommand(
+                        mutation(), "M³", new BigDecimal("125.0000"),
+                        new BigDecimal("800.000"), VIGENCIA, null,
+                        "CONTRATO_MEDIDO"
+                )
+        ))).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("SERVICE_PRICE_ALREADY_USED");
+
+        assertThat(jdbc.queryForObject(
+                "SELECT unidade FROM service_price_version WHERE id = ?",
+                String.class, preco.id()
+        )).isEqualTo("M2");
     }
 
     /*
@@ -195,7 +328,7 @@ class PostgresqlCorrecaoDeCatalogoIT {
 
         assertThatThrownBy(() -> inTx(() -> servico.atualizarPreco(
                 obra, ator, preco.id(), new UpdateServicePriceCommand(
-                        mutation(), new BigDecimal("12.5000"),
+                        mutation(), "M2", new BigDecimal("12.5000"),
                         new BigDecimal("800.000"), VIGENCIA, null,
                         "CONTRATO_MEDIDO"
                 )
@@ -234,7 +367,7 @@ class PostgresqlCorrecaoDeCatalogoIT {
 
         assertThatThrownBy(() -> inTx(() -> servico.atualizarPreco(
                 obra, ator, primeira.id(), new UpdateServicePriceCommand(
-                        mutation(), new BigDecimal("12.5000"),
+                        mutation(), "M2", new BigDecimal("12.5000"),
                         new BigDecimal("800.000"), VIGENCIA, null,
                         "CONTRATO_MEDIDO"
                 )
@@ -271,7 +404,7 @@ class PostgresqlCorrecaoDeCatalogoIT {
 
         assertThatThrownBy(() -> inTx(() -> servico.atualizarPreco(
                 obra, ator, primeira.id(), new UpdateServicePriceCommand(
-                        mutation(), new BigDecimal("125.0000"),
+                        mutation(), "M2", new BigDecimal("125.0000"),
                         new BigDecimal("800.000"), VIGENCIA,
                         VIGENCIA.plusMonths(4), "CONTRATO_MEDIDO"
                 )

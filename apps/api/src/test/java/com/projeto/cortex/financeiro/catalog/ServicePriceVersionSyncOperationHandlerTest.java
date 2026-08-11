@@ -193,6 +193,7 @@ class ServicePriceVersionSyncOperationHandlerTest {
         when(service.atualizarPreco(eq(WORKSITE), eq(ACTOR), eq(PRICE), any()))
                 .thenReturn(price(PRICE, null, "ACTIVE"));
         ObjectNode payload = basePayload(PRICE);
+        payload.put("unit", "M²");
         payload.put("unitPrice", "50.0000");
         payload.put("contractedQuantity", "1200.000");
         payload.put("validFrom", "2026-07-01");
@@ -215,6 +216,7 @@ class ServicePriceVersionSyncOperationHandlerTest {
                 eq(WORKSITE), eq(ACTOR), eq(PRICE), command.capture()
         );
         assertThat(command.getValue().clientMutationId()).isEqualTo(MUTATION);
+        assertThat(command.getValue().unit()).isEqualTo("M²");
         assertThat(command.getValue().unitPrice()).isEqualByComparingTo("50.0000");
         assertThat(command.getValue().contractedQuantity())
                 .isEqualByComparingTo("1200.000");
@@ -234,6 +236,7 @@ class ServicePriceVersionSyncOperationHandlerTest {
         when(service.atualizarPreco(eq(WORKSITE), eq(ACTOR), eq(PRICE), any()))
                 .thenReturn(price(PRICE, null, "ACTIVE"));
         ObjectNode payload = basePayload(PRICE);
+        payload.put("unit", "M²");
         payload.put("unitPrice", "50.0000");
         payload.putNull("contractedQuantity");
         payload.put("validFrom", "2026-07-01");
@@ -258,6 +261,7 @@ class ServicePriceVersionSyncOperationHandlerTest {
     @Test
     void rejectsCorrectionWhenClientSuppliesAnyRelatedEntity() {
         ObjectNode payload = basePayload(PRICE);
+        payload.put("unit", "M²");
         payload.put("unitPrice", "50.0000");
         payload.put("validFrom", "2026-07-01");
         payload.put("source", "CONTRATO_MEDIDO");

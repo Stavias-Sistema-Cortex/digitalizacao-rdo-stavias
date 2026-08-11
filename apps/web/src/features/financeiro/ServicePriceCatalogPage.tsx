@@ -718,6 +718,7 @@ export function ServicePriceCatalogPage({
             const form = new FormData(event.currentTarget);
             void submit(
               () => queueUpdatePrice(obraId, selectedPrice.id, {
+                unit: normalizarUnidade(readText(form, "unit")),
                 unitPrice: readText(form, "unitPrice"),
                 contractedQuantity: readText(form, "contractedQuantity"),
                 validFrom: readText(form, "validFrom"),
@@ -738,10 +739,25 @@ export function ServicePriceCatalogPage({
           <p className="finance-catalog-editor__aviso" role="status">
             A correção reescreve esta versão, sem criar outra. Ela só é aceita
             enquanto nenhuma execução usou este preço — depois disso, o caminho é{" "}
-            <strong>Substituir</strong>. A unidade ({selectedPrice.unit}) e a
-            moeda não mudam aqui: elas identificam a versão.
+            <strong>Substituir</strong>. Trocar a unidade renumera a versão, que
+            é contada por unidade; a moeda continua sendo BRL.
           </p>
           <div className="finance-catalog-editor__grid">
+            <label>
+              Unidade
+              <input
+                name="unit"
+                aria-label="Unidade"
+                required
+                maxLength={30}
+                list={unidadesId}
+                defaultValue={selectedPrice.unit}
+              />
+              <small>
+                Corrija aqui o que entrou como M antes de o cadastro aceitar
+                M² e M³.
+              </small>
+            </label>
             <label>
               Valor unitário
               <input
@@ -749,7 +765,6 @@ export function ServicePriceCatalogPage({
                 aria-label="Valor unitário"
                 inputMode="decimal"
                 required
-                autoFocus
                 defaultValue={selectedPrice.unitPrice}
               />
             </label>

@@ -93,6 +93,7 @@ public interface ServicePriceCatalogRepository {
             String actorId,
             String clientMutationId,
             String requestHash,
+            String unit,
             BigDecimal unitPrice,
             BigDecimal contractedQuantity,
             LocalDate validFrom,

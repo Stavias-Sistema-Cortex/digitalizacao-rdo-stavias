@@ -21,6 +21,7 @@ import type {
   ServiceCatalogPage,
   ServiceCatalogRow,
 } from "./servicePriceApi";
+import { normalizarUnidade } from "./servicoCatalogoEntrada";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -49,6 +50,7 @@ export interface UpdateLocalServiceInput {
 }
 
 export interface UpdateLocalPriceInput {
+  unit: string;
   unitPrice: string;
   contractedQuantity: string;
   validFrom: string;
@@ -760,8 +762,12 @@ export async function queueCreatePrice(
  * <p>Quem decide se a correção ainda cabe é o servidor, dentro da mesma escrita:
  * preço já citado por uma execução, já substituído ou já cancelado é recusado.
  * Aqui só se recusa o que dá para saber sem rede — versão que este aparelho já
- * sabe encerrada. A unidade e a moeda não entram: elas são endereço da versão, e
- * trocá-las apontaria para outro preço.
+ * sabe encerrada.
+ *
+ * <p>A unidade entra na correção porque ela é o erro mais comum a consertar:
+ * antes de o cadastro aceitar expoente, todo serviço medido em área ou volume
+ * entrava como metro linear. Ela arrasta o número da versão, que é contado por
+ * unidade, e quem renumera é o servidor. A moeda fica de fora: é BRL e só.
  */
 export async function queueUpdatePrice(
   obraId: string,
@@ -770,6 +776,11 @@ export async function queueUpdatePrice(
 ): Promise<QueuedCatalogMutation> {
   const identity = await localMutationIdentity(obraId);
   const entityId = requiredUuid(priceId, "priceId");
+  // Normaliza aqui também, não só na tela: quem digita "m2" na correção quer
+  // metro quadrado, e gravar "M2" seria trocar um símbolo errado por outro.
+  const unit = normalizarUnidade(
+    requiredText(input.unit, "Unidade", 30),
+  ).toUpperCase();
   const unitPrice = decimalText(input.unitPrice);
   const contractedQuantity = input.contractedQuantity.trim()
     ? contractedQuantityText(input.contractedQuantity)
@@ -795,6 +806,7 @@ export async function queueUpdatePrice(
   const payload = {
     id: entityId,
     obraId: identity.obraId,
+    unit,
     unitPrice,
     contractedQuantity,
     validFrom,
@@ -803,6 +815,7 @@ export async function queueUpdatePrice(
   };
   const local: ServicePriceVersionLocalRecord = {
     ...previous,
+    unit,
     unitPrice,
     contractedQuantity,
     validFrom,
@@ -831,6 +844,7 @@ export async function queueUpdatePrice(
     previousSnapshot: {
       id: entityId,
       obraId: identity.obraId,
+      unit: previous.unit,
       unitPrice: previous.unitPrice,
       contractedQuantity: previous.contractedQuantity,
       validFrom: previous.validFrom,

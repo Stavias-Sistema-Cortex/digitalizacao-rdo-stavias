@@ -392,6 +392,7 @@ public class ServicePriceCatalogService {
                     new ServicePriceCatalogRepository.UpdatePriceRecord(
                             normalizedPriceId, worksite, actor,
                             normalized.clientMutationId(), hash,
+                            normalized.unit(),
                             normalized.unitPrice(),
                             normalized.contractedQuantity(),
                             normalized.validFrom(), normalized.validTo(),
@@ -599,6 +600,7 @@ public class ServicePriceCatalogService {
                 "operation", "SERVICE_PRICE_VERSION_UPDATED",
                 "obraId", obraId,
                 "priceId", priceId,
+                "unit", command.unit(),
                 "unitPrice", command.unitPrice().toPlainString(),
                 "contractedQuantity", command.contractedQuantity() == null
                         ? ""
@@ -728,8 +730,14 @@ public class ServicePriceCatalogService {
                     "vigenciaFim não pode ser anterior à vigenciaInicio."
             );
         }
+        String unit = FinanceValidation.requiredText(command.unit(), "unidade", 30)
+                .toUpperCase(Locale.ROOT);
+        if (!UNIT.matcher(unit).matches()) {
+            throw FinanceValidation.badRequest("unidade inválida.");
+        }
         return new UpdateServicePriceCommand(
                 FinanceValidation.mutationId(command.clientMutationId()),
+                unit,
                 price(command.unitPrice()),
                 /*
                  * Ausência continua sendo ausência. Versões anteriores à V60 não
