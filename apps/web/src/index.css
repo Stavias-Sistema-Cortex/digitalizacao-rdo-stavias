@@ -2602,6 +2602,72 @@ textarea:focus {
   font-size: 0.7rem;
 }
 
+/*
+ * As listas de explicação do PDOR — dados ausentes, limitações, alertas,
+ * recomendações — não tinham estilo nenhum. Saíam como marcadores corridos com
+ * o rótulo colado na explicação: "Consumo real de materialSoma das quantidades
+ * aplicadas…", uma frase emendada na outra. A forma é a mesma dos fatores de
+ * risco, que já se leem bem.
+ */
+.obras-pdor-explanation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.obras-pdor-explanation-section h4 {
+  margin: 0 0 8px;
+  color: #25342d;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.obras-pdor-explanation-section ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.obras-pdor-explanation-section li {
+  border: 1px solid #e3e8e5;
+  padding: 10px 12px;
+}
+
+.obras-pdor-explanation-section strong {
+  display: block;
+  color: #25342d;
+  font-size: 0.76rem;
+}
+
+.obras-pdor-explanation-section span {
+  display: block;
+  margin-top: 2px;
+  color: #718078;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+/*
+ * A ressalva fica junto do número, e não enterrada numa lista embaixo.
+ *
+ * A receita prevista pode sair alta ao lado de uma faixa zerada: sem nenhuma
+ * medição, o índice de captura é zero e a projeção direta cai no valor
+ * contratual inteiro, enquanto a simulação não tem de onde tirar percentis.
+ * Os dois números são o que o modelo produziu, e apresentá-los lado a lado sem
+ * dizer isso faz o painel se contradizer na cara de quem lê.
+ */
+.obras-pdor-ressalva {
+  margin: 6px 0 0;
+  color: #7a5b00;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
 @media (max-width: 620px) {
   .home-dashboard {
     padding: 0;
