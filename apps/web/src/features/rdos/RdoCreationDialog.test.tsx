@@ -297,7 +297,17 @@ describe("diálogo obra-first de RDO", () => {
 
     expect(await screen.findByText("Parcial")).toBeVisible();
     expect(screen.getByText("Colaboradores 2/4")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Criar rascunho" })).toBeDisabled();
+    /*
+     * Esperar o botão assentar, não fotografá-lo. O painel de cobertura aparece
+     * assim que o contexto chega, e o impedimento é apurado um tique depois, de
+     * propósito — então entre um e outro há uma janela em que o botão ainda não
+     * sabe que deve estar travado. Fotografar essa janela passa numa máquina
+     * folgada e falha sob carga, que foi o que aconteceu no CI.
+     */
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Criar rascunho" }))
+        .toBeDisabled(),
+    );
   });
 
   it("remove o hard stop legado e cria rascunho explicitamente LOCAL_PENDING", async () => {
@@ -369,8 +379,12 @@ describe("diálogo obra-first de RDO", () => {
 
     expect(await screen.findByText(RDO_CREATION_CONTEXT_INCOMPATIBLE))
       .toBeVisible();
-    expect(screen.getByRole("button", { name: "Criar rascunho" }))
-      .toBeDisabled();
+    // Mesma janela do teste de cobertura parcial: a mensagem aparece antes de o
+    // impedimento ser apurado, e o botão só trava depois.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Criar rascunho" }))
+        .toBeDisabled(),
+    );
 
     await user.click(
       screen.getByRole("button", { name: "Tentar novamente" }),
