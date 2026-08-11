@@ -208,7 +208,7 @@ class PostgresqlQuilometroDoEixoIT {
                     fonte, status, valido_desde,
                     criado_por, atualizado_por, criado_em, atualizado_em
                 ) VALUES (
-                    ?, ?, ?, 'LineString',
+                    ?, ?, ?, 'LINESTRING',
                     CAST(? AS jsonb), CAST(? AS jsonb),
                     'GESTAO_MAPA', 'ATIVA', ?,
                     ?, ?, ?, ?
