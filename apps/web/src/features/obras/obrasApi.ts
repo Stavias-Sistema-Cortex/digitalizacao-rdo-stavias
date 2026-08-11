@@ -488,6 +488,36 @@ export function obraPdorFromApi(api: ObraPdorApi): ObraPdor {
 }
 
 /**
+ * Manda a obra recalcular o PDOR agora.
+ *
+ * <p>O cálculo já era disparado por evento — a cada mudança de RDO —, e essa
+ * era a única porta. Só que o snapshot é cache: quando o que ele projetava
+ * deixa de existir e nenhum RDO muda depois disso, a projeção velha fica na
+ * tela sem nada que a tire de lá. O endpoint existia desde sempre e nenhuma
+ * tela o chamava.
+ *
+ * <p>Recalcular não inventa dado nenhum: relê a obra como ela está agora. Se
+ * as entradas sumiram, o resultado é "dados insuficientes" — e é essa a
+ * resposta correta, no lugar de um número que já não descreve coisa alguma.
+ */
+export async function recalcularPdor(
+  obraId: string,
+): Promise<ObraPdor | null> {
+  const response = await apiFetch(
+    `/obras/${encodeURIComponent(obraId)}/pdor/calcular`,
+    { method: "POST" },
+  );
+  const data = await readJson<ObraPdorApi>(response);
+  const pdor = obraPdorFromApi(data);
+  if (pdor.obraId !== obraId) {
+    throw new Error(
+      "O servidor retornou um PDOR fora da obra financeira solicitada.",
+    );
+  }
+  return pdor;
+}
+
+/**
  * Busca o snapshot PDOR mais recente da obra. Retorna null quando a obra
  * ainda não tem nenhum cálculo (404) — o próximo RDO dispara o cálculo
  * automaticamente no backend.

@@ -994,3 +994,24 @@
   gap: 6px;
   margin-left: auto;
 }
+
+/*
+ * A porta para recalcular à mão.
+ *
+ * O cálculo é disparado por evento a cada mudança de RDO, e essa era a única
+ * porta — quando o que o snapshot projetava deixava de existir e nenhum RDO
+ * mudava depois, a projeção velha ficava na tela sem nada que a tirasse de lá.
+ */
+.finance-pdor-acoes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.finance-pdor-acoes span {
+  color: var(--color-muted, #66706b);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
