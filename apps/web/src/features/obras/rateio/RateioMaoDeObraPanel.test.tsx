@@ -264,6 +264,30 @@ describe("a tela do rateio", () => {
     );
   });
 
+  /*
+   * O rateio não guarda retrato próprio: ele é sempre recalculado do que os
+   * RDOs dizem agora. É isso que faz o RDO apagado sumir daqui junto — não há
+   * cópia guardada que possa sobreviver ao apagamento e continuar contando
+   * dias para uma obra.
+   */
+  it("refaz a conta quando a sincronização termina", async () => {
+    mocks.lerLocal.mockResolvedValue(
+      leitura([apontamento("2026-07-01", "obra-a")]),
+    );
+
+    render(<RateioMaoDeObraPanel obras={OBRAS} mesInicial="2026-07" />);
+    await screen.findByRole("row", { name: /PESSOA UM/ });
+    expect(mocks.lerLocal).toHaveBeenCalledTimes(1);
+
+    // O RDO foi apagado em outra máquina e a sincronização trouxe a novidade.
+    mocks.lerLocal.mockResolvedValue(leitura([]));
+    window.dispatchEvent(new Event("cortex:sync-completed"));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("row", { name: /PESSOA UM/ })).toBeNull(),
+    );
+  });
+
   it("explica o vazio conforme a causa", async () => {
     mocks.lerLocal.mockResolvedValue(leitura([]));
     render(<RateioMaoDeObraPanel obras={OBRAS} mesInicial="2026-07" />);

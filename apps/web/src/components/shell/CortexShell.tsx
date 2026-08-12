@@ -386,23 +386,13 @@ export function CortexShell({
             />
             <span className="sidebar-label">Obras</span>
           </button>
-          <button
-            type="button"
-            className={
-              active === "equipes"
-                ? "sidebar-nav-item active"
-                : "sidebar-nav-item"
-            }
-            title="Equipes"
-            onClick={() => navigate("/equipes")}
-          >
-            <img
-              src="/icons8/user.png"
-              alt=""
-              draggable={false}
-            />
-            <span className="sidebar-label">Equipes</span>
-          </button>
+          {/*
+            Equipes saiu da navegação do dia a dia: quem trabalhou em cada obra
+            é o RDO que declara, e o Rateio, dentro de Obras, é onde isso se lê.
+            A tela continua alcançável no rodapé administrativo porque a equipe
+            alocada ainda é uma das duas portas de acesso a uma obra — tirá-la
+            de vez deixaria um acesso que ninguém conseguiria revogar.
+          */}
           <button
             type="button"
             className={
@@ -469,6 +459,20 @@ export function CortexShell({
                 draggable={false}
               />
               <span className="sidebar-label">Gerir obras</span>
+            </button>
+          )}
+          {alfa && (
+            <button
+              type="button"
+              onClick={() => navigate("/equipes")}
+              title="Equipes e acesso às obras"
+            >
+              <img
+                src="/icons8/user.png"
+                alt=""
+                draggable={false}
+              />
+              <span className="sidebar-label">Equipes</span>
             </button>
           )}
           {alfa && (
