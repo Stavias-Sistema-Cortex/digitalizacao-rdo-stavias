@@ -15,6 +15,49 @@
   position: relative;
 }
 
+/*
+ * O balão é um cartão do Córtex, não um tooltip genérico: título firme, o
+ * quilômetro em linha própria — é a resposta que o clique veio buscar — e o
+ * resto como texto de apoio. Sem isto o Leaflet rendia "Eixo da obrakm
+ * 172,133", tudo inline, tudo do mesmo peso.
+ */
+.mapa-balao {
+  min-width: 190px;
+  max-width: 280px;
+  color: var(--color-ink);
+}
+
+.mapa-balao strong {
+  display: block;
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  margin-bottom: 4px;
+}
+
+.mapa-balao-km {
+  display: block;
+  font-weight: 500;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+  margin-bottom: 2px;
+}
+
+.mapa-balao-detalhes {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--color-muted);
+}
+
+.mapa-balao small {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--color-muted);
+}
+
 .mapa-balao:has(.mapa-balao-remover),
 .mapa-balao:has(.mapa-balao-redesenhar) {
   padding-right: 26px;

@@ -19,6 +19,7 @@ import { mapboxAccessToken, type MapProvider } from "./mapProvider";
 import {
   detalhesDoBalao,
   lixeiraDoBalao,
+  quilometroDoBalao,
   redesenhoDoBalao,
   tituloDoBalao,
 } from "./popupDoMapa";
@@ -331,11 +332,20 @@ function popupContent(
    */
   const title = document.createElement("strong");
   title.textContent = tituloDoBalao(properties);
+  container.append(title);
+
+  const km = quilometroDoBalao(properties);
+  if (km) {
+    const kmLinha = document.createElement("span");
+    kmLinha.className = "mapa-balao-km";
+    kmLinha.textContent = km;
+    container.append(kmLinha);
+  }
 
   const detail = document.createElement("span");
+  detail.className = "mapa-balao-detalhes";
   detail.textContent = detalhesDoBalao(properties).join(" · ");
-
-  container.append(title, detail);
+  container.append(detail);
 
   if (properties.fonte) {
     const origem = document.createElement("small");

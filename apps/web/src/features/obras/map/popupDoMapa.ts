@@ -38,6 +38,9 @@ const LAPIS_SVG =
 
 /** Número de quilômetro como o Brasil escreve: vírgula, até três casas. */
 const KM_LEGIVEL = new Intl.NumberFormat("pt-BR", {
+  // Notação de estaca: km 196+120 se escreve 196,120. Sem o mínimo, o mesmo
+  // balão mostrava "172,133 ao 196,12" — duas precisões na mesma régua.
+  minimumFractionDigits: 3,
   maximumFractionDigits: 3,
 });
 
@@ -62,6 +65,12 @@ function pontaDeQuilometro(valor: unknown): string {
  * sem o final descreve por onde a frente começou, e esconder isso por não estar
  * completo apagaria a única referência que a linha tem.
  */
+export function quilometroDoBalao(
+  properties: Record<string, unknown>,
+): string | null {
+  return quilometragem(properties);
+}
+
 function quilometragem(properties: Record<string, unknown>): string | null {
   const inicial = pontaDeQuilometro(properties.kmInicial);
   const fim = pontaDeQuilometro(properties.kmFinal);
@@ -111,9 +120,9 @@ export function detalhesDoBalao(
   const fase = properties.faseExecucao;
   const rotuloCategoria = rotuloDaCategoria(properties.categoria);
   return [
-    // O quilômetro vem primeiro porque é a primeira coisa que se pergunta
-    // olhando para uma linha numa rodovia.
-    quilometragem(properties),
+    // O quilômetro NÃO entra aqui: ele tem linha própria no balão, porque é a
+    // primeira coisa que se pergunta olhando para uma linha numa rodovia — e
+    // linha de destaque não se mistura com metadado.
     // A rodovia diz sobre qual estrada a régua fala — o eixo a carrega.
     typeof properties.rodovia === "string" && properties.rodovia.trim()
       ? properties.rodovia.trim()
@@ -151,6 +160,7 @@ export function detalhesDoBalao(
 }
 
 export function popupHtml(properties: Record<string, unknown>): string {
+  const km = quilometroDoBalao(properties);
   const detalhes = [
     ...detalhesDoBalao(properties),
     typeof properties.fonte === "string"
@@ -158,9 +168,9 @@ export function popupHtml(properties: Record<string, unknown>): string {
       : null,
   ].filter((item): item is string => Boolean(item));
 
-  return `<strong>${escapeHtml(tituloDoBalao(properties))}</strong><span>${escapeHtml(
-    detalhes.join(" · "),
-  )}</span>`;
+  return `<strong>${escapeHtml(tituloDoBalao(properties))}</strong>${
+    km ? `<span class="mapa-balao-km">${escapeHtml(km)}</span>` : ""
+  }<span class="mapa-balao-detalhes">${escapeHtml(detalhes.join(" · "))}</span>`;
 }
 
 /**

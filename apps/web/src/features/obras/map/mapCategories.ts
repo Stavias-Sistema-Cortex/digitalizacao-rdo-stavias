@@ -108,8 +108,23 @@ export function rotuloDaCategoria(categoria: unknown): string {
   return rotuloLegivel(categoria, "Camada operacional");
 }
 
-/** Origem do dado (`GESTAO_MAPA`, `CAPTURA_CAMPO`) escrita como texto. */
+/**
+ * Origem do dado escrita como gente escreve.
+ *
+ * As origens conhecidas têm nome próprio — a conversão genérica de caixa não
+ * devolve o acento que o enum nunca teve, e "Gestao mapa" no balão denuncia a
+ * grafia do banco. O que não estiver no dicionário continua legível pelo
+ * caminho genérico.
+ */
+const ROTULO_POR_FONTE: Record<string, string> = {
+  GESTAO_MAPA: "Gestão do mapa",
+  CAPTURA_CAMPO: "Captura de campo",
+};
+
 export function rotuloDaFonte(fonte: unknown): string {
+  if (typeof fonte === "string" && fonte in ROTULO_POR_FONTE) {
+    return ROTULO_POR_FONTE[fonte];
+  }
   return rotuloLegivel(fonte, "Origem não declarada");
 }
 
