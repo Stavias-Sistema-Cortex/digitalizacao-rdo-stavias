@@ -204,9 +204,12 @@ public class TrechoApoiadoNoEixo {
                        execution.servico_nome,
                        execution.trecho_inicial,
                        execution.trecho_final,
+                       execution.pista,
                        execution.status_validacao,
                        execution.data_execucao,
                        rdo.numero_rdo,
+                       rdo.cidade,
+                       rdo.rodovia,
                        rdo.status AS rdo_status
                 FROM execucao_servico_rdo execution
                 JOIN rdo
@@ -234,6 +237,9 @@ public class TrechoApoiadoNoEixo {
                             rs.getString("servico_nome"),
                             inicial.doubleValue(),
                             fim.doubleValue(),
+                            rs.getString("pista"),
+                            rs.getString("cidade"),
+                            rs.getString("rodovia"),
                             rs.getString("status_validacao"),
                             rs.getString("rdo_status"),
                             rs.getDate("data_execucao") == null
@@ -272,6 +278,17 @@ public class TrechoApoiadoNoEixo {
         properties.put("numeroRdo", apontamento.numeroRdo());
         properties.put("kmInicial", apontamento.kmInicial());
         properties.put("kmFinal", apontamento.kmFinal());
+        // O balão fala a língua da obra: cidade, quilômetro e pista — os três
+        // vindos do próprio RDO, que é quem desenha esta linha.
+        if (temTexto(apontamento.pista())) {
+            properties.put("pista", apontamento.pista().trim());
+        }
+        if (temTexto(apontamento.cidade())) {
+            properties.put("cidade", apontamento.cidade().trim());
+        }
+        if (temTexto(apontamento.rodovia())) {
+            properties.put("rodovia", apontamento.rodovia().trim());
+        }
         properties.put("statusValidacao", apontamento.statusValidacao());
         properties.put("rdoStatus", apontamento.rdoStatus());
 
@@ -425,6 +442,10 @@ public class TrechoApoiadoNoEixo {
     ) {
     }
 
+    private static boolean temTexto(String valor) {
+        return valor != null && !valor.isBlank();
+    }
+
     private record Apontamento(
             String execucaoId,
             String rdoId,
@@ -432,6 +453,9 @@ public class TrechoApoiadoNoEixo {
             String servicoNome,
             double kmInicial,
             double kmFinal,
+            String pista,
+            String cidade,
+            String rodovia,
             String statusValidacao,
             String rdoStatus,
             LocalDateTime dataExecucao

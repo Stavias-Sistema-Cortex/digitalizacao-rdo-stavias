@@ -118,6 +118,14 @@ export function detalhesDoBalao(
     typeof properties.rodovia === "string" && properties.rodovia.trim()
       ? properties.rodovia.trim()
       : null,
+    // Cidade e pista vêm do próprio RDO na linha derivada: é a língua em que
+    // a obra descreve onde o trabalho aconteceu.
+    typeof properties.cidade === "string" && properties.cidade.trim()
+      ? properties.cidade.trim()
+      : null,
+    typeof properties.pista === "string" && properties.pista.trim()
+      ? `pista ${properties.pista.trim()}`
+      : null,
     // O serviço vem antes de qualquer metadado: é o que o segmento REPRESENTA
     // no campo, e era a informação que existia no dado sem aparecer na tela.
     servico && servico !== titulo ? servico : null,

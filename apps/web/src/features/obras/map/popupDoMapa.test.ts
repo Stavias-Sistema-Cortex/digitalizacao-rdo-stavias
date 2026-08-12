@@ -195,6 +195,32 @@ describe("o balão do eixo", () => {
     expect(texto).not.toContain("2026-08-11");
   });
 
+  /*
+   * A linha derivada fala a língua da obra: cidade, quilômetro e pista — os
+   * três vindos do próprio RDO, que é quem a desenha.
+   */
+  it("a linha derivada mostra cidade e pista vindas do RDO", () => {
+    const texto =
+      popupElement(
+        {
+          categoria: "TRECHO",
+          derivadoDoEixo: true,
+          geometriaId: "exec-1",
+          execucaoId: "exec-1",
+          kmInicial: "206,822",
+          kmFinal: "207,100",
+          cidade: "Pirassununga",
+          pista: "Norte",
+          numeroRdo: "RDO-0026",
+        },
+        null,
+      ).textContent ?? "";
+
+    expect(texto).toContain("Pirassununga");
+    expect(texto).toContain("pista Norte");
+    expect(texto).toContain("km 206,822 ao 207,100");
+  });
+
   it("não repete o título na linha de detalhes", () => {
     const balao = popupElement(propriedadesDoEixo, null);
     const detalhes = balao.querySelector("span")?.textContent ?? "";

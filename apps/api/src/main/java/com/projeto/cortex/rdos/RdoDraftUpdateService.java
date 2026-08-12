@@ -30,6 +30,8 @@ public class RdoDraftUpdateService {
 
     private final JdbcTemplate jdbcTemplate;
     private final QuilometroDoEixo quilometroDoEixo;
+    private final com.projeto.cortex.obras.mapa.DesenhoDoTrechoNoMapa
+            desenhoDoTrechoNoMapa;
     private final RdoQueryService queryService;
     private final RdoAssetEligibilityService assetEligibilityService;
     private final RdoMemoryPublisher memoryPublisher;
@@ -61,6 +63,10 @@ public class RdoDraftUpdateService {
                 jdbcTemplate,
                 new com.fasterxml.jackson.databind.ObjectMapper()
         );
+        this.desenhoDoTrechoNoMapa =
+                new com.projeto.cortex.obras.mapa.DesenhoDoTrechoNoMapa(
+                        jdbcTemplate
+                );
         this.queryService = queryService;
         this.assetEligibilityService = assetEligibilityService;
         this.memoryPublisher = memoryPublisher;
@@ -268,6 +274,7 @@ public class RdoDraftUpdateService {
          * mudar a posição de todo trecho antigo, para sempre.
          */
         reescreverQuilometroDoEixo(rdoId, request);
+        cederDesenhoManualAoRdo(rdoId, request);
 
         reconciliarMaoObra(rdoId, request.obraId(), request.maoObra());
         reconciliarEquipamentos(rdoId, request.obraId(), request.equipamentos());
@@ -1145,6 +1152,49 @@ public class RdoDraftUpdateService {
                     exception
             );
         }
+    }
+
+    /**
+     * O RDO é a hierarquia — inclusive sobre o traçado desenhado à mão.
+     *
+     * <p>Quando o apontamento declara quilômetro nos dois extremos de algum
+     * serviço, é o RDO que desenha: o traçado manual daquele RDO sai de
+     * vigência e a linha derivada — projetada sobre o eixo, com cidade,
+     * quilômetro e pista do próprio apontamento — assume na leitura seguinte.
+     * Sem quilômetro declarado, o desenho fica: o RDO não teria linha nenhuma
+     * para pôr no lugar.
+     *
+     * <p>Falha aqui não derruba o salvamento, pela mesma ordem de valor do
+     * eixo: o RDO é o fato, o mapa é projeção.
+     */
+    private void cederDesenhoManualAoRdo(String rdoId, RdoCreateRequest request) {
+        if (rdoEstaCancelado(rdoId) || !algumServicoDeclaraQuilometro(request)) {
+            return;
+        }
+        try {
+            desenhoDoTrechoNoMapa.cederAoRdo(rdoId);
+        } catch (RuntimeException exception) {
+            LOGGER.warn(
+                    "RDO {} salvo, mas o traçado manual não pôde ceder à linha derivada.",
+                    rdoId,
+                    exception
+            );
+        }
+    }
+
+    private boolean algumServicoDeclaraQuilometro(RdoCreateRequest request) {
+        if (request.servicosExecutados() == null) {
+            return false;
+        }
+        return request.servicosExecutados().stream()
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(servico ->
+                        temTexto(servico.trechoInicial())
+                                && temTexto(servico.trechoFinal()));
+    }
+
+    private static boolean temTexto(String valor) {
+        return valor != null && !valor.isBlank();
     }
 
     private boolean rdoEstaCancelado(String rdoId) {
