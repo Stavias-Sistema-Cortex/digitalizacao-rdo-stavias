@@ -15,9 +15,18 @@ describe("rótulos das camadas do mapa", () => {
     expect(rotuloDaCategoria("LOCALIZACAO_OBRA")).toBe("Localizacao obra");
   });
 
-  it("escreve a origem do dado do mesmo jeito", () => {
-    expect(rotuloDaFonte("GESTAO_MAPA")).toBe("Gestao mapa");
-    expect(rotuloDaFonte("CAPTURA_CAMPO")).toBe("Captura campo");
+  /*
+   * As origens conhecidas têm nome próprio, com o acento que o enum nunca
+   * teve — "Gestao mapa" no balão denunciava a grafia do banco. O caminho
+   * genérico continua atendendo o que não estiver no dicionário.
+   */
+  it("escreve as origens conhecidas como gente escreve", () => {
+    expect(rotuloDaFonte("GESTAO_MAPA")).toBe("Gestão do mapa");
+    expect(rotuloDaFonte("CAPTURA_CAMPO")).toBe("Captura de campo");
+  });
+
+  it("uma origem desconhecida ainda sai legível pelo caminho genérico", () => {
+    expect(rotuloDaFonte("IMPORTACAO_LEGADA")).toBe("Importacao legada");
   });
 
   it("nomeia o que chega vazio em vez de devolver texto em branco", () => {
