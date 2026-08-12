@@ -45,13 +45,18 @@ class ObraMapaControllerMockMvcTest {
                         "obra-1", "Obra Norte",
                         new BigDecimal("-20.4428"), new BigDecimal("-54.6464")
                 ),
-                List.of()
+                List.of(),
+                List.of("rdo-calado")
         ));
 
         mockMvc.perform(get("/api/obras/obra-1/mapa"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.obra.id").value("obra-1"))
-                .andExpect(jsonPath("$.features").isArray());
+                .andExpect(jsonPath("$.features").isArray())
+                // A lista de silêncio viaja na mesma resposta: é dela que o
+                // aparelho aprende de quais RDOs não deve derivar linha
+                // nenhuma por conta própria.
+                .andExpect(jsonPath("$.rdosComLinhaSilenciada[0]").value("rdo-calado"));
 
         verify(currentUserService, never()).requireAlfa();
         verify(service).buscarMapa("obra-1");

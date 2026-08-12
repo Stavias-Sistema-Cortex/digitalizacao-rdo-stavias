@@ -29,6 +29,20 @@ const GEOMETRY_TYPES = new Set<OperationalGeometryType>([
 export interface ObraMapData {
   obra: WorksiteMapPoint;
   features: ObraMapFeature[];
+  /**
+   * RDOs cuja linha derivada foi calada no servidor.
+   *
+   * <p>Não é lista de desenho, é lista de silêncio — e ela existe porque o
+   * aparelho também deriva linhas a partir dos apontamentos que guarda. Sem
+   * ela, o RDO silenciado deixava de constar entre os que o servidor desenha
+   * e o aparelho o redesenhava sozinho na leitura seguinte.
+   *
+   * <p>Opcional porque ausência tem significado próprio e seguro: uma leitura
+   * que não fala de silêncio nenhum — a que vem do dispositivo sem rede, ou a
+   * de um servidor anterior a esta versão — descreve o mapa como ele sempre
+   * foi descrito, e o aparelho desenha o que sabe.
+   */
+  rdosComLinhaSilenciada?: string[];
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -112,6 +126,11 @@ export function obraMapResponseFromApi(value: unknown): ObraMapData {
           const feature = featureFromApi(item);
           return feature ? [feature] : [];
         })
+      : [],
+    rdosComLinhaSilenciada: Array.isArray(root.rdosComLinhaSilenciada)
+      ? root.rdosComLinhaSilenciada.flatMap((item) =>
+          typeof item === "string" && item ? [item] : [],
+        )
       : [],
   };
 }
@@ -222,6 +241,7 @@ export async function carregarMapaObra(
         features: locais === null || conhecidas === 0
           ? dados.features
           : [...locais.map(featureDoRegistro), ...derivadas(dados.features)],
+        rdosComLinhaSilenciada: dados.rdosComLinhaSilenciada,
       },
       origem: "REDE",
       obtidoEm: agora,
@@ -242,7 +262,17 @@ export async function carregarMapaObra(
       .sort()
       .at(-1) ?? null;
     return {
-      dados: { obra, features: locais.map(featureDoRegistro) },
+      /*
+       * Sem rede não há lista de silêncio, e não há de onde tirá-la: ela não
+       * é registro do aparelho. O que o dispositivo desenha então são as suas
+       * próprias linhas derivadas, como sempre desenhou — a leitura seguinte,
+       * com rede, é quem reimpõe o silêncio.
+       */
+      dados: {
+        obra,
+        features: locais.map(featureDoRegistro),
+        rdosComLinhaSilenciada: [],
+      },
       origem: "CACHE_LOCAL",
       obtidoEm: confirmadoEm,
     };

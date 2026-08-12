@@ -257,6 +257,45 @@ class PostgresqlTrechoApoiadoNoEixoIT {
         assertThat(apoio.projetarEm(obraId, List.of(eixo(obraId)))).hasSize(2);
     }
 
+    /*
+     * O silêncio precisa ser dito, não só obedecido.
+     *
+     * O aparelho deriva as suas próprias linhas — é assim que o RDO preenchido
+     * em campo aparece antes de subir — e decide o que desenhar perguntando
+     * quais RDOs o servidor já mostra. Sumir da resposta, e só isso, tirava o
+     * RDO calado daquela conta: o aparelho redesenhava a linha por conta
+     * própria e o silêncio não durava nada. Por isso a resposta do mapa
+     * carrega quem foi calado.
+     */
+    @Test
+    void oRdoCaladoEAnunciadoParaOAparelhoNaoRedesenhar() {
+        String obraId = cenario("APOIO-ANUNCIO");
+        String rdoId = rdoComInterdicao(obraId, "102", "104");
+        TrechoDerivadoSilenciado lixeira = lixeira();
+
+        assertThat(lixeira.rdosComLinhaSilenciada(obraId)).isEmpty();
+        lixeira.silenciar(obraId, "eixo:rdo:" + rdoId, null, "alfa-1");
+
+        assertThat(lixeira.rdosComLinhaSilenciada(obraId))
+                .containsExactly(rdoId);
+
+        // Editar o RDO reafirma o que ele declara: a linha volta a desenhar e
+        // o anúncio some junto, senão o aparelho seguiria calando sozinho.
+        lixeira.reafirmar(rdoId);
+        assertThat(lixeira.rdosComLinhaSilenciada(obraId)).isEmpty();
+    }
+
+    /* O silêncio é de uma obra: o anúncio não pode vazar para a obra vizinha. */
+    @Test
+    void oAnuncioNaoAtravessaAObra() {
+        String obraId = cenario("APOIO-ANUNCIO-ESCOPO");
+        String vizinha = cenario("APOIO-ANUNCIO-VIZINHA");
+        String rdoId = rdoComInterdicao(obraId, "102", "104");
+        lixeira().silenciar(obraId, "eixo:rdo:" + rdoId, null, "alfa-1");
+
+        assertThat(lixeira().rdosComLinhaSilenciada(vizinha)).isEmpty();
+    }
+
     @Test
     void identidadeQueNaoEDerivadaNaoEntraNaLixeira() {
         String obraId = cenario("APOIO-LIXEIRA-ERRADA");

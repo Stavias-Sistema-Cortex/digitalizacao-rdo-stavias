@@ -264,6 +264,60 @@ function trechoDerivado(id: string, execucaoId: string) {
   };
 }
 
+/** A régua da obra: sem ela o aparelho não tem onde apoiar quilômetro nenhum. */
+function eixoDaObra() {
+  return {
+    id: "eixo-1",
+    categoria: "EIXO_OBRA",
+    objetoTipo: "OBRA",
+    objetoId: "obra-1",
+    geometry: {
+      type: "LineString" as const,
+      coordinates: [
+        [-47.6, -22.4],
+        [-47.4, -22.4],
+      ],
+    },
+    properties: { kmInicial: 100, kmFinal: 110 },
+    fonte: "GESTAO_MAPA",
+    versao: 1,
+    validoDesde: "2026-03-01T12:00:00.000Z",
+    validoAte: null,
+  };
+}
+
+/** O apontamento que o aparelho guarda e sabe projetar sozinho no eixo. */
+function segmentoDoRdo() {
+  return {
+    id: "seg-1",
+    origem: "EXECUCAO_SERVICO",
+    rdoId: "rdo-1",
+    numeroRdo: "RDO-0009",
+    data: "2026-03-04",
+    servicoNome: "Fresagem",
+    subtrecho: null,
+    sentido: "Norte",
+    pista: null,
+    faixa: "1",
+    kmInicial: 102,
+    kmFinal: 104,
+    estacaInicial: null,
+    estacaFinal: null,
+    extensaoM: 2000,
+    larguraM: null,
+    areaM2: null,
+    massaTonelada: null,
+    status: null,
+    rdoStatus: "ENVIADA",
+    procedencia: "SERVIDOR",
+    pistaInferida: false,
+  };
+}
+
+function ids() {
+  return leaflet.ultimasFeatures.features.map((feature) => feature.id);
+}
+
 describe("RodoviaWorkspace", () => {
   /**
    * encerrarGeometria já existia inteiro e não tinha por onde ser chamado.
@@ -420,6 +474,49 @@ describe("RodoviaWorkspace", () => {
         leaflet.ultimasFeatures.features.map((feature) => feature.id),
       ).not.toContain("eixo:exec-1"),
     );
+  });
+
+  /*
+   * O silêncio tem de calar as DUAS derivações.
+   *
+   * A do servidor some da resposta — é o que silenciar faz. Já a do aparelho,
+   * que existe para o RDO preenchido em campo aparecer antes de subir, decide
+   * o que desenhar perguntando quais RDOs o servidor já mostra. O RDO calado
+   * sumia dessa conta e a linha voltava desenhada pelo próprio aparelho, sem
+   * lixeira e sem lápis: o silêncio durava uma releitura e mais nada.
+   */
+  it("não redesenha localmente a linha que o servidor calou", async () => {
+    const user = userEvent.setup();
+    const derivada = trechoDerivado("eixo:seg-1", "seg-1");
+    carregarMapaObra
+      .mockResolvedValueOnce(
+        leitura({ dados: { obra, features: [eixoDaObra(), derivada] } }),
+      )
+      // Depois do silêncio: a linha sai da resposta e o RDO entra na lista.
+      .mockResolvedValue(
+        leitura({
+          dados: {
+            obra,
+            features: [eixoDaObra()],
+            rdosComLinhaSilenciada: ["rdo-1"],
+          },
+        }),
+      );
+    render(
+      <RodoviaWorkspace
+        obra={obra}
+        podeDesenhar
+        segmentos={[segmentoDoRdo()] as never}
+      />,
+    );
+    await screen.findByTestId("mapa-leaflet");
+    await waitFor(() => expect(ids()).toContain("eixo:seg-1"));
+
+    clicarNaLixeira("eixo:seg-1");
+    await user.click(await screen.findByRole("button", { name: "Remover" }));
+    await waitFor(() => expect(carregarMapaObra).toHaveBeenCalledTimes(2));
+
+    await waitFor(() => expect(ids()).not.toContain("eixo:seg-1"));
   });
 
   /*

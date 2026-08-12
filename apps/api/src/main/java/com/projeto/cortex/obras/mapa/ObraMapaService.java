@@ -97,7 +97,11 @@ public class ObraMapaService {
                 trechoApoiadoNoEixo.projetarEm(
                         obraId,
                         quilometroDoApontamento.projetarEm(features)
-                )
+                ),
+                // O que foi calado viaja junto com o que foi desenhado: o
+                // aparelho deriva as suas próprias linhas e precisa saber de
+                // quais RDOs não deve derivar nada.
+                trechoDerivadoSilenciado.rdosComLinhaSilenciada(obraId)
         );
     }
 

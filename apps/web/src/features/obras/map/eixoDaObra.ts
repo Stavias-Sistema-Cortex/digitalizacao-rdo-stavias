@@ -409,6 +409,12 @@ export function feicoesApoiadasNoEixo(
  * aparelho é o apontamento que ainda não subiu — o RDO preenchido em campo,
  * que o servidor não tem como conhecer. Contar as duas origens aqui é o que
  * impede a mesma linha de aparecer duas vezes, levemente deslocada.
+ *
+ * <p>O RDO cuja linha foi silenciada entra nesta mesma conta, vindo da
+ * resposta do servidor. Ele não está desenhado, mas também não é um RDO que
+ * o servidor desconhece: derivá-lo de novo aqui desfaria o silêncio na tela
+ * de quem tem os apontamentos no aparelho — que é quase todo mundo que abre
+ * o mapa da obra.
  */
 export function rdosJaNoMapa(
   collection: OperationalFeatureCollection,
@@ -437,6 +443,7 @@ export function rdosJaNoMapa(
 export function apoiarTrechosNoEixo(
   collection: OperationalFeatureCollection,
   segmentos: readonly SegmentoTrecho[],
+  rdosSilenciados: readonly string[] = [],
 ): OperationalFeatureCollection {
   const eixo = lerEixoDaColecao(collection);
   if (!eixo || segmentos.length === 0) {
@@ -445,7 +452,7 @@ export function apoiarTrechosNoEixo(
   const derivadas = feicoesApoiadasNoEixo(
     eixo,
     segmentos,
-    rdosJaNoMapa(collection),
+    new Set([...rdosJaNoMapa(collection), ...rdosSilenciados]),
   );
   if (derivadas.length === 0) {
     return collection;

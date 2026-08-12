@@ -1,8 +1,9 @@
 package com.projeto.cortex.obras.mapa;
 
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -43,27 +44,37 @@ public class TrechoDerivadoSilenciado {
         this.memoryService = memoryService;
     }
 
-    /** As linhas silenciadas de uma obra, para a derivação pular. */
-    public Silencios silenciosDaObra(String obraId) {
-        Set<String> execucoes = new HashSet<>();
-        Set<String> interdicoes = new HashSet<>();
+    /**
+     * Os RDOs desta obra que têm alguma linha silenciada.
+     *
+     * <p>Vai na resposta do mapa porque o silêncio não pode valer só para o
+     * traço que o servidor deriva. O aparelho deriva os seus também — é assim
+     * que o RDO preenchido em campo aparece antes de subir — e ele decide o
+     * que desenhar perguntando quais RDOs o servidor já mostra. Sem esta
+     * lista, o RDO silenciado sumia daquela conta e o aparelho ressuscitava a
+     * linha sozinho: o silêncio durava até a releitura e mais nada.
+     *
+     * <p>A resposta é por RDO, e não por linha, porque é assim que a supressão
+     * já funciona do outro lado: o aparelho não desenha nada de um RDO que o
+     * servidor desenha, para a mesma linha não aparecer duas vezes levemente
+     * deslocada. Silenciar tem de entrar nessa mesma conta — senão esconder
+     * uma linha faria aparecer outra que ninguém tinha visto.
+     */
+    public List<String> rdosComLinhaSilenciada(String obraId) {
+        Set<String> rdos = new LinkedHashSet<>();
         jdbcTemplate.query(
                 """
-                SELECT rdo_id, execucao_id
+                SELECT DISTINCT rdo_id
                 FROM trecho_derivado_silenciado
                 WHERE obra_id = ?
+                ORDER BY rdo_id
                 """,
                 rs -> {
-                    String execucaoId = rs.getString("execucao_id");
-                    if (execucaoId == null) {
-                        interdicoes.add(rs.getString("rdo_id"));
-                    } else {
-                        execucoes.add(execucaoId);
-                    }
+                    rdos.add(rs.getString("rdo_id"));
                 },
                 obraId
         );
-        return new Silencios(execucoes, interdicoes);
+        return List.copyOf(rdos);
     }
 
     /**
@@ -191,21 +202,4 @@ public class TrechoDerivadoSilenciado {
         );
     }
 
-    /** O que está em silêncio numa obra, separado pelas duas fontes. */
-    public record Silencios(
-            Set<String> execucoes,
-            Set<String> interdicoes
-    ) {
-        public boolean execucaoSilenciada(String execucaoId) {
-            return execucaoId != null && execucoes.contains(execucaoId);
-        }
-
-        public boolean interdicaoSilenciada(String rdoId) {
-            return rdoId != null && interdicoes.contains(rdoId);
-        }
-
-        public boolean vazio() {
-            return execucoes.isEmpty() && interdicoes.isEmpty();
-        }
-    }
 }

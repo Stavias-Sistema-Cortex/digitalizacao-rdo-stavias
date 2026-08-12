@@ -448,8 +448,16 @@ export function RodoviaWorkspace({
    * primeiro acerto de um dos dois.
    */
   const colecaoCompleta = useMemo(
-    () => apoiarTrechosNoEixo(colecaoPersistida, segmentos ?? []),
-    [colecaoPersistida, segmentos],
+    () =>
+      apoiarTrechosNoEixo(
+        colecaoPersistida,
+        segmentos ?? [],
+        // O silêncio vale para as duas derivações. Sem passá-lo adiante, o
+        // aparelho redesenhava por conta própria a linha que o servidor
+        // acabou de calar — e a substituta local nem lixeira tem.
+        leituraVisivel?.dados.rdosComLinhaSilenciada ?? [],
+      ),
+    [colecaoPersistida, segmentos, leituraVisivel?.dados.rdosComLinhaSilenciada],
   );
   const eixo = useMemo(
     () => lerEixoDaColecao(colecaoPersistida),

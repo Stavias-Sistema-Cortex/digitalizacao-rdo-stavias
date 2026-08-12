@@ -232,6 +232,40 @@ describe("apoiarTrechosNoEixo", () => {
     const semSegmentos = colecao(FEICAO_DO_EIXO);
     expect(apoiarTrechosNoEixo(semSegmentos, [])).toBe(semSegmentos);
   });
+
+  /*
+   * O silêncio precisa valer para as duas derivações.
+   *
+   * A linha calada some da resposta do servidor — é isso que silenciar quer
+   * dizer. Só que o aparelho deriva as suas próprias linhas a partir dos
+   * apontamentos que guarda, e ele decide o que desenhar perguntando quais
+   * RDOs o servidor já mostra. Sem a lista de silêncio, o RDO calado sumia
+   * dessa conta e o aparelho redesenhava exatamente a linha que acabara de
+   * ser tirada do mapa — para todo mundo que tivesse os apontamentos, que é
+   * quase todo mundo que abre a obra.
+   */
+  it("não redesenha por conta própria a linha que o servidor calou", () => {
+    const resultado = apoiarTrechosNoEixo(
+      colecao(FEICAO_DO_EIXO),
+      [segmento()],
+      ["rdo-1"],
+    );
+
+    expect(resultado.features).toHaveLength(1);
+    expect(resultado.features[0].properties.categoria).toBe("EIXO_OBRA");
+  });
+
+  /* O silêncio é de um RDO, não da obra: o vizinho continua desenhando. */
+  it("cala só o RDO silenciado", () => {
+    const resultado = apoiarTrechosNoEixo(
+      colecao(FEICAO_DO_EIXO),
+      [segmento(), segmento({ id: "seg-2", rdoId: "rdo-2" })],
+      ["rdo-1"],
+    );
+
+    expect(resultado.features).toHaveLength(2);
+    expect(resultado.features[1].properties.objetoId).toBe("rdo-2");
+  });
 });
 
 describe("rdosJaNoMapa", () => {
