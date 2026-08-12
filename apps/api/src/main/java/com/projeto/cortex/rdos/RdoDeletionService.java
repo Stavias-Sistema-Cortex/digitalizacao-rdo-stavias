@@ -57,9 +57,15 @@ public class RdoDeletionService {
         Alvo alvo = carregar(id);
         currentUserService.requireWorksiteAccess(alvo.obraId());
 
-        if (!"RASCUNHO".equals(alvo.status())) {
-            currentUserService.requireAlfa();
-        }
+        /*
+         * Apagar RDO é decisão de Alfa, em qualquer estado. Já houve uma
+         * versão desta regra em que rascunho era exceção — "quem monta
+         * desfaz" —, e o dono do sistema a revogou: o RDO é o registro do
+         * dia da obra, e removê-lo, mesmo rascunho, é mexer no que a
+         * operação declara. Quem é Beta descarta apenas o rascunho local
+         * que nunca subiu, que o servidor nem conhece.
+         */
+        currentUserService.requireAlfa();
         recusarSeTemEvidenciaDeReceita(id);
         recusarSeEBaseDeOutro(id);
 

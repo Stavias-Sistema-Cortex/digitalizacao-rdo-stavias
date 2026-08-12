@@ -112,9 +112,15 @@ class RdoDeletionServiceTest {
                 .hasMessageContaining("1 serviço já medido");
     }
 
-    /* Rascunho não passa pelo portão do Alfa: quem monta desfaz. */
+    /*
+     * Apagar é decisão de Alfa em qualquer estado. Rascunho já foi exceção —
+     * "quem monta desfaz" — e o dono do sistema revogou a exceção: o RDO é o
+     * registro do dia da obra, e removê-lo é mexer no que a operação declara.
+     * O Beta continua descartando o rascunho local que nunca subiu, porque
+     * esse o servidor nem conhece e não passa por aqui.
+     */
     @Test
-    void rascunhoNaoExigeAlfa() {
+    void rascunhoTambemExigeAlfa() {
         existeRdo("RASCUNHO");
         servicosMedidos(0);
         semDependentes();
@@ -123,7 +129,7 @@ class RdoDeletionServiceTest {
 
         assertThatCode(() -> service.apagar("rdo-1")).doesNotThrowAnyException();
 
-        verify(currentUserService, never()).requireAlfa();
+        verify(currentUserService).requireAlfa();
         verify(currentUserService).requireWorksiteAccess("obra-1");
     }
 

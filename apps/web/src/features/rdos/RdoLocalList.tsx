@@ -62,6 +62,16 @@ interface RdoLocalListProps {
   onCancelRdo?: (record: LocalRdoRecord) => void;
   onRestoreRdo?: (record: LocalRdoRecord) => void;
   onPurgeRdo?: (record: LocalRdoRecord) => void;
+  /**
+   * Apagar RDO — cancelar, recuperar e destruir — é decisão de Alfa.
+   *
+   * <p>O servidor recusa de qualquer forma; esconder o botão é o lado honesto
+   * da mesma regra, porque um botão que só produz recusa ensina a pessoa a
+   * desconfiar dos outros. O que não passa por aqui é o "Descartar RDO" do
+   * rascunho local que nunca subiu: esse não existe no servidor, não é
+   * "apagar RDO", e continua ao alcance de quem o criou.
+   */
+  podeApagarRdo?: boolean;
   lifecycleRdoId?: string | null;
   onRefresh: () => void;
   createButtonRef?: Ref<HTMLButtonElement>;
@@ -378,6 +388,7 @@ export function RdoLocalList({
   onCancelRdo,
   onRestoreRdo,
   onPurgeRdo,
+  podeApagarRdo = false,
   lifecycleRdoId = null,
   onRefresh,
   createButtonRef,
@@ -1136,7 +1147,13 @@ export function RdoLocalList({
                       Clonar para outra data
                     </button>
                   ) : null}
-                  {onCancelRdo && !record.canceladoEm ? (
+                  {/*
+                    "Descartar RDO" (rascunho que nunca subiu) fica para quem
+                    o criou; "Apagar RDO" (o servidor conhece) é só Alfa.
+                  */}
+                  {onCancelRdo &&
+                  !record.canceladoEm &&
+                  (record.versaoEntidade === null || podeApagarRdo) ? (
                     <button
                       type="button"
                       className="secondary-button rdo-discard-button"
@@ -1150,7 +1167,7 @@ export function RdoLocalList({
                           : "Apagar RDO"}
                     </button>
                   ) : null}
-                  {onRestoreRdo && record.canceladoEm ? (
+                  {onRestoreRdo && record.canceladoEm && podeApagarRdo ? (
                     <button
                       type="button"
                       className="secondary-button"
@@ -1170,7 +1187,7 @@ export function RdoLocalList({
                     pressa. Assim são dois passos: primeiro sai da operação e
                     dá para voltar; depois some, e aí não dá.
                   */}
-                  {onPurgeRdo && record.canceladoEm ? (
+                  {onPurgeRdo && record.canceladoEm && podeApagarRdo ? (
                     <button
                       type="button"
                       className="secondary-button rdo-discard-button"

@@ -132,15 +132,28 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
         return rdoWorkflowService.enviar(entityId);
     }
 
+    /*
+     * Apagar RDO — e desfazer o apagamento — é decisão de Alfa. O botão
+     * "Apagar RDO" da lista é exatamente esta operação: o cancelamento
+     * recuperável. Exigir só o acesso à obra deixava qualquer Beta vinculado
+     * apagar o registro do dia inteiro da obra; e deixar a restauração aberta
+     * permitiria ao Beta desfazer uma decisão que não é dele. As duas pontas
+     * do ciclo pedem a mesma autoridade.
+     *
+     * A recusa chega ao aparelho como REJEITADA terminal (403), vai para a
+     * revisão com o motivo escrito e não fica retentando para sempre.
+     */
     private RdoResponse cancel(SyncPushRequest.MutacaoCliente mutation) {
         String entityId = requireEntityId(mutation);
         currentUserService.requireRdoAccess(entityId);
+        currentUserService.requireAlfa();
         return rdoWorkflowService.cancelar(entityId);
     }
 
     private RdoResponse restore(SyncPushRequest.MutacaoCliente mutation) {
         String entityId = requireEntityId(mutation);
         currentUserService.requireRdoAccess(entityId);
+        currentUserService.requireAlfa();
         return rdoWorkflowService.restaurar(entityId);
     }
 

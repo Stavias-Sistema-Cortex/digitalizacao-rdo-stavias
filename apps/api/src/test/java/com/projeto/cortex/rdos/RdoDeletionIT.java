@@ -128,23 +128,27 @@ class RdoDeletionIT {
     }
 
     /**
-     * Rascunho é papel de rascunho: quem monta desfaz. Enviado é registro
-     * entregue, e desfazer entrega é decisão de quem responde pela obra.
+     * Apagar é decisão de Alfa em qualquer estado. Rascunho já foi exceção —
+     * "quem monta desfaz" — e o dono do sistema a revogou: o RDO é o registro
+     * do dia da obra, rascunho ou entregue, e removê-lo é mexer no que a
+     * operação declara.
      */
     @Test
-    void rascunhoQualquerUmDaObraApagaEEnviadoExigeAlfa() {
+    void apagarExigeAlfaEmQualquerEstado() {
         String obraId = inserirObra("papeis");
         String rascunho = inserirRdo(obraId, "RDO-0030", LocalDate.of(2026, 7, 23), "RASCUNHO", null);
         String enviado = inserirRdo(obraId, "RDO-0031", LocalDate.of(2026, 7, 24), "ENVIADO", null);
 
-        RdoDeletionService semSerAlfa = servicoQueRecusaAlfa();
-        semSerAlfa.apagar(rascunho);
-        assertThat(existeRdo(rascunho)).isFalse();
+        assertThatThrownBy(() -> servicoQueRecusaAlfa().apagar(rascunho))
+                .isInstanceOf(ResponseStatusException.class);
+        assertThat(existeRdo(rascunho)).isTrue();
 
         assertThatThrownBy(() -> servicoQueRecusaAlfa().apagar(enviado))
                 .isInstanceOf(ResponseStatusException.class);
         assertThat(existeRdo(enviado)).isTrue();
 
+        servico("alfa").apagar(rascunho);
+        assertThat(existeRdo(rascunho)).isFalse();
         servico("alfa").apagar(enviado);
         assertThat(existeRdo(enviado)).isFalse();
     }

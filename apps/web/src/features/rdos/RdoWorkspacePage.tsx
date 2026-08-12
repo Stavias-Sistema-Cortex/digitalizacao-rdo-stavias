@@ -6,7 +6,11 @@ import {
 } from "react";
 
 import { CortexShell } from "../../components/shell/CortexShell";
-import { AUTH_SESSION_CHANGED_EVENT, getSession } from "../auth/authSession";
+import {
+  AUTH_SESSION_CHANGED_EVENT,
+  getSession,
+  isAlfa,
+} from "../auth/authSession";
 import {
   listOperationalEvents,
 } from "../../lib/db/operationalEventRepository";
@@ -429,6 +433,7 @@ export function RdoWorkspacePage() {
         onPurgeRdo={(record) => {
           void handlePurgeRdo(record);
         }}
+        podeApagarRdo={isAlfa(getSession())}
         lifecycleRdoId={lifecycleRdoId}
         onRefresh={() => {
           void loadRecords();
