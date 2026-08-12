@@ -16,7 +16,12 @@ import {
   TOKEN_POR_FASE,
 } from "./execucaoDoTrecho";
 import { mapboxAccessToken, type MapProvider } from "./mapProvider";
-import { lixeiraDoBalao, redesenhoDoBalao } from "./popupDoMapa";
+import {
+  detalhesDoBalao,
+  lixeiraDoBalao,
+  redesenhoDoBalao,
+  tituloDoBalao,
+} from "./popupDoMapa";
 import {
   idDaFeicao,
   rastreadorDeBalao,
@@ -318,25 +323,17 @@ function popupContent(
   const container = document.createElement("div");
   container.className = "operational-map-popup mapa-balao";
 
+  /*
+   * O título e os detalhes são os mesmos do painel Leaflet, de propósito. O
+   * vetorial tinha frase própria e ela mostrava o pior dos casos: o eixo
+   * abria como "EIXO_OBRA", com "EIXO OBRA" repetido embaixo e sem o
+   * quilômetro — a única informação que uma régua tem a dar.
+   */
   const title = document.createElement("strong");
-  title.textContent = String(
-    properties.nome ??
-      properties.servicoNome ??
-      properties.categoria ??
-      "Elemento operacional",
-  );
+  title.textContent = tituloDoBalao(properties);
 
   const detail = document.createElement("span");
-  detail.textContent = [
-    properties.numeroRdo ? `RDO ${String(properties.numeroRdo)}` : null,
-    properties.data ?? properties.validoDesde
-      ? String(properties.data ?? properties.validoDesde).slice(0, 10)
-      : null,
-    properties.categoria ? String(properties.categoria).replaceAll("_", " ") : null,
-  ]
-    .filter(Boolean)
-    .map(String)
-    .join(" · ");
+  detail.textContent = detalhesDoBalao(properties).join(" · ");
 
   container.append(title, detail);
 

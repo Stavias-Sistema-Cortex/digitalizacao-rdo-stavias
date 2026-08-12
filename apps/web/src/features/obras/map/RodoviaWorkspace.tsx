@@ -468,6 +468,13 @@ export function RodoviaWorkspace({
    * errada não custa o RDO.
    */
   const ehTrecho = pontoEscolhido?.properties.categoria === "TRECHO";
+  /*
+   * O eixo sai pelo mesmo caminho, e a pergunta precisa dizer o que o
+   * apagamento significa de verdade: as linhas derivadas somem porque perdem a
+   * régua, mas nenhum RDO é tocado — os quilômetros continuam nos
+   * apontamentos, e uma régua nova os reergue.
+   */
+  const ehEixo = pontoEscolhido?.properties.categoria === "EIXO_OBRA";
 
   const pedirRemocaoDoPonto = useCallback((id: string) => {
     setPontoParaRemover(id);
@@ -1617,10 +1624,19 @@ export function RodoviaWorkspace({
             onClick={(evento) => evento.stopPropagation()}
           >
             <p id="rodovia-confirma-titulo">
-              {ehTrecho
-                ? "Remover este trecho do mapa?"
-                : "Remover este ponto do mapa?"}
+              {ehEixo
+                ? "Remover o eixo da obra do mapa?"
+                : ehTrecho
+                  ? "Remover este trecho do mapa?"
+                  : "Remover este ponto do mapa?"}
             </p>
+            {ehEixo ? (
+              <small>
+                Os trechos apoiados nele saem do mapa junto, porque perdem a
+                régua. Nenhum RDO é tocado — os quilômetros continuam nos
+                apontamentos, e um eixo novo os traz de volta.
+              </small>
+            ) : null}
             {ehTrecho ? (
               <small>
                 O apontamento do RDO não é tocado: o quilômetro fica onde está,

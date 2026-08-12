@@ -36,6 +36,25 @@ const LAPIS_SVG =
   'aria-hidden="true" focusable="false">' +
   '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" /></svg>';
 
+/** Número de quilômetro como o Brasil escreve: vírgula, até três casas. */
+const KM_LEGIVEL = new Intl.NumberFormat("pt-BR", {
+  maximumFractionDigits: 3,
+});
+
+/**
+ * Uma ponta de quilômetro, venha ela como veio.
+ *
+ * <p>O eixo grava o quilômetro como número nas propriedades da linha; o trecho
+ * derivado chega como texto já projetado. O balão lia só texto, e por isso o
+ * eixo — justamente a régua de tudo — abria sem quilômetro nenhum.
+ */
+function pontaDeQuilometro(valor: unknown): string {
+  if (typeof valor === "number" && Number.isFinite(valor)) {
+    return KM_LEGIVEL.format(valor);
+  }
+  return typeof valor === "string" ? valor.trim() : "";
+}
+
 /**
  * "km 206,822 ao 207,100" — ou só um extremo, quando é só isso que se sabe.
  *
@@ -44,29 +63,61 @@ const LAPIS_SVG =
  * completo apagaria a única referência que a linha tem.
  */
 function quilometragem(properties: Record<string, unknown>): string | null {
-  const valor = (chave: string): string =>
-    typeof properties[chave] === "string" ? properties[chave].trim() : "";
-  const inicial = valor("kmInicial");
-  const fim = valor("kmFinal");
+  const inicial = pontaDeQuilometro(properties.kmInicial);
+  const fim = pontaDeQuilometro(properties.kmFinal);
   if (inicial && fim) return `km ${inicial} ao ${fim}`;
   if (inicial) return `a partir do km ${inicial}`;
   if (fim) return `até o km ${fim}`;
   return null;
 }
 
-export function popupHtml(properties: Record<string, unknown>): string {
-  const titulo =
-    typeof properties.nome === "string" && properties.nome
-      ? properties.nome
-      : rotuloDaCategoria(properties.categoria);
+/** "2026-08-11..." como se lê: 11/08/2026. */
+function dataLegivel(valor: string): string {
+  const [ano, mes, dia] = valor.slice(0, 10).split("-");
+  if (!ano || !mes || !dia) return valor.slice(0, 10);
+  return `${dia}/${mes}/${ano}`;
+}
+
+/**
+ * O nome pelo qual o balão abre — o mesmo nos dois painéis.
+ *
+ * <p>O painel vetorial tinha regra própria e ela mostrava o pior dos casos: o
+ * eixo abria como "EIXO_OBRA", a grafia do banco, com a mesma sigla repetida
+ * na linha de baixo. O eixo tem nome de gente porque é a única geometria com
+ * papel próprio — é a régua da obra, não uma camada qualquer.
+ */
+export function tituloDoBalao(properties: Record<string, unknown>): string {
+  if (typeof properties.nome === "string" && properties.nome.trim()) {
+    return properties.nome.trim();
+  }
+  if (properties.categoria === "EIXO_OBRA") {
+    return "Eixo da obra";
+  }
+  return rotuloDaCategoria(properties.categoria);
+}
+
+/**
+ * A linha de detalhes do balão, sem a origem — ela fecha o balão à parte.
+ *
+ * <p>Compartilhada entre os dois painéis para acabarem as duas verdades: o
+ * Leaflet montava uma frase, o vetorial montava outra, e a mesma linha clicada
+ * dizia coisas diferentes conforme o lado da tela.
+ */
+export function detalhesDoBalao(
+  properties: Record<string, unknown>,
+): string[] {
+  const titulo = tituloDoBalao(properties);
   const servico = servicoDaFeature({ properties } as never);
   const fase = properties.faseExecucao;
-  const detalhes = [
+  const rotuloCategoria = rotuloDaCategoria(properties.categoria);
+  return [
     // O quilômetro vem primeiro porque é a primeira coisa que se pergunta
-    // olhando para uma linha numa rodovia. Ele não está gravado na geometria:
-    // o servidor o projeta na leitura, a partir da linha de execução do RDO,
-    // que é onde ele mora desde que deixou de existir em dois lugares.
+    // olhando para uma linha numa rodovia.
     quilometragem(properties),
+    // A rodovia diz sobre qual estrada a régua fala — o eixo a carrega.
+    typeof properties.rodovia === "string" && properties.rodovia.trim()
+      ? properties.rodovia.trim()
+      : null,
     // O serviço vem antes de qualquer metadado: é o que o segmento REPRESENTA
     // no campo, e era a informação que existia no dado sem aparecer na tela.
     servico && servico !== titulo ? servico : null,
@@ -77,17 +128,29 @@ export function popupHtml(properties: Record<string, unknown>): string {
       ? `RDO ${properties.numeroRdo}`
       : null,
     typeof properties.validoDesde === "string"
-      ? `desde ${properties.validoDesde.slice(0, 10)}`
+      ? `desde ${dataLegivel(properties.validoDesde)}`
       : null,
-    typeof properties.categoria === "string"
-      ? rotuloDaCategoria(properties.categoria)
+    // Repetir o título logo abaixo dele era o que fazia o balão parecer
+    // gerado: "Eixo da obra · Eixo obra" não informa nada duas vezes. O eixo
+    // fica de fora sempre, porque o título dele já é a categoria com outro
+    // nome.
+    typeof properties.categoria === "string" &&
+    properties.categoria !== "EIXO_OBRA" &&
+    rotuloCategoria !== titulo
+      ? rotuloCategoria
       : null,
+  ].filter((item): item is string => Boolean(item));
+}
+
+export function popupHtml(properties: Record<string, unknown>): string {
+  const detalhes = [
+    ...detalhesDoBalao(properties),
     typeof properties.fonte === "string"
       ? rotuloDaFonte(properties.fonte)
       : null,
   ].filter((item): item is string => Boolean(item));
 
-  return `<strong>${escapeHtml(titulo)}</strong><span>${escapeHtml(
+  return `<strong>${escapeHtml(tituloDoBalao(properties))}</strong><span>${escapeHtml(
     detalhes.join(" · "),
   )}</span>`;
 }
@@ -122,6 +185,12 @@ export function geometriaDoBalao(
  * a linha errada ficava no mapa da obra para sempre, ou custava o apontamento
  * inteiro do dia.
  *
+ * <p>O eixo também sai por aqui, e a decisão é do dono do sistema. Apagar a
+ * régua não toca em RDO nenhum: os quilômetros continuam nos apontamentos, que
+ * é onde moram — o que some são as linhas que o eixo derivava, porque sem
+ * régua não há onde projetá-las. O botão "Cadastrar o eixo" volta à barra, e
+ * uma régua nova reergue os mesmos trechos a partir dos mesmos números.
+ *
  * <p>A localização da obra continua fora: ela não é geometria removível, é o
  * cadastro da obra.
  */
@@ -130,7 +199,8 @@ export function geometriaPodeSairDoMapa(
 ): boolean {
   return (
     (properties.categoria === "PONTO_OPERACIONAL" ||
-      properties.categoria === "TRECHO") &&
+      properties.categoria === "TRECHO" ||
+      properties.categoria === "EIXO_OBRA") &&
     !ehDerivadaDoEixo(properties) &&
     geometriaDoBalao(properties) !== null
   );
@@ -153,6 +223,7 @@ export function ehDerivadaDoEixo(
 
 /** O nome do que a lixeira remove, para o rótulo dizer a verdade. */
 function rotuloDoRemovivel(properties: Record<string, unknown>): string {
+  if (properties.categoria === "EIXO_OBRA") return "eixo da obra";
   return properties.categoria === "TRECHO"
     ? "trecho desenhado"
     : "ponto operacional";

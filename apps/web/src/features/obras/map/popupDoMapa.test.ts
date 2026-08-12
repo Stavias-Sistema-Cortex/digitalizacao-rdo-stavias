@@ -122,6 +122,88 @@ describe("lixeira no balão do ponto", () => {
 });
 
 /**
+ * O eixo também sai pelo balão, por decisão do dono do sistema.
+ *
+ * <p>Apagar a régua não toca em RDO nenhum: os quilômetros moram nos
+ * apontamentos. O que some são as linhas derivadas — sem régua não há onde
+ * projetá-las — e o cadastro do eixo volta a ser oferecido na barra.
+ */
+describe("lixeira no balão do eixo", () => {
+  it("oferece lixeira ao eixo da obra, com o nome certo", () => {
+    const botao = lixeira(
+      popupElement(
+        { categoria: "EIXO_OBRA", geometriaId: "eixo-1" },
+        vi.fn(),
+      ),
+    );
+
+    expect(botao).not.toBeNull();
+    expect(botao?.getAttribute("aria-label")).toBe("Remover eixo da obra");
+  });
+
+  it("chama de volta com o eixo que foi aberto", () => {
+    const aoRemover = vi.fn();
+    const balao = popupElement(
+      { categoria: "EIXO_OBRA", geometriaId: "eixo-7" },
+      aoRemover,
+    );
+
+    lixeira(balao)?.click();
+
+    expect(aoRemover).toHaveBeenCalledWith("eixo-7");
+  });
+});
+
+/**
+ * O balão do eixo tem de dizer o que uma régua tem a dizer.
+ *
+ * <p>Ele abria com a grafia do banco — "EIXO_OBRA" no título e "EIXO OBRA"
+ * repetido embaixo — e sem quilômetro nenhum, porque o eixo grava o km como
+ * número e o balão só lia texto. A única geometria com papel próprio era a
+ * pior descrita do mapa.
+ */
+describe("o balão do eixo", () => {
+  const propriedadesDoEixo = {
+    categoria: "EIXO_OBRA",
+    geometriaId: "eixo-1",
+    kmInicial: 206.822,
+    kmFinal: 214.5,
+    rodovia: "SP-330",
+    validoDesde: "2026-08-11T12:00:00",
+    fonte: "GESTAO_MAPA",
+  };
+
+  it("abre com nome de gente, não com a grafia do banco", () => {
+    const balao = popupElement(propriedadesDoEixo, null);
+
+    expect(balao.querySelector("strong")?.textContent).toBe("Eixo da obra");
+    expect(balao.textContent).not.toContain("EIXO_OBRA");
+    expect(balao.textContent).not.toContain("EIXO OBRA");
+  });
+
+  it("mostra o quilômetro numérico em pt-BR e a rodovia", () => {
+    const texto = popupElement(propriedadesDoEixo, null).textContent ?? "";
+
+    expect(texto).toContain("km 206,822 ao 214,5");
+    expect(texto).toContain("SP-330");
+  });
+
+  it("escreve a data como se lê, não como se grava", () => {
+    const texto = popupElement(propriedadesDoEixo, null).textContent ?? "";
+
+    expect(texto).toContain("desde 11/08/2026");
+    expect(texto).not.toContain("2026-08-11");
+  });
+
+  it("não repete o título na linha de detalhes", () => {
+    const balao = popupElement(propriedadesDoEixo, null);
+    const detalhes = balao.querySelector("span")?.textContent ?? "";
+
+    expect(detalhes).not.toContain("Eixo obra");
+  });
+});
+
+/**
  * A porta para corrigir um traçado torto.
  *
  * <p>A lixeira resolvia a linha errada de um jeito só: jogando fora o desenho
