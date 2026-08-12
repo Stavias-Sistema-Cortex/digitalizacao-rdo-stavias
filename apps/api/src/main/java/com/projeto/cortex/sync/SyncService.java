@@ -546,8 +546,16 @@ public class SyncService {
             SyncPushRequest.MutacaoCliente mutacao
     ) {
         try {
-            validarMutacao(mutacao);
+            /*
+             * A exclusividade vem antes da validação geral, e a ordem importa:
+             * para o envelope legado de uma operação exclusiva, a exigência de
+             * envelope canônico do handler dispararia primeiro — e essa produz
+             * ERRO retentável, devolvendo a linha velha ao ciclo eterno que
+             * esta rejeição existe para encerrar. A exclusividade não precisa
+             * do handler para decidir: ela olha só a operação e a versão.
+             */
             validarOperacaoExclusivaCanonica(mutacao);
+            validarMutacao(mutacao);
 
             SyncPushResponse.ResultadoMutacao existente = buscarResultadoMutacaoExistenteOuNull(
                     dispositivoId,

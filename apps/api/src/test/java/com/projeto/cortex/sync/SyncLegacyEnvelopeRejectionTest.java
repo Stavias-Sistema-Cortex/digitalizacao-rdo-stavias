@@ -207,6 +207,67 @@ class SyncLegacyEnvelopeRejectionTest {
         assertThat(mockingDetails(workflowService).getInvocations()).isEmpty();
     }
 
+    /**
+     * A ordem entre as duas recusas decide o desfecho, e por isso é contrato.
+     *
+     * <p>O handler de obra exige o envelope canônico; para o envelope legado de
+     * ARQUIVAR_OBRA, essa exigência disparava antes da exclusividade e produzia
+     * ERRO retentável — a linha velha voltava ao ciclo eterno que a rejeição
+     * terminal existe para encerrar. Foi exatamente o que o CI pegou. A
+     * exclusividade decide primeiro, porque só precisa da operação e da versão.
+     */
+    @Test
+    void oEnvelopeLegadoDeObraSaiComoRejeicaoTerminalENaoComoErro() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        when(currentUserService.requireUserId()).thenReturn("usuario-auth");
+        when(
+                jdbcTemplate.queryForObject(
+                        anyString(),
+                        eq(Integer.class),
+                        any(),
+                        any()
+                )
+        ).thenReturn(1);
+
+        com.projeto.cortex.obras.ObraService obraService =
+                mock(com.projeto.cortex.obras.ObraService.class);
+        SyncService service = new SyncService(
+                jdbcTemplate,
+                new ObjectMapper(),
+                transactionTemplateQueExecuta(),
+                new SyncOperationRegistry(List.of(new ObraSyncOperationHandler(
+                        obraService,
+                        currentUserService,
+                        new ObjectMapper()
+                ))),
+                currentUserService,
+                mock(FinancialAccessService.class)
+        );
+
+        SyncPushResponse response = service.push(new SyncPushRequest(
+                DEVICE_ID,
+                List.of(new SyncPushRequest.MutacaoCliente(
+                        UUID.randomUUID().toString(),
+                        "OBRA",
+                        UUID.randomUUID().toString(),
+                        "ARQUIVAR_OBRA",
+                        1L,
+                        new ObjectMapper().createObjectNode(),
+                        LocalDateTime.of(2026, 8, 12, 12, 0),
+                        null
+                ))
+        ));
+
+        SyncPushResponse.ResultadoMutacao resultado =
+                response.resultados().getFirst();
+        assertThat(resultado.status()).isEqualTo("REJEITADA");
+        assertThat(
+                resultado.resultado().path("rejeicao").path("categoria").asText()
+        ).isEqualTo("UNSUPPORTED_SCHEMA_VERSION");
+        assertThat(mockingDetails(obraService).getInvocations()).isEmpty();
+    }
+
     private SyncPushRequest.MutacaoCliente envelopeLegadoDeCancelamentoDeRdo() {
         return new SyncPushRequest.MutacaoCliente(
                 UUID.randomUUID().toString(),
