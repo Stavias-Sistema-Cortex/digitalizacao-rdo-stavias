@@ -44,6 +44,12 @@ export interface RdoCreationContextLookup {
     rodovia: string | null;
     status: string | null;
     version: number;
+    /**
+     * Quilômetro que o eixo da obra declara. Nulo quando não há eixo
+     * cadastrado ou ele ainda não tem quilômetro — aí não há o que sugerir.
+     */
+    kmInicialEixo: number | string | null;
+    kmFinalEixo: number | string | null;
   };
   data: string;
   nextNumberSuggestion: string | null;

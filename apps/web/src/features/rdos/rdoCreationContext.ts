@@ -75,6 +75,26 @@ export function isRdoCreationContextComplete(
     explicitOptional(coverage.priceCatalog);
 }
 
+/**
+ * O quilômetro do eixo escrito como o campo do RDO espera lê-lo.
+ *
+ * <p>O servidor manda número; o campo é texto livre, e quem digita ali escreve
+ * "206,822". Devolver "206.822" faria a leitura em pt-BR entender oitocentos
+ * mil — o separador decimal daqui é a vírgula.
+ *
+ * <p>Sem eixo cadastrado, ou com eixo sem quilômetro, devolve vazio: sugerir
+ * zero seria pior do que não sugerir nada.
+ */
+function kmDoEixo(valor: number | string | null | undefined): string {
+  if (valor === null || valor === undefined) return "";
+  const numero = typeof valor === "number" ? valor : Number(String(valor).trim());
+  if (!Number.isFinite(numero)) return "";
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  }).format(numero);
+}
+
 export function applyRdoCreationContext(
   draft: RdoDraft,
   context: RdoCreationContextLookup,
@@ -107,6 +127,23 @@ export function applyRdoCreationContext(
     rodovia: context.obra.rodovia?.trim() ?? "",
     cidade: context.obra.cidade?.trim() ?? "",
     uf: context.obra.uf?.trim() ?? "",
+    /*
+     * O quilômetro do eixo chega preenchido, e continua editável.
+     *
+     * <p>O eixo é cadastrado uma vez e é a régua sobre a qual todo apontamento
+     * vira trecho no mapa. Quem abria um RDO tinha de redigitar esse número de
+     * cabeça, e o que ficava em branco ficava em branco para sempre — o campo
+     * não se preenche sozinho depois.
+     *
+     * <p>Um rascunho que já traz quilômetro manda: ele está afirmando o trecho,
+     * e essa afirmação vale mais do que a sugestão da obra. Vale para a
+     * clonagem, que copia o trecho do RDO escolhido, e para o rascunho
+     * retomado, que não pode ter o que foi digitado sobrescrito pela régua.
+     */
+    kmInicialInterditado: draft.kmInicialInterditado
+      || kmDoEixo(context.obra.kmInicialEixo),
+    kmFinalInterditado: draft.kmFinalInterditado
+      || kmDoEixo(context.obra.kmFinalEixo),
     /*
      * A equipe que o rascunho já traz manda.
      *

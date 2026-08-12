@@ -75,6 +75,8 @@ function context(partial = false): RdoCreationContextLookup {
       rodovia: "SP-041",
       status: "ATIVA",
       version: 4,
+      kmInicialEixo: null,
+      kmFinalEixo: null,
     },
     data: "2026-07-22",
     nextNumberSuggestion: "RDO-0021",
