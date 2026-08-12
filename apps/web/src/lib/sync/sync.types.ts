@@ -122,6 +122,15 @@ export interface SyncRunSummary {
   conflicts: number;
   pulled: number;
   acknowledgedCommitSeq: number;
+  /**
+   * A janela acabou com evento do servidor ainda por vir.
+   *
+   * <p>É sucesso, não falha: o que chegou já está gravado e o cursor avançou.
+   * Quem lê isto tem uma única obrigação — pedir outra janela em seguida, em
+   * vez de esperar o intervalo, para o aparelho recém-chegado terminar de se
+   * pôr em dia em minutos e não em meia hora.
+   */
+  pullPendente: boolean;
 }
 
 export async function toPushMutationRequest(

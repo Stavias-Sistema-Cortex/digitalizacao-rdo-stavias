@@ -12,7 +12,9 @@ export type AutomaticSyncTrigger =
   | "INTERVAL"
   | "VISIBILITY"
   | "AUTH_SESSION"
-  | "RETRY";
+  | "RETRY"
+  /** A janela anterior encheu e o servidor ainda tem evento a entregar. */
+  | "PULL_PENDENTE";
 
 interface SchedulerEventTarget {
   addEventListener(type: string, listener: EventListener): void;

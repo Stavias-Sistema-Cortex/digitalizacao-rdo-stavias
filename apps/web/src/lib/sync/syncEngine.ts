@@ -253,6 +253,7 @@ async function executeSync(
         ) + retryPushSummary.conflicts,
       pulled: pullSummary.pulled,
       acknowledgedCommitSeq,
+      pullPendente: pullSummary.pendente,
     };
     announceSyncCompleted();
     return summary;

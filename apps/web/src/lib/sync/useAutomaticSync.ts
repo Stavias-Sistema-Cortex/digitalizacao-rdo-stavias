@@ -5,6 +5,20 @@ import { loadEarliestAutomaticRetryAt } from "./automaticSyncRetryStorage";
 import { createAutomaticSyncScheduler } from "./automaticSyncScheduler";
 import { syncNow } from "./syncEngine";
 
+/**
+ * A janela terminou em dia, ou terminou cheia?
+ *
+ * <p>O resumo chega como `unknown` porque o agendador não conhece o motor que
+ * executa; a pergunta é sobre um campo só, e é aqui que ela se responde.
+ */
+export function aindaFaltaPuxar(summary: unknown): boolean {
+  return (
+    typeof summary === "object" &&
+    summary !== null &&
+    (summary as { pullPendente?: unknown }).pullPendente === true
+  );
+}
+
 export function useAutomaticSync(enabled = true): void {
   const lastReportedErrorRef = useRef<string | null>(null);
 
@@ -17,6 +31,12 @@ export function useAutomaticSync(enabled = true): void {
       onSuccess: (trigger, summary) => {
         lastReportedErrorRef.current = null;
         console.info(`[sync automático:${trigger}] concluído`, summary);
+        // Aparelho recém-chegado atravessa o histórico em janelas cheias. Sem
+        // este pedido ele esperaria trinta segundos entre cada uma, e a
+        // primeira carga levaria dezenas de minutos para completar.
+        if (aindaFaltaPuxar(summary)) {
+          scheduler.request("PULL_PENDENTE");
+        }
       },
       onError: (trigger, error) => {
         const message =

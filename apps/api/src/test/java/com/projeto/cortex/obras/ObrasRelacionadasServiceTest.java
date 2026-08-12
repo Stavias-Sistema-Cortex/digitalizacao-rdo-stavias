@@ -118,6 +118,31 @@ class ObrasRelacionadasServiceTest {
         );
     }
 
+    /**
+     * O teto desta lista é o teto do produto inteiro.
+     *
+     * <p>Ela não tem busca nem paginação: é ela que enche o IndexedDB, e o que
+     * fica de fora não existe para quem abre o aplicativo. Com 200, a obra
+     * seguinte pela ordem de atualização sumia calada, para todos ao mesmo
+     * tempo — e quem procurasse concluiria que o cadastro se perdeu. O número
+     * fica escrito aqui porque é uma decisão sobre o que a empresa consegue
+     * enxergar, não um detalhe de consulta.
+     */
+    @Test
+    void aListaCabeAOperacaoInteiraEmVezDeCortarNoDuzentos() {
+        Montagem montagem = montarPara("alfa-1", true);
+
+        montagem.service().listarParaColaborador();
+
+        verify(montagem.jdbc()).query(
+                argThat((String sql) -> sql.contains(
+                        "LIMIT " + ObrasRelacionadasService.TETO_DE_OBRAS_NA_LISTA
+                )),
+                any(RowMapper.class)
+        );
+        assertEquals(1_000, ObrasRelacionadasService.TETO_DE_OBRAS_NA_LISTA);
+    }
+
     @Test
     void projecaoRelacionadaCarregaVersaoAutoritativa() throws Exception {
         Montagem montagem = montarPara("alfa-1", true);

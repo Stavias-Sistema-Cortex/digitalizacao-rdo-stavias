@@ -14,6 +14,14 @@ export interface PullEventsSummary {
   pulled: number;
   lastAppliedCommitSeq: number;
   messagingConversationIds: string[];
+  /**
+   * Ainda há evento do servidor além do que coube nesta janela.
+   *
+   * <p>O teto de páginas existe para uma janela não durar para sempre, e ele é
+   * atingido de verdade: um aparelho novo começa no cursor zero e precisa
+   * atravessar o histórico inteiro da empresa antes de estar em dia.
+   */
+  pendente: boolean;
 }
 
 export async function pullEvents(
@@ -80,11 +88,32 @@ export async function pullEvents(
         pulled,
         lastAppliedCommitSeq: cursor,
         messagingConversationIds: [...messagingConversationIds],
+        pendente: false,
       };
     }
   }
 
-  throw new Error(
-    `Pull interrompido após ${MAX_PAGES_PER_RUN} páginas para evitar loop infinito.`,
-  );
+  /*
+   * Gastar o teto de páginas não é falha: é uma janela cheia, com o cursor
+   * gravado e o resto esperando a próxima. Aqui isso era uma exceção, e a
+   * exceção derrubava o ciclo inteiro — o estado terminava em erro, a tarja
+   * vermelha acendia e `announceSyncCompleted` nunca era disparado, então
+   * nenhuma tela recarregava com o que tinha acabado de chegar.
+   *
+   * Quem sentia era exatamente quem acabou de entrar. Um aparelho já em dia
+   * traz dezenas de eventos por janela e nunca encosta no teto; um aparelho
+   * novo começa no cursor zero, atravessa o histórico inteiro e falha em toda
+   * sincronização até alcançá-lo — o que, visto de fora, é "erro de
+   * sincronização o tempo todo, e não vejo todas as informações".
+   *
+   * O guarda contra laço continua onde sempre esteve, e é ele que de fato
+   * protege: cursor que regride e cursor que não avança com `hasMore` seguem
+   * lançando, dentro do laço, porque nenhum dos dois progride.
+   */
+  return {
+    pulled,
+    lastAppliedCommitSeq: cursor,
+    messagingConversationIds: [...messagingConversationIds],
+    pendente: true,
+  };
 }

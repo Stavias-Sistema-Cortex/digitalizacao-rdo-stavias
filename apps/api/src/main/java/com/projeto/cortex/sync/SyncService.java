@@ -598,6 +598,15 @@ public class SyncService {
                     ? "Mutação rejeitada pelo backend."
                     : exception.getReason();
 
+            if (recusaDeAutorizacao(exception)) {
+                return registrarRejeicaoEmNovaTransacao(
+                        dispositivoId,
+                        mutacao,
+                        erro,
+                        "AUTHORIZATION"
+                );
+            }
+
             return isCanonical(mutacao)
                     ? registrarRejeicaoEmNovaTransacao(
                             dispositivoId,
@@ -2155,6 +2164,36 @@ public class SyncService {
 
     private boolean isCanonical(SyncPushRequest.MutacaoCliente mutation) {
         return mutation != null && mutation.schemaVersion() != null;
+    }
+
+    /**
+     * A recusa é de permissão, e permissão não vira verdade esperando.
+     *
+     * <p>Toda {@link ResponseStatusException} de uma mutação não canônica virava
+     * {@code ERRO}, e {@code ERRO} é retentável: o aparelho devolvia a linha à
+     * fila com espera escalonada e a empurrava de novo, para sempre. Numa recusa
+     * de validação isso ainda faz algum sentido — o dado pode ser corrigido, e
+     * há reparos que dependem justamente da retentativa. Numa recusa de
+     * autorização não faz nenhum: o servidor não vai mudar de ideia porque a
+     * pergunta foi repetida, e a resposta é a mesma em toda janela.
+     *
+     * <p>O custo aparecia longe da causa. Quem tinha uma alteração recusada por
+     * permissão via a tarja vermelha acesa em toda sincronização, indefinidamente,
+     * sem nada na tela dizendo o que estava preso — e o dono do sistema, que é
+     * Alfa e nunca é recusado, não tinha como reproduzir. Como {@code REJEITADA}
+     * a mesma linha vai para a revisão, com o motivo escrito, e quem opera
+     * decide: descartar, ou reenviar depois que a permissão for corrigida. Nada
+     * se perde, e o ciclo termina em vez de recomeçar sozinho para sempre.
+     *
+     * <p>Só 401 e 403 entram aqui. 400 e 404 continuam {@code ERRO} de
+     * propósito: é deles que dependem os reparos que reenviam a mutação
+     * corrigida — o RDO que o servidor não tem e volta como criação, entre
+     * outros.
+     */
+    private boolean recusaDeAutorizacao(ResponseStatusException exception) {
+        int status = exception.getStatusCode().value();
+        return status == HttpStatus.UNAUTHORIZED.value()
+                || status == HttpStatus.FORBIDDEN.value();
     }
 
     private boolean canonicalReceiptPersistable(

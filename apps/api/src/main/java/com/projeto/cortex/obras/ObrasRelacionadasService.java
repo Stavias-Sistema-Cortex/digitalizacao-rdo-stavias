@@ -4,6 +4,8 @@ import com.projeto.cortex.auth.AutorizacaoDeObra;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.financeiro.access.FinancialPermission;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,9 @@ import java.util.Set;
 
 @Service
 public class ObrasRelacionadasService {
+
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(ObrasRelacionadasService.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserService currentUserService;
@@ -53,10 +58,28 @@ public class ObrasRelacionadasService {
             WHERE o.arquivado_em IS NULL
             """;
 
+    /**
+     * Teto da lista que abastece o aparelho de todo mundo.
+     *
+     * <p>Esta consulta não tem busca nem paginação: é ela que enche o
+     * IndexedDB, e o que não vem aqui simplesmente não existe para quem está no
+     * aplicativo. Eram 200, calados — a obra de número 201, pela ordem de
+     * atualização, sumia da lista sem nada dizer, e sumia para todos ao mesmo
+     * tempo. Um recorte silencioso na única lista de obras do produto é a forma
+     * mais cara de esconder dado: não dá erro, não dá aviso, e quem procura
+     * conclui que o cadastro se perdeu.
+     *
+     * <p>O teto continua existindo porque a resposta viaja inteira para um
+     * celular em campo, mas agora está acima de qualquer carteira plausível de
+     * contratos, e encostar nele passa a deixar rastro no log em vez de passar
+     * despercebido.
+     */
+    static final int TETO_DE_OBRAS_NA_LISTA = 1_000;
+
     private static final String ORDENACAO = """
             ORDER BY o.atualizado_em DESC, o.id DESC
-            LIMIT 200
-            """;
+            LIMIT %d
+            """.formatted(TETO_DE_OBRAS_NA_LISTA);
 
     private static final RowMapper<ObraRelacionadaResponse> PROJETAR_OBRA =
             (rs, rowNum) -> new ObraRelacionadaResponse(
@@ -108,6 +131,14 @@ public class ObrasRelacionadasService {
         List<ObraRelacionadaResponse> obras = global
                 ? jdbcTemplate.query(sql, PROJETAR_OBRA)
                 : jdbcTemplate.query(sql, PROJETAR_OBRA, userId, userId);
+
+        if (obras.size() >= TETO_DE_OBRAS_NA_LISTA) {
+            LOGGER.warn(
+                    "A lista de obras encostou no teto de {}; há cadastro que"
+                            + " não está chegando aos aparelhos.",
+                    TETO_DE_OBRAS_NA_LISTA
+            );
+        }
 
         Set<String> financeWorksites = financialAccessService.allowedObraIds(
                 userId,
