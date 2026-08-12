@@ -215,23 +215,26 @@ export function geometriaDoBalao(
 export function geometriaPodeSairDoMapa(
   properties: Record<string, unknown>,
 ): boolean {
+  if (ehDerivadaDoEixo(properties)) {
+    // A linha derivada tem lixeira própria: silêncio, não apagamento.
+    return true;
+  }
   return (
     (properties.categoria === "PONTO_OPERACIONAL" ||
       properties.categoria === "TRECHO" ||
       properties.categoria === "EIXO_OBRA") &&
-    !ehDerivadaDoEixo(properties) &&
     geometriaDoBalao(properties) !== null
   );
 }
 
 /**
- * A linha que o eixo derivou não é desenho, e por isso não tem lixeira.
+ * A linha que o eixo derivou não é desenho, e a lixeira dela é outra.
  *
  * <p>Ela não existe como registro: nasce na leitura, do quilômetro que mora no
- * apontamento do RDO. Não há o que apagar — apagá-la teria de significar apagar
- * o apontamento, e apagar um trabalho a partir do mapa é decisão que não cabe
- * a um clique numa linha. Quem quer tirar o trecho tira o quilômetro no RDO, e
- * a linha some junto na consulta seguinte.
+ * RDO. Removê-la não pode apagar o RDO — o mapa é projeção, o documento é o
+ * fato. O que a lixeira guarda é um silêncio: a linha some do mapa, para todo
+ * mundo, e o RDO segue intacto. O silêncio dura até o documento ser editado —
+ * aí a hierarquia dele se reafirma e a linha volta na leitura seguinte.
  */
 export function ehDerivadaDoEixo(
   properties: Record<string, unknown>,
@@ -241,6 +244,7 @@ export function ehDerivadaDoEixo(
 
 /** O nome do que a lixeira remove, para o rótulo dizer a verdade. */
 function rotuloDoRemovivel(properties: Record<string, unknown>): string {
+  if (ehDerivadaDoEixo(properties)) return "linha do RDO no mapa";
   if (properties.categoria === "EIXO_OBRA") return "eixo da obra";
   return properties.categoria === "TRECHO"
     ? "trecho desenhado"

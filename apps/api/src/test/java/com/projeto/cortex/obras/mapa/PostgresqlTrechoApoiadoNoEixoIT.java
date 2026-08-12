@@ -199,6 +199,88 @@ class PostgresqlTrechoApoiadoNoEixoIT {
         assertThat(apoio.projetarEm(obraId, List.of(eixo(obraId)))).hasSize(1);
     }
 
+    /*
+     * A lixeira da linha derivada guarda um silêncio, não um apagamento: a
+     * linha some do mapa para todo mundo e o RDO segue intacto, declarando o
+     * mesmo quilômetro de sempre.
+     */
+    @Test
+    void aLinhaSilenciadaSomeDoMapaSemTocarNoRdo() {
+        String obraId = cenario("APOIO-SILENCIO");
+        String rdoId = rdoComInterdicao(obraId, "102", "104");
+        TrechoDerivadoSilenciado lixeira = lixeira();
+
+        assertThat(apoio.projetarEm(obraId, List.of(eixo(obraId)))).hasSize(2);
+        assertThat(lixeira.silenciar(
+                obraId, "eixo:rdo:" + rdoId, "linha errada", "alfa-1"
+        )).isTrue();
+
+        assertThat(apoio.projetarEm(obraId, List.of(eixo(obraId)))).hasSize(1);
+        // O RDO não foi tocado: o quilômetro declarado continua lá.
+        assertThat(jdbc.queryForObject(
+                "SELECT km_inicial_interditado FROM rdo WHERE id = ?",
+                String.class, rdoId
+        )).isEqualTo("102");
+    }
+
+    @Test
+    void aLinhaDeServicoSilenciadaTambemSome() {
+        String obraId = cenario("APOIO-SILENCIO-SERVICO");
+        apontamento(obraId, "102", "104", "Fresagem");
+        String execucaoId = jdbc.queryForObject(
+                "SELECT id FROM execucao_servico_rdo WHERE obra_id = ?",
+                String.class, obraId
+        );
+
+        assertThat(lixeira().silenciar(
+                obraId, "eixo:" + execucaoId, null, "alfa-1"
+        )).isTrue();
+
+        assertThat(apoio.projetarEm(obraId, List.of(eixo(obraId)))).hasSize(1);
+    }
+
+    /*
+     * O silêncio dura até o RDO falar de novo: a reafirmação — chamada em toda
+     * edição do documento — apaga os silêncios dele, e a linha volta. A
+     * hierarquia é sempre do RDO.
+     */
+    @Test
+    void editarORdoReafirmaALinhaSilenciada() {
+        String obraId = cenario("APOIO-REAFIRMA");
+        String rdoId = rdoComInterdicao(obraId, "102", "104");
+        TrechoDerivadoSilenciado lixeira = lixeira();
+        lixeira.silenciar(obraId, "eixo:rdo:" + rdoId, null, "alfa-1");
+        assertThat(apoio.projetarEm(obraId, List.of(eixo(obraId)))).hasSize(1);
+
+        assertThat(lixeira.reafirmar(rdoId)).isEqualTo(1);
+
+        assertThat(apoio.projetarEm(obraId, List.of(eixo(obraId)))).hasSize(2);
+    }
+
+    @Test
+    void identidadeQueNaoEDerivadaNaoEntraNaLixeira() {
+        String obraId = cenario("APOIO-LIXEIRA-ERRADA");
+        assertThat(lixeira().silenciar(obraId, "feature-comum", null, "alfa-1"))
+                .isFalse();
+        assertThat(lixeira().silenciar(
+                obraId, "eixo:rdo:nao-existe", null, "alfa-1"
+        )).isFalse();
+    }
+
+    private TrechoDerivadoSilenciado lixeira() {
+        return new TrechoDerivadoSilenciado(
+                jdbc,
+                new com.projeto.cortex.memory.CortexOperationalMemoryService(
+                        jdbc,
+                        new ObjectMapper(),
+                        org.mockito.Mockito.mock(
+                                org.springframework.context
+                                        .ApplicationEventPublisher.class
+                        )
+                )
+        );
+    }
+
     /** Um RDO que só declarou o trecho interditado da Identificação. */
     private String rdoComInterdicao(
             String obraId,

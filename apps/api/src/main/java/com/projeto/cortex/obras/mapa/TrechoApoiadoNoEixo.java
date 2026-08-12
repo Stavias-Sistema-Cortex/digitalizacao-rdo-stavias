@@ -191,6 +191,11 @@ public class TrechoApoiadoNoEixo {
      * é posicionável. O RDO apagado leva junto o que apontou: cancelar marca
      * {@code rdo.cancelado_em} e não toca nas linhas, então é o salto pelo RDO
      * que faz o dia apagado sumir do mapa.
+     *
+     * <p>A linha silenciada pela lixeira do mapa também fica de fora — sem
+     * tocar no RDO, que segue declarando o quilômetro. O silêncio dura até o
+     * documento ser editado: {@link TrechoDerivadoSilenciado} o apaga, e a
+     * linha volta na leitura seguinte.
      */
     private List<Apontamento> buscarApontamentos(
             String obraId,
@@ -220,6 +225,11 @@ public class TrechoApoiadoNoEixo {
                   AND execution.trecho_inicial IS NOT NULL
                   AND execution.trecho_final IS NOT NULL
                   AND NOT (execution.rdo_id = ANY (?))
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM trecho_derivado_silenciado silencio
+                      WHERE silencio.execucao_id = execution.id
+                  )
                 ORDER BY execution.data_execucao, execution.id
                 """,
                 rs -> {
@@ -298,6 +308,12 @@ public class TrechoApoiadoNoEixo {
                         AND execution.cancelada = FALSE
                         AND execution.trecho_inicial IS NOT NULL
                         AND execution.trecho_final IS NOT NULL
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM trecho_derivado_silenciado silencio
+                      WHERE silencio.rdo_id = rdo.id
+                        AND silencio.execucao_id IS NULL
                   )
                 ORDER BY rdo.data_rdo, rdo.id
                 """,

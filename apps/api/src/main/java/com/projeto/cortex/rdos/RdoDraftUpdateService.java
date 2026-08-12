@@ -275,6 +275,7 @@ public class RdoDraftUpdateService {
          */
         reescreverQuilometroDoEixo(rdoId, request);
         cederDesenhoManualAoRdo(rdoId, request);
+        reafirmarLinhasSilenciadas(rdoId);
 
         reconciliarMaoObra(rdoId, request.obraId(), request.maoObra());
         reconciliarEquipamentos(rdoId, request.obraId(), request.equipamentos());
@@ -1208,6 +1209,34 @@ public class RdoDraftUpdateService {
 
     private static boolean temTexto(String valor) {
         return valor != null && !valor.isBlank();
+    }
+
+    /**
+     * O RDO editado reafirma o que declara: os silêncios do mapa caem.
+     *
+     * <p>A lixeira da linha derivada guarda um silêncio, não um apagamento —
+     * e o silêncio dura até o documento falar de novo. Quem edita o RDO está
+     * afirmando o quilômetro outra vez, e a linha volta a ser desenhada na
+     * leitura seguinte, para todo mundo. A tabela é a mesma que
+     * {@code TrechoDerivadoSilenciado} administra; o DELETE mora aqui para a
+     * edição não depender de um componente do mapa.
+     *
+     * <p>Falha aqui não derruba o salvamento, pela mesma ordem de valor de
+     * sempre: o RDO é o fato, o mapa é projeção.
+     */
+    private void reafirmarLinhasSilenciadas(String rdoId) {
+        try {
+            jdbcTemplate.update(
+                    "DELETE FROM trecho_derivado_silenciado WHERE rdo_id = ?",
+                    rdoId
+            );
+        } catch (RuntimeException exception) {
+            LOGGER.warn(
+                    "RDO {} salvo, mas o silêncio das linhas derivadas não pôde cair.",
+                    rdoId,
+                    exception
+            );
+        }
     }
 
     private boolean rdoEstaCancelado(String rdoId) {

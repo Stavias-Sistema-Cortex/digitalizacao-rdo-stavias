@@ -60,6 +60,28 @@ public class ObraMapaController {
         return service.atualizar(obraId, featureId, request);
     }
 
+    /**
+     * Silencia uma linha derivada do RDO — a lixeira que não apaga o RDO.
+     *
+     * <p>O identificador vai no corpo porque carrega dois-pontos, e rota é
+     * lugar de identidade simples. Só Alfa, como todo encerramento no mapa.
+     */
+    @PostMapping("/geometrias/derivadas/silenciar")
+    public void silenciarDerivada(
+            @PathVariable String obraId,
+            @RequestBody SilenciarDerivadaRequest request
+    ) {
+        service.silenciarDerivada(
+                obraId,
+                request == null ? null : request.featureId(),
+                request == null ? null : request.motivo()
+        );
+    }
+
+    /** O pedido da lixeira da linha derivada. */
+    public record SilenciarDerivadaRequest(String featureId, String motivo) {
+    }
+
     @PostMapping("/geometrias/{featureId}/encerrar")
     public ObraGeometriaResponse encerrar(
             @PathVariable String obraId,

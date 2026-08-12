@@ -49,7 +49,8 @@ class ObraMapaServiceTest {
             new TrechoApoiadoNoEixo(
                     mock(org.springframework.jdbc.core.JdbcTemplate.class),
                     new ObjectMapper()
-            )
+            ),
+            mock(TrechoDerivadoSilenciado.class)
     );
 
     @Test

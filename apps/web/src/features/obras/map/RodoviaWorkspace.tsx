@@ -37,7 +37,11 @@ import {
   type OperationalFeatureCollection,
   type WorksiteMapPoint,
 } from "./mapGeometry";
-import { carregarMapaObra, type LeituraMapaObra } from "./obraMapApi";
+import {
+  carregarMapaObra,
+  silenciarTrechoDerivado,
+  type LeituraMapaObra,
+} from "./obraMapApi";
 import {
   encerrarGeometria,
   redesenharTrecho,
@@ -475,6 +479,12 @@ export function RodoviaWorkspace({
    * apontamentos, e uma régua nova os reergue.
    */
   const ehEixo = pontoEscolhido?.properties.categoria === "EIXO_OBRA";
+  /*
+   * A linha derivada tem lixeira de silêncio: some do mapa para todo mundo,
+   * o RDO não é tocado, e editar o RDO a traz de volta. A pergunta precisa
+   * dizer exatamente isso, porque "remover" aqui não apaga nada.
+   */
+  const ehDerivada = pontoEscolhido?.properties.derivadoDoEixo === true;
 
   const pedirRemocaoDoPonto = useCallback((id: string) => {
     setPontoParaRemover(id);
@@ -487,11 +497,24 @@ export function RodoviaWorkspace({
     setRemovendo(true);
     setAviso(null);
     try {
-      await encerrarGeometria(
-        pontoParaRemover,
-        MOTIVO_DA_REMOCAO_NO_MAPA,
-        pontoEscolhido ? geometriaVisivel(pontoEscolhido, obra.id) : undefined,
-      );
+      if (pontoEscolhido?.properties.derivadoDoEixo === true) {
+        // A derivada não é geometria persistida: a lixeira dela é o silêncio
+        // no servidor, direto — ela só existe com rede, então a remoção
+        // também só existe com rede.
+        await silenciarTrechoDerivado(
+          obra.id,
+          pontoParaRemover,
+          MOTIVO_DA_REMOCAO_NO_MAPA,
+        );
+      } else {
+        await encerrarGeometria(
+          pontoParaRemover,
+          MOTIVO_DA_REMOCAO_NO_MAPA,
+          pontoEscolhido
+            ? geometriaVisivel(pontoEscolhido, obra.id)
+            : undefined,
+        );
+      }
       // Sai da tela agora, nos dois painéis, sem esperar a releitura: o
       // encerramento já está gravado, e um ponto que continua desenhado
       // depois de removido é exatamente o que fazia a ação parecer quebrada.
@@ -1624,7 +1647,9 @@ export function RodoviaWorkspace({
             onClick={(evento) => evento.stopPropagation()}
           >
             <p id="rodovia-confirma-titulo">
-              {ehEixo
+              {ehDerivada
+                ? "Tirar esta linha do RDO do mapa?"
+                : ehEixo
                 ? "Remover o eixo da obra do mapa?"
                 : ehTrecho
                   ? "Remover este trecho do mapa?"
@@ -1637,7 +1662,12 @@ export function RodoviaWorkspace({
                 apontamentos, e um eixo novo os traz de volta.
               </small>
             ) : null}
-            {ehTrecho ? (
+            {ehDerivada ? (
+              <small>
+                A linha sai do mapa para todo mundo. O RDO não é tocado — e
+                editar o RDO traz a linha de volta, porque a hierarquia é dele.
+              </small>
+            ) : ehTrecho ? (
               <small>
                 O apontamento do RDO não é tocado: o quilômetro fica onde está,
                 e só o desenho sai do mapa.

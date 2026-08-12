@@ -366,8 +366,10 @@ describe("quilômetro no balão do trecho", () => {
 
 /*
  * A linha que o eixo derivou não é desenho: ela nasce na leitura, do
- * quilômetro que mora no apontamento. Apagá-la teria de significar apagar o
- * apontamento, e isso não cabe a um clique numa linha do mapa.
+ * quilômetro que mora no apontamento. A lixeira dela, por decisão do dono do
+ * sistema, é outra coisa — um silêncio no servidor. A linha sai do mapa para
+ * todo mundo, o RDO segue intacto, e editar o RDO desfaz o silêncio: a
+ * hierarquia é sempre do documento.
  */
 describe("linha derivada do eixo", () => {
   const derivada = {
@@ -379,9 +381,40 @@ describe("linha derivada do eixo", () => {
     objetoId: "rdo-1",
   };
 
-  it("não oferece lixeira", () => {
-    expect(geometriaPodeSairDoMapa(derivada)).toBe(false);
-    expect(lixeiraDoBalao(derivada, () => {})).toBeNull();
+  it("oferece a lixeira do silêncio, nomeando o que ela tira", () => {
+    expect(geometriaPodeSairDoMapa(derivada)).toBe(true);
+    const botao = lixeiraDoBalao(derivada, () => {});
+    expect(botao).not.toBeNull();
+    expect(botao?.getAttribute("aria-label")).toBe(
+      "Remover linha do RDO no mapa",
+    );
+  });
+
+  it("chama de volta com a identidade derivada, que o servidor sabe ler", () => {
+    const aoRemover = vi.fn();
+
+    lixeiraDoBalao(derivada, aoRemover)?.click();
+
+    expect(aoRemover).toHaveBeenCalledWith("eixo:execucao-1");
+  });
+
+  /*
+   * A interdição da Identificação não tem linha de serviço: o lápis não tem
+   * o que reescrever, mas o silêncio vale igual — a identidade dela é o
+   * próprio RDO.
+   */
+  it("a interdição declarada tem lixeira mesmo sem linha de serviço", () => {
+    const interdicao = {
+      categoria: "TRECHO",
+      derivadoDoEixo: true,
+      geometriaId: "eixo:rdo:rdo-1",
+      objetoTipo: "RDO",
+      objetoId: "rdo-1",
+    };
+
+    expect(geometriaPodeSairDoMapa(interdicao)).toBe(true);
+    expect(lixeiraDoBalao(interdicao, () => {})).not.toBeNull();
+    expect(trechoPodeSerRedesenhado(interdicao)).toBe(false);
   });
 
   it("oferece o lápis, que corrige o quilômetro no RDO", () => {

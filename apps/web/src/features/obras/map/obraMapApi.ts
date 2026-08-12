@@ -116,6 +116,33 @@ export function obraMapResponseFromApi(value: unknown): ObraMapData {
   };
 }
 
+/**
+ * A lixeira da linha derivada: silêncio no servidor, não apagamento.
+ *
+ * <p>Chamada direta, fora da fila offline, de propósito: a linha derivada só
+ * existe quando o servidor responde — sem rede ela nem aparece no mapa —,
+ * então a remoção dela também só existe com rede. O RDO não é tocado, e
+ * editá-lo desfaz o silêncio.
+ */
+export async function silenciarTrechoDerivado(
+  obraId: string,
+  featureId: string,
+  motivo: string,
+): Promise<void> {
+  const response = await apiFetch(
+    `/obras/${encodeURIComponent(obraId)}/geometrias/derivadas/silenciar`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ featureId, motivo }),
+    },
+  );
+  if (!response.ok) {
+    const body = await readResponseBody(response);
+    throw new Error(responseErrorMessage(body, response.status));
+  }
+}
+
 export async function buscarMapaObra(obraId: string): Promise<ObraMapData> {
   const response = await apiFetch(
     `/obras/${encodeURIComponent(obraId)}/mapa`,

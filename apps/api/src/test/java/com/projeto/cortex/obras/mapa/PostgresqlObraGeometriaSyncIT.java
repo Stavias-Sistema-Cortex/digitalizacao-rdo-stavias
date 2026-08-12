@@ -402,7 +402,8 @@ class PostgresqlObraGeometriaSyncIT {
                 mapper,
                 new ObraOperabilityGuard(obraRepository),
                 new QuilometroDoApontamento(jdbc),
-        new TrechoApoiadoNoEixo(jdbc, mapper)
+        new TrechoApoiadoNoEixo(jdbc, mapper),
+        new TrechoDerivadoSilenciado(jdbc, memory)
         );
         SyncService service = new SyncService(
                 jdbc,

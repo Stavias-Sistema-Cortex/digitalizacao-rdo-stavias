@@ -52,6 +52,7 @@ public class ObraMapaService {
     private final ObraOperabilityGuard operabilityGuard;
     private final QuilometroDoApontamento quilometroDoApontamento;
     private final TrechoApoiadoNoEixo trechoApoiadoNoEixo;
+    private final TrechoDerivadoSilenciado trechoDerivadoSilenciado;
 
     public ObraMapaService(
             ObraRepository obraRepository,
@@ -61,7 +62,8 @@ public class ObraMapaService {
             ObjectMapper objectMapper,
             ObraOperabilityGuard operabilityGuard,
             QuilometroDoApontamento quilometroDoApontamento,
-            TrechoApoiadoNoEixo trechoApoiadoNoEixo
+            TrechoApoiadoNoEixo trechoApoiadoNoEixo,
+            TrechoDerivadoSilenciado trechoDerivadoSilenciado
     ) {
         this.obraRepository = obraRepository;
         this.featureRepository = featureRepository;
@@ -71,6 +73,7 @@ public class ObraMapaService {
         this.operabilityGuard = operabilityGuard;
         this.quilometroDoApontamento = quilometroDoApontamento;
         this.trechoApoiadoNoEixo = trechoApoiadoNoEixo;
+        this.trechoDerivadoSilenciado = trechoDerivadoSilenciado;
     }
 
     @Transactional(readOnly = true)
@@ -259,6 +262,35 @@ public class ObraMapaService {
         ObraGeometriaResponse after = toResponse(featureRepository.saveAndFlush(feature));
         memoryPublisher.encerrada(before, after, obraId, actorId, baseVersion, reason);
         return after;
+    }
+
+    /**
+     * A lixeira da linha derivada: silencia sem tocar no RDO.
+     *
+     * <p>Não passa pelo encerramento de geometria porque não há geometria — a
+     * linha nasce na leitura, não tem registro nem versão. O silêncio vale
+     * para todo mundo e dura até o RDO ser editado, quando a hierarquia dele
+     * se reafirma e a linha volta.
+     */
+    public void silenciarDerivada(
+            String obraId,
+            String featureId,
+            String motivo
+    ) {
+        currentUserService.requireAlfa();
+        operabilityGuard.requireWritable(obraId);
+        boolean silenciada = trechoDerivadoSilenciado.silenciar(
+                obraId,
+                featureId,
+                motivo,
+                currentUserService.requireUserId()
+        );
+        if (!silenciada) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "A linha derivada não foi encontrada nesta obra."
+            );
+        }
     }
 
     private NormalizedRequest normalize(
