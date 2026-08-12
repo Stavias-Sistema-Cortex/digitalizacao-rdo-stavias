@@ -138,6 +138,86 @@ class PostgresqlTrechoApoiadoNoEixoIT {
         assertThat(apoio.projetarEm(obraId, List.of(eixo(obraId)))).hasSize(1);
     }
 
+    /*
+     * O caso do RDO real que não desenhava nada: quem abre o documento
+     * preenche o trecho interditado da Identificação — 200 a 202 — e os
+     * serviços saem sem quilômetro próprio. A derivação só lia as linhas de
+     * serviço, e o único quilômetro declarado do dia ficava invisível.
+     */
+    @Test
+    void oTrechoInterditadoDaIdentificacaoDesenhaQuandoNenhumServicoTemKm() {
+        String obraId = cenario("APOIO-INTERDICAO");
+        String rdoId = rdoComInterdicao(obraId, "102", "104");
+
+        List<ObraGeometriaResponse> resultado =
+                apoio.projetarEm(obraId, List.of(eixo(obraId)));
+
+        assertThat(resultado).hasSize(2);
+        ObraGeometriaResponse derivada = resultado.get(1);
+        assertThat(derivada.id()).isEqualTo("eixo:rdo:" + rdoId);
+        assertThat(derivada.objetoId()).isEqualTo(rdoId);
+        // Sem linha de serviço por trás, não há para onde levar uma correção
+        // de km pelo mapa — a ausência da identidade é o que desliga o botão.
+        assertThat(derivada.properties())
+                .containsEntry(TrechoApoiadoNoEixo.PROPRIEDADE_DERIVADA, true)
+                .doesNotContainKey("execucaoId")
+                .doesNotContainKey("servico");
+    }
+
+    /*
+     * O serviço é o apontamento fino: dele saem pista e nome do serviço. Com
+     * ele presente, a interdição não desenha por cima — seria o mesmo dia duas
+     * vezes, em linhas quase iguais.
+     */
+    @Test
+    void aInterdicaoNaoDobraORdoQueJaTemServicoComKm() {
+        String obraId = cenario("APOIO-INTERDICAO-E-SERVICO");
+        String rdoId = apontamento(obraId, "102", "104", "Fresagem");
+        jdbc.update(
+                "UPDATE rdo SET km_inicial_interditado = ?,"
+                        + " km_final_interditado = ? WHERE id = ?",
+                "102", "104", rdoId
+        );
+
+        List<ObraGeometriaResponse> resultado =
+                apoio.projetarEm(obraId, List.of(eixo(obraId)));
+
+        assertThat(resultado).hasSize(2);
+        assertThat(resultado.get(1).properties()).containsKey("execucaoId");
+    }
+
+    @Test
+    void aInterdicaoDoRdoApagadoNaoDesenha() {
+        String obraId = cenario("APOIO-INTERDICAO-APAGADA");
+        String rdoId = rdoComInterdicao(obraId, "102", "104");
+        jdbc.update("""
+                UPDATE rdo
+                SET status = 'CANCELADA', cancelado_em = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                """, rdoId);
+
+        assertThat(apoio.projetarEm(obraId, List.of(eixo(obraId)))).hasSize(1);
+    }
+
+    /** Um RDO que só declarou o trecho interditado da Identificação. */
+    private String rdoComInterdicao(
+            String obraId,
+            String kmInicial,
+            String kmFinal
+    ) {
+        String rdoId = id();
+        jdbc.update(
+                """
+                INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo,
+                                 km_inicial_interditado, km_final_interditado)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                rdoId, obraId, "RDO-" + rdoId.substring(0, 8), DATA,
+                kmInicial, kmFinal
+        );
+        return rdoId;
+    }
+
     /** Obra com colaborador, pronta para receber RDO. */
     private String cenario(String sufixo) {
         String obraId = id();

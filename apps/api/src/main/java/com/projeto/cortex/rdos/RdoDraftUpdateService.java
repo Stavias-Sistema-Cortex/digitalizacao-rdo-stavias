@@ -1168,7 +1168,7 @@ public class RdoDraftUpdateService {
      * eixo: o RDO é o fato, o mapa é projeção.
      */
     private void cederDesenhoManualAoRdo(String rdoId, RdoCreateRequest request) {
-        if (rdoEstaCancelado(rdoId) || !algumServicoDeclaraQuilometro(request)) {
+        if (rdoEstaCancelado(rdoId) || !algumQuilometroDeclarado(request)) {
             return;
         }
         try {
@@ -1182,7 +1182,20 @@ public class RdoDraftUpdateService {
         }
     }
 
-    private boolean algumServicoDeclaraQuilometro(RdoCreateRequest request) {
+    /**
+     * O RDO declarou quilômetro em algum lugar que vira linha no mapa?
+     *
+     * <p>Duas fontes, na mesma ordem da derivação: o serviço executado com os
+     * dois extremos, e — na falta dele — o trecho interditado da Identificação.
+     * A segunda entrou porque era o caso comum em campo: quem abre o RDO
+     * preenche a interdição e para por aí, e o traçado manual antigo ficava de
+     * pé em cima de um RDO que já dizia, por quilômetro, onde o dia aconteceu.
+     */
+    private boolean algumQuilometroDeclarado(RdoCreateRequest request) {
+        if (temTexto(request.kmInicialInterditado())
+                && temTexto(request.kmFinalInterditado())) {
+            return true;
+        }
         if (request.servicosExecutados() == null) {
             return false;
         }

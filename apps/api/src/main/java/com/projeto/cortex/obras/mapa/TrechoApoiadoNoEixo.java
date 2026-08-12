@@ -251,7 +251,88 @@ public class TrechoApoiadoNoEixo {
                 obraId,
                 rdosComDesenho.toArray(String[]::new)
         );
+        buscarInterdicoesDeclaradas(obraId, rdosComDesenho, encontrados);
         return encontrados;
+    }
+
+    /**
+     * O trecho interditado declarado na Identificação do RDO.
+     *
+     * <p>É o quilômetro que o campo realmente preenche: quem abre o RDO diz de
+     * onde a onde a pista ficou tomada, e muitas vezes para por aí — os
+     * serviços saem sem km próprio. Este era o RDO que não desenhava nada no
+     * mapa: a derivação só lia as linhas de serviço, e o único quilômetro que
+     * o documento tinha declarado ficava invisível.
+     *
+     * <p>Entra como reserva, não como dobra: o {@code NOT EXISTS} pula o RDO
+     * que já tem serviço com km, porque o serviço é o apontamento fino — dele
+     * saem pista e nome do serviço — e desenhar a interdição por cima
+     * mostraria o mesmo dia duas vezes. Sem serviço posicionável, a interdição
+     * é o que há, e o que há aparece.
+     */
+    private void buscarInterdicoesDeclaradas(
+            String obraId,
+            List<String> rdosComDesenho,
+            List<Apontamento> encontrados
+    ) {
+        jdbcTemplate.query(
+                """
+                SELECT rdo.id,
+                       rdo.numero_rdo,
+                       rdo.km_inicial_interditado,
+                       rdo.km_final_interditado,
+                       rdo.cidade,
+                       rdo.rodovia,
+                       rdo.status AS rdo_status,
+                       rdo.data_rdo
+                FROM rdo
+                WHERE rdo.obra_id = ?
+                  AND rdo.cancelado_em IS NULL
+                  AND rdo.km_inicial_interditado IS NOT NULL
+                  AND rdo.km_final_interditado IS NOT NULL
+                  AND NOT (rdo.id = ANY (?))
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM execucao_servico_rdo execution
+                      WHERE execution.rdo_id = rdo.id
+                        AND execution.cancelada = FALSE
+                        AND execution.trecho_inicial IS NOT NULL
+                        AND execution.trecho_final IS NOT NULL
+                  )
+                ORDER BY rdo.data_rdo, rdo.id
+                """,
+                rs -> {
+                    BigDecimal inicial = QuilometroParser.parse(
+                            rs.getString("km_inicial_interditado"));
+                    BigDecimal fim = QuilometroParser.parse(
+                            rs.getString("km_final_interditado"));
+                    if (inicial == null || fim == null) {
+                        return;
+                    }
+                    encontrados.add(new Apontamento(
+                            // Sem linha de serviço por trás, não há para onde
+                            // levar uma correção de km feita pelo mapa — e o
+                            // balão sabe disso pela ausência da identidade.
+                            null,
+                            rs.getString("id"),
+                            rs.getString("numero_rdo"),
+                            null,
+                            inicial.doubleValue(),
+                            fim.doubleValue(),
+                            null,
+                            rs.getString("cidade"),
+                            rs.getString("rodovia"),
+                            null,
+                            rs.getString("rdo_status"),
+                            rs.getDate("data_rdo") == null
+                                    ? null
+                                    : rs.getDate("data_rdo").toLocalDate()
+                                            .atStartOfDay()
+                    ));
+                },
+                obraId,
+                rdosComDesenho.toArray(String[]::new)
+        );
     }
 
     private ObraGeometriaResponse feicaoDerivada(
@@ -273,8 +354,15 @@ public class TrechoApoiadoNoEixo {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put(PROPRIEDADE_DERIVADA, true);
         properties.put("eixoId", eixo.id());
-        properties.put("execucaoId", apontamento.execucaoId());
-        properties.put("servico", apontamento.servicoNome());
+        // A interdição declarada na Identificação não tem linha de serviço por
+        // trás: sem execucaoId, o mapa não oferece a correção de km — que não
+        // teria onde ser escrita — e o balão dispensa a linha de serviço.
+        if (temTexto(apontamento.execucaoId())) {
+            properties.put("execucaoId", apontamento.execucaoId());
+        }
+        if (temTexto(apontamento.servicoNome())) {
+            properties.put("servico", apontamento.servicoNome());
+        }
         properties.put("numeroRdo", apontamento.numeroRdo());
         properties.put("kmInicial", apontamento.kmInicial());
         properties.put("kmFinal", apontamento.kmFinal());
@@ -289,13 +377,19 @@ public class TrechoApoiadoNoEixo {
         if (temTexto(apontamento.rodovia())) {
             properties.put("rodovia", apontamento.rodovia().trim());
         }
-        properties.put("statusValidacao", apontamento.statusValidacao());
+        if (temTexto(apontamento.statusValidacao())) {
+            properties.put("statusValidacao", apontamento.statusValidacao());
+        }
         properties.put("rdoStatus", apontamento.rdoStatus());
 
         return new ObraGeometriaResponse(
                 // A identidade carrega a linha de origem: é ela que o mapa usa
                 // para levar uma correção de traçado de volta ao apontamento.
-                "eixo:" + apontamento.execucaoId(),
+                // A interdição não tem linha de serviço, então a identidade é o
+                // próprio RDO — única do mesmo jeito, corrigível por ele.
+                temTexto(apontamento.execucaoId())
+                        ? "eixo:" + apontamento.execucaoId()
+                        : "eixo:rdo:" + apontamento.rdoId(),
                 "TRECHO",
                 "RDO",
                 apontamento.rdoId(),
