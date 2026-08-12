@@ -192,6 +192,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
         expectedTables.add("ontology_entity_worksite_snapshots");
         expectedTables.add("cortex_release_marker");
         expectedTables.add("equipamento_terceirizado");
+        expectedTables.add("trecho_derivado_silenciado");
 
         Set<String> actualTables = new TreeSet<>(jdbc.queryForList("""
                 SELECT table_name
@@ -202,7 +203,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                 ORDER BY table_name
                 """, String.class));
 
-        assertThat(expectedTables).hasSize(126).doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES);
+        assertThat(expectedTables).hasSize(127).doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES);
         assertThat(actualTables)
                 .doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES)
                 .containsExactlyElementsOf(expectedTables);
