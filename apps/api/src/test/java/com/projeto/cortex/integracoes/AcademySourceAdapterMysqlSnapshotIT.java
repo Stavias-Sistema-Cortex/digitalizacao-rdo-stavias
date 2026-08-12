@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -148,10 +149,13 @@ class AcademySourceAdapterMysqlSnapshotIT {
                 realStatements.add(realStatement);
                 PreparedStatement observedStatement = spy(realStatement);
                 doAnswer(query -> {
-                    Object result = query.callRealMethod();
+                    ResultSet result = (ResultSet) query.callRealMethod();
                     if (executions.incrementAndGet() == 1) {
                         firstPageRead.countDown();
                         if (!sourceMutated.await(10, TimeUnit.SECONDS)) {
+                            // O caminho de falha sai por exceção e ninguém
+                            // mais recebe este ResultSet para fechá-lo.
+                            result.close();
                             throw new SQLException(
                                     "fixture mutation did not complete"
                             );
