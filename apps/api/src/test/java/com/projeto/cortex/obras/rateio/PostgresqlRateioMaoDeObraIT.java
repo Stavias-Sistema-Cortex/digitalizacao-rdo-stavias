@@ -92,6 +92,9 @@ class PostgresqlRateioMaoDeObraIT {
                         .orElseThrow();
         assertThat(encontrado.maoObra()).isEmpty();
         assertThat(resposta.completo()).isTrue();
+        // O nome da obra viaja junto: sem ele, quem ainda não baixou a lista
+        // de obras veria um identificador cru — ou não veria a obra.
+        assertThat(encontrado.obraNome()).isEqualTo("Obra vazio");
     }
 
     @Test

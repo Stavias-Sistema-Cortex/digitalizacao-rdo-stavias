@@ -37,6 +37,14 @@ export interface ApontamentoDeMaoDeObra {
   /** O cargo do dia, como o RDO registrou. */
   funcao: string;
   obraId: string;
+  /**
+   * O nome da obra, quando quem entregou o apontamento o conhece.
+   *
+   * <p>Vazio na leitura local, onde o nome vem da lista de obras do aparelho.
+   * O servidor manda preenchido para que uma obra recém-criada não apareça
+   * como identificador cru em quem ainda não baixou a lista.
+   */
+  obraNome: string;
   /** `YYYY-MM-DD`. */
   data: string;
   /** A frente: quem responde pelo RDO em que a pessoa foi apontada. */

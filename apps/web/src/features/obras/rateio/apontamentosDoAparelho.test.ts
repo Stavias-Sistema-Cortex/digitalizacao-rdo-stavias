@@ -51,6 +51,7 @@ describe("apontamentos lidos dos RDOs do aparelho", () => {
         nome: "PESSOA UM",
         funcao: "MOTORISTA",
         obraId: "obra-norte",
+        obraNome: "",
         data: "2026-07-10",
         encarregado: "FRENTE A",
         rdoId: "rdo-1",

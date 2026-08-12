@@ -99,6 +99,7 @@ export function RateioMaoDeObraPanel({
   const [mes, setMes] = useState<string>(mesInicial ?? mesCorrente());
   const [busca, setBusca] = useState("");
   const [frente, setFrente] = useState("");
+  const [obraEscolhida, setObraEscolhida] = useState("");
   const [somenteEmExecucao, setSomenteEmExecucao] = useState(true);
   const [leitura, setLeitura] = useState<LeituraDeApontamentos | null>(null);
   const [origem, setOrigem] = useState<OrigemDoRetrato>("APARELHO");
@@ -173,17 +174,39 @@ export function RateioMaoDeObraPanel({
     };
   }, [carregar]);
 
+  /*
+   * O nome de uma obra pode vir de dois lugares, e os dois são necessários. A
+   * lista do aparelho é a de sempre; o apontamento traz o nome que o servidor
+   * conhece, e é ele que salva a obra criada hoje, que o celular de quem não
+   * abriu a lista ainda não baixou. Sem esse segundo caminho, ela apareceria
+   * como identificador cru.
+   */
   const nomePorObra = useMemo(() => {
     const nomes = new Map<string, string>();
+    for (const apontamento of leitura?.apontamentos ?? []) {
+      if (apontamento.obraNome) nomes.set(apontamento.obraId, apontamento.obraNome);
+    }
     for (const obra of obras) nomes.set(obra.id, obra.nome);
     return nomes;
-  }, [obras]);
+  }, [obras, leitura]);
 
   const obrasEmExecucao = useMemo(
     () =>
       new Set(
         filterObrasByChip([...obras], "EM_EXECUCAO").map((obra) => obra.id),
       ),
+    [obras],
+  );
+
+  /*
+   * Obra que este aparelho ainda não baixou não é obra parada. Tratá-la como
+   * fora de execução a fazia sumir do recorte em silêncio — e duas pessoas
+   * abriam o mesmo mês e viam totais diferentes, uma porque já tinha a lista
+   * de obras atualizada e a outra porque não. O filtro só esconde o que se
+   * sabe estar fora; o que não se conhece continua à vista.
+   */
+  const obrasConhecidas = useMemo(
+    () => new Set(obras.map((obra) => obra.id)),
     [obras],
   );
 
@@ -198,15 +221,21 @@ export function RateioMaoDeObraPanel({
     [leitura],
   );
 
-  const obrasVisiveis = useMemo(
-    () =>
-      somenteEmExecucao
-        ? rateioCompleto.obraIds.filter((obraId) =>
-            obrasEmExecucao.has(obraId),
-          )
-        : [],
-    [somenteEmExecucao, rateioCompleto.obraIds, obrasEmExecucao],
-  );
+  const obrasVisiveis = useMemo(() => {
+    // Escolher uma obra é uma decisão explícita e manda sobre o recorte
+    // automático: quem pediu aquela obra quer aquela obra, parada ou não.
+    if (obraEscolhida) return [obraEscolhida];
+    if (!somenteEmExecucao) return [];
+    return rateioCompleto.obraIds.filter(
+      (obraId) => obrasEmExecucao.has(obraId) || !obrasConhecidas.has(obraId),
+    );
+  }, [
+    obraEscolhida,
+    somenteEmExecucao,
+    rateioCompleto.obraIds,
+    obrasEmExecucao,
+    obrasConhecidas,
+  ]);
 
   const rateio = useMemo(
     () =>
@@ -284,6 +313,21 @@ export function RateioMaoDeObraPanel({
         </label>
 
         <label className="rateio-campo">
+          <span className="visually-hidden">Obra</span>
+          <select
+            value={obraEscolhida}
+            onChange={(evento) => setObraEscolhida(evento.target.value)}
+          >
+            <option value="">Todas as obras</option>
+            {rateioCompleto.obraIds.map((obraId) => (
+              <option key={obraId} value={obraId}>
+                {nomePorObra.get(obraId) ?? obraId}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="rateio-campo">
           <span className="visually-hidden">Frente</span>
           <select
             value={frente}
@@ -306,11 +350,12 @@ export function RateioMaoDeObraPanel({
         <button
           type="button"
           className={
-            somenteEmExecucao
+            somenteEmExecucao && !obraEscolhida
               ? "rateio-alternador is-ativo"
               : "rateio-alternador"
           }
-          aria-pressed={somenteEmExecucao}
+          aria-pressed={somenteEmExecucao && !obraEscolhida}
+          disabled={obraEscolhida !== ""}
           onClick={() => setSomenteEmExecucao((atual) => !atual)}
         >
           Só obras em execução

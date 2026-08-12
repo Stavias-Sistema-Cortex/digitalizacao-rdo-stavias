@@ -84,6 +84,7 @@ export function lerRespostaDoRateio(
       payload: {
         encarregadoObra: rdo.encarregadoObra,
         apontadorRdo: rdo.apontadorRdo,
+        obraNome: rdo.obraNome,
         maoObra,
       },
     });

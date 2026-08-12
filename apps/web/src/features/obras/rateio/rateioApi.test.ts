@@ -14,6 +14,7 @@ describe("a leitura da resposta do servidor", () => {
           obraId: "obra-a",
           dataRdo: "2026-07-10",
           numeroRdo: "RDO-0001",
+          obraNome: "Obra do Servidor",
           encarregadoObra: "FRENTE A",
           apontadorRdo: "QUEM ASSINA",
           maoObra: [
@@ -35,6 +36,7 @@ describe("a leitura da resposta do servidor", () => {
         nome: "PESSOA UM",
         funcao: "AJUDANTE",
         obraId: "obra-a",
+        obraNome: "Obra do Servidor",
         data: "2026-07-10",
         encarregado: "FRENTE A",
         rdoId: "rdo-1",

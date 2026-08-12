@@ -60,6 +60,7 @@ public class RateioMaoDeObraService {
             SELECT
                 r.id                AS rdo_id,
                 r.obra_id           AS obra_id,
+                o.nome              AS obra_nome,
                 r.data_rdo          AS data_rdo,
                 r.numero_rdo        AS numero_rdo,
                 r.encarregado_obra  AS encarregado_obra,
@@ -68,6 +69,7 @@ public class RateioMaoDeObraService {
                 m.nome_colaborador  AS nome_colaborador,
                 m.cargo             AS cargo
             FROM rdo r
+            JOIN obra o ON o.id = r.obra_id
             LEFT JOIN rdo_mao_obra m ON m.rdo_id = r.id
             WHERE r.cancelado_em IS NULL
               AND r.status <> 'CANCELADA'
@@ -128,6 +130,7 @@ public class RateioMaoDeObraService {
                             return new ConstrucaoDeRdo(
                                     rdoId,
                                     resultado.getString("obra_id"),
+                                    resultado.getString("obra_nome"),
                                     resultado.getDate("data_rdo") == null
                                             ? null
                                             : resultado.getDate("data_rdo")
@@ -209,6 +212,7 @@ public class RateioMaoDeObraService {
     private record ConstrucaoDeRdo(
             String id,
             String obraId,
+            String obraNome,
             LocalDate dataRdo,
             String numeroRdo,
             String encarregadoObra,
@@ -218,6 +222,7 @@ public class RateioMaoDeObraService {
         ConstrucaoDeRdo(
                 String id,
                 String obraId,
+                String obraNome,
                 LocalDate dataRdo,
                 String numeroRdo,
                 String encarregadoObra,
@@ -226,6 +231,7 @@ public class RateioMaoDeObraService {
             this(
                     id,
                     obraId,
+                    obraNome,
                     dataRdo,
                     numeroRdo,
                     encarregadoObra,
@@ -238,6 +244,7 @@ public class RateioMaoDeObraService {
             return new RateioMaoDeObraResponse.RdoDoRateio(
                     id,
                     obraId,
+                    obraNome,
                     dataRdo,
                     numeroRdo,
                     encarregadoObra,

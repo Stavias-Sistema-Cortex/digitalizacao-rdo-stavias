@@ -162,6 +162,7 @@ export function apontamentosDoRdo(
       nome,
       funcao: texto(item.cargo),
       obraId: registro.obraId,
+      obraNome: texto(registro.payload.obraNome),
       data: registro.dataRdo,
       encarregado,
       rdoId: registro.id,

@@ -64,6 +64,7 @@ function apontamento(
     nome: "PESSOA UM",
     funcao: "AJUDANTE DE OBRA",
     obraId,
+    obraNome: "",
     data,
     encarregado: "FRENTE A",
     rdoId: `rdo-${data}-${obraId}`,
@@ -235,14 +236,73 @@ describe("a tela do rateio", () => {
     // Metade do tempo foi para uma obra que a tela não mostra: o que aparece
     // continua sendo 50%, e não 100%.
     expect(within(linha).getByText("50%")).toBeInTheDocument();
-    expect(screen.queryByText("Obra Parada")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("table")).queryByText("Obra Parada"),
+    ).toBeNull();
 
     fireEvent.click(
       screen.getByRole("button", { name: /Só obras em execução/ }),
     );
     await waitFor(() =>
-      expect(screen.getAllByText("Obra Parada").length).toBeGreaterThan(0),
+      expect(
+        within(screen.getByRole("table")).getAllByText("Obra Parada").length,
+      ).toBeGreaterThan(0),
     );
+  });
+
+  /*
+   * O defeito que este teste prende: obra que o aparelho ainda não baixou não
+   * é obra parada. Escondê-la fazia duas pessoas abrirem o mesmo mês e verem
+   * totais diferentes — uma com a lista de obras atualizada, a outra não.
+   */
+  it("mostra a obra que o aparelho ainda não conhece, com o nome do servidor", async () => {
+    mocks.lerLocal.mockResolvedValue(
+      leitura([
+        apontamento("2026-07-01", "obra-nova", {
+          obraNome: "Obra Criada Hoje",
+        }),
+      ]),
+    );
+
+    render(<RateioMaoDeObraPanel obras={OBRAS} mesInicial="2026-07" />);
+
+    const linha = await screen.findByRole("row", { name: /PESSOA UM/ });
+    expect(within(linha).getByText("100%")).toBeInTheDocument();
+    // O nome aparece na coluna da obra e na leitura acessível de cada dia.
+    expect(
+      within(screen.getByRole("table")).getAllByText("Obra Criada Hoje").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("filtra por uma obra escolhida, mesmo que ela não esteja em execução", async () => {
+    mocks.lerLocal.mockResolvedValue(
+      leitura([
+        apontamento("2026-07-01", "obra-a"),
+        apontamento("2026-07-02", "obra-c"),
+        apontamento("2026-07-02", "obra-a", {
+          colaboradorId: "col-2",
+          nome: "SO NA NORTE",
+        }),
+      ]),
+    );
+
+    render(<RateioMaoDeObraPanel obras={OBRAS} mesInicial="2026-07" />);
+    await screen.findByRole("row", { name: /SO NA NORTE/ });
+
+    fireEvent.change(screen.getByDisplayValue("Todas as obras"), {
+      target: { value: "obra-c" },
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("row", { name: /SO NA NORTE/ })).toBeNull(),
+    );
+    const linha = screen.getByRole("row", { name: /PESSOA UM/ });
+    // A obra escolhida ficou com metade do tempo da pessoa, e é essa metade
+    // que se mostra: a outra foi para uma obra fora do recorte.
+    expect(within(linha).getByText("50%")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Só obras em execução/ }),
+    ).toBeDisabled();
   });
 
   it("procura pelo nome da pessoa", async () => {

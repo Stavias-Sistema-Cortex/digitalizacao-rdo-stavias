@@ -32,6 +32,17 @@ public record RateioMaoDeObraResponse(
     public record RdoDoRateio(
             String id,
             String obraId,
+            /**
+             * O nome da obra, para a tela não depender de já conhecê-la.
+             *
+             * <p>O aparelho tem a lista de obras que baixou, e ela pode estar
+             * atrás do que o rateio mostra: obra criada hoje, RDO lançado
+             * hoje, e o celular de quem não abriu a lista ainda. Sem o nome
+             * aqui, essa obra apareceria como um identificador cru — ou pior,
+             * sumiria do recorte de obras em execução, e duas pessoas veriam
+             * números diferentes do mesmo mês.
+             */
+            String obraNome,
             LocalDate dataRdo,
             String numeroRdo,
             /** Texto livre do RDO; costuma vir vazio no que é feito em campo. */
