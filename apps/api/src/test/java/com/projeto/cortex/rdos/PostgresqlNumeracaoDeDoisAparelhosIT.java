@@ -3,18 +3,20 @@ package com.projeto.cortex.rdos;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -94,7 +96,10 @@ class PostgresqlNumeracaoDeDoisAparelhosIT {
         return allocated == null ? 1L : allocated;
     }
 
+    // Teste de concorrência que trava é teste que queima a esteira inteira em
+    // silêncio: aqui ele falha em um minuto e diz o que aconteceu.
     @Test
+    @Timeout(value = 2, unit = TimeUnit.MINUTES)
     void dezAparelhosSimultaneosRecebemDezNumerosDistintosESemBuraco()
             throws Exception {
         String obraId = obra("concorrencia");
@@ -102,14 +107,15 @@ class PostgresqlNumeracaoDeDoisAparelhosIT {
         CountDownLatch largada = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(aparelhos);
         try {
-            List<Future<Long>> alocacoes = executor.invokeAll(
-                    java.util.stream.IntStream.range(0, aparelhos)
-                            .<Callable<Long>>mapToObj(ignorado -> () -> {
-                                largada.await();
-                                return alocar(obraId);
-                            })
-                            .toList()
-            );
+            // submit, e não invokeAll: a largada só é dada depois que todas as
+            // threads estão de pé, e invokeAll ficaria esperando por elas.
+            List<Future<Long>> alocacoes = new ArrayList<>();
+            for (int aparelho = 0; aparelho < aparelhos; aparelho++) {
+                alocacoes.add(executor.submit(() -> {
+                    largada.await();
+                    return alocar(obraId);
+                }));
+            }
             largada.countDown();
 
             Set<Long> numeros = new HashSet<>();
