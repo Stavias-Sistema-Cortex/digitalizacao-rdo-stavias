@@ -703,7 +703,11 @@ export function ObrasPage() {
               : view === "RATEIO"
                 ? "Rateio apurado dos RDOs"
                 : `${filteredObras.length} obras visíveis`,
-          detail: hasConfirmedRemoteHydration
+          detail: view === "RATEIO"
+            // O rateio é do quadro inteiro, não da obra em foco: repetir o
+            // foco aqui sugeria um recorte que a aba não faz.
+            ? "Quem esteve em cada obra, dia a dia"
+            : hasConfirmedRemoteHydration
             ? focusedObra
               ? `Foco: ${focusedObra.nome}`
               : "Nenhuma obra selecionada"

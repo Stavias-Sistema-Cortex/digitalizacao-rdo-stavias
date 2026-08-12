@@ -274,7 +274,7 @@ export function RateioMaoDeObraPanel({
         </div>
 
         <label className="rateio-campo">
-          <span className="sr-only">Procurar pessoa ou função</span>
+          <span className="visually-hidden">Procurar pessoa ou função</span>
           <input
             type="search"
             value={busca}
@@ -284,7 +284,7 @@ export function RateioMaoDeObraPanel({
         </label>
 
         <label className="rateio-campo">
-          <span className="sr-only">Frente</span>
+          <span className="visually-hidden">Frente</span>
           <select
             value={frente}
             onChange={(evento) => setFrente(evento.target.value)}
@@ -298,14 +298,23 @@ export function RateioMaoDeObraPanel({
           </select>
         </label>
 
-        <label className="rateio-alternador">
-          <input
-            type="checkbox"
-            checked={somenteEmExecucao}
-            onChange={(evento) => setSomenteEmExecucao(evento.target.checked)}
-          />
-          <span>Só obras em execução</span>
-        </label>
+        {/*
+          Botão, e não caixa de marcar: a caixa nativa vem com a cor do sistema
+          operacional e não obedece à paleta, o que fazia um quadrado azul de
+          outro produto pousar no meio da barra.
+        */}
+        <button
+          type="button"
+          className={
+            somenteEmExecucao
+              ? "rateio-alternador is-ativo"
+              : "rateio-alternador"
+          }
+          aria-pressed={somenteEmExecucao}
+          onClick={() => setSomenteEmExecucao((atual) => !atual)}
+        >
+          Só obras em execução
+        </button>
 
         <button
           type="button"
@@ -317,41 +326,36 @@ export function RateioMaoDeObraPanel({
         </button>
       </header>
 
-      <FaixaDeProveniencia
-        origem={origem}
-        leitura={leitura}
-        carregando={carregando}
-        erro={erro}
-      />
+      {/*
+        Os números do período, a divisão entre obras e a legenda são uma coisa
+        só — três blocos soltos empilhados diziam o mesmo e ocupavam a tela
+        inteira antes de a matriz aparecer.
+      */}
+      <section className="rateio-panorama" aria-label="Panorama do período">
+        <div className="rateio-numeros">
+          <span className="rateio-numero">
+            <strong>{rateio.colaboradores.length}</strong> pessoas
+          </span>
+          <span className="rateio-numero">
+            <strong>{totalDeDias}</strong> dias apontados
+          </span>
+          <span className="rateio-numero">
+            <strong>{rateio.obraIds.length}</strong> obras
+          </span>
+          <span className="rateio-numero">
+            <strong>{rateio.totaisPorEncarregado.length}</strong> frentes
+          </span>
+          <FaixaDeProveniencia
+            origem={origem}
+            leitura={leitura}
+            carregando={carregando}
+            erro={erro}
+          />
+        </div>
 
-      <div className="rateio-resumo">
-        <article className="rateio-cartao">
-          <span className="rateio-cartao-rotulo">Pessoas</span>
-          <strong className="rateio-cartao-valor">
-            {rateio.colaboradores.length}
-          </strong>
-        </article>
-        <article className="rateio-cartao">
-          <span className="rateio-cartao-rotulo">Dias apontados</span>
-          <strong className="rateio-cartao-valor">{totalDeDias}</strong>
-        </article>
-        <article className="rateio-cartao">
-          <span className="rateio-cartao-rotulo">Obras</span>
-          <strong className="rateio-cartao-valor">
-            {rateio.obraIds.length}
-          </strong>
-        </article>
-        <article className="rateio-cartao">
-          <span className="rateio-cartao-rotulo">Frentes</span>
-          <strong className="rateio-cartao-valor">
-            {rateio.totaisPorEncarregado.length}
-          </strong>
-        </article>
-      </div>
-
-      {rateio.obraIds.length > 0 ? (
-        <section className="rateio-distribuicao" aria-label="Divisão do período">
-          <div className="rateio-barra">
+        {rateio.obraIds.length > 0 ? (
+          <>
+            <div className="rateio-barra">
             {rateio.obraIds.map((obraId) => {
               const total = rateio.totaisPorObra.get(obraId);
               const fatia =
@@ -394,9 +398,10 @@ export function RateioMaoDeObraPanel({
                 </li>
               );
             })}
-          </ul>
-        </section>
-      ) : null}
+            </ul>
+          </>
+        ) : null}
+      </section>
 
       {rateio.colaboradores.length === 0 ? (
         <p className="rateio-vazio" role="status">
@@ -478,6 +483,9 @@ function MatrizDoRateio({
             <th className="rateio-col-funcao" scope="col">
               Função
             </th>
+            <th className="rateio-col-divisao" scope="col">
+              Divisão
+            </th>
             {dias.map((dia) => {
               const data = new Date(`${dia}T12:00:00Z`);
               const semana = data.getUTCDay();
@@ -516,7 +524,7 @@ function MatrizDoRateio({
               indice === 0 ||
               colaboradores[indice - 1].encarregado !==
                 colaborador.encarregado;
-            const colunas = 2 + dias.length + obraIds.length;
+            const colunas = 3 + dias.length + obraIds.length;
             return (
               <Fragment key={colaborador.chave}>
                 {abreFrente ? (
@@ -531,16 +539,61 @@ function MatrizDoRateio({
                     {colaborador.nome}
                   </th>
                   <td className="rateio-col-funcao">{colaborador.funcao}</td>
+                  {/*
+                    A divisão da pessoa em miniatura, ao lado do nome: com
+                    trinta e um dias no meio, as colunas de percentual caem
+                    fora da tela em qualquer monitor, e é justamente esse
+                    número que se veio buscar. Aqui ele fica sempre visível,
+                    em forma de barra; o valor exato continua à direita.
+                  */}
+                  <td className="rateio-col-divisao">
+                    <span
+                      className="rateio-mini-barra"
+                      title={obraIds
+                        .filter(
+                          (obraId) =>
+                            (colaborador.fracaoPorObra.get(obraId) ?? 0) > 0,
+                        )
+                        .map(
+                          (obraId) =>
+                            `${nomePorObra.get(obraId) ?? obraId}: ${PERCENTUAL.format(
+                              colaborador.fracaoPorObra.get(obraId) ?? 0,
+                            )}`,
+                        )
+                        .join(" · ")}
+                    >
+                      {obraIds.map((obraId) => {
+                        const fatia =
+                          colaborador.fracaoPorObra.get(obraId) ?? 0;
+                        if (fatia <= 0) return null;
+                        return (
+                          <span
+                            key={obraId}
+                            className="rateio-mini-fatia"
+                            style={{
+                              ...corDaObra(cores.get(obraId)),
+                              width: `${fatia * 100}%`,
+                            }}
+                          />
+                        );
+                      })}
+                    </span>
+                  </td>
                   {dias.map((dia) => {
                     const registro = colaborador.dias.get(dia);
                     const visiveis = (registro?.obraIds ?? []).filter((obraId) =>
                       obraIds.includes(obraId),
                     );
                     if (visiveis.length === 0) {
+                      const semana = new Date(`${dia}T12:00:00Z`).getUTCDay();
                       return (
                         <td
                           key={dia}
-                          className="rateio-celula is-vazia"
+                          className={
+                            semana === 0 || semana === 6
+                              ? "rateio-celula is-vazia is-descanso"
+                              : "rateio-celula is-vazia"
+                          }
                           aria-label="Sem apontamento"
                         />
                       );
@@ -561,7 +614,7 @@ function MatrizDoRateio({
                         )}
                         title={`${dia.slice(8)}: ${nomes}`}
                       >
-                        <span className="sr-only">{nomes}</span>
+                        <span className="visually-hidden">{nomes}</span>
                       </td>
                     );
                   })}

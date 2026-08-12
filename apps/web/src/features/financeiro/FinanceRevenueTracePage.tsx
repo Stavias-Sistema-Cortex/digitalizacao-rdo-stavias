@@ -200,7 +200,7 @@ export function FinanceRevenueTracePage({
       {!visibleError && rows.length > 0 ? (
         <div className="finance-revenue-table-wrap">
           <table className="finance-revenue-table">
-            <thead><tr><th>Data / RDO</th><th>Serviço</th><th>Memória do preço</th><th>Receita</th><th>Estado</th><th><span className="sr-only">Rastro</span></th></tr></thead>
+            <thead><tr><th>Data / RDO</th><th>Serviço</th><th>Memória do preço</th><th>Receita</th><th>Estado</th><th><span className="visually-hidden">Rastro</span></th></tr></thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={row.revenueEvidenceId}>

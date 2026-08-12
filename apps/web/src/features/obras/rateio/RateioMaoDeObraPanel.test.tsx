@@ -125,10 +125,32 @@ describe("a tela do rateio", () => {
 
     await screen.findByRole("row", { name: /PESSOA UM/ });
     const [cabecalho] = screen.getAllByRole("rowgroup");
-    // Nome, função, 31 dias e a coluna da obra que apareceu.
+    // Nome, função, divisão, 31 dias e a coluna da obra que apareceu.
     expect(within(cabecalho).getAllByRole("columnheader")).toHaveLength(
-      2 + 31 + 1,
+      3 + 31 + 1,
     );
+  });
+
+  /*
+   * Com trinta e um dias no meio, a coluna de percentual cai fora da tela em
+   * qualquer monitor. A barra de divisão fica parada ao lado do nome para que
+   * o número que se veio buscar não dependa de rolar.
+   */
+  it("mostra a divisão da pessoa em barra, ao lado do nome", async () => {
+    mocks.lerLocal.mockResolvedValue(
+      leitura([
+        apontamento("2026-07-01", "obra-a"),
+        apontamento("2026-07-02", "obra-a"),
+        apontamento("2026-07-03", "obra-b"),
+      ]),
+    );
+
+    render(<RateioMaoDeObraPanel obras={OBRAS} mesInicial="2026-07" />);
+
+    const linha = await screen.findByRole("row", { name: /PESSOA UM/ });
+    expect(
+      within(linha).getByTitle("Obra Norte: 66,7% · Obra Sul: 33,3%"),
+    ).toBeInTheDocument();
   });
 
   it("diz que o retrato é do aparelho quando não há rede", async () => {
@@ -215,7 +237,9 @@ describe("a tela do rateio", () => {
     expect(within(linha).getByText("50%")).toBeInTheDocument();
     expect(screen.queryByText("Obra Parada")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText(/Só obras em execução/));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Só obras em execução/ }),
+    );
     await waitFor(() =>
       expect(screen.getAllByText("Obra Parada").length).toBeGreaterThan(0),
     );
