@@ -15,6 +15,8 @@ import { MensagensCard } from "./MensagensCard";
 import { ObraFocusCard } from "./ObraFocusCard";
 import { TimeCard } from "./TimeCard";
 import type { HomeData } from "./useHomeData";
+import { fraseDaHomeSemObras } from "./fraseDaHomeSemObras";
+import { getSession, isAlfa } from "../auth/authSession";
 
 export function HomeOverview({
   data,
@@ -31,6 +33,7 @@ export function HomeOverview({
     events,
     latestRdo,
     isLoading,
+    hasConfirmedRemoteHydration,
   } = data;
   const { snapshot } = useSyncStatus();
   const [chip, setChip] = useState<ObraStatusChip>("TODAS");
@@ -146,7 +149,12 @@ export function HomeOverview({
           {isLoading ? (
             <p>Carregando obras…</p>
           ) : obras.length === 0 ? (
-            <p>Nenhuma obra disponível. Conecte-se uma vez para carregar seu escopo.</p>
+            <p>
+              {fraseDaHomeSemObras(
+                hasConfirmedRemoteHydration,
+                isAlfa(getSession()),
+              )}
+            </p>
           ) : (
             <p>Escolha uma obra para começar.</p>
           )}
