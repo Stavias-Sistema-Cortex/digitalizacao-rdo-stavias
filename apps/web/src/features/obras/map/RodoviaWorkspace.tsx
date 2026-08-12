@@ -307,6 +307,16 @@ export function RodoviaWorkspace({
    * tinha funcionado.
    */
   const [encerradosAgora, setEncerradosAgora] = useState<string[]>([]);
+  /*
+   * Derivadas silenciadas nesta sessão — máscara curta, de outra natureza.
+   *
+   * A derivada nunca mora no aparelho: cada leitura da rede é a autoridade
+   * sobre ela. A máscara só precisa cobrir o instante entre o silêncio aceito
+   * e a releitura aterrissar — depois disso ela é zerada. Se ficasse para
+   * sempre, como a dos encerrados, uma linha reafirmada por edição do RDO
+   * voltaria para todo mundo menos para quem a silenciou.
+   */
+  const [silenciadasAgora, setSilenciadasAgora] = useState<string[]>([]);
   const [aproximado, setAproximado] =
     useState<EnquadramentoAproximado | null>(null);
   const [ciclo, setCiclo] = useState(0);
@@ -362,7 +372,12 @@ export function RodoviaWorkspace({
     let cancelado = false;
     carregarMapaObra({ id: obraId, nome: obraNome, latitude, longitude })
       .then((leitura) => {
-        if (!cancelado) setEstado({ fase: "pronto", leitura });
+        if (cancelado) return;
+        // A leitura que chega já sabe dos silêncios; a máscara deles morre
+        // aqui. Se a linha renasceu — o RDO foi editado e reafirmou o que
+        // declara — ela volta, inclusive para quem a tinha silenciado.
+        setSilenciadasAgora([]);
+        setEstado({ fase: "pronto", leitura });
       })
       .catch((motivo: unknown) => {
         if (cancelado) return;
@@ -398,8 +413,13 @@ export function RodoviaWorkspace({
    * num deles remover no outro na mesma hora.
    */
   const leituraVisivel = useMemo(() => {
-    if (!leitura || encerradosAgora.length === 0) return leitura;
-    const removidos = new Set(encerradosAgora);
+    if (
+      !leitura ||
+      (encerradosAgora.length === 0 && silenciadasAgora.length === 0)
+    ) {
+      return leitura;
+    }
+    const removidos = new Set([...encerradosAgora, ...silenciadasAgora]);
     return {
       ...leitura,
       dados: {
@@ -409,7 +429,7 @@ export function RodoviaWorkspace({
         ),
       },
     };
-  }, [leitura, encerradosAgora]);
+  }, [leitura, encerradosAgora, silenciadasAgora]);
 
   const colecaoPersistida = useMemo(
     () =>
@@ -500,12 +520,15 @@ export function RodoviaWorkspace({
       if (pontoEscolhido?.properties.derivadoDoEixo === true) {
         // A derivada não é geometria persistida: a lixeira dela é o silêncio
         // no servidor, direto — ela só existe com rede, então a remoção
-        // também só existe com rede.
+        // também só existe com rede. A máscara dela também é outra: vive só
+        // até a releitura aterrissar, porque a leitura é quem manda nas
+        // derivadas.
         await silenciarTrechoDerivado(
           obra.id,
           pontoParaRemover,
           MOTIVO_DA_REMOCAO_NO_MAPA,
         );
+        setSilenciadasAgora((atuais) => [...atuais, pontoParaRemover]);
       } else {
         await encerrarGeometria(
           pontoParaRemover,
@@ -514,11 +537,12 @@ export function RodoviaWorkspace({
             ? geometriaVisivel(pontoEscolhido, obra.id)
             : undefined,
         );
+        // Sai da tela agora, nos dois painéis, sem esperar a releitura: o
+        // encerramento já está gravado, e um ponto que continua desenhado
+        // depois de removido é exatamente o que fazia a ação parecer
+        // quebrada.
+        setEncerradosAgora((atuais) => [...atuais, pontoParaRemover]);
       }
-      // Sai da tela agora, nos dois painéis, sem esperar a releitura: o
-      // encerramento já está gravado, e um ponto que continua desenhado
-      // depois de removido é exatamente o que fazia a ação parecer quebrada.
-      setEncerradosAgora((atuais) => [...atuais, pontoParaRemover]);
       setPontoParaRemover(null);
       recarregar();
     } catch (motivo: unknown) {

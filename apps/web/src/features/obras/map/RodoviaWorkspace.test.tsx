@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LeituraMapaObra } from "./obraMapApi";
 
 const carregarMapaObra = vi.hoisted(() => vi.fn());
+const silenciarTrechoDerivado = vi.hoisted(() => vi.fn());
 const registrarTrechoDesenhado = vi.hoisted(() => vi.fn());
 const registrarEixoDaObra = vi.hoisted(() => vi.fn());
 const encerrarGeometria = vi.hoisted(() => vi.fn());
@@ -74,7 +75,10 @@ vi.mock("../../auth/authSession", async (importOriginal) => ({
     perfil?.papelAcesso === "ALFA",
 }));
 
-vi.mock("./obraMapApi", () => ({ carregarMapaObra }));
+vi.mock("./obraMapApi", () => ({
+  carregarMapaObra,
+  silenciarTrechoDerivado,
+}));
 vi.mock("./obraGeometriaMutations", () => ({
   encerrarGeometria,
   redesenharTrecho,
@@ -162,6 +166,8 @@ function leitura(overrides: Partial<LeituraMapaObra> = {}): LeituraMapaObra {
 beforeEach(() => {
   sessao.papelAcesso = "ALFA";
   carregarMapaObra.mockReset();
+  silenciarTrechoDerivado.mockReset();
+  silenciarTrechoDerivado.mockResolvedValue(undefined);
   registrarTrechoDesenhado.mockReset();
   registrarEixoDaObra.mockReset();
   registrarEixoDaObra.mockResolvedValue({ id: "eixo-1" });
@@ -228,6 +234,31 @@ function trechoDesenhado(id: string) {
     properties: { rodovia: "SP-310", sentido: "Sul" },
     fonte: "GESTAO_MAPA",
     versao: 3,
+    validoDesde: "2026-08-04T12:00:00.000Z",
+    validoAte: null,
+  };
+}
+
+/**
+ * A linha que o servidor deriva do quilômetro do RDO, apoiada no eixo.
+ * Ela nunca mora no aparelho — só existe na resposta da rede.
+ */
+function trechoDerivado(id: string, execucaoId: string) {
+  return {
+    id,
+    categoria: "TRECHO",
+    objetoTipo: "RDO",
+    objetoId: "rdo-1",
+    geometry: {
+      type: "LineString" as const,
+      coordinates: [
+        [-47.4, -22.0],
+        [-47.35, -22.005],
+      ],
+    },
+    properties: { derivadoDoEixo: true, execucaoId },
+    fonte: "GESTAO_MAPA",
+    versao: 0,
     validoDesde: "2026-08-04T12:00:00.000Z",
     validoAte: null,
   };
@@ -352,6 +383,85 @@ describe("RodoviaWorkspace", () => {
     expect(
       screen.queryByRole("button", { name: "Remover" }),
     ).not.toBeInTheDocument();
+  });
+
+  /*
+   * A lixeira da linha derivada é outra: silêncio no servidor, não
+   * encerramento de geometria. A linha some do mapa para todo mundo e o RDO
+   * não é tocado — encerrar geometria aqui seria chamar a porta errada,
+   * porque a derivada não é registro.
+   */
+  it("silencia a linha derivada sem tocar em geometria nenhuma", async () => {
+    const user = userEvent.setup();
+    const derivada = trechoDerivado("eixo:exec-1", "exec-1");
+    carregarMapaObra
+      .mockResolvedValueOnce(leitura({ dados: { obra, features: [derivada] } }))
+      // Depois do silêncio o servidor deixa de derivar a linha.
+      .mockResolvedValue(leitura({ dados: { obra, features: [] } }));
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    clicarNaLixeira("eixo:exec-1");
+    expect(
+      await screen.findByText("Tirar esta linha do RDO do mapa?"),
+    ).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Remover" }));
+
+    await waitFor(() =>
+      expect(silenciarTrechoDerivado).toHaveBeenCalledWith(
+        "obra-1",
+        "eixo:exec-1",
+        expect.any(String),
+      ),
+    );
+    expect(encerrarGeometria).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(
+        leaflet.ultimasFeatures.features.map((feature) => feature.id),
+      ).not.toContain("eixo:exec-1"),
+    );
+  });
+
+  /*
+   * A hierarquia é do RDO até o fim: se o documento foi editado e reafirmou o
+   * que declara, a linha volta para todo mundo — inclusive para quem a
+   * silenciou. A máscara local morre na primeira leitura fresca; se
+   * sobrevivesse, este aparelho seria o único da obra sem a linha reafirmada.
+   */
+  it("a linha reafirmada pelo RDO volta até para quem a silenciou", async () => {
+    const user = userEvent.setup();
+    const derivada = trechoDerivado("eixo:exec-1", "exec-1");
+    let entregarReleitura: (valor: LeituraMapaObra) => void = () => {};
+    carregarMapaObra
+      .mockResolvedValueOnce(leitura({ dados: { obra, features: [derivada] } }))
+      .mockImplementation(
+        () =>
+          new Promise<LeituraMapaObra>((resolve) => {
+            entregarReleitura = resolve;
+          }),
+      );
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    clicarNaLixeira("eixo:exec-1");
+    await user.click(await screen.findByRole("button", { name: "Remover" }));
+    // Silenciada: sai da tela na hora, antes mesmo de a releitura chegar.
+    await waitFor(() =>
+      expect(
+        leaflet.ultimasFeatures.features.map((feature) => feature.id),
+      ).not.toContain("eixo:exec-1"),
+    );
+
+    // O RDO foi editado em algum lugar: a releitura chega com a linha viva.
+    act(() => {
+      entregarReleitura(leitura({ dados: { obra, features: [derivada] } }));
+    });
+
+    await waitFor(() =>
+      expect(
+        leaflet.ultimasFeatures.features.map((feature) => feature.id),
+      ).toContain("eixo:exec-1"),
+    );
   });
 
   /**
