@@ -113,8 +113,7 @@ class PostgresqlQuilometroDoEixoIT {
         boolean mudou = quilometroDoEixo.reescrever(
                 obraId,
                 new BigDecimal("300.000"),
-                new BigDecimal("312.750"),
-                "RDO:" + id()
+                new BigDecimal("312.750")
         );
 
         assertThat(mudou).isTrue();
@@ -137,7 +136,7 @@ class PostgresqlQuilometroDoEixoIT {
         eixo(obraId, "{\"kmInicial\": 100, \"kmFinal\": 110}");
 
         assertThat(quilometroDoEixo.reescrever(
-                obraId, new BigDecimal("100"), new BigDecimal("110"), "RDO:" + id()
+                obraId, new BigDecimal("100"), new BigDecimal("110")
         )).isFalse();
     }
 
@@ -152,7 +151,7 @@ class PostgresqlQuilometroDoEixoIT {
         eixo(obraId, "{\"kmInicial\": 100, \"kmFinal\": 110}");
 
         assertThat(quilometroDoEixo.reescrever(
-                obraId, null, new BigDecimal("110"), "RDO:" + id()
+                obraId, null, new BigDecimal("110")
         )).isFalse();
         assertThat(quilometroDoEixo.faixaVigente(obraId).kmInicial())
                 .isEqualByComparingTo("100");
@@ -163,7 +162,7 @@ class PostgresqlQuilometroDoEixoIT {
         String obraId = obra("nada-para-reescrever");
 
         assertThat(quilometroDoEixo.reescrever(
-                obraId, new BigDecimal("1"), new BigDecimal("2"), "RDO:" + id()
+                obraId, new BigDecimal("1"), new BigDecimal("2")
         )).isFalse();
     }
 
@@ -182,7 +181,7 @@ class PostgresqlQuilometroDoEixoIT {
         );
 
         assertThat(quilometroDoEixo.reescrever(
-                obraId, new BigDecimal("300"), new BigDecimal("312"), "RDO:" + id()
+                obraId, new BigDecimal("300"), new BigDecimal("312")
         )).isFalse();
         assertThat(quilometroDoEixo.faixaVigente(obraId)).isNull();
     }

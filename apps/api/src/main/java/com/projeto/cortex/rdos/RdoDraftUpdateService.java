@@ -1136,12 +1136,7 @@ public class RdoDraftUpdateService {
             return;
         }
         try {
-            quilometroDoEixo.reescrever(
-                    request.obraId(),
-                    kmInicial,
-                    kmFinal,
-                    "RDO:" + rdoId
-            );
+            quilometroDoEixo.reescrever(request.obraId(), kmInicial, kmFinal);
         } catch (RuntimeException exception) {
             LOGGER.warn(
                     "RDO {} salvo, mas o eixo da obra {} não pôde receber o quilômetro.",

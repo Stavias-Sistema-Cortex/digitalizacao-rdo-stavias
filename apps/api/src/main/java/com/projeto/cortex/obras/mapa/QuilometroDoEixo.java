@@ -86,12 +86,18 @@ public class QuilometroDoEixo {
      * <p>A gravação toca só as duas propriedades. A geometria, a vigência e a
      * autoria da linha ficam como estavam, porque o RDO está corrigindo o
      * rótulo de uma régua que já existe — não desenhando outra.
+     *
+     * <p>{@code atualizado_por} em particular fica intocado: ele é chave
+     * estrangeira para colaborador e significa quem desenhou esta linha pelo
+     * mapa. Um RDO não é um colaborador, e carimbar o identificador do RDO ali
+     * não caberia na coluna nem existiria na tabela apontada. Quem mudou o
+     * quilômetro está registrado no próprio RDO, que é onde a mudança foi
+     * declarada, e no log desta operação.
      */
     public boolean reescrever(
             String obraId,
             BigDecimal kmInicial,
-            BigDecimal kmFinal,
-            String atualizadoPor
+            BigDecimal kmFinal
     ) {
         if (kmInicial == null || kmFinal == null) {
             return false;
@@ -120,8 +126,7 @@ public class QuilometroDoEixo {
                             ?::text[],
                             to_jsonb(?::numeric),
                             true
-                        )::json,
-                    atualizado_por = ?
+                        )::json
                 WHERE obra_id = ?
                   AND categoria = ?
                   AND status = 'ATIVA'
@@ -131,7 +136,6 @@ public class QuilometroDoEixo {
                 kmInicial,
                 "{" + KM_FINAL + "}",
                 kmFinal,
-                atualizadoPor,
                 obraId,
                 TrechoApoiadoNoEixo.CATEGORIA_EIXO
         );
