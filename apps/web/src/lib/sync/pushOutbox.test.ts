@@ -5,6 +5,7 @@ import { ApiError } from "../api/apiError";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  get: vi.fn(),
   serialize: vi.fn(),
   api: vi.fn(),
   mark: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../db/outboxRepository", () => ({
   listReadyPendingOutboxMutations: mocks.list,
+  getOutboxMutation: mocks.get,
 }));
 vi.mock("./sync.types", () => ({
   toPushMutationRequest: mocks.serialize,
@@ -60,6 +62,10 @@ describe("pushOutbox row isolation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.reconcile.mockResolvedValue(null);
+    mocks.get.mockImplementation(async (id: string) => ({
+      clientMutationId: id,
+      status: "SYNCING",
+    }));
     mocks.mark.mockImplementation(
       async (row: OutboxMutationRecord) => ({
         ...row,
@@ -295,4 +301,82 @@ describe("pushOutbox row isolation", () => {
       expect(mocks.reject).not.toHaveBeenCalled();
     },
   );
+  /*
+   * O defeito que este teste prende: um 403 sem código não é veredito sobre
+   * mutação nenhuma — é o filtro de CSRF diante de um cookie duplicado, ou um
+   * proxy que comeu o cabeçalho. Antes, ele recusava terminalmente o lote
+   * inteiro, e o trabalho do aparelho morria ali: recusa terminal não é
+   * retentada pelo ciclo nem alcançada pelo botão de reenviar.
+   */
+  it("devolve o lote à fila quando o 403 vem sem código do servidor", async () => {
+    const bloqueada = mutation("sem-veredito", 13);
+    mocks.list.mockResolvedValue([bloqueada]);
+    mocks.serialize.mockResolvedValue({
+      clientMutationId: bloqueada.clientMutationId,
+    });
+    mocks.api.mockRejectedValue(
+      new ApiError("Token CSRF inválido.", 403, null),
+    );
+
+    await expect(pushOutbox("device-1")).rejects.toBeInstanceOf(ApiError);
+
+    expect(mocks.retry).toHaveBeenCalledWith(
+      bloqueada.clientMutationId,
+      "Token CSRF inválido.",
+      "HTTP_403_TERMINAL",
+      expect.any(Object),
+    );
+    expect(mocks.reject).not.toHaveBeenCalled();
+  });
+
+  it("devolve à fila também quando a rota some no meio de um deploy", async () => {
+    const bloqueada = mutation("rota-sumiu", 13);
+    mocks.list.mockResolvedValue([bloqueada]);
+    mocks.serialize.mockResolvedValue({
+      clientMutationId: bloqueada.clientMutationId,
+    });
+    mocks.api.mockRejectedValue(new ApiError("Não encontrado.", 404, null));
+
+    await expect(pushOutbox("device-1")).rejects.toBeInstanceOf(ApiError);
+
+    expect(mocks.retry).toHaveBeenCalled();
+    expect(mocks.reject).not.toHaveBeenCalled();
+  });
+
+  /*
+   * Falhar ao trancar a linha é armazenamento cheio, transação abortada, ou a
+   * tela tendo superado a mutação entre a listagem e a trava. Nada disso julga
+   * o conteúdo, e recusar aqui apagava até a marca de superação recém-escrita.
+   */
+  it("devolve à fila a linha que não pôde ser trancada", async () => {
+    const disputada = mutation("sem-trava", 13);
+    mocks.list.mockResolvedValue([disputada]);
+    mocks.mark.mockRejectedValue(new Error("Armazenamento sem espaço."));
+
+    const summary = await pushOutbox("device-1");
+
+    expect(mocks.retry).toHaveBeenCalledWith(
+      disputada.clientMutationId,
+      "Armazenamento sem espaço.",
+      "LOCAL_LOCK_FAILED",
+      expect.any(Object),
+    );
+    expect(mocks.reject).not.toHaveBeenCalled();
+    expect(summary.pushed).toBe(0);
+  });
+
+  it("não revive a linha que a tela já tinha superado", async () => {
+    const superada = mutation("superada", 13);
+    mocks.list.mockResolvedValue([superada]);
+    mocks.mark.mockRejectedValue(new Error("A mutação não está pendente."));
+    mocks.get.mockResolvedValue({
+      clientMutationId: superada.clientMutationId,
+      status: "SUPERSEDED",
+    });
+
+    await pushOutbox("device-1");
+
+    expect(mocks.retry).not.toHaveBeenCalled();
+    expect(mocks.reject).not.toHaveBeenCalled();
+  });
 });

@@ -130,9 +130,20 @@ function estaViva(mutation: OutboxMutationRecord): boolean {
  * montar o envelope, reapresentá-lo repete a mesma falha, que nunca chegou a
  * ser opinião do servidor.
  */
+/*
+ * LOCAL_RESULT_APPLY_INVALID saiu desta lista, e é a única saída de quem já
+ * ficou preso por ele. Ele marca a falha de gravar localmente um resultado que
+ * o servidor já devolveu — e essa falha pode ser transitória: aparelho sem
+ * espaço, transação abortada, aba fechada no meio. Nesses casos o dado está no
+ * servidor e reenviar resolve, porque o servidor reconhece o mesmo
+ * clientMutationId e devolve o mesmo desfecho em vez de duplicar.
+ *
+ * LOCAL_CANONICAL_INVALID continua aqui: hoje ele só é gravado quando o
+ * envelope não pode ser montado a partir do que está no aparelho, e isso se
+ * repete igual a cada tentativa.
+ */
 const RECUSA_QUE_O_REENVIO_NAO_MUDA = new Set([
   "VERSION_CONFLICT",
-  "LOCAL_RESULT_APPLY_INVALID",
   "LOCAL_CANONICAL_INVALID",
   "LOCAL_CANONICAL_UPLOAD_INVALID",
 ]);

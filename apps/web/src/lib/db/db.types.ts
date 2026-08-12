@@ -231,6 +231,23 @@ export interface LocalRdoRecord {
    * apagado é a leitura verdadeira deles.
    */
   canceladoEm?: string | null;
+  /**
+   * O carimbo de atualização **do servidor** na última vez que este aparelho
+   * leu o conteúdo deste RDO.
+   *
+   * <p>Existe separado de `updatedAt` porque os dois medem coisas diferentes:
+   * `updatedAt` é escrito com o relógio deste aparelho em vários pontos do
+   * caminho de sincronização, e comparar um com o outro é comparar dois
+   * relógios que ninguém sincronizou. Num tablet de campo adiantado, isso
+   * fazia toda edição feita por outra pessoa nas horas seguintes parecer mais
+   * antiga do que a cópia local — e o conteúdo novo nunca era buscado. O
+   * documento aparecia na lista, com o texto de ontem, só naquele aparelho.
+   *
+   * <p>Ausente nos registros gravados antes desta capacidade: a leitura
+   * verdadeira deles é "não sei quando o servidor mudou", e não saber manda
+   * buscar o conteúdo uma vez.
+   */
+  servidorAtualizadoEm?: string | null;
 }
 
 export interface ServiceCatalogLocalRecord {
@@ -528,6 +545,21 @@ export interface SyncStateRecord {
   lastSyncCompletedAt: string | null;
   lastSyncError: string | null;
   syncExecutionLease: SyncExecutionLeaseRecord | null;
+  /**
+   * O escopo de obras com que este cursor foi construído.
+   *
+   * <p>O cursor só anda para a frente, e o servidor entrega os eventos que a
+   * pessoa alcança <b>no instante da leitura</b>. Quando alguém é vinculado a
+   * uma obra que já existia, tudo o que aconteceu nela antes do vínculo ficou
+   * atrás do cursor e nunca mais é entregue: RDO e obra têm reconciliação por
+   * outra porta e se recuperam, mas tarefa só chega por evento — e some da
+   * tela dessa pessoa enquanto o resto da equipe a vê.
+   *
+   * <p>Guardar o escopo permite perceber que ele cresceu e rebobinar. Ausente
+   * nos registros gravados antes desta capacidade: ler como "desconhecido" e
+   * apenas anotar o escopo atual, sem rebobinar por engano.
+   */
+  escopoDoCursor?: string | null;
 }
 
 export interface ProcessedEventRecord {

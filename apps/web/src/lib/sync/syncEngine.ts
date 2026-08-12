@@ -226,12 +226,15 @@ async function executeSync(
         };
     await assertSyncExecution(guard, lease);
     const pullSummary = await pullEvents(deviceId, guard);
-    await assertSyncExecution(guard, lease);
-    await refreshMessagingAfterPull(
-      pullSummary.messagingConversationIds,
-      guard,
+    // Este passo vai à rede duas vezes, e ficou de fora do isolamento quando
+    // os reparos entraram. Fora dele, uma falha de mensageria derrubava o
+    // ciclo DEPOIS de o pull já ter gravado tudo: o cursor não era confirmado,
+    // a fila não era podada e — o pior — o aviso de fim de sincronização nunca
+    // saía, então as telas abertas continuavam mostrando o retrato velho de um
+    // dado que já estava no aparelho.
+    await reparoSemDerrubarOCiclo("mensagens após o pull", () =>
+      refreshMessagingAfterPull(pullSummary.messagingConversationIds, guard),
     );
-    await assertSyncExecution(guard, lease);
     const acknowledgedCommitSeq =
       await acknowledgeCurrentCursor(deviceId, guard);
     await assertSyncExecution(guard, lease);

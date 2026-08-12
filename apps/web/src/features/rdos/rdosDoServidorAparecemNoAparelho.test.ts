@@ -340,7 +340,11 @@ describe("RDOs do servidor no aparelho de quem tem acesso", () => {
     const database = await getCortexDb();
     await database.put(
       "rdos",
-      rdoLocal({ updatedAt: "2026-08-09T18:00:00.000Z", versaoEntidade: 4 }),
+      rdoLocal({
+        updatedAt: "2026-08-09T18:00:00.000Z",
+        servidorAtualizadoEm: "2026-08-09T18:00:00.000Z",
+        versaoEntidade: 4,
+      }),
     );
     respondeComLista([resumo()]);
 
@@ -350,11 +354,61 @@ describe("RDOs do servidor no aparelho de quem tem acesso", () => {
     expect(api.autoritativo).not.toHaveBeenCalled();
   });
 
+  /*
+   * O defeito que isto conserta: `updatedAt` é escrito com o relógio deste
+   * aparelho, e num tablet adiantado ele fica no futuro depois de qualquer
+   * envio. Comparado com o carimbo do servidor, a cópia local parecia sempre
+   * a mais nova — e a edição feita por outra pessoa nunca era buscada. O RDO
+   * ficava na lista com o texto de ontem, só ali.
+   */
+  it("busca a edição de outra pessoa mesmo com o relógio do aparelho adiantado", async () => {
+    const database = await getCortexDb();
+    await database.put(
+      "rdos",
+      rdoLocal({
+        updatedAt: "2027-01-01T00:00:00.000Z",
+        servidorAtualizadoEm: "2026-08-09T12:00:00.000Z",
+        versaoEntidade: 4,
+      }),
+    );
+    respondeComLista([
+      resumo({ atualizadoEm: "2026-08-09T20:00:00.000Z" }),
+    ]);
+
+    const resultado = await reconciliarRdosDoServidor();
+
+    expect(resultado.detalhados).toBe(1);
+  });
+
+  /*
+   * Registro gravado antes desta correção não tem o carimbo do servidor. Não
+   * saber quando o servidor mudou manda buscar uma vez — e a partir daí ele
+   * passa a ter a marca e para de ser rebuscado à toa.
+   */
+  it("busca uma vez o registro antigo, que não guardava o carimbo do servidor", async () => {
+    const database = await getCortexDb();
+    await database.put(
+      "rdos",
+      rdoLocal({ updatedAt: "2026-08-09T18:00:00.000Z", versaoEntidade: 4 }),
+    );
+    respondeComLista([resumo()]);
+
+    const resultado = await reconciliarRdosDoServidor();
+
+    expect(resultado.detalhados).toBe(1);
+    const guardado = await database.get("rdos", RDO_REMOTO);
+    expect(guardado?.servidorAtualizadoEm).toBe("2026-08-09T18:00:00.000Z");
+  });
+
   it("rebusca quando o servidor diz que o RDO mudou depois", async () => {
     const database = await getCortexDb();
     await database.put(
       "rdos",
-      rdoLocal({ updatedAt: "2026-08-09T12:00:00.000Z", versaoEntidade: 4 }),
+      rdoLocal({
+        updatedAt: "2026-08-09T12:00:00.000Z",
+        servidorAtualizadoEm: "2026-08-09T12:00:00.000Z",
+        versaoEntidade: 4,
+      }),
     );
     respondeComLista([
       resumo({ atualizadoEm: "2026-08-09T20:00:00.000Z" }),

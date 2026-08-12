@@ -22,6 +22,8 @@ function createDeviceName(): string {
   return `Córtex Web - ${platform}`;
 }
 
+import { escopoCresceu, marcaDoEscopo } from "./escopoDoCursor";
+
 export async function ensureRegisteredDevice(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<string> {
@@ -40,6 +42,16 @@ export async function ensureRegisteredDevice(
 
   const sameUser =
     currentState.usuarioId === usuarioId;
+
+  /*
+   * O cursor volta ao começo quando a pessoa passa a alcançar uma obra que
+   * antes não alcançava. Sem isso, tudo o que aconteceu naquela obra antes do
+   * vínculo fica atrás do cursor para sempre — e tarefa, que só chega por
+   * evento, some da tela dela enquanto o resto da equipe a vê.
+   */
+  const escopoAtual = marcaDoEscopo(session);
+  const rebobinar =
+    sameUser && escopoCresceu(currentState.escopoDoCursor, escopoAtual);
   const deviceId =
     sameUser && currentState.deviceId
       ? currentState.deviceId
@@ -65,7 +77,8 @@ export async function ensureRegisteredDevice(
   await updateSyncState({
     deviceId: response.id,
     usuarioId,
-    ...(sameUser
+    escopoDoCursor: escopoAtual,
+    ...(sameUser && !rebobinar
       ? {}
       : {
           lastPulledCommitSeq: 0,

@@ -153,6 +153,23 @@ describe("um reparo podre não derruba o ciclo", () => {
     expect(resumo.reparosFalharam).toEqual(["referências de obra"]);
   });
 
+  /*
+   * A mensageria depois do pull ficou de fora do isolamento quando os reparos
+   * entraram, e era o pior lugar para ficar: o pull já tinha gravado tudo, e
+   * a falha derrubava o ciclo antes de confirmar o cursor e — o que mais dói —
+   * antes de avisar as telas de que havia dado novo. O aparelho ficava com o
+   * conteúdo em mãos e mostrando o retrato velho.
+   */
+  it("a mensageria que falha depois do pull não leva o ciclo junto", async () => {
+    mocks.refresh.mockRejectedValueOnce(new Error("mensageria fora do ar"));
+
+    const resumo = await syncNow();
+
+    expect(mocks.pull).toHaveBeenCalledTimes(1);
+    expect(mocks.ack).toHaveBeenCalledTimes(1);
+    expect(resumo.reparosFalharam).toEqual(["mensagens após o pull"]);
+  });
+
   it("um ciclo saudável não anota falha nenhuma", async () => {
     const resumo = await syncNow();
 

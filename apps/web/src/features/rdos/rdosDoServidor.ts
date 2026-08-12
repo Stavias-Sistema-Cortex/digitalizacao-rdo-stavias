@@ -238,12 +238,25 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
         await database.put("rdos", registroDoCabecalho(remoto, agora));
         resultado.descobertos += 1;
       }
-      // Falta conteúdo quando o registro nunca o teve, ou quando o servidor
-      // diz que o documento mudou depois da última vez que este aparelho o leu.
+      /*
+       * Falta conteúdo quando o registro nunca o teve, ou quando o servidor
+       * diz que o documento mudou depois da última leitura deste aparelho.
+       *
+       * <p>A comparação é entre dois carimbos do servidor — o da listagem
+       * agora e o guardado na última leitura. Antes ela comparava o carimbo do
+       * servidor com o `updatedAt` local, que é escrito com o relógio deste
+       * aparelho: num relógio adiantado, a cópia local parecia sempre mais
+       * nova, e a edição feita por outra pessoa nunca era buscada.
+       *
+       * <p>Registro sem o carimbo do servidor é registro gravado antes desta
+       * correção: busca-se o conteúdo uma vez, e a partir daí ele passa a ter.
+       */
       const precisaDeConteudo =
         local === undefined ||
         local.versaoEntidade === null ||
-        (remoto.atualizadoEm !== null && remoto.atualizadoEm > local.updatedAt);
+        !local.servidorAtualizadoEm ||
+        (remoto.atualizadoEm !== null &&
+          remoto.atualizadoEm > local.servidorAtualizadoEm);
       if (precisaDeConteudo) semConteudo.push(remoto);
     }
 
@@ -334,6 +347,7 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
       versaoEntidade: autoritativo.version,
       payload: autoritativo.rdo,
       updatedAt: remoto.atualizadoEm ?? agora,
+      servidorAtualizadoEm: remoto.atualizadoEm ?? agora,
     } as LocalRdoRecord);
     resultado.detalhados += 1;
   }

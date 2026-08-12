@@ -143,12 +143,30 @@ describe("o reenvio só vale onde pode mudar o desfecho", () => {
     expect(vaiAdiantarReenviar(recusada, [recusada])).toBe(false);
   });
 
-  it("não adianta reenviar falha local, que nunca foi opinião do servidor", () => {
+  it("não adianta reenviar o envelope que este aparelho não consegue montar", () => {
+    const recusada = mutacao("m-1", "REJECTED", {
+      lastSafeCode: "LOCAL_CANONICAL_INVALID",
+    });
+
+    expect(vaiAdiantarReenviar(recusada, [recusada])).toBe(false);
+  });
+
+  /*
+   * Este caso mudou de lado, e a razão é a diferença entre falha determinística
+   * e falha de armazenamento. LOCAL_RESULT_APPLY_INVALID marca a falha de
+   * gravar aqui um resultado que o servidor já devolveu: aparelho sem espaço,
+   * transação abortada, aba fechada no meio. O dado está lá; o que faltou foi
+   * anotá-lo. Reenviar resolve, porque o servidor responde pelo mesmo
+   * clientMutationId com o mesmo desfecho em vez de duplicar — e enquanto este
+   * código ficou na lista dos irreenviáveis, quem caiu nele não tinha saída
+   * nenhuma além de descartar o próprio trabalho.
+   */
+  it("adianta reenviar o resultado que não coube no aparelho", () => {
     const recusada = mutacao("m-1", "REJECTED", {
       lastSafeCode: "LOCAL_RESULT_APPLY_INVALID",
     });
 
-    expect(vaiAdiantarReenviar(recusada, [recusada])).toBe(false);
+    expect(vaiAdiantarReenviar(recusada, [recusada])).toBe(true);
   });
 
   /*
