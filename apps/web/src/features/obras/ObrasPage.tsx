@@ -39,10 +39,11 @@ import {
   type UpdateObraInput,
 } from "./obraLifecycle";
 import { ObraAccessibleDialog } from "./ObraAccessibleDialog";
+import { RateioMaoDeObraPanel } from "./rateio/RateioMaoDeObraPanel";
 import { ObraTrechoSection } from "./trecho/ObraTrechoSection";
 import "./gestao/gestaoObras.css";
 
-type ObrasView = "ATIVAS" | "DESATIVADAS" | "LIXEIRA";
+type ObrasView = "ATIVAS" | "DESATIVADAS" | "RATEIO" | "LIXEIRA";
 
 const EMPTY_UPDATE: UpdateObraInput = {
   codigoContrato: "",
@@ -671,6 +672,11 @@ export function ObrasPage() {
             label: "Desativadas",
             active: view === "DESATIVADAS",
           },
+          {
+            id: "RATEIO",
+            label: "Rateio de mão de obra",
+            active: view === "RATEIO",
+          },
           ...(canManageWorksites
             ? [{
                 id: "LIXEIRA",
@@ -694,7 +700,9 @@ export function ObrasPage() {
             ? "Atualizando obras"
             : view === "LIXEIRA"
               ? `${archivedObras.length} obras na Lixeira`
-              : `${filteredObras.length} obras visíveis`,
+              : view === "RATEIO"
+                ? "Rateio apurado dos RDOs"
+                : `${filteredObras.length} obras visíveis`,
           detail: hasConfirmedRemoteHydration
             ? focusedObra
               ? `Foco: ${focusedObra.nome}`
@@ -704,7 +712,7 @@ export function ObrasPage() {
               : "Dados preservados neste dispositivo",
         }}
       >
-        {view !== "LIXEIRA" ? (
+        {view !== "LIXEIRA" && view !== "RATEIO" ? (
         <section className="obras-filter-bar" aria-label="Filtros de obras">
           {view === "ATIVAS" ? (
           <div
@@ -764,7 +772,9 @@ export function ObrasPage() {
         </section>
         ) : null}
 
-        {view === "LIXEIRA" && canManageWorksites ? (
+        {view === "RATEIO" ? (
+          <RateioMaoDeObraPanel obras={obras} />
+        ) : view === "LIXEIRA" && canManageWorksites ? (
           <section
             ref={trashRef}
             className="obras-trash"

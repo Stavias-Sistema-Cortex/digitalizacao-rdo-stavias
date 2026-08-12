@@ -59,6 +59,7 @@ vi.mock("../auth/authSession", () => ({
       },
   isAlfa: (session: { papelAcesso?: string } | null) =>
     session?.papelAcesso === "ALFA",
+  AUTH_SESSION_CHANGED_EVENT: "cortex-auth-session-changed",
 }));
 
 // O acompanhamento do trecho tem cobertura própria e abre IndexedDB e rede;

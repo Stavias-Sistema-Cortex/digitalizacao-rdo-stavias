@@ -1,0 +1,417 @@
+/*
+ * O rateio é uma tabela larga por natureza: trinta e uma colunas de dias mais
+ * uma coluna por obra. O desenho aceita essa largura em vez de brigar com ela
+ * — a tabela rola por dentro, as duas primeiras colunas ficam paradas, e o que
+ * se lê de longe é a faixa de cor de cada pessoa ao longo do mês.
+ *
+ * A paleta vive aqui, e não no TypeScript, porque é decisão de aparência. O
+ * componente só diz "esta obra é a cor 3"; que cor é a 3, quem responde é o
+ * CSS.
+ */
+
+.rateio {
+  --rateio-cor-1: #0e857a;
+  --rateio-cor-2: #f2c300;
+  --rateio-cor-3: #6fb1e8;
+  --rateio-cor-4: #e08a3c;
+  --rateio-cor-5: #9d8df1;
+  --rateio-cor-6: #d96a86;
+  --rateio-cor-7: #5ec3b4;
+  --rateio-cor-8: #8fa31e;
+  --rateio-cor-9: #c9761b;
+  --rateio-cor-10: #7a8ea3;
+
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Controles ---------------------------------------------------------- */
+
+.rateio-controles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rateio-mes {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.rateio-mes-passo {
+  min-width: 2rem;
+  padding: 0.3rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-graphite);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--transition-functional);
+}
+
+.rateio-mes-passo:hover {
+  background: var(--color-canvas);
+}
+
+.rateio-mes-rotulo {
+  min-width: 10.5rem;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.rateio-campo input,
+.rateio-campo select {
+  padding: 0.42rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.rateio-campo input {
+  min-width: 14rem;
+}
+
+.rateio-alternador {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.rateio-exportar {
+  margin-left: auto;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: 0.83rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-functional);
+}
+
+.rateio-exportar:hover:not(:disabled) {
+  background: var(--color-canvas);
+}
+
+.rateio-exportar:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Proveniência ------------------------------------------------------- */
+
+.rateio-proveniencia {
+  margin: 0;
+  padding: 0.45rem 0.7rem;
+  border-radius: var(--radius-control);
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  background: var(--color-canvas);
+  border-left: 3px solid var(--color-border-strong);
+}
+
+.rateio-proveniencia.is-servidor {
+  border-left-color: var(--color-focus);
+}
+
+.rateio-proveniencia.is-aparelho {
+  border-left-color: var(--color-brand-yellow);
+}
+
+.rateio-proveniencia.is-erro {
+  border-left-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* Cartões de resumo -------------------------------------------------- */
+
+.rateio-resumo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.6rem;
+}
+
+.rateio-cartao {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  background: var(--color-surface);
+}
+
+.rateio-cartao-rotulo {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+
+.rateio-cartao-valor {
+  font-size: 1.45rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Barra de distribuição ---------------------------------------------- */
+
+.rateio-distribuicao {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.rateio-barra {
+  display: flex;
+  height: 0.85rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-canvas);
+}
+
+.rateio-barra-fatia {
+  background: var(--cor-a);
+  transition: width var(--transition-functional);
+}
+
+.rateio-legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rateio-legenda-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.rateio-marca {
+  align-self: center;
+  width: 0.7rem;
+  height: 0.7rem;
+  flex: 0 0 auto;
+  border-radius: 3px;
+  background: var(--cor-a);
+}
+
+.rateio-legenda-nome {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+.rateio-legenda-numero {
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.rateio-legenda-detalhe {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+/* Matriz ------------------------------------------------------------- */
+
+.rateio-matriz-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  background: var(--color-surface);
+}
+
+.rateio-matriz {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.78rem;
+}
+
+.rateio-matriz th,
+.rateio-matriz td {
+  padding: 0.3rem 0.45rem;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.rateio-matriz thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-canvas);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+
+/*
+ * As duas primeiras colunas ficam paradas: rolando trinta dias para a direita,
+ * a linha perde o dono se o nome for embora junto.
+ */
+.rateio-matriz .rateio-col-nome {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 12rem;
+  background: var(--color-surface);
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+.rateio-matriz .rateio-col-funcao {
+  position: sticky;
+  left: 12rem;
+  z-index: 1;
+  min-width: 10rem;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  border-right: 1px solid var(--color-border-strong);
+}
+
+.rateio-matriz thead .rateio-col-nome,
+.rateio-matriz thead .rateio-col-funcao {
+  z-index: 3;
+  background: var(--color-canvas);
+}
+
+.rateio-col-dia {
+  width: 1.6rem;
+  min-width: 1.6rem;
+  padding: 0.25rem 0 !important;
+  text-align: center !important;
+}
+
+.rateio-col-dia.is-descanso {
+  background: color-mix(in srgb, var(--color-canvas) 60%, var(--color-border));
+}
+
+.rateio-dia-numero {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-graphite);
+}
+
+.rateio-dia-semana {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.rateio-celula {
+  padding: 0.18rem !important;
+  background-clip: content-box;
+  background-color: var(--cor-a);
+}
+
+.rateio-celula.is-vazia {
+  background-color: transparent;
+}
+
+/*
+ * Dia dividido entre duas obras: as duas cores na mesma célula, na diagonal.
+ * A planilha antiga escrevia uma só e o outro meio-dia desaparecia.
+ */
+.rateio-celula.is-dividida {
+  background-image: linear-gradient(
+    135deg,
+    var(--cor-a) 0 50%,
+    var(--cor-b) 50% 100%
+  );
+}
+
+.rateio-frente th {
+  position: sticky;
+  left: 0;
+  padding: 0.4rem 0.45rem;
+  background: var(--color-canvas);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-graphite);
+  border-top: 1px solid var(--color-border-strong);
+}
+
+.rateio-col-obra {
+  min-width: 6rem;
+}
+
+.rateio-matriz thead .rateio-col-obra {
+  white-space: normal;
+  max-width: 9rem;
+}
+
+.rateio-col-obra.is-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+.rateio-col-obra.is-zero {
+  color: var(--color-border-strong);
+  font-weight: 400;
+}
+
+.rateio-matriz tbody tr:hover .rateio-col-nome,
+.rateio-matriz tbody tr:hover .rateio-col-funcao {
+  background: var(--color-canvas);
+}
+
+.rateio-vazio {
+  margin: 0;
+  padding: 1.4rem;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-container);
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 720px) {
+  .rateio-exportar {
+    margin-left: 0;
+  }
+
+  .rateio-campo input {
+    min-width: 100%;
+  }
+
+  .rateio-matriz .rateio-col-nome {
+    min-width: 9rem;
+  }
+
+  .rateio-matriz .rateio-col-funcao {
+    left: 9rem;
+    min-width: 7rem;
+  }
+}
