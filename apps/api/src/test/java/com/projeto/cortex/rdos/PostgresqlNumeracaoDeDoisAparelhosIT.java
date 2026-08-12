@@ -141,6 +141,21 @@ class PostgresqlNumeracaoDeDoisAparelhosIT {
     }
 
     /**
+     * A cerca da V79: o texto do número também é único por obra. Era o furo
+     * que a importação deixava — mesmo número com outra data passava pela
+     * deduplicação de lá. Em outra obra, o mesmo número segue valendo.
+     */
+    @Test
+    void oTextoDoNumeroEUnicoPorObraMesmoComDataDiferente() {
+        String obraId = obra("texto");
+        inserirRdo(obraId, "RDO-0042", null);
+
+        assertThatThrownBy(() -> inserirRdo(obraId, "RDO-0042", null))
+                .isInstanceOf(DuplicateKeyException.class);
+        inserirRdo(obra("outra"), "RDO-0042", null);
+    }
+
+    /**
      * O importado empurra a sequência: depois de um RDO histórico de número
      * alto, a alocação continua dali — é a semente por MAX que faz a criação
      * nunca colidir com o passado importado.
