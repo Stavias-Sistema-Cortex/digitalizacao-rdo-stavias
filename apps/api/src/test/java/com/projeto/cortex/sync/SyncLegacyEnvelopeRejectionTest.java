@@ -13,6 +13,10 @@ import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.equipes.EquipeService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.rdos.RdoDraftUpdateService;
+import com.projeto.cortex.rdos.RdoQueryService;
+import com.projeto.cortex.rdos.RdoService;
+import com.projeto.cortex.rdos.RdoWorkflowService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -143,6 +147,77 @@ class SyncLegacyEnvelopeRejectionTest {
                 .hasSize(2)
                 .allSatisfy(resultado ->
                         assertThat(resultado.status()).isEqualTo("ERRO"));
+    }
+
+    /**
+     * A exclusividade canônica também condena só a própria mutação.
+     *
+     * <p>Ela era validada antes do laço e lançava para fora do push: um único
+     * envelope antigo com operação de ciclo de vida — CANCELAR_RDO gravado por
+     * uma versão velha do app — respondia 400 para a requisição INTEIRA, e o
+     * aparelho via o lote todo recusado em toda janela, para sempre. A recusa
+     * agora é terminal e da mutação: REJEITADA, com a categoria que o aparelho
+     * lê para saber que não adianta reenviar igual.</p>
+     */
+    @Test
+    void aOperacaoExclusivaCanonicaComEnvelopeAntigoNaoDerrubaOLote() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        when(currentUserService.requireUserId()).thenReturn("usuario-auth");
+        when(
+                jdbcTemplate.queryForObject(
+                        anyString(),
+                        eq(Integer.class),
+                        any(),
+                        any()
+                )
+        ).thenReturn(1);
+
+        RdoWorkflowService workflowService = mock(RdoWorkflowService.class);
+        SyncService service = new SyncService(
+                jdbcTemplate,
+                new ObjectMapper(),
+                transactionTemplateQueExecuta(),
+                new SyncOperationRegistry(List.of(new RdoSyncOperationHandler(
+                        jdbcTemplate,
+                        new ObjectMapper(),
+                        mock(RdoService.class),
+                        mock(RdoDraftUpdateService.class),
+                        workflowService,
+                        mock(RdoQueryService.class),
+                        currentUserService
+                ))),
+                currentUserService,
+                mock(FinancialAccessService.class)
+        );
+
+        SyncPushResponse response = service.push(new SyncPushRequest(
+                DEVICE_ID,
+                List.of(envelopeLegadoDeCancelamentoDeRdo())
+        ));
+
+        SyncPushResponse.ResultadoMutacao resultado =
+                response.resultados().getFirst();
+        assertThat(resultado.status()).isEqualTo("REJEITADA");
+        assertThat(resultado.erro()).contains("schemaVersion 13");
+        assertThat(
+                resultado.resultado().path("rejeicao").path("categoria").asText()
+        ).isEqualTo("UNSUPPORTED_SCHEMA_VERSION");
+        // A recusa veio antes do domínio: cancelar nunca foi tentado.
+        assertThat(mockingDetails(workflowService).getInvocations()).isEmpty();
+    }
+
+    private SyncPushRequest.MutacaoCliente envelopeLegadoDeCancelamentoDeRdo() {
+        return new SyncPushRequest.MutacaoCliente(
+                UUID.randomUUID().toString(),
+                "RDO",
+                UUID.randomUUID().toString(),
+                "CANCELAR_RDO",
+                1L,
+                new ObjectMapper().createObjectNode(),
+                LocalDateTime.of(2026, 8, 12, 12, 0),
+                null
+        );
     }
 
     /**

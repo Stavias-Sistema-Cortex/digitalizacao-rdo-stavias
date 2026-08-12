@@ -72,6 +72,9 @@ vi.mock("../db/syncStateRepository", () => ({
   updateSyncState: mocks.updateSyncState,
 }));
 vi.mock("./syncStorage", () => ({
+  // Fila com uma linha: os testes deste arquivo afirmam a ordem dos reparos,
+  // e o portão de fila vazia os pularia todos.
+  contarMutacoesDaOutbox: vi.fn(async () => 1),
   queueErroredMutationsForRetry: mocks.queueErroredRetry,
   recoverInterruptedMutations: mocks.recover,
   reidentificarObrasInexistentesForSync: mocks.reidentificarObras,

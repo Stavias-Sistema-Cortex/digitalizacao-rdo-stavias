@@ -38,6 +38,7 @@ vi.mock("./registerDevice", () => ({
   ensureRegisteredDevice: syncMocks.ensureDevice,
 }));
 vi.mock("./syncStorage", () => ({
+  contarMutacoesDaOutbox: vi.fn(async () => 1),
   queueErroredMutationsForRetry: vi.fn(async () => 0),
   recoverInterruptedMutations: vi.fn(async () => undefined),
   recoverCanonicalConflictReconciliations: vi.fn(async () => 0),

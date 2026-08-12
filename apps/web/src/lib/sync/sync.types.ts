@@ -131,6 +131,15 @@ export interface SyncRunSummary {
    * pôr em dia em minutos e não em meia hora.
    */
   pullPendente: boolean;
+  /**
+   * Reparos de fila que falharam e foram pulados neste ciclo.
+   *
+   * <p>Vazio no ciclo saudável. Um nome aqui significa que uma linha da fila
+   * local resiste ao próprio conserto — o ciclo continuou (envio e recebimento
+   * aconteceram), mas o rastro fica, porque um reparo que falha em silêncio
+   * todo ciclo é como os aparelhos divergem sem ninguém ver.
+   */
+  reparosFalharam: readonly string[];
 }
 
 export async function toPushMutationRequest(

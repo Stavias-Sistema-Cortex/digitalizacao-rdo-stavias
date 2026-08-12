@@ -13,6 +13,7 @@ import { pullEvents } from "./pullEvents";
 import { pushOutbox } from "./pushOutbox";
 import { ensureRegisteredDevice } from "./registerDevice";
 import {
+  contarMutacoesDaOutbox,
   desamarrarCitacoesFantasmas,
   podarMutacoesJaAplicadas,
   queueErroredMutationsForRetry,
@@ -61,55 +62,99 @@ async function executeSync(
   }, guard);
   await assertSyncExecution(guard, lease);
 
+  /*
+   * Reparo é manutenção da fila, não é o trabalho. Uma linha podre — gravada
+   * por uma versão antiga do app, ou corrompida de qualquer outro jeito — fazia
+   * o reparo dela estourar e levava o ciclo inteiro junto: o aparelho parava de
+   * enviar e de receber TUDO, para sempre, por causa de uma linha. E só aquele
+   * aparelho: nas outras máquinas a sincronização seguia normal, que é a
+   * assinatura do defeito mais difícil de reproduzir.
+   *
+   * O passo que falha é pulado e anotado; o envio, o recebimento e os demais
+   * reparos continuam. A exceção é a sessão trocada ou o lease perdido no meio
+   * do passo: a reconferência abaixo relança exatamente esses, porque aí quem
+   * deve morrer é o ciclo mesmo.
+   */
+  const reparosFalharam: string[] = [];
+  const reparoSemDerrubarOCiclo = async (
+    nome: string,
+    passo: () => Promise<unknown>,
+  ): Promise<void> => {
+    try {
+      await passo();
+    } catch (error: unknown) {
+      await assertSyncExecution(guard, lease);
+      reparosFalharam.push(nome);
+      console.warn(
+        `[sync] O reparo "${nome}" falhou e foi pulado neste ciclo.`,
+        error,
+      );
+    }
+    await assertSyncExecution(guard, lease);
+  };
+
   try {
-    await recoverInterruptedMutations(guard);
-    await assertSyncExecution(guard, lease);
-    await repairMissingObraReferencesForSync(guard);
-    await assertSyncExecution(guard, lease);
-    await repairMissingMaoObraReferencesForSync(guard);
-    await assertSyncExecution(guard, lease);
-    // Antes da hidratação de contexto: as criações reidentificadas voltam à
-    // fila bloqueadas pelo recibo, e é a hidratação deste mesmo ciclo que as
-    // destrava contra a obra viva.
-    await reidentificarObrasInexistentesForSync(guard);
-    await assertSyncExecution(guard, lease);
-    await hydrateBlockedRdoCreationContextsForSync(guard);
-    await assertSyncExecution(guard, lease);
     /*
-     * Faxina das linhas presas por uma regra que já não existe: a edição de
-     * rascunho não é mais barrada pelo recibo de contexto, mas a fila de quem
-     * já tinha uma bloqueada não se corrige sozinha, e o envio a descartaria em
-     * silêncio para sempre.
+     * A fila vazia dispensa a manutenção da fila. Todos os reparos pré-envio
+     * leem a outbox e só a outbox; num aparelho em dia — o estado normal —
+     * eles eram uma dúzia de varreduras a cada trinta segundos para concluir
+     * que não havia nada. Um count responde antes de qualquer uma delas.
      */
-    await releaseBlockedRdoUpdatesForSync(guard);
+    const filaTemLinhas = (await contarMutacoesDaOutbox(guard)) > 0;
     await assertSyncExecution(guard, lease);
-    await repairRdoCreateMutationsForSync(guard);
-    await assertSyncExecution(guard, lease);
-    // Antes do reenvio genérico: o vínculo de mão de obra recusado tem reparo
-    // próprio, e reenviar sem repará-lo só repetiria a mesma recusa.
-    await recoverErroredWorkforceRdoMutationsForSync(guard);
-    await assertSyncExecution(guard, lease);
-    await recoverRejectedRdoMutationsForSync(guard, {
-      executionLease: lease,
-    });
-    await assertSyncExecution(guard, lease);
-    await recoverRejectedGeometryMutationsForSync(guard);
-    await assertSyncExecution(guard, lease);
-    await recoverRejectedArchivedObraMutationsForSync(guard);
-    await assertSyncExecution(guard, lease);
-    // Nenhuma alteração de campo fica parada sem retentativa: o que sobrou em
-    // ERROR volta à fila com espera escalonada, em vez de morrer ali.
-    await queueErroredMutationsForRetry(guard);
-    await assertSyncExecution(guard, lease);
+
+    if (filaTemLinhas) {
+      await reparoSemDerrubarOCiclo("mutações interrompidas", () =>
+        recoverInterruptedMutations(guard));
+      await reparoSemDerrubarOCiclo("referências de obra", () =>
+        repairMissingObraReferencesForSync(guard));
+      await reparoSemDerrubarOCiclo("referências de mão de obra", () =>
+        repairMissingMaoObraReferencesForSync(guard));
+      // Antes da hidratação de contexto: as criações reidentificadas voltam à
+      // fila bloqueadas pelo recibo, e é a hidratação deste mesmo ciclo que as
+      // destrava contra a obra viva.
+      await reparoSemDerrubarOCiclo("obras reidentificadas", () =>
+        reidentificarObrasInexistentesForSync(guard));
+      await reparoSemDerrubarOCiclo("contextos de criação", () =>
+        hydrateBlockedRdoCreationContextsForSync(guard));
+      /*
+       * Faxina das linhas presas por uma regra que já não existe: a edição de
+       * rascunho não é mais barrada pelo recibo de contexto, mas a fila de quem
+       * já tinha uma bloqueada não se corrige sozinha, e o envio a descartaria
+       * em silêncio para sempre.
+       */
+      await reparoSemDerrubarOCiclo("edições retidas", () =>
+        releaseBlockedRdoUpdatesForSync(guard));
+      await reparoSemDerrubarOCiclo("criações de RDO", () =>
+        repairRdoCreateMutationsForSync(guard));
+      // Antes do reenvio genérico: o vínculo de mão de obra recusado tem
+      // reparo próprio, e reenviar sem repará-lo só repetiria a mesma recusa.
+      await reparoSemDerrubarOCiclo("vínculos de mão de obra", () =>
+        recoverErroredWorkforceRdoMutationsForSync(guard));
+      await reparoSemDerrubarOCiclo("RDOs recusados", () =>
+        recoverRejectedRdoMutationsForSync(guard, {
+          executionLease: lease,
+        }));
+      await reparoSemDerrubarOCiclo("geometrias recusadas", () =>
+        recoverRejectedGeometryMutationsForSync(guard));
+      await reparoSemDerrubarOCiclo("obras arquivadas recusadas", () =>
+        recoverRejectedArchivedObraMutationsForSync(guard));
+      // Nenhuma alteração de campo fica parada sem retentativa: o que sobrou
+      // em ERROR volta à fila com espera escalonada, em vez de morrer ali.
+      await reparoSemDerrubarOCiclo("retentativas escalonadas", () =>
+        queueErroredMutationsForRetry(guard));
+    }
 
     const deviceId = await ensureRegisteredDevice(guard);
     await assertSyncExecution(guard, lease);
     const uploadSummary = await processObjectUploads(20, guard);
     await assertSyncExecution(guard, lease);
-    await resolveCanonicalUploadReplacements(guard);
-    await assertSyncExecution(guard, lease);
-    await recoverCanonicalConflictReconciliations(guard);
-    await assertSyncExecution(guard, lease);
+    // Fora do portão da fila vazia de propósito: os uploads deste mesmo ciclo
+    // podem ter acabado de criar as linhas que estes dois passos resolvem.
+    await reparoSemDerrubarOCiclo("substituições de upload", () =>
+      resolveCanonicalUploadReplacements(guard));
+    await reparoSemDerrubarOCiclo("reconciliações de conflito", () =>
+      recoverCanonicalConflictReconciliations(guard));
     /*
      * O reparo vem antes do push. Uma mutação que cita uma dependência já
      * inexistente seria recusada pelo servidor em todo envio, para sempre —
@@ -126,18 +171,35 @@ async function executeSync(
     const recoveredReplacementIds = new Set<string>();
     const recoveredReplacementByOriginalId =
       new Map<string, string>();
-    const recoveredAfterPush = pushSummary.errors > 0
-      ? await recoverRejectedRdoMutationsForSync(guard, {
-          executionLease: lease,
-          recoveredReplacementIds,
-          recoveredReplacementByOriginalId,
-        }) +
-        // O reparo do vínculo no mesmo ciclo do envio: quem chegou ao campo
-        // hoje sobe hoje, sem esperar a próxima janela de sincronização.
-        await recoverErroredWorkforceRdoMutationsForSync(guard, {
-          requeuedMutationIds: recoveredReplacementByOriginalId,
-        })
-      : 0;
+    /*
+     * O reparo pós-push é tão manutenção quanto os pré-push, e falha do mesmo
+     * jeito: uma linha podre aqui derrubava o ciclo já com o push feito, e o
+     * pull — que traria o que os outros aparelhos mandaram — nunca acontecia.
+     * Falhou, vale zero recuperado e o ciclo segue para o pull.
+     */
+    let recoveredAfterPush = 0;
+    if (pushSummary.errors > 0) {
+      try {
+        recoveredAfterPush =
+          (await recoverRejectedRdoMutationsForSync(guard, {
+            executionLease: lease,
+            recoveredReplacementIds,
+            recoveredReplacementByOriginalId,
+          })) +
+          // O reparo do vínculo no mesmo ciclo do envio: quem chegou ao campo
+          // hoje sobe hoje, sem esperar a próxima janela de sincronização.
+          (await recoverErroredWorkforceRdoMutationsForSync(guard, {
+            requeuedMutationIds: recoveredReplacementByOriginalId,
+          }));
+      } catch (error: unknown) {
+        await assertSyncExecution(guard, lease);
+        reparosFalharam.push("recuperação pós-envio");
+        console.warn(
+          "[sync] A recuperação pós-envio falhou e foi pulada neste ciclo.",
+          error,
+        );
+      }
+    }
     await assertSyncExecution(guard, lease);
     /*
      * A fusão por campo já resolveu o conflito e a substituta está na fila; o
@@ -254,6 +316,7 @@ async function executeSync(
       pulled: pullSummary.pulled,
       acknowledgedCommitSeq,
       pullPendente: pullSummary.pendente,
+      reparosFalharam,
     };
     announceSyncCompleted();
     return summary;

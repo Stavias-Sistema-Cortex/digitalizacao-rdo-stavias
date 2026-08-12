@@ -1317,6 +1317,24 @@ function isRecoverableLegacyRdoProvenanceFailure(
   );
 }
 
+/**
+ * Quantas linhas a fila tem, sem carregar nenhuma.
+ *
+ * <p>Existe para o motor decidir se a manutenção da fila vale a pena. Todos os
+ * reparos pré-envio leem a outbox e só a outbox — numa fila vazia, que é o
+ * estado normal de um aparelho em dia, eles eram uma dúzia de varreduras para
+ * concluir que não havia nada, a cada trinta segundos. Um {@code count} do
+ * IndexedDB responde a mesma pergunta sem desserializar linha nenhuma.
+ */
+export async function contarMutacoesDaOutbox(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<number> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+  return database.count("outbox_mutations");
+}
+
 export async function recoverInterruptedMutations(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<void> {
@@ -5356,6 +5374,15 @@ export async function applyPulledEventsAtomically(
   const orderedEvents = [...events].sort(
     (left, right) => left.commitSeq - right.commitSeq,
   );
+  /*
+   * Duplicata dentro da mesma janela. O servidor não deveria mandar duas
+   * vezes o mesmo commitSeq — mas se mandar, o `add` no registro de
+   * processados estoura por chave repetida, a transação inteira aborta e o
+   * cursor nunca passa desta janela: o aparelho para de sincronizar para
+   * sempre, e só ele. Contra um defeito do servidor, a defesa fica no
+   * aparelho, que é quem pagaria a conta.
+   */
+  const processadosNestaJanela = new Set<number>();
 
   for (const event of orderedEvents) {
     if (!Number.isSafeInteger(event.commitSeq)) {
@@ -5369,6 +5396,11 @@ export async function applyPulledEventsAtomically(
     if (event.commitSeq <= syncState.lastPulledCommitSeq) {
       continue;
     }
+
+    if (processadosNestaJanela.has(event.commitSeq)) {
+      continue;
+    }
+    processadosNestaJanela.add(event.commitSeq);
 
     const alreadyProcessed = await processedStore.get(
       event.commitSeq,

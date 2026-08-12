@@ -139,10 +139,23 @@ class PostgresqlCanonicalMutationIT {
                 schemaVersion
         );
 
-        assertThatThrownBy(() -> service.push(
+        /*
+         * A recusa é da mutação, não do lote. Isto já foi um throw que virava
+         * 400 para a requisição inteira: um envelope legado preso na fila de
+         * um aparelho custava o push de todo o resto, em toda janela, para
+         * sempre. Agora a mutação volta REJEITADA — terminal, com a categoria
+         * que o aparelho lê — e o caminho legado continua inalcançável.
+         */
+        SyncPushResponse resposta = service.push(
                 new SyncPushRequest(deviceId, List.of(mutation))
-        )).isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
-                .hasMessageContaining("schemaVersion 13");
+        );
+
+        SyncPushResponse.ResultadoMutacao resultado = resposta.resultados().get(0);
+        assertThat(resultado.status()).isEqualTo("REJEITADA");
+        assertThat(resultado.erro()).contains("schemaVersion 13");
+        assertThat(
+                resultado.resultado().path("rejeicao").path("categoria").asText()
+        ).isEqualTo("UNSUPPORTED_SCHEMA_VERSION");
 
         verify(obraService, never()).arquivarObra(
                 org.mockito.ArgumentMatchers.any(),
@@ -159,11 +172,14 @@ class PostgresqlCanonicalMutationIT {
                 Integer.class,
                 obraId
         )).isZero();
+        // Nada além da rejeição fica no razão: nenhuma linha aplicada, nenhuma
+        // pendente — a mutação não atravessou para o caminho legado.
         assertThat(jdbc.queryForObject(
                 """
                 SELECT COUNT(*)
                 FROM sync_mutacao_cliente
                 WHERE client_mutation_id = ?
+                  AND status <> 'REJEITADA'
                 """,
                 Integer.class,
                 clientMutationId

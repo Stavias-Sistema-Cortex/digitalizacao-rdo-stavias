@@ -35,6 +35,7 @@ vi.mock("./ackCursor", () => ({ acknowledgeCurrentCursor: vi.fn() }));
 vi.mock("./pullEvents", () => ({ pullEvents: vi.fn() }));
 vi.mock("./pushOutbox", () => ({ pushOutbox: vi.fn() }));
 vi.mock("./syncStorage", () => ({
+  contarMutacoesDaOutbox: vi.fn(async () => 1),
   queueErroredMutationsForRetry: vi.fn(),
   queueResolvableConflictsForRetry: vi.fn(),
   recoverInterruptedMutations: vi.fn(),

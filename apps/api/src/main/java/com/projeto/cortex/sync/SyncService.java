@@ -471,8 +471,6 @@ public class SyncService {
             );
         }
 
-        mutacoes.forEach(this::validarOperacaoExclusivaCanonica);
-
         List<SyncPushResponse.ResultadoMutacao> resultados = new ArrayList<>();
 
         for (SyncPushRequest.MutacaoCliente mutacao : mutacoes) {
@@ -510,6 +508,21 @@ public class SyncService {
         );
     }
 
+    /**
+     * O envelope antigo condena a própria mutação, não o lote inteiro.
+     *
+     * <p>Esta validação era feita antes do laço, e lançava para fora do push:
+     * um único envelope legado — gravado por uma versão antiga do app e preso
+     * na fila de um aparelho — respondia 400 para a requisição INTEIRA. O
+     * aparelho via o lote todo recusado, mandava as outras mutações para a
+     * revisão, e repetia o desfecho em toda janela enquanto a linha velha
+     * existisse. Uma linha de outra era do app não pode custar o trabalho de
+     * hoje.
+     *
+     * <p>Como rejeição por mutação ela é terminal ({@code REJEITADA}): vai para
+     * a revisão do aparelho com o motivo escrito, e as demais mutações do lote
+     * seguem o próprio caminho.
+     */
     private void validarOperacaoExclusivaCanonica(
             SyncPushRequest.MutacaoCliente mutacao
     ) {
@@ -520,8 +533,8 @@ public class SyncService {
                 && !Integer.valueOf(CANONICAL_SCHEMA_VERSION).equals(
                         mutacao.schemaVersion()
                 )) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
+            throw rejection(
+                    "UNSUPPORTED_SCHEMA_VERSION",
                     "Operações de ciclo de vida de obra exigem schemaVersion 13."
             );
         }
@@ -534,6 +547,7 @@ public class SyncService {
     ) {
         try {
             validarMutacao(mutacao);
+            validarOperacaoExclusivaCanonica(mutacao);
 
             SyncPushResponse.ResultadoMutacao existente = buscarResultadoMutacaoExistenteOuNull(
                     dispositivoId,
