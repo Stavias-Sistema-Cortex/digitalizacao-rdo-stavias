@@ -498,7 +498,8 @@
 
 .rdo-create-workspace .action-bar {
   bottom: 12px;
-  border: 1px solid var(--color-border);
+  /* A borda forte e a sombra vêm da regra global: esta variante só ajusta a
+     posição e o raio, sem devolver a barra ao tom que a fazia sumir. */
   border-radius: var(--radius-control);
 }
 
