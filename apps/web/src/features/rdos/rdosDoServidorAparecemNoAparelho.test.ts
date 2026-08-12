@@ -365,3 +365,72 @@ describe("RDOs do servidor no aparelho de quem tem acesso", () => {
     expect(resultado.detalhados).toBe(1);
   });
 });
+
+/**
+ * O RDO apagado numa máquina precisa morrer em todas.
+ *
+ * <p>Apagar é exclusão de verdade no servidor — a linha some — e o aparelho de
+ * quem apagou se limpa na hora. Os outros ficavam com a cópia para sempre: o
+ * evento RDO_APAGADO já tinha passado pelo cursor deles antes de existir
+ * tratamento, e a reconciliação, por regra correta, não apaga pelo que a
+ * listagem deixou de dizer. O que ela faz agora é perguntar: ausente da lista,
+ * o RDO é buscado pelo id, e só o 404 nominal do servidor o remove.
+ */
+describe("o RDO apagado em outra máquina sai deste aparelho", () => {
+  it("remove quando o servidor confirma, nominalmente, que ele não existe", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdoLocal());
+    respondeComLista([]);
+    api.autoritativo.mockResolvedValue({ kind: "MISSING" });
+
+    const resultado = await reconciliarRdosDoServidor();
+
+    expect(resultado.removidos).toBe(1);
+    expect(await database.get("rdos", RDO_REMOTO)).toBeUndefined();
+  });
+
+  /*
+   * A trava antiga continua valendo por inteiro: ausência na listagem, com o
+   * documento ainda respondendo pelo id, não remove nada. É o que protege
+   * contra a lista que chegou manca.
+   */
+  it("mantém o registro quando o id ainda responde no servidor", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdoLocal());
+    respondeComLista([]);
+
+    const resultado = await reconciliarRdosDoServidor();
+
+    expect(resultado.removidos).toBe(0);
+    expect(await database.get("rdos", RDO_REMOTO)).toBeTruthy();
+  });
+
+  it("mantém o registro quando a confirmação falha", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdoLocal());
+    respondeComLista([]);
+    api.autoritativo.mockRejectedValue(new Error("sem rede"));
+
+    const resultado = await reconciliarRdosDoServidor();
+
+    expect(resultado.removidos).toBe(0);
+    expect(await database.get("rdos", RDO_REMOTO)).toBeTruthy();
+  });
+
+  /*
+   * Trabalho de campo nunca entra na varredura. Um registro pendente é
+   * apontamento que ainda não subiu, e o destino dele é decidido pela fila de
+   * envio — não por uma limpeza de leitura.
+   */
+  it("não confirma nem remove o que tem trabalho local pendente", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdoLocal({ syncStatus: "PENDING_SYNC" }));
+    respondeComLista([]);
+
+    const resultado = await reconciliarRdosDoServidor();
+
+    expect(resultado.removidos).toBe(0);
+    expect(api.autoritativo).not.toHaveBeenCalled();
+    expect(await database.get("rdos", RDO_REMOTO)).toBeTruthy();
+  });
+});

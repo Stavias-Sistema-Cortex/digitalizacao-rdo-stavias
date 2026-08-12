@@ -7,6 +7,7 @@ import { getCortexDb } from "../../lib/db/cortexDb";
 import type { LocalRdoRecord } from "../../lib/db/db.types";
 import { buscarRdoAutoritativoPorId } from "./rdoLookupApi";
 import { listCachedAuthorizedRdoWorksites } from "./rdoCreationContextRepository";
+import { limparRastroLocalDoRdo } from "./rdoLifecycle";
 
 /**
  * Os RDOs que existem no servidor, trazidos para este aparelho.
@@ -29,10 +30,15 @@ import { listCachedAuthorizedRdoWorksites } from "./rdoCreationContextRepository
  *   <li><b>Só toca no que já está sincronizado.</b> Registro pendente, local,
  *       em conflito ou com erro é trabalho de alguém que ainda não subiu.
  *       Sobrescrevê-lo com a versão do servidor apagaria o apontamento do dia.</li>
- *   <li><b>Nunca apaga.</b> Ao contrário da reconciliação de geometria, a
- *       ausência de um RDO na resposta não vira remoção local. Uma lista
- *       incompleta — por filtro, por página, por obra que saiu do escopo —
- *       levaria embora documentos que continuam existindo.</li>
+ *   <li><b>Nunca apaga por inferência.</b> A ausência de um RDO na listagem
+ *       não vira remoção local: uma lista incompleta — por filtro, por rede,
+ *       por obra que saiu do escopo — levaria embora documentos que continuam
+ *       existindo. O que a ausência vira é uma pergunta direta: o aparelho
+ *       busca aquele RDO pelo id, e só o remove quando o servidor responde,
+ *       nominalmente, que ele não existe mais. Sem essa pergunta, o RDO
+ *       apagado numa máquina ficava imortal em todas as outras — o evento de
+ *       apagamento já tinha passado pelo cursor delas antes de alguém saber
+ *       tratá-lo, e nada mais o reentregava.</li>
  * </ul>
  */
 
@@ -56,6 +62,19 @@ export interface RdoResumoRemoto {
  * isso, então ninguém fica sem saber que ele existe.
  */
 const DETALHES_POR_PASSAGEM = 40;
+
+/**
+ * Quantos desaparecimentos cada passagem confirma no servidor, um a um.
+ *
+ * <p>Confirmar é uma requisição por RDO suspeito, e a suspeita nasce da
+ * ausência na listagem — que em condição normal significa meia dúzia de
+ * apagamentos, não centenas. O teto existe para o caso anormal: uma listagem
+ * que veio manca faria toda a coleção local virar suspeita de uma vez, e sem
+ * teto isso seria uma rajada de requisições num aparelho em campo. O que não
+ * couber espera a passagem seguinte, ainda visível — errar para o lado de
+ * mostrar demais é o erro barato.
+ */
+const CONFIRMACOES_DE_SUMICO_POR_PASSAGEM = 20;
 
 function texto(valor: unknown): string {
   return typeof valor === "string" ? valor.trim() : "";
@@ -176,6 +195,8 @@ export interface ReconciliacaoDeRdos {
   detalhados: number;
   /** Quantos ainda esperam o conteúdo, para a passagem seguinte. */
   pendentes: number;
+  /** RDOs que o servidor confirmou não existirem mais, tirados do aparelho. */
+  removidos: number;
 }
 
 /**
@@ -190,12 +211,14 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
     descobertos: 0,
     detalhados: 0,
     pendentes: 0,
+    removidos: 0,
   };
   const obras = await listCachedAuthorizedRdoWorksites().catch(() => []);
   if (obras.length === 0) return resultado;
 
   const agora = new Date().toISOString();
   const semConteudo: RdoResumoRemoto[] = [];
+  let confirmacoesRestantes = CONFIRMACOES_DE_SUMICO_POR_PASSAGEM;
 
   for (const obra of obras) {
     let remotos: RdoResumoRemoto[];
@@ -222,6 +245,50 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
         local.versaoEntidade === null ||
         (remoto.atualizadoEm !== null && remoto.atualizadoEm > local.updatedAt);
       if (precisaDeConteudo) semConteudo.push(remoto);
+    }
+
+    /*
+     * O caminho de volta: o que este aparelho tem e o servidor já não lista.
+     *
+     * <p>A listagem desta obra chegou inteira — o `catch` acima já descartou a
+     * que não chegou —, então um registro sincronizado que não aparece nela é
+     * suspeito de ter sido apagado em outra máquina. Suspeito, não condenado:
+     * a remoção só acontece depois de o servidor responder 404 para o id
+     * exato. Um FOUND, um erro de rede ou um acesso negado deixam o registro
+     * onde está, e o custo do engano é mostrar por mais uma passagem um RDO
+     * que já morreu — o erro barato.
+     *
+     * <p>Isto também é o que limpa os aparelhos envenenados antes do evento
+     * RDO_APAGADO ser tratado no pull: o evento já passou pelo cursor deles e
+     * nada o reentrega, então sem esta pergunta o RDO apagado ficaria lá para
+     * sempre, com o selo de sincronizado.
+     */
+    const idsNoServidor = new Set(remotos.map((remoto) => remoto.id));
+    const locaisDaObra = await database.getAllFromIndex(
+      "rdos",
+      "by-obra-id",
+      obra.id,
+    );
+    for (const local of locaisDaObra) {
+      if (confirmacoesRestantes <= 0) break;
+      if (local.syncStatus !== "SYNCED") continue;
+      if (idsNoServidor.has(local.id)) continue;
+      confirmacoesRestantes -= 1;
+      try {
+        const autoritativo = await buscarRdoAutoritativoPorId(local.id);
+        if (autoritativo.kind !== "MISSING") continue;
+        // Refeita de propósito: a confirmação é assíncrona, e alguém pode ter
+        // começado a editar este RDO enquanto ela acontecia. Trabalho local
+        // novo vale mais do que a ausência no servidor.
+        const aindaLocal = await database.get("rdos", local.id);
+        if (aindaLocal === undefined || aindaLocal.syncStatus !== "SYNCED") {
+          continue;
+        }
+        await limparRastroLocalDoRdo(local.id);
+        resultado.removidos += 1;
+      } catch {
+        // Sem confirmação não se apaga nada; fica para a próxima passagem.
+      }
     }
   }
 

@@ -5392,9 +5392,29 @@ export async function applyPulledEventsAtomically(
       );
 
       if (localRdo) {
-        await rdoStore.put(
-          applySafeRdoEvent(localRdo, event),
-        );
+        /*
+         * Apagar é a única transição que remove o registro em vez de
+         * atualizá-lo. O servidor apaga de verdade — a linha deixa de existir —
+         * e o aparelho de quem apagou se limpa na hora; os demais recebiam este
+         * evento e o ignoravam, porque `applySafeRdoEvent` só conhecia enviado,
+         * cancelado e restaurado. O RDO apagado ficava imortal em todo outro
+         * aparelho da obra, com o selo SINCRONIZADO, e ninguém entendia por que
+         * só quem apagou parou de vê-lo.
+         *
+         * Só a cópia SYNCED sai. Registro com trabalho local pendente é
+         * apontamento que ainda não subiu, e o envio dele já tem destino
+         * definido: o servidor responde que o RDO não existe e o reparo da
+         * fila decide o que fazer — regra que protege o campo e não muda aqui.
+         */
+        if (event.tipoEvento === "RDO_APAGADO") {
+          if (localRdo.syncStatus === "SYNCED") {
+            await rdoStore.delete(event.entidadeId);
+          }
+        } else {
+          await rdoStore.put(
+            applySafeRdoEvent(localRdo, event),
+          );
+        }
       }
     }
 
