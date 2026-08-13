@@ -49,6 +49,24 @@ public record RateioMaoDeObraResponse(
             String encarregadoObra,
             /** Quem assina o documento, e a última porta para achar a frente. */
             String apontadorRdo,
+            /**
+             * O identificador de quem assina, quando o apontador foi escolhido
+             * da lista da obra em vez de digitado.
+             *
+             * <p>Viaja porque a assinatura conta como presença: com o
+             * identificador, a mesma pessoa escrita de dois jeitos em dois
+             * RDOs continua sendo uma pessoa só no rateio.
+             */
+            String apontadorColaboradorId,
+            /**
+             * Quem preencheu o documento — nasce do nome da sessão de quem o
+             * criou e é editável.
+             *
+             * <p>É a assinatura mais comum do RDO feito no aplicativo: o campo
+             * de encarregado costuma vir vazio, e sem este nome um dia inteiro
+             * de trabalho entrava no rateio como dia de ninguém.
+             */
+            String preenchidoPor,
             List<MaoDeObraDoRateio> maoObra
     ) {}
 

@@ -24,7 +24,11 @@ export function mensagemDeRateioVazio(
     leitura.rdosLidos > 0 &&
     leitura.rdosSemMaoDeObra === leitura.rdosLidos
   ) {
-    return "Os RDOs deste período não têm mão de obra apontada — o rateio nasce do que o campo aponta.";
+    // Depois que a assinatura passou a contar, este caso ficou raro e mais
+    // específico: não é só a equipe que falta, é que o documento não nomeia
+    // ninguém — nem quem o preencheu. Dizer só "sem mão de obra" mandaria
+    // procurar a equipe, quando o que resolve é assinar o RDO.
+    return "Os RDOs deste período não nomeiam ninguém — nem a equipe apontada, nem quem os preencheu.";
   }
   return "Nada corresponde ao filtro escolhido.";
 }

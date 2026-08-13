@@ -14,7 +14,14 @@ import java.util.List;
 public record ObraMapaResponse(
         ObraLocalizacaoResponse obra,
         List<ObraGeometriaResponse> features,
-        List<String> rdosComLinhaSilenciada
+        List<String> rdosComLinhaSilenciada,
+        /**
+         * O que o RDO apontou por quilômetro e não virou linha — nulo quando
+         * tudo virou. Sem isto o mapa ficava vazio sem dizer por quê, e quem
+         * apontou o quilômetro no RDO não tinha como saber se o dado estava
+         * errado ou se faltava cadastrar a régua da obra.
+         */
+        TrechoApoiadoNoEixo.ApontamentosSemLinha apontamentosSemLinha
 ) {
     public record ObraLocalizacaoResponse(
             String id,

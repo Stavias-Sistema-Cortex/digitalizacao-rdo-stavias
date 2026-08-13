@@ -330,4 +330,117 @@ describe("apontamentos lidos dos RDOs do aparelho", () => {
     expect(leitura.apontamentos).toHaveLength(1);
     expect(leitura.apontamentos[0].nome).toBe("ANA");
   });
+
+  /*
+   * Quem assina o RDO esteve lá.
+   *
+   * <p>O rateio lia só a lista de mão de obra, e quem preenche o documento
+   * quase nunca se inclui nela — a lista é da equipe. O resultado era um RDO
+   * de um dia inteiro de trabalho entrando no rateio como dia de ninguém: o
+   * gestor procurava pelo nome de quem assinou o dia e não achava nada.
+   */
+  describe("quem assina o RDO conta como presente", () => {
+    it("conta quem preencheu, mesmo sem ninguém apontado na mão de obra", () => {
+      const leitura = extrairApontamentos(
+        [rdo({ payload: { preenchidoPor: "PESSOA QUE ASSINA", maoObra: [] } })],
+        JULHO,
+      );
+
+      expect(leitura.apontamentos).toHaveLength(1);
+      expect(leitura.apontamentos[0]).toMatchObject({
+        nome: "PESSOA QUE ASSINA",
+        funcao: "Preencheu o RDO",
+        obraId: "obra-norte",
+        data: "2026-07-10",
+        colaboradorId: null,
+      });
+    });
+
+    it("o apontador escolhido da lista entra com o cadastro dele", () => {
+      const [apontamento] = extrairApontamentos(
+        [
+          rdo({
+            payload: {
+              apontadorRdo: "QUEM APONTA",
+              apontadorColaboradorId: "col-77",
+              maoObra: [],
+            },
+          }),
+        ],
+        JULHO,
+      ).apontamentos;
+
+      expect(apontamento).toMatchObject({
+        colaboradorId: "col-77",
+        nome: "QUEM APONTA",
+        funcao: "Apontador do RDO",
+      });
+    });
+
+    /* Quem já está na equipe vale pela equipe, com o cargo que declarou. */
+    it("não duplica quem já está apontado na mão de obra", () => {
+      const leitura = extrairApontamentos(
+        [
+          rdo({
+            payload: {
+              apontadorRdo: "MARIA",
+              preenchidoPor: "MARIA",
+              maoObra: [
+                { colaboradorId: "col-3", nomeColaborador: "MARÍA", cargo: "TOPÓGRAFA" },
+              ],
+            },
+          }),
+        ],
+        JULHO,
+      );
+
+      expect(leitura.apontamentos).toHaveLength(1);
+      expect(leitura.apontamentos[0].funcao).toBe("TOPÓGRAFA");
+    });
+
+    /* Assinar duas vezes o mesmo dia não faz de ninguém duas pessoas. */
+    it("quem apontou e preencheu entra uma vez só", () => {
+      const leitura = extrairApontamentos(
+        [
+          rdo({
+            payload: {
+              apontadorRdo: "ELIAS",
+              preenchidoPor: "ELIAS",
+              maoObra: [],
+            },
+          }),
+        ],
+        JULHO,
+      );
+
+      expect(leitura.apontamentos).toHaveLength(1);
+      expect(leitura.apontamentos[0].funcao).toBe("Apontador do RDO");
+    });
+
+    /*
+     * O campo de encarregado é texto livre e recebe tanto gente quanto o nome
+     * da frente. Virar pessoa criaria um colaborador que não existe, comendo
+     * fatia de obra como se fosse gente.
+     */
+    it("não inventa uma pessoa a partir do encarregado, que pode ser a frente", () => {
+      const leitura = extrairApontamentos(
+        [rdo({ payload: { encarregadoObra: "FRENTE A", maoObra: [] } })],
+        JULHO,
+      );
+
+      expect(leitura.apontamentos).toHaveLength(0);
+      expect(leitura.rdosSemMaoDeObra).toBe(1);
+    });
+
+    /* Cabeçalho sem conteúdo continua sendo "não sei", não "só o que assina". */
+    it("o RDO que ainda não foi aberto não vira apontamento de assinatura", () => {
+      const leitura = extrairApontamentos(
+        [rdo({ payload: { preenchidoPor: "PESSOA QUE ASSINA" } })],
+        JULHO,
+      );
+
+      expect(leitura.apontamentos).toHaveLength(0);
+      expect(leitura.rdosSemConteudo).toBe(1);
+    });
+  });
 });

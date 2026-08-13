@@ -5,6 +5,7 @@ import {
   CATEGORIA_EIXO,
   PROPRIEDADE_DERIVADA,
   apoiarTrechosNoEixo,
+  oQueEsperaARegua,
   lerEixoDaColecao,
   rdosJaNoMapa,
   kmDoPonto,
@@ -253,6 +254,67 @@ describe("apoiarTrechosNoEixo", () => {
 
     expect(resultado.features).toHaveLength(1);
     expect(resultado.features[0].properties.categoria).toBe("EIXO_OBRA");
+  });
+
+  /*
+   * Sem rede o servidor não fala, e a tela voltaria a ficar vazia em silêncio.
+   * O aparelho apura o mesmo com o que tem: é a única apuração que existe para
+   * o RDO preenchido em campo que ainda não subiu.
+   */
+  it("apura sozinho o que espera a régua quando não há eixo", () => {
+    const espera = oQueEsperaARegua(colecao(), [segmento()]);
+
+    expect(espera?.motivo).toBe("SEM_EIXO");
+    expect(espera?.total).toBe(1);
+    expect(espera?.kmInicial).toBe(102);
+    expect(espera?.kmFinal).toBe(104);
+    // A data do apontamento, que é a do RDO.
+    expect(espera?.primeiraData).toBe("2026-08-10");
+    expect(espera?.eixoKmInicial).toBeNull();
+  });
+
+  it("com eixo curto demais, diz que ficou fora e mostra a faixa da régua", () => {
+    const espera = oQueEsperaARegua(colecao(FEICAO_DO_EIXO), [
+      segmento({ kmInicial: 300, kmFinal: 302 }),
+    ]);
+
+    expect(espera?.motivo).toBe("FORA_DO_EIXO");
+    expect(espera?.eixoKmInicial).toBe(100);
+    expect(espera?.eixoKmFinal).toBe(110);
+  });
+
+  it("cala quando o apontamento virou linha", () => {
+    expect(
+      oQueEsperaARegua(colecao(FEICAO_DO_EIXO), [segmento()]),
+    ).toBeUndefined();
+  });
+
+  /* O que o servidor já desenha não está esperando nada. */
+  it("não conta o RDO que já está no mapa nem o silenciado", () => {
+    const derivadaDoServidor = {
+      type: "Feature" as const,
+      id: "eixo:seg-1",
+      geometry: {
+        type: "LineString" as const,
+        coordinates: [
+          [0.4, 0],
+          [0.8, 0],
+        ],
+      },
+      properties: {
+        categoria: "TRECHO",
+        [PROPRIEDADE_DERIVADA]: true,
+        objetoTipo: "RDO",
+        objetoId: "rdo-1",
+      },
+    };
+
+    expect(
+      oQueEsperaARegua(colecao(derivadaDoServidor), [segmento()]),
+    ).toBeUndefined();
+    expect(
+      oQueEsperaARegua(colecao(), [segmento()], ["rdo-1"]),
+    ).toBeUndefined();
   });
 
   /* O silêncio é de um RDO, não da obra: o vizinho continua desenhando. */

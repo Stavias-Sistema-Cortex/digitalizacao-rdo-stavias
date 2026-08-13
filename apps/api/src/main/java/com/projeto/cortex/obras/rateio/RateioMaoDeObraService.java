@@ -65,6 +65,8 @@ public class RateioMaoDeObraService {
                 r.numero_rdo        AS numero_rdo,
                 r.encarregado_obra  AS encarregado_obra,
                 r.apontador_rdo     AS apontador_rdo,
+                r.apontador_colaborador_id AS apontador_colaborador_id,
+                r.preenchido_por    AS preenchido_por,
                 m.colaborador_id    AS colaborador_id,
                 m.nome_colaborador  AS nome_colaborador,
                 m.cargo             AS cargo
@@ -137,7 +139,11 @@ public class RateioMaoDeObraService {
                                                     .toLocalDate(),
                                     resultado.getString("numero_rdo"),
                                     resultado.getString("encarregado_obra"),
-                                    resultado.getString("apontador_rdo")
+                                    resultado.getString("apontador_rdo"),
+                                    resultado.getString(
+                                            "apontador_colaborador_id"
+                                    ),
+                                    resultado.getString("preenchido_por")
                             );
                         } catch (java.sql.SQLException erro) {
                             throw new IllegalStateException(
@@ -217,6 +223,8 @@ public class RateioMaoDeObraService {
             String numeroRdo,
             String encarregadoObra,
             String apontadorRdo,
+            String apontadorColaboradorId,
+            String preenchidoPor,
             List<RateioMaoDeObraResponse.MaoDeObraDoRateio> maoObra
     ) {
         ConstrucaoDeRdo(
@@ -226,7 +234,9 @@ public class RateioMaoDeObraService {
                 LocalDate dataRdo,
                 String numeroRdo,
                 String encarregadoObra,
-                String apontadorRdo
+                String apontadorRdo,
+                String apontadorColaboradorId,
+                String preenchidoPor
         ) {
             this(
                     id,
@@ -236,6 +246,8 @@ public class RateioMaoDeObraService {
                     numeroRdo,
                     encarregadoObra,
                     apontadorRdo,
+                    apontadorColaboradorId,
+                    preenchidoPor,
                     new ArrayList<>()
             );
         }
@@ -249,6 +261,8 @@ public class RateioMaoDeObraService {
                     numeroRdo,
                     encarregadoObra,
                     apontadorRdo,
+                    apontadorColaboradorId,
+                    preenchidoPor,
                     List.copyOf(maoObra)
             );
         }

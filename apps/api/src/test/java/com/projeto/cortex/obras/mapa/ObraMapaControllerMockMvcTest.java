@@ -46,7 +46,19 @@ class ObraMapaControllerMockMvcTest {
                         new BigDecimal("-20.4428"), new BigDecimal("-54.6464")
                 ),
                 List.of(),
-                List.of("rdo-calado")
+                List.of("rdo-calado"),
+                // O km declarado que não virou linha viaja na mesma resposta:
+                // é dele que a tela tira o que dizer em vez de ficar vazia.
+                new TrechoApoiadoNoEixo.ApontamentosSemLinha(
+                        "SEM_EIXO",
+                        1,
+                        200,
+                        202,
+                        java.time.LocalDate.parse("2026-08-08"),
+                        java.time.LocalDate.parse("2026-08-08"),
+                        null,
+                        null
+                )
         ));
 
         mockMvc.perform(get("/api/obras/obra-1/mapa"))
@@ -56,7 +68,13 @@ class ObraMapaControllerMockMvcTest {
                 // A lista de silêncio viaja na mesma resposta: é dela que o
                 // aparelho aprende de quais RDOs não deve derivar linha
                 // nenhuma por conta própria.
-                .andExpect(jsonPath("$.rdosComLinhaSilenciada[0]").value("rdo-calado"));
+                .andExpect(jsonPath("$.rdosComLinhaSilenciada[0]").value("rdo-calado"))
+                // A data que viaja é a do RDO — 8 de agosto —, e não a do dia
+                // em que alguém abriu o mapa.
+                .andExpect(jsonPath("$.apontamentosSemLinha.motivo")
+                        .value("SEM_EIXO"))
+                .andExpect(jsonPath("$.apontamentosSemLinha.primeiraData")
+                        .value("2026-08-08"));
 
         verify(currentUserService, never()).requireAlfa();
         verify(service).buscarMapa("obra-1");

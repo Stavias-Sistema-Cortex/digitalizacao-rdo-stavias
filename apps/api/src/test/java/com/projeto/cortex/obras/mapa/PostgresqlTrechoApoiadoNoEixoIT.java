@@ -296,6 +296,68 @@ class PostgresqlTrechoApoiadoNoEixoIT {
         assertThat(lixeira().rdosComLinhaSilenciada(vizinha)).isEmpty();
     }
 
+    /*
+     * O quilômetro apontado que não vira linha precisa ser dito.
+     *
+     * <p>A obra sem eixo não tem régua: nada se apoia, e o mapa abria vazio
+     * sem uma palavra. Quem tinha declarado o trecho no RDO concluía que o
+     * dado se perdera ou que a sincronização falhara — e o que faltava era um
+     * cadastro que ninguém tinha como adivinhar.
+     */
+    @Test
+    void semEixoOMapaDizOQueEstaEsperandoARegua() {
+        String obraId = cenario("APOIO-ESPERA");
+        rdoComInterdicao(obraId, "200", "202");
+
+        TrechoApoiadoNoEixo.Projecao projecao =
+                apoio.projetar(obraId, List.of());
+
+        assertThat(projecao.features()).isEmpty();
+        assertThat(projecao.semLinha()).isNotNull();
+        assertThat(projecao.semLinha().motivo()).isEqualTo("SEM_EIXO");
+        assertThat(projecao.semLinha().total()).isEqualTo(1);
+        assertThat(projecao.semLinha().kmInicial()).isEqualTo(200);
+        assertThat(projecao.semLinha().kmFinal()).isEqualTo(202);
+        // A data que sai é a do RDO, não a de hoje: o mapa é lido num dia e o
+        // trabalho aconteceu em outro.
+        assertThat(projecao.semLinha().primeiraData())
+                .isEqualTo(DATA);
+        assertThat(projecao.semLinha().eixoKmInicial()).isNull();
+    }
+
+    /*
+     * O segundo silêncio: a régua existe e não alcança o trecho. Some do mapa
+     * igual, e o gesto que resolve é outro — estender o eixo ou corrigir o km.
+     */
+    @Test
+    void oApontamentoForaDaFaixaDoEixoTambemEDito() {
+        String obraId = cenario("APOIO-FORA");
+        rdoComInterdicao(obraId, "200", "202");
+
+        TrechoApoiadoNoEixo.Projecao projecao =
+                apoio.projetar(obraId, List.of(eixo(obraId)));
+
+        assertThat(projecao.features()).hasSize(1);
+        assertThat(projecao.semLinha()).isNotNull();
+        assertThat(projecao.semLinha().motivo()).isEqualTo("FORA_DO_EIXO");
+        // A faixa da régua vai junto, para a tela poder mostrar as duas.
+        assertThat(projecao.semLinha().eixoKmInicial()).isEqualTo(100);
+        assertThat(projecao.semLinha().eixoKmFinal()).isEqualTo(110);
+    }
+
+    /* Mapa que desenhou tudo não precisa de desculpa nenhuma. */
+    @Test
+    void quandoTudoViraLinhaNaoHaOQueAvisar() {
+        String obraId = cenario("APOIO-SEM-AVISO");
+        apontamento(obraId, "102", "104", "Fresagem");
+
+        TrechoApoiadoNoEixo.Projecao projecao =
+                apoio.projetar(obraId, List.of(eixo(obraId)));
+
+        assertThat(projecao.features()).hasSize(2);
+        assertThat(projecao.semLinha()).isNull();
+    }
+
     @Test
     void identidadeQueNaoEDerivadaNaoEntraNaLixeira() {
         String obraId = cenario("APOIO-LIXEIRA-ERRADA");

@@ -477,6 +477,54 @@ describe("RodoviaWorkspace", () => {
   });
 
   /*
+   * O RDO declarou o trecho interditado, a obra não tem eixo, e o mapa abria
+   * vazio sem dizer nada — nem que havia algo esperando, nem que o gesto que
+   * resolve é cadastrar a régua. Quem apontou o quilômetro concluía que a
+   * sincronização tinha falhado.
+   */
+  it("diz o que espera a régua, citando a data do RDO, e oferece o eixo", async () => {
+    carregarMapaObra.mockResolvedValue(
+      leitura({
+        dados: {
+          obra,
+          features: [],
+          apontamentosSemLinha: {
+            motivo: "SEM_EIXO",
+            total: 1,
+            kmInicial: 200,
+            kmFinal: 202,
+            primeiraData: "2026-08-08",
+            ultimaData: "2026-08-08",
+            eixoKmInicial: null,
+            eixoKmFinal: null,
+          },
+        },
+      }),
+    );
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    const aviso = await screen.findByRole("status", {
+      name: "Quilômetro apontado sem linha no mapa",
+    });
+    expect(aviso).toHaveTextContent(/espera a régua/);
+    expect(aviso).toHaveTextContent(/km 200 ao 202/);
+    // A data do RDO, não a da leitura do mapa.
+    expect(aviso).toHaveTextContent(/08\/08\/2026/);
+    expect(
+      within(aviso).getByRole("button", { name: "Cadastrar o eixo" }),
+    ).toBeInTheDocument();
+  });
+
+  /* Com a régua de pé e tudo desenhado, o aviso não tem o que dizer. */
+  it("cala quando o servidor não relata nada esperando", async () => {
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    expect(screen.queryByText(/espera a régua/)).not.toBeInTheDocument();
+  });
+
+  /*
    * O silêncio tem de calar as DUAS derivações.
    *
    * A do servidor some da resposta — é o que silenciar faz. Já a do aparelho,
@@ -637,13 +685,20 @@ describe("RodoviaWorkspace", () => {
     ).toBeInTheDocument();
   });
 
-  it("declara a data da última atualização confirmada", async () => {
+  /*
+   * O instante da leitura precisa estar na tela, e precisa dizer que é isso.
+   * "Última atualização em 12/08" ao lado de um RDO do dia 8 lia-se como
+   * "o dia 8 se perdeu" — o mapa guarda o histórico inteiro, cada linha na
+   * data em que foi apontada.
+   */
+  it("declara quando as camadas foram lidas, sem chamar isso de atualização", async () => {
     render(<RodoviaWorkspace obra={obra} podeDesenhar={false} />);
 
     await screen.findByTestId("mapa-leaflet");
     expect(
-      screen.getByText(/última atualização em 03\/03\/2026/),
+      screen.getByText(/camadas lidas em 03\/03\/2026/),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/última atualização/)).not.toBeInTheDocument();
   });
 
   it("avisa quando está exibindo o que já tinha no dispositivo", async () => {
@@ -654,7 +709,7 @@ describe("RodoviaWorkspace", () => {
 
     await screen.findByTestId("mapa-leaflet");
     expect(
-      screen.getByText(/dados do dispositivo, sem rede/),
+      screen.getByText(/do dispositivo, sem rede/),
     ).toBeInTheDocument();
   });
 

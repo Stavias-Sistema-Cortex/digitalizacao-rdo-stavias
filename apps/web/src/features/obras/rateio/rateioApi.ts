@@ -84,6 +84,11 @@ export function lerRespostaDoRateio(
       payload: {
         encarregadoObra: rdo.encarregadoObra,
         apontadorRdo: rdo.apontadorRdo,
+        // Quem assina o documento conta como presente, e por isso os campos da
+        // assinatura atravessam inteiros: sem eles o retrato do servidor teria
+        // menos gente que a leitura do aparelho, para os mesmos RDOs.
+        apontadorColaboradorId: rdo.apontadorColaboradorId,
+        preenchidoPor: rdo.preenchidoPor,
         obraNome: rdo.obraNome,
         maoObra,
       },

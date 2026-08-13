@@ -50,7 +50,12 @@ import {
   registrarTrechoDesenhado,
   type GeometriaVisivelNoMapa,
 } from "./obraGeometriaMutations";
-import { apoiarTrechosNoEixo, lerEixoDaColecao } from "./eixoDaObra";
+import {
+  apoiarTrechosNoEixo,
+  lerEixoDaColecao,
+  oQueEsperaARegua,
+} from "./eixoDaObra";
+import { avisoDoQueEsperaARegua } from "./avisoDoQueEsperaARegua";
 import { corrigirKmPeloMapa } from "./corrigirKmPeloMapa";
 import type { SegmentoTrecho } from "../trecho/trechoGeometry";
 import { quilometroDigitado } from "../../../lib/numeros/quilometroDigitado";
@@ -462,6 +467,32 @@ export function RodoviaWorkspace({
   const eixo = useMemo(
     () => lerEixoDaColecao(colecaoPersistida),
     [colecaoPersistida],
+  );
+  /*
+   * O que o servidor apurou que não virou linha. Vem dele porque só ele vê
+   * todos os RDOs da obra — o aparelho tem os que baixou — e porque a
+   * interdição declarada na Identificação nem chega aqui como segmento.
+   */
+  const esperandoARegua = useMemo(
+    () =>
+      avisoDoQueEsperaARegua(
+        // O servidor manda quando fala: ele vê todos os RDOs da obra, e o
+        // aparelho só os que baixou. Sem rede — ou para o RDO preenchido em
+        // campo que ainda não subiu — a apuração local é a única que existe,
+        // e calar aqui devolveria a tela vazia sem explicação.
+        leituraVisivel?.dados.apontamentosSemLinha ??
+          oQueEsperaARegua(
+            colecaoPersistida,
+            segmentos ?? [],
+            leituraVisivel?.dados.rdosComLinhaSilenciada ?? [],
+          ),
+      ),
+    [
+      leituraVisivel?.dados.apontamentosSemLinha,
+      leituraVisivel?.dados.rdosComLinhaSilenciada,
+      colecaoPersistida,
+      segmentos,
+    ],
   );
   // O recorte é decidido aqui, no pai dos dois mapas, e desce pronto para
   // ambos: recortar em cada metade permitiria que elas mostrassem obras
@@ -1129,11 +1160,18 @@ export function RodoviaWorkspace({
         <div>
           <p className="eyebrow">Mapa da rodovia</p>
           <h3 id="rodovia-workspace-title">{worksite.nome}</h3>
+          {/*
+            "Última atualização" dizia a coisa errada com a data certa.
+            É o instante em que estas camadas foram lidas — não a data do que
+            elas mostram. Quem abria no dia 12 o mapa de um RDO do dia 8 lia
+            "última atualização em 12/08" e concluía que o dia 8 tinha se
+            perdido. O mapa guarda o histórico inteiro, cada linha na data em
+            que foi apontada; o recorte por dia é que escolhe qual olhar.
+          */}
           <span>
-            última atualização em{" "}
-            {formatarInstante(leitura?.obtidoEm ?? null)}
+            camadas lidas em {formatarInstante(leitura?.obtidoEm ?? null)}
             {leitura?.origem === "CACHE_LOCAL"
-              ? " · dados do dispositivo, sem rede"
+              ? " · do dispositivo, sem rede"
               : ""}
           </span>
         </div>
@@ -1241,6 +1279,36 @@ export function RodoviaWorkspace({
           enquadrado em {aproximado.local}, a partir do endereço do cadastro.
           Nada disso é gravado. {instrucaoDeGeorreferencia}
         </p>
+      ) : null}
+
+      {/*
+        O quilômetro apontado no RDO que não virou linha.
+
+        Esta tela ficava vazia sem explicar, e o vazio tinha duas causas que
+        pedem gestos opostos: obra sem eixo, e apontamento fora da faixa do
+        eixo. O aviso nomeia a data do RDO de propósito — o mapa é lido num dia
+        e o trabalho aconteceu em outro, e essa diferença é a regra, não a
+        exceção.
+      */}
+      {esperandoARegua ? (
+        <div
+          className="rodovia-workspace-aviso rodovia-workspace-aviso--espera"
+          role="status"
+          aria-label="Quilômetro apontado sem linha no mapa"
+        >
+          <p>
+            <strong>{esperandoARegua.titulo}</strong> {esperandoARegua.detalhe}
+          </p>
+          {esperandoARegua.pedeOEixo && podeDesenhar && !cadastrandoEixo ? (
+            <button
+              type="button"
+              className="rodovia-desenho-botao"
+              onClick={abrirCadastroDoEixo}
+            >
+              Cadastrar o eixo
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {aviso ? <p className="rodovia-workspace-aviso">{aviso}</p> : null}

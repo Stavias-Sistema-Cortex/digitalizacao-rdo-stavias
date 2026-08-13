@@ -440,6 +440,77 @@ export function rdosJaNoMapa(
  * remontam quando a coleção muda de identidade, e remontar sem mudança real
  * apaga o enquadramento de quem estava olhando.
  */
+/**
+ * O que o aparelho apontou por quilômetro e não conseguiu desenhar.
+ *
+ * <p>Espelha, com o que este aparelho tem, a mesma apuração que o servidor faz
+ * com tudo o que ele tem. Existe pelo mesmo motivo que a derivação local
+ * existe: sem rede, o servidor não fala, e o RDO preenchido em campo que ainda
+ * não subiu só é conhecido aqui. Sem isto, a tela sem rede voltava a ficar
+ * vazia em silêncio — exatamente o que esta mudança veio consertar.
+ *
+ * <p>Considera só o que a derivação local tentaria desenhar: o que já está no
+ * mapa pelo servidor não está esperando nada.
+ */
+export function oQueEsperaARegua(
+  collection: OperationalFeatureCollection,
+  segmentos: readonly SegmentoTrecho[],
+  rdosSilenciados: readonly string[] = [],
+): {
+  motivo: "SEM_EIXO" | "FORA_DO_EIXO";
+  total: number;
+  kmInicial: number;
+  kmFinal: number;
+  primeiraData: string | null;
+  ultimaData: string | null;
+  eixoKmInicial: number | null;
+  eixoKmFinal: number | null;
+} | undefined {
+  const eixo = lerEixoDaColecao(collection);
+  const jaNoMapa = new Set([
+    ...rdosJaNoMapa(collection),
+    ...rdosSilenciados,
+  ]);
+
+  const esperando: SegmentoTrecho[] = [];
+  for (const segmento of segmentos) {
+    if (segmento.origem === "PROGRAMACAO" || !posicionavel(segmento)) continue;
+    if (segmento.rdoId && jaNoMapa.has(segmento.rdoId)) continue;
+    if (
+      eixo &&
+      recortarEixoPorKm(
+        eixo,
+        segmento.kmInicial as number,
+        segmento.kmFinal as number,
+      )
+    ) {
+      continue;
+    }
+    esperando.push(segmento);
+  }
+  if (esperando.length === 0) return undefined;
+
+  const quilometros = esperando.flatMap((segmento) => [
+    segmento.kmInicial as number,
+    segmento.kmFinal as number,
+  ]);
+  const datas = esperando
+    .map((segmento) => segmento.data)
+    .filter((data): data is string => Boolean(data))
+    .sort();
+
+  return {
+    motivo: eixo ? "FORA_DO_EIXO" : "SEM_EIXO",
+    total: esperando.length,
+    kmInicial: Math.min(...quilometros),
+    kmFinal: Math.max(...quilometros),
+    primeiraData: datas[0] ?? null,
+    ultimaData: datas.at(-1) ?? null,
+    eixoKmInicial: eixo ? eixo.kmInicial : null,
+    eixoKmFinal: eixo ? eixo.kmFinal : null,
+  };
+}
+
 export function apoiarTrechosNoEixo(
   collection: OperationalFeatureCollection,
   segmentos: readonly SegmentoTrecho[],

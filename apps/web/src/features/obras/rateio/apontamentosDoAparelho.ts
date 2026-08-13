@@ -128,6 +128,70 @@ function encarregadoDoRdo(
 }
 
 /**
+ * Quem assina o RDO esteve naquela obra naquele dia.
+ *
+ * <p>O rateio nasceu lendo só a lista de mão de obra, e com isso perdia
+ * justamente quem responde pelo documento: o apontador que o preencheu, o
+ * encarregado da frente, quem assina embaixo. Eles quase nunca se incluem na
+ * lista — a lista é da equipe, e quem a digita não se digita — então o RDO de
+ * um dia inteiro de trabalho aparecia no rateio como dia de ninguém.
+ *
+ * <p>Não é inferência: é o que o próprio documento declara. O RDO afirma que
+ * fulano o preencheu naquela obra naquela data, e o rateio conta presença por
+ * declaração, não por crachá batido.
+ *
+ * <p>A função de cada um vai escrita para o gestor saber de onde a linha veio,
+ * e a ordem importa: quem aparece por mais de um papel entra uma vez só, pelo
+ * primeiro — o apontador que também preencheu não vira duas pessoas.
+ *
+ * <p><b>O encarregado declarado fica de fora, de propósito.</b> O campo é texto
+ * livre e tanto recebe o nome de uma pessoa quanto o da frente — "FRENTE A" é
+ * escrita ali todo dia. Contá-lo criaria colaboradores que não existem,
+ * consumindo fatia de obra como se fossem gente; errar assim é pior do que
+ * deixar de fora um encarregado que, no caso comum, já está apontado na mão de
+ * obra. Ele segue nomeando a frente na coluna "Encarregado", que é rótulo e
+ * aguenta ser uma frente.
+ */
+const PAPEIS_QUE_ASSINAM: readonly {
+  campoNome: string;
+  campoId?: string;
+  funcao: string;
+}[] = [
+  {
+    campoNome: "apontadorRdo",
+    campoId: "apontadorColaboradorId",
+    funcao: "Apontador do RDO",
+  },
+  { campoNome: "preenchidoPor", funcao: "Preencheu o RDO" },
+];
+
+/**
+ * Por quais chaves esta pessoa pode ser reconhecida.
+ *
+ * <p>São duas, e as duas precisam ser guardadas: quem está na mão de obra
+ * costuma vir com cadastro, e quem assina o documento costuma vir só com o
+ * nome digitado. Guardar apenas a melhor chave de cada um fazia os dois
+ * passarem um pelo outro — a mesma pessoa entrava duas vezes no mesmo dia, uma
+ * pela equipe e outra pela assinatura, e o dia dela virava dois.
+ *
+ * <p>O nome é comparado sem acento e sem caixa, que é como o mesmo nome chega
+ * escrito de dois jeitos pela planilha e pela digitação em campo.
+ */
+function chavesDaPessoa(colaboradorId: string, nome: string): string[] {
+  const chaves: string[] = [];
+  if (colaboradorId) chaves.push(`id:${colaboradorId}`);
+  if (nome) {
+    chaves.push(
+      `nome:${nome
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()}`,
+    );
+  }
+  return chaves;
+}
+
+/**
  * O que o rateio precisa saber de um RDO, venha ele de onde vier.
  *
  * <p>É um recorte do registro local de propósito: o mesmo tipo descreve o que
@@ -151,16 +215,49 @@ export function apontamentosDoRdo(
 
   const encarregado = encarregadoDoRdo(registro.payload, maoDeObra);
   const apontamentos: ApontamentoDeMaoDeObra[] = [];
+  const jaContados = new Set<string>();
 
   for (const item of maoDeObra) {
     if (!pessoaTrabalhouNoDia(item)) continue;
     const colaboradorId = texto(item.colaboradorId);
     const nome = texto(item.nomeColaborador);
     if (!colaboradorId && !nome) continue;
+    for (const chave of chavesDaPessoa(colaboradorId, nome)) {
+      jaContados.add(chave);
+    }
     apontamentos.push({
       colaboradorId: colaboradorId || null,
       nome,
       funcao: texto(item.cargo),
+      obraId: registro.obraId,
+      obraNome: texto(registro.payload.obraNome),
+      data: registro.dataRdo,
+      encarregado,
+      rdoId: registro.id,
+    });
+  }
+
+  /*
+   * Quem assina entra depois da equipe, e só se ainda não estiver nela: quando
+   * o encarregado se inclui na mão de obra — que é o certo — a lista dele já
+   * vale, com o cargo que ele mesmo declarou. O papel só nomeia quem entrou
+   * por aqui.
+   */
+  for (const papel of PAPEIS_QUE_ASSINAM) {
+    const nome = texto(registro.payload[papel.campoNome]);
+    if (!nome) continue;
+    const colaboradorId = papel.campoId
+      ? texto(registro.payload[papel.campoId])
+      : "";
+    const chaves = chavesDaPessoa(colaboradorId, nome);
+    if (chaves.some((chave) => jaContados.has(chave))) continue;
+    for (const chave of chaves) {
+      jaContados.add(chave);
+    }
+    apontamentos.push({
+      colaboradorId: colaboradorId || null,
+      nome,
+      funcao: papel.funcao,
       obraId: registro.obraId,
       obraNome: texto(registro.payload.obraNome),
       data: registro.dataRdo,

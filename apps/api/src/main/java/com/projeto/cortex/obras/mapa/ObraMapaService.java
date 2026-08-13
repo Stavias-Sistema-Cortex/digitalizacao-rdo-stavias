@@ -85,23 +85,27 @@ public class ObraMapaService {
                 .stream()
                 .map(this::toResponse)
                 .toList();
+        // Duas projeções na leitura, na ordem em que se completam: o quilômetro
+        // entra nos desenhos que já existem, e o eixo desenha o que foi
+        // apontado por quilômetro e nunca teve traço. Nenhuma das duas grava
+        // nada — acertar o RDO muda o mapa na consulta seguinte, que é a única
+        // reconciliação que precisa existir.
+        TrechoApoiadoNoEixo.Projecao projecao = trechoApoiadoNoEixo.projetar(
+                obraId,
+                quilometroDoApontamento.projetarEm(features)
+        );
         return new ObraMapaResponse(
                 new ObraMapaResponse.ObraLocalizacaoResponse(
                         obra.getId(), obra.getNome(), obra.getLatitude(), obra.getLongitude()
                 ),
-                // Duas projeções na leitura, na ordem em que se completam: o
-                // quilômetro entra nos desenhos que já existem, e o eixo desenha
-                // o que foi apontado por quilômetro e nunca teve traço. Nenhuma
-                // das duas grava nada — acertar o RDO muda o mapa na consulta
-                // seguinte, que é a única reconciliação que precisa existir.
-                trechoApoiadoNoEixo.projetarEm(
-                        obraId,
-                        quilometroDoApontamento.projetarEm(features)
-                ),
+                projecao.features(),
                 // O que foi calado viaja junto com o que foi desenhado: o
                 // aparelho deriva as suas próprias linhas e precisa saber de
                 // quais RDOs não deve derivar nada.
-                trechoDerivadoSilenciado.rdosComLinhaSilenciada(obraId)
+                trechoDerivadoSilenciado.rdosComLinhaSilenciada(obraId),
+                // E o que não virou linha viaja também, para a tela poder
+                // dizer o que falta em vez de ficar vazia em silêncio.
+                projecao.semLinha()
         );
     }
 

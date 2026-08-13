@@ -43,6 +43,49 @@ export interface ObraMapData {
    * foi descrito, e o aparelho desenha o que sabe.
    */
   rdosComLinhaSilenciada?: string[];
+  /**
+   * O que o RDO apontou por quilômetro e o mapa não desenhou.
+   *
+   * <p>Ausente quando tudo virou linha. Existe porque a tela vazia tinha duas
+   * causas indistinguíveis — a obra sem eixo cadastrado e o apontamento fora
+   * da faixa que o eixo cobre — e cada uma pede um gesto diferente.
+   */
+  apontamentosSemLinha?: ApontamentosSemLinha;
+}
+
+/** Por que um quilômetro declarado no RDO não virou linha no mapa. */
+export interface ApontamentosSemLinha {
+  motivo: "SEM_EIXO" | "FORA_DO_EIXO";
+  total: number;
+  kmInicial: number;
+  kmFinal: number;
+  /** Datas dos RDOs — não a data em que o mapa foi lido. */
+  primeiraData: string | null;
+  ultimaData: string | null;
+  eixoKmInicial: number | null;
+  eixoKmFinal: number | null;
+}
+
+function apontamentosSemLinhaFromApi(
+  value: unknown,
+): ApontamentosSemLinha | undefined {
+  const object = objectValue(value);
+  const motivo = nullableString(object.motivo);
+  if (motivo !== "SEM_EIXO" && motivo !== "FORA_DO_EIXO") {
+    return undefined;
+  }
+  const total = nullableNumber(object.total) ?? 0;
+  if (total <= 0) return undefined;
+  return {
+    motivo,
+    total,
+    kmInicial: nullableNumber(object.kmInicial) ?? 0,
+    kmFinal: nullableNumber(object.kmFinal) ?? 0,
+    primeiraData: nullableString(object.primeiraData),
+    ultimaData: nullableString(object.ultimaData),
+    eixoKmInicial: nullableNumber(object.eixoKmInicial),
+    eixoKmFinal: nullableNumber(object.eixoKmFinal),
+  };
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -132,6 +175,9 @@ export function obraMapResponseFromApi(value: unknown): ObraMapData {
           typeof item === "string" && item ? [item] : [],
         )
       : [],
+    apontamentosSemLinha: apontamentosSemLinhaFromApi(
+      root.apontamentosSemLinha,
+    ),
   };
 }
 
@@ -242,6 +288,7 @@ export async function carregarMapaObra(
           ? dados.features
           : [...locais.map(featureDoRegistro), ...derivadas(dados.features)],
         rdosComLinhaSilenciada: dados.rdosComLinhaSilenciada,
+        apontamentosSemLinha: dados.apontamentosSemLinha,
       },
       origem: "REDE",
       obtidoEm: agora,

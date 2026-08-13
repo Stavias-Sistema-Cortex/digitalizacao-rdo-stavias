@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.obras.trecho.QuilometroParser;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -69,28 +70,149 @@ public class TrechoApoiadoNoEixo {
             String obraId,
             List<ObraGeometriaResponse> features
     ) {
+        return projetar(obraId, features).features();
+    }
+
+    /**
+     * A projeção e, junto com ela, o que ficou de fora dela.
+     *
+     * <p>Durante muito tempo a resposta era só o desenho, e o que não virava
+     * linha simplesmente não aparecia. Para quem apontou o quilômetro no RDO,
+     * as duas situações eram a mesma tela vazia: a obra sem eixo cadastrado —
+     * não há régua, então nada se apoia — e o apontamento fora da faixa que a
+     * régua cobre. Nos dois casos o dado existe, está certo, e o mapa cala.
+     *
+     * <p>Calar é o pior dos mundos porque o gesto que resolve cada caso é
+     * diferente: um pede que se cadastre o eixo, o outro que se estenda o eixo
+     * ou se corrija o quilômetro. Sem saber qual é, não há o que fazer senão
+     * desconfiar do sistema.
+     */
+    public Projecao projetar(
+            String obraId,
+            List<ObraGeometriaResponse> features
+    ) {
         Eixo eixo = lerEixo(features);
-        if (eixo == null) {
-            return features;
-        }
         List<Apontamento> apontamentos = buscarApontamentos(
                 obraId, rdosComDesenhoProprio(features)
         );
         if (apontamentos.isEmpty()) {
-            return features;
+            return new Projecao(features, null);
+        }
+        if (eixo == null) {
+            return new Projecao(
+                    features,
+                    ApontamentosSemLinha.semEixo(apontamentos)
+            );
         }
 
         List<ObraGeometriaResponse> resultado = new ArrayList<>(features);
+        List<Apontamento> foraDaRegua = new ArrayList<>();
         for (Apontamento apontamento : apontamentos) {
             List<double[]> recorte = recortarPorKm(
                     eixo, apontamento.kmInicial(), apontamento.kmFinal()
             );
             if (recorte == null) {
+                foraDaRegua.add(apontamento);
                 continue;
             }
             resultado.add(feicaoDerivada(eixo, apontamento, recorte));
         }
-        return resultado;
+        return new Projecao(
+                resultado,
+                foraDaRegua.isEmpty()
+                        ? null
+                        : ApontamentosSemLinha.foraDoEixo(foraDaRegua, eixo)
+        );
+    }
+
+    /** O desenho e o que não coube nele. */
+    public record Projecao(
+            List<ObraGeometriaResponse> features,
+            /** Nulo quando todo apontamento com quilômetro virou linha. */
+            ApontamentosSemLinha semLinha
+    ) {
+    }
+
+    /**
+     * O que o RDO apontou por quilômetro e o mapa não conseguiu desenhar.
+     *
+     * <p>Resumo, e não a lista inteira: o que a tela precisa dizer é quantos
+     * são, de que quilômetro a que quilômetro vão e de quando são — a data do
+     * RDO, que quase nunca é a data em que alguém está olhando o mapa. Um
+     * apontamento de 8 de agosto lido no dia 12 tem de ser reconhecível como
+     * sendo do dia 8.
+     */
+    public record ApontamentosSemLinha(
+            /** {@code SEM_EIXO} ou {@code FORA_DO_EIXO}. */
+            String motivo,
+            int total,
+            double kmInicial,
+            double kmFinal,
+            LocalDate primeiraData,
+            LocalDate ultimaData,
+            /** A faixa que a régua cobre; nula quando não há régua. */
+            Double eixoKmInicial,
+            Double eixoKmFinal
+    ) {
+        private static ApontamentosSemLinha semEixo(
+                List<Apontamento> apontamentos
+        ) {
+            return resumir("SEM_EIXO", apontamentos, null, null);
+        }
+
+        private static ApontamentosSemLinha foraDoEixo(
+                List<Apontamento> apontamentos,
+                Eixo eixo
+        ) {
+            return resumir(
+                    "FORA_DO_EIXO",
+                    apontamentos,
+                    eixo.kmInicial(),
+                    eixo.kmFinal()
+            );
+        }
+
+        private static ApontamentosSemLinha resumir(
+                String motivo,
+                List<Apontamento> apontamentos,
+                Double eixoKmInicial,
+                Double eixoKmFinal
+        ) {
+            double menorKm = Double.MAX_VALUE;
+            double maiorKm = -Double.MAX_VALUE;
+            LocalDate primeira = null;
+            LocalDate ultima = null;
+            for (Apontamento apontamento : apontamentos) {
+                menorKm = Math.min(
+                        menorKm,
+                        Math.min(apontamento.kmInicial(), apontamento.kmFinal())
+                );
+                maiorKm = Math.max(
+                        maiorKm,
+                        Math.max(apontamento.kmInicial(), apontamento.kmFinal())
+                );
+                if (apontamento.dataExecucao() == null) {
+                    continue;
+                }
+                LocalDate data = apontamento.dataExecucao().toLocalDate();
+                if (primeira == null || data.isBefore(primeira)) {
+                    primeira = data;
+                }
+                if (ultima == null || data.isAfter(ultima)) {
+                    ultima = data;
+                }
+            }
+            return new ApontamentosSemLinha(
+                    motivo,
+                    apontamentos.size(),
+                    menorKm,
+                    maiorKm,
+                    primeira,
+                    ultima,
+                    eixoKmInicial,
+                    eixoKmFinal
+            );
+        }
     }
 
     /**

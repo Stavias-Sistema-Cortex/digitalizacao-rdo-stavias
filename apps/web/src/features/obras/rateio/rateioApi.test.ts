@@ -41,7 +41,66 @@ describe("a leitura da resposta do servidor", () => {
         encarregado: "FRENTE A",
         rdoId: "rdo-1",
       },
+      // Quem assina o documento entra pelo mesmo núcleo dos dois lados: se só
+      // o caminho local o contasse, o mesmo mês mudaria de gente ao entrar e
+      // sair da rede.
+      {
+        colaboradorId: null,
+        nome: "QUEM ASSINA",
+        funcao: "Apontador do RDO",
+        obraId: "obra-a",
+        obraNome: "Obra do Servidor",
+        data: "2026-07-10",
+        encarregado: "FRENTE A",
+        rdoId: "rdo-1",
+      },
     ]);
+  });
+
+  /*
+   * O caso que motivou tudo isto: RDO preenchido em campo, com o trecho
+   * declarado e a equipe ainda não apontada. Quem o preencheu procurava o
+   * próprio nome no rateio e encontrava um mês vazio.
+   */
+  it("conta quem preencheu o RDO que o servidor devolveu sem mão de obra", () => {
+    const leitura = lerRespostaDoRateio({
+      rdos: [
+        {
+          id: "rdo-9",
+          obraId: "obra-a",
+          dataRdo: "2026-08-08",
+          obraNome: "Quarta intervenção",
+          preenchidoPor: "QUEM PREENCHEU",
+          maoObra: [],
+        },
+      ],
+    });
+
+    expect(leitura.apontamentos).toHaveLength(1);
+    expect(leitura.apontamentos[0]).toMatchObject({
+      nome: "QUEM PREENCHEU",
+      funcao: "Preencheu o RDO",
+      obraId: "obra-a",
+      data: "2026-08-08",
+    });
+  });
+
+  /* O cadastro do apontador atravessa: a mesma pessoa não vira duas. */
+  it("traz o identificador do apontador escolhido da lista", () => {
+    const leitura = lerRespostaDoRateio({
+      rdos: [
+        {
+          id: "rdo-9",
+          obraId: "obra-a",
+          dataRdo: "2026-08-08",
+          apontadorRdo: "QUEM APONTA",
+          apontadorColaboradorId: "col-42",
+          maoObra: [],
+        },
+      ],
+    });
+
+    expect(leitura.apontamentos[0].colaboradorId).toBe("col-42");
   });
 
   /*

@@ -97,6 +97,47 @@ class PostgresqlRateioMaoDeObraIT {
         assertThat(encontrado.obraNome()).isEqualTo("Obra vazio");
     }
 
+    /*
+     * O RDO sem equipe apontada ainda tem quem o assinou, e é essa assinatura
+     * que fazia falta: o rateio contava só a lista de mão de obra, e um dia
+     * inteiro de trabalho declarado por quem preencheu o documento entrava
+     * como dia de ninguém. O servidor não decide isso — ele entrega os campos,
+     * e o núcleo do rateio, um só nos dois caminhos, conta a presença.
+     */
+    @Test
+    void aAssinaturaDoRdoViajaParaOQuemContaAPresenca() {
+        String obraId = obra("assinatura");
+        String apontador = colaborador("Quem Aponta");
+        String rdoId = rdo(obraId, "2026-07-10", "RDO-0009");
+        jdbc.update(
+                """
+                UPDATE rdo
+                   SET preenchido_por = 'QUEM PREENCHEU',
+                       apontador_rdo = 'QUEM APONTA',
+                       apontador_colaborador_id = ?
+                 WHERE id = ?
+                """,
+                apontador,
+                rdoId
+        );
+
+        RateioMaoDeObraResponse.RdoDoRateio encontrado =
+                servicoPara(alfa(), true)
+                        .apontamentosDoPeriodo(
+                                LocalDate.parse("2026-07-01"),
+                                LocalDate.parse("2026-07-31")
+                        )
+                        .rdos().stream()
+                        .filter(item -> item.id().equals(rdoId))
+                        .findFirst()
+                        .orElseThrow();
+
+        assertThat(encontrado.maoObra()).isEmpty();
+        assertThat(encontrado.preenchidoPor()).isEqualTo("QUEM PREENCHEU");
+        assertThat(encontrado.apontadorRdo()).isEqualTo("QUEM APONTA");
+        assertThat(encontrado.apontadorColaboradorId()).isEqualTo(apontador);
+    }
+
     @Test
     void aMaoDeObraApontadaChegaComNomeECargo() {
         String obraId = obra("gente");
