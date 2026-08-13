@@ -52,7 +52,6 @@ const operationalWorkspaceCss = readCss(
 const rdoWorkspaceCss = readCss("./features/rdos/RdoWorkspacePage.css");
 const deviceSecurityCss = readCss("./features/auth/DeviceSecurityPage.css");
 const financeiroCss = readCss("./features/financeiro/FinanceiroPage.css");
-const equipesCss = readCss("./features/equipes/EquipesPage.css");
 const loginCss = readCss("./features/auth/LoginPage.css");
 const browserCandidates = [
   process.env.CORTEX_BROWSER_BIN,
@@ -125,10 +124,6 @@ describe("polimento visual da plataforma autenticada", () => {
       integracoesCss,
       ".integracoes-table-card,\n.integracoes-report",
     );
-    const teamsFrame = rule(
-      equipesCss,
-      ".teams-workspace .teams-page",
-    );
     const managementColumn = rule(gestaoObrasCss, ".gestao-obras-coluna");
     const workspaceRail = rule(
       operationalWorkspaceCss,
@@ -139,7 +134,6 @@ describe("polimento visual da plataforma autenticada", () => {
       institutionalFrame,
       documentSurface,
       integrationCard,
-      teamsFrame,
       managementColumn,
       workspaceRail,
     ]) {
@@ -150,7 +144,6 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(rule(financeiroCss, ".finance-scope-bar")).toContain(
       "background: var(--color-surface);",
     );
-    expect(teamsFrame).not.toContain("overflow: hidden;");
     expect(rule(globalCss, ":root")).toContain("--glass-shadow: none;");
     expect(globalCss).not.toContain("backdrop-filter:");
   });

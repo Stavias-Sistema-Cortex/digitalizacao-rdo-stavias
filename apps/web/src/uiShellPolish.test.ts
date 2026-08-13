@@ -28,7 +28,6 @@ const operationalWorkspaceCss = readCss(
 const loginCss = readCss("./features/auth/LoginPage.css");
 const mensagensCss = readCss("./features/mensagens/MensagensPage.css");
 const financeiroCss = readCss("./features/financeiro/FinanceiroPage.css");
-const equipesCss = readCss("./features/equipes/EquipesPage.css");
 const workforceCss = readCss("./features/rdos/RdoWorkforceEditor.css");
 const operationalMapCss = readCss("./features/obras/map/OperationalMap.css");
 const rodoviaWorkspaceCss = readCss(
@@ -51,7 +50,6 @@ const taskTypographyCss = [
   loginCss,
   mensagensCss,
   financeiroCss,
-  equipesCss,
   workforceCss,
   operationalMapCss,
   rodoviaWorkspaceCss,
@@ -161,9 +159,6 @@ describe("shell e superfícies operacionais", () => {
       "padding: 6px 12px;",
     );
     expect(rule(financeiroCss, ".finance-scope-bar")).toContain(
-      "box-shadow: none;",
-    );
-    expect(rule(equipesCss, ".teams-workspace .teams-page")).toContain(
       "box-shadow: none;",
     );
     expect(rule(integracoesCss, ".integracoes-table-card,\n.integracoes-report"))

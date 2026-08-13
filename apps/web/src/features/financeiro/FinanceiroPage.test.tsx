@@ -18,12 +18,6 @@ import type {
 } from "../../lib/db/db.types";
 
 const {
-  buscarCobrancas,
-  buscarCompras,
-  buscarLancamentos,
-  buscarNotasFiscais,
-  buscarRelatorio,
-  buscarVisaoGeral,
   fetchAuthorizedRevenueWorksites,
   listOutboxMutations,
   listObrasLocais,
@@ -32,12 +26,6 @@ const {
   revenueMounts,
   resolveFinanceCapabilities,
 } = vi.hoisted(() => ({
-  buscarCobrancas: vi.fn(),
-  buscarCompras: vi.fn(),
-  buscarLancamentos: vi.fn(),
-  buscarNotasFiscais: vi.fn(),
-  buscarRelatorio: vi.fn(),
-  buscarVisaoGeral: vi.fn(),
   fetchAuthorizedRevenueWorksites: vi.fn(),
   listOutboxMutations: vi.fn(),
   listObrasLocais: vi.fn(),
@@ -91,15 +79,6 @@ vi.mock("../../lib/db/obraLocalRepository", () => ({
 
 vi.mock("../../lib/db/outboxRepository", () => ({
   listOutboxMutations,
-}));
-
-vi.mock("./financeiroApi", () => ({
-  buscarCobrancas,
-  buscarCompras,
-  buscarLancamentos,
-  buscarNotasFiscais,
-  buscarRelatorio,
-  buscarVisaoGeral,
 }));
 
 vi.mock("./financeRevenueWorksiteApi", () => ({
@@ -266,12 +245,6 @@ describe("FinanceiroPage: superfície de receita", () => {
     expect(
       screen.getByRole("button", { name: "Rastreio de receita" }),
     ).toHaveAttribute("aria-current", "page");
-    expect(buscarCompras).not.toHaveBeenCalled();
-    expect(buscarNotasFiscais).not.toHaveBeenCalled();
-    expect(buscarLancamentos).not.toHaveBeenCalled();
-    expect(buscarCobrancas).not.toHaveBeenCalled();
-    expect(buscarRelatorio).not.toHaveBeenCalled();
-    expect(buscarVisaoGeral).not.toHaveBeenCalled();
   });
 
   it("mantém preços versionados como suporte explícito à receita", async () => {

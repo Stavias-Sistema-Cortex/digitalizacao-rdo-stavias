@@ -66,7 +66,6 @@ const rdoCss = source("./features/rdos/RdoWorkspacePage.css");
 const rdoDialogCss = source("./features/rdos/RdoCreationDialog.css");
 const financeCss = source("./features/financeiro/FinanceiroPage.css");
 const mensagensCss = source("./features/mensagens/MensagensPage.css");
-const equipesCss = source("./features/equipes/EquipesPage.css");
 const integracoesCss = source("./features/integracoes/IntegracoesPage.css");
 const gestaoObrasCss = source("./features/obras/gestao/gestaoObras.css");
 const tasksCss = source("./features/tarefas/TarefasPage.css");
@@ -207,12 +206,7 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(content).toContain("flex: 1 1 auto;");
   });
 
-  it("lets Equipes and Mensagens fill available space without viewport subtraction locks", () => {
-    const teamsPage = rule(equipesCss, ".teams-page");
-    const teamsContent = rule(
-      equipesCss,
-      ".teams-workspace > .operational-workspace__content",
-    );
+  it("lets Mensagens fill available space without viewport subtraction locks", () => {
     const messagesPage = rule(mensagensCss, ".mensagens-page");
     const messagesFrame = rule(mensagensCss, ".mensagens-frame");
     const messagesWorkspace = rule(
@@ -220,12 +214,6 @@ describe("Cortex 3 institutional visual policy", () => {
       ".mensagens-workspace",
     );
 
-    expect(teamsPage).not.toMatch(/(?:^|\n)\s*height:/);
-    expect(teamsPage).not.toContain("overflow: hidden;");
-    expect(teamsContent).toContain("flex: 1 1 auto;");
-    expect(equipesCss).not.toMatch(
-      /(?:^|\n)\s*height:\s*calc\(100d?vh\s*-\s*\d+px\)/,
-    );
     expect(messagesPage).toContain("display: flex;");
     expect(messagesPage).toContain("min-height: 100dvh;");
     expect(messagesFrame).toContain("flex: 1 1 auto;");
