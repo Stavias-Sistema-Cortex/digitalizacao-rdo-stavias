@@ -76,11 +76,19 @@ describe("o que espera a régua da obra", () => {
     expect(texto?.pedeOEixo).toBe(false);
   });
 
-  it("um trecho só é falado no singular", () => {
-    expect(avisoDoQueEsperaARegua(aviso())?.titulo).toContain("1 trecho");
-    expect(avisoDoQueEsperaARegua(aviso({ total: 4 }))?.titulo).toContain(
-      "4 trechos",
+  /* O verbo acompanha: "espera/esperam", "ficou/ficaram". */
+  it("um trecho só é falado no singular, vários no plural", () => {
+    expect(avisoDoQueEsperaARegua(aviso())?.titulo).toContain(
+      "1 trecho apontado por quilômetro espera a régua",
     );
+    expect(avisoDoQueEsperaARegua(aviso({ total: 4 }))?.titulo).toContain(
+      "4 trechos apontados por quilômetro esperam a régua",
+    );
+    expect(
+      avisoDoQueEsperaARegua(
+        aviso({ motivo: "FORA_DO_EIXO", total: 2, eixoKmInicial: 100, eixoKmFinal: 110 }),
+      )?.titulo,
+    ).toContain("2 trechos apontados por quilômetro ficaram fora");
   });
 
   /* Sem nada esperando, não há aviso: mapa cheio não precisa de desculpa. */

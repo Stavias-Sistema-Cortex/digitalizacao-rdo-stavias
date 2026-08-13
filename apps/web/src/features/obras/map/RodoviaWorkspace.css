@@ -441,6 +441,19 @@
   color: var(--color-muted);
 }
 
+/*
+ * O aviso do que espera a régua carrega um parágrafo e, para quem pode
+ * desenhar, o botão que resolve. Sem isto o <p> traria a margem padrão do
+ * navegador e o botão nasceria colado no texto.
+ */
+.rodovia-workspace-aviso--espera p {
+  margin: 0;
+}
+
+.rodovia-workspace-aviso--espera .rodovia-desenho-botao {
+  margin-top: 8px;
+}
+
 .rodovia-workspace-aviso--aproximado strong {
   color: var(--color-ink);
 }

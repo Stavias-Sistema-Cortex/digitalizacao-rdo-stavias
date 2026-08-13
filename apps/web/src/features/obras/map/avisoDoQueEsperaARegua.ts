@@ -63,15 +63,15 @@ export function avisoDoQueEsperaARegua(
 ): AvisoDoQueEsperaARegua | null {
   if (!aviso || aviso.total <= 0) return null;
 
-  const quantos =
-    aviso.total === 1
-      ? "1 trecho apontado por quilômetro"
-      : `${aviso.total} trechos apontados por quilômetro`;
+  const umSo = aviso.total === 1;
+  const quantos = umSo
+    ? "1 trecho apontado por quilômetro"
+    : `${aviso.total} trechos apontados por quilômetro`;
   const onde = faixa(aviso.kmInicial, aviso.kmFinal);
 
   if (aviso.motivo === "SEM_EIXO") {
     return {
-      titulo: `${quantos} espera a régua da obra.`,
+      titulo: `${quantos} ${umSo ? "espera" : "esperam"} a régua da obra.`,
       detalhe:
         `O ${onde}${quando(aviso)} está declarado e não tem sobre o que se` +
         " apoiar: esta obra ainda não tem o eixo cadastrado. Cadastre o eixo" +
@@ -86,7 +86,7 @@ export function avisoDoQueEsperaARegua(
       ? faixa(aviso.eixoKmInicial, aviso.eixoKmFinal)
       : "";
   return {
-    titulo: `${quantos} ficou fora do eixo cadastrado.`,
+    titulo: `${quantos} ${umSo ? "ficou" : "ficaram"} fora do eixo cadastrado.`,
     detalhe:
       `O ${onde}${quando(aviso)} está declarado no RDO` +
       (doEixo ? `, e o eixo desta obra cobre do ${doEixo}` : "") +
