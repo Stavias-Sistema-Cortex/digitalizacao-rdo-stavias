@@ -107,6 +107,13 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(sidebar).toContain("overflow-y: auto;");
     expect(sidebar).toContain("background: transparent;");
     expect(content).toContain("min-height: 100dvh;");
+    /*
+     * O escuro do quadro é da barra lateral, que é transparente sobre ele. Sem
+     * fundo próprio, a coluna de conteúdo o deixava aparecer por baixo como
+     * uma tarja preta sempre que a página estivesse mais curta que a tela —
+     * carregando, ou com poucos registros.
+     */
+    expect(content).toContain("background: var(--color-canvas);");
     expect(content).not.toContain("height: 100%;");
     expect(content).not.toContain("overflow-y: auto;");
     expect(globalCss).not.toContain(".floating-controls");

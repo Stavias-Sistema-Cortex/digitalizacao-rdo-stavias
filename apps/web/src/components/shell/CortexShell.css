@@ -13,9 +13,20 @@
   transition: grid-template-columns 220ms ease;
 }
 
+/*
+ * A coluna de conteúdo pinta o próprio fundo.
+ *
+ * O escuro do quadro existe para a barra lateral, que é transparente sobre
+ * ele. A coluna ao lado não pintava nada: enquanto a página estivesse mais
+ * curta que a tela — carregando, ou com poucos registros — o escuro aparecia
+ * por baixo dela como uma tarja preta, e sumia assim que a lista crescia. A
+ * página de RDOs mostrava isso a cada abertura, porque `.rdo-dashboard` tem
+ * fundo mas não tem altura mínima.
+ */
 .cortex-shell-content {
   min-width: 0;
   min-height: 100dvh;
+  background: var(--color-canvas);
 }
 
 .cortex-shell.is-resizing {
