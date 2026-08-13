@@ -4862,6 +4862,25 @@ export async function descartarEdicaoEmConflito(
       errorCategory: "VERSION_CONFLICT_DISCARDED",
     });
   }
+  /*
+   * A mutação legada não liga seus eventos pelo índice: ela os nomeia no
+   * payload. Sem carimbá-los aqui, o descarte apagava a mutação e deixava os
+   * eventos órfãos como "falha no envio" para sempre — sem fila que os
+   * reenviasse e sem decisão que os alcançasse. O rastro fica, como no caso
+   * canônico: descartado, não apagado.
+   */
+  const carimbados = new Set(events.map((event) => event.id));
+  for (const eventId of mutationOperationalEventIds(mutation)) {
+    if (carimbados.has(eventId)) continue;
+    const legacyEvent = await eventStore.get(eventId);
+    if (!legacyEvent || legacyEvent.syncStatus === "SYNCED") continue;
+    await eventStore.put({
+      ...legacyEvent,
+      result: "DISCARDED",
+      syncStatus: "SYNC_FAILED",
+      errorCategory: "VERSION_CONFLICT_DISCARDED",
+    });
+  }
 
   if (mutation.entidadeTipo === "RDO") {
     const rdoStore = transaction.objectStore("rdos");
