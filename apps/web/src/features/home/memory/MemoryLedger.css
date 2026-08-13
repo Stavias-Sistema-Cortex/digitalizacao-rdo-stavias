@@ -460,7 +460,12 @@
   box-shadow: 0 0 0 1px var(--memory-survey);
 }
 
+/*
+ * Falha no envio é fila, não recusa: fica no amarelo do pendente, e não no
+ * vermelho de alarme reservado a conflito e rejeição.
+ */
 .memory-entry[data-status="LOCAL_PENDING"] .memory-entry__rail span,
+.memory-entry[data-status="SYNC_FAILED"] .memory-entry__rail span,
 .memory-entry[data-status="SYNCING"] .memory-entry__rail span {
   background: var(--memory-safety);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-brand-yellow) 60%, var(--color-ink));

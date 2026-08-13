@@ -5,6 +5,7 @@ import {
   vaiAdiantarReenviar,
 } from "./superacaoDeMutacao";
 import type {
+  CanonicalMutationResult,
   CanonicalOperationalEventRecord,
   CanonicalOutboxMutationRecord,
   LocalRdoChildRecord,
@@ -1067,12 +1068,29 @@ async function updateRdoChildrenSyncStatus(
   );
 }
 
+/**
+ * O desfecho que o evento legado do RDO passa a carregar junto do transporte.
+ *
+ * <p>Os eventos que o RDO escreve ao salvar nascem em `schemaVersion: 1`, sem
+ * `result` e sem `errorCategory` — campos que só o envelope canônico preenchia.
+ * Quando o envio terminava mal, eles recebiam apenas `SYNC_FAILED`, e a Memória,
+ * sem veredito para ler, caía no `REJECTED` implícito do fim da escada: um
+ * tropeço de fila virava recusa do servidor na tela, sem código seguro nenhum
+ * para explicá-la. Dizer aqui o que de fato aconteceu é o que devolve a
+ * distinção entre conflito, recusa, substituição e nova tentativa.
+ */
+interface VeredictoDoEnvio {
+  result: CanonicalMutationResult;
+  errorCategory: string | null;
+}
+
 async function updateRdoOperationalEventsSyncStatus(
   transaction: OperationalEventSyncTransaction,
   rdoId: string,
   syncStatus: OperationalEventRecord["syncStatus"],
   timestamp: string,
   exactEventIds?: ReadonlySet<string>,
+  veredito?: VeredictoDoEnvio,
 ): Promise<void> {
   const store = transaction.objectStore("operational_events");
 
@@ -1087,6 +1105,11 @@ async function updateRdoOperationalEventsSyncStatus(
       .map((record) =>
         store.put({
           ...record,
+          // O evento canônico tem escritor próprio (`putCanonicalEvent`), que
+          // conhece a mutação dele. Só o legado é veredito deste caminho: sem
+          // esta guarda, uma chamada sem recorte carimbaria o desfecho de uma
+          // mutação sobre os eventos canônicos das outras do mesmo RDO.
+          ...(veredito && record.schemaVersion !== 13 ? veredito : {}),
           syncStatus,
           syncedAt:
             syncStatus === "SYNCED" ? timestamp : record.syncedAt,
@@ -1433,6 +1456,11 @@ export async function recoverInterruptedMutations(
           mutation.entidadeId,
           "PENDING_SYNC",
           timestamp,
+          undefined,
+          // Voltar para a fila apaga o veredito anterior: sem isto, o evento
+          // legado que já levou um "REJECTED" continuaria vermelho na Memória
+          // enquanto espera, tranquilo, a próxima tentativa.
+          { result: "PENDING", errorCategory: null },
         );
       }
       await updateRdoAttachmentsSyncStatus(
@@ -2734,6 +2762,11 @@ export async function queueErroredMutationsForRetry(
         mutation.entidadeId,
         "PENDING_SYNC",
         timestamp,
+        undefined,
+        // Voltar para a fila apaga o veredito anterior: sem isto, o evento
+        // legado que já levou um "REJECTED" continuaria vermelho na Memória
+        // enquanto espera, tranquilo, a próxima tentativa.
+        { result: "PENDING", errorCategory: null },
       );
       await updateRdoAttachmentsSyncStatus(
         transaction,
@@ -3099,6 +3132,11 @@ export async function queueResolvableConflictsForRetry(): Promise<number> {
         mutation.entidadeId,
         "PENDING_SYNC",
         timestamp,
+        undefined,
+        // Voltar para a fila apaga o veredito anterior: sem isto, o evento
+        // legado que já levou um "REJECTED" continuaria vermelho na Memória
+        // enquanto espera, tranquilo, a próxima tentativa.
+        { result: "PENDING", errorCategory: null },
       );
       await updateRdoAttachmentsSyncStatus(
         transaction,
@@ -3210,6 +3248,7 @@ export async function markMutationAsSyncing(
         "SYNCING",
         timestamp,
         mutationOperationalEventIds(currentMutation),
+        { result: "SYNCING", errorCategory: null },
       );
     }
     await updateRdoAttachmentsSyncStatus(
@@ -3476,6 +3515,7 @@ export async function applyPushResultAtomically(
         "SYNCED",
         timestamp,
         mutationOperationalEventIds(mutation),
+        { result: "SYNCED", errorCategory: null },
       );
       await updateRdoAttachmentsSyncStatus(
         transaction,
@@ -3674,11 +3714,17 @@ export async function applyPushResultAtomically(
         timestamp,
       );
       if (!canonicalEvent) {
+        // Com recorte: sem ele, o conflito de uma mutação marcava como falho
+        // todo evento não sincronizado do RDO — inclusive os das mutações que
+        // seguiam tranquilamente na fila, que apareciam vermelhos sem nunca
+        // terem sido enviados.
         await updateRdoOperationalEventsSyncStatus(
           transaction,
           mutation.entidadeId,
           "SYNC_FAILED",
           timestamp,
+          mutationOperationalEventIds(mutation),
+          { result: "CONFLICT", errorCategory: disposition.safeCode },
         );
       }
       await updateRdoAttachmentsSyncStatus(
@@ -3862,14 +3908,35 @@ export async function applyPushResultAtomically(
         timestamp,
       );
       if (!canonicalEvent) {
+        /*
+         * Três desfechos diferentes moravam no mesmo `SYNC_FAILED` mudo, e a
+         * Memória chamava os três de recusa:
+         *
+         * - a cadeia liberada não falhou nem foi recusada — a sucessora, que
+         *   carrega o rascunho inteiro, absorveu esta tentativa. É a mesma
+         *   substituição que o envelope canônico já sabe narrar;
+         * - o erro retentável volta para a fila, e o evento com ele;
+         * - só a recusa terminal é recusa, e agora vem com o código seguro que
+         *   a explica, em vez do vermelho sem motivo.
+         */
         await updateRdoOperationalEventsSyncStatus(
           transaction,
           mutation.entidadeId,
-          disposition.retryable && !releasedNonAppliedRdoChain
-            ? "PENDING_SYNC"
-            : "SYNC_FAILED",
+          releasedNonAppliedRdoChain
+            ? "LOCAL_ONLY"
+            : disposition.retryable
+              ? "PENDING_SYNC"
+              : "SYNC_FAILED",
           timestamp,
           mutationOperationalEventIds(mutation),
+          releasedNonAppliedRdoChain
+            ? {
+                result: "SUPERSEDED",
+                errorCategory: "NON_APPLIED_SUPERSEDED_BY_LOCAL_EDIT",
+              }
+            : disposition.retryable
+              ? { result: "PENDING", errorCategory: disposition.safeCode }
+              : { result: "REJECTED", errorCategory: disposition.safeCode },
         );
       }
       await updateRdoAttachmentsSyncStatus(
@@ -4654,6 +4721,7 @@ export async function rejectMutationLocally(
       "SYNC_FAILED",
       timestamp,
       mutationOperationalEventIds(mutation),
+      { result: "REJECTED", errorCategory: safeCode },
     );
   }
   if (mutation.entidadeTipo === "RDO") {
@@ -5151,6 +5219,11 @@ export async function returnMutationToPending(
         mutation.entidadeId,
         "PENDING_SYNC",
         timestamp,
+        undefined,
+        // Voltar para a fila apaga o veredito anterior: sem isto, o evento
+        // legado que já levou um "REJECTED" continuaria vermelho na Memória
+        // enquanto espera, tranquilo, a próxima tentativa.
+        { result: "PENDING", errorCategory: null },
       );
     }
     await updateRdoAttachmentsSyncStatus(

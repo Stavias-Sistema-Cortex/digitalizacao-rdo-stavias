@@ -28,6 +28,14 @@ export type MemoryDocumentStatus =
   | "DISCARDED"
   /* Escrita absorvida por uma posterior da mesma entidade. Não é recusa. */
   | "SUPERSEDED"
+  /*
+   * A última tentativa de envio não chegou ao fim. Ninguém recusou nada: o
+   * envelope continua íntegro no aparelho e volta a subir quando a fila
+   * andar. Existe separado de `REJECTED` porque confundir os dois faz a
+   * Memória acusar de recusa o que foi tropeço de rede ou de fila — e quem lê
+   * conclui, com razão, que perdeu o trabalho.
+   */
+  | "SYNC_FAILED"
   | "REJECTED";
 
 export interface MemoryStructuralKeys {
@@ -127,6 +135,7 @@ export type MemoryCoverageCode =
   | "LOCAL_PENDING"
   | "SYNCING"
   | "CONFLICT"
+  | "SYNC_FAILED"
   | "REJECTED";
 
 export interface MemoryCoverageView {
@@ -139,6 +148,7 @@ export interface MemoryCoverageView {
     | "Conflito"
     | "Descartado"
     | "Substituído"
+    | "Falha no envio"
     | "Rejeitado";
   detail: string;
 }
@@ -302,6 +312,13 @@ export function memoryCoverage(input: {
       `Há alterações recusadas com evidência preservada neste dispositivo.${partialDetail}${graphDetail}`,
     );
   }
+  if (statuses.has("SYNC_FAILED")) {
+    return coverage(
+      "SYNC_FAILED",
+      "Falha no envio",
+      `Há alterações preservadas neste dispositivo cujo último envio não se completou.${partialDetail}${graphDetail}`,
+    );
+  }
   if (statuses.has("SYNCING")) {
     return coverage(
       "SYNCING",
@@ -358,6 +375,7 @@ export function memoryStatusLabel(
     CONFLICT: "Conflito",
     DISCARDED: "Descartado",
     SUPERSEDED: "Substituído",
+    SYNC_FAILED: "Falha no envio",
     REJECTED: "Rejeitado",
   };
   return labels[status];
@@ -375,6 +393,8 @@ const SUPERSESSAO: ReadonlySet<string> = new Set([
   "SUPERSEDED_BY_LOCAL_EDIT",
   "SUPERSEDED_BY_CONFLICT_REPLACEMENT",
   "SUPERSEDED_BY_REPLACEMENT",
+  "SUPERSEDED_BY_DEPENDENCY_REWIRE",
+  "NON_APPLIED_SUPERSEDED_BY_LOCAL_EDIT",
 ]);
 
 function localStatus(event: OperationalEventRecord): MemoryDocumentStatus {
@@ -396,7 +416,19 @@ function localStatus(event: OperationalEventRecord): MemoryDocumentStatus {
   ) {
     return "LOCAL_PENDING";
   }
-  return event.syncStatus === "SYNCED" ? "UPDATED" : "REJECTED";
+  if (event.syncStatus === "SYNCED") return "UPDATED";
+  /*
+   * Sobra o transporte que falhou sem veredito próprio — o caso dos eventos
+   * legados do RDO, que nascem em `schemaVersion: 1` sem `result` e recebem
+   * apenas `SYNC_FAILED` quando o envio termina mal.
+   *
+   * Até aqui a escada caía num `REJECTED` implícito, e um tropeço de rede
+   * aparecia como recusa do servidor: crachá "Rejeitado", cobertura inteira
+   * "Rejeitado", cartão de revisão sem versão-base, sem versão remota e sem
+   * nada a decidir. Quem tinha acabado de salvar em campo lia recusa onde
+   * houve fila. Falha de envio é falha de envio, e é o que passa a dizer.
+   */
+  return "SYNC_FAILED";
 }
 
 function serverStatus(result: string | null): MemoryDocumentStatus {

@@ -836,6 +836,7 @@ export interface MemorySearchDocumentRecord {
     | "CONFLICT"
     | "DISCARDED"
     | "SUPERSEDED"
+    | "SYNC_FAILED"
     | "REJECTED";
   sourceKind: "SERVER" | "LOCAL";
   occurredAt: string;
