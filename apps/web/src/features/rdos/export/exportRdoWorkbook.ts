@@ -1,7 +1,8 @@
 import * as XLSX from "@e965/xlsx";
 import { unzipSync, zipSync } from "fflate";
 
-import { apiFetch } from "../../../lib/api/apiClient";
+import { apiFetch, readResponseBody } from "../../../lib/api/apiClient";
+import { responseErrorMessage } from "../../../lib/api/apiError";
 import templateUrl from "./RDO-v1.xlsx?url";
 import {
   assertRdoExportDownloadPermit,
@@ -576,8 +577,14 @@ export async function downloadAuthoritativeRdoWorkbook(
     },
   );
   if (!response.ok) {
+    // O servidor explica a recusa — campo fora do previsto, seção que não cabe
+    // na folha, obra sem o que a capa exige. Trocar isso por um número deixava
+    // quem clicou sem a única informação capaz de resolver o problema.
     throw new Error(
-      `O servidor recusou a exportação do RDO (${response.status}).`,
+      responseErrorMessage(
+        await readResponseBody(response),
+        response.status,
+      ),
     );
   }
   const mediaType = response.headers

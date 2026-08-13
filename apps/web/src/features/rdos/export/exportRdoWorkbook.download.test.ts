@@ -22,7 +22,8 @@ const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
 }));
 
-vi.mock("../../../lib/api/apiClient", () => ({
+vi.mock("../../../lib/api/apiClient", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/api/apiClient")>()),
   apiFetch: mocks.apiFetch,
 }));
 

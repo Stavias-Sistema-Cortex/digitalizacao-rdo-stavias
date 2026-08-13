@@ -22,7 +22,8 @@ const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
 }));
 
-vi.mock("../../../lib/api/apiClient", () => ({
+vi.mock("../../../lib/api/apiClient", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/api/apiClient")>()),
   apiFetch: mocks.apiFetch,
 }));
 
@@ -511,12 +512,15 @@ describe("authoritative RDO PDF download", () => {
       "sem um arquivo PDF válido",
     ],
     [
-      "an HTTP 403",
+      // O motivo do servidor é o que resolve o problema de quem clicou; o
+      // número sozinho não diz se falta campo, se a seção não cabe na folha
+      // ou se a pessoa perdeu o acesso à obra.
+      "an HTTP 403 relaying the server reason",
       new Response("forbidden", {
         status: 403,
         headers: { "Content-Type": "application/pdf" },
       }),
-      "recusou a exportação do RDO (403)",
+      "forbidden",
     ],
   ])("rejects %s without invoking the local generator", async (
     _label,
