@@ -4,7 +4,10 @@ import {
   downloadRdoExportBlob,
   type RdoExportDownloadPermit,
 } from "./rdoExportDownload";
-import { rdoWorkbookFilename } from "./exportRdoWorkbook";
+import {
+  rdoWorkbookFilename,
+  type RdoExportIdentidade,
+} from "./exportRdoWorkbook";
 import { buildRdoPdf } from "./rdoPdfLayout";
 import {
   type RdoWorkbookSnapshot,
@@ -18,7 +21,7 @@ export function exportRdoPdf(snapshot: RdoWorkbookSnapshot): Uint8Array {
   return new Uint8Array(buildRdoPdf(snapshot).output("arraybuffer"));
 }
 
-export function rdoPdfFilename(snapshot: RdoWorkbookSnapshot): string {
+export function rdoPdfFilename(snapshot: RdoExportIdentidade): string {
   return rdoWorkbookFilename(snapshot).replace(/\.xlsx$/, ".pdf");
 }
 
@@ -35,7 +38,7 @@ export async function downloadRdoPdf(
 }
 
 export async function downloadAuthoritativeRdoPdf(
-  snapshot: RdoWorkbookSnapshot,
+  snapshot: RdoExportIdentidade,
   permit: RdoExportDownloadPermit,
 ): Promise<void> {
   assertRdoExportDownloadPermit(permit);

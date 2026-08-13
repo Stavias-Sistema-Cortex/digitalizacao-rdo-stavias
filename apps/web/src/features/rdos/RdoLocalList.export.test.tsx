@@ -443,6 +443,76 @@ describe("RdoLocalList offline export", () => {
     expect(mocks.downloadPdfLocal).not.toHaveBeenCalled();
   });
 
+  /*
+   * O RDO que outra pessoa preencheu chega primeiro como cabeçalho — número,
+   * data e obra — e o conteúdo vem numa passagem seguinte. O portão local
+   * recusava esse cabeçalho com razão ("o segmento canônico local não foi
+   * persistido"), e desligava os dois botões. Só que o documento existe
+   * inteiro no servidor, que o exporta sem precisar de nada daqui além do
+   * identificador: a exportação morria justamente nos RDOs dos outros.
+   */
+  it("exports from the server a synced RDO that arrived as a header only", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList(
+      record({
+        syncStatus: "SYNCED",
+        versaoEntidade: null,
+        payload: {
+          id: "rdo-local-1",
+          obraId: "obra-1",
+          numeroRdo: "RDO-1",
+          dataRdo: "2026-07-22",
+          status: "RASCUNHO",
+        },
+      }),
+    );
+
+    const button = await screen.findByRole("button", { name: "Exportar XLSX" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mocks.downloadServer).toHaveBeenCalledOnce());
+    expect(mocks.downloadLocal).not.toHaveBeenCalled();
+  });
+
+  /* Sem rede, a recusa do portão local volta a ser a verdade sobre o arquivo. */
+  it("keeps the header-only RDO honestly unexportable without network", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList(
+      record({
+        syncStatus: "SYNCED",
+        versaoEntidade: null,
+        payload: {
+          id: "rdo-local-1",
+          obraId: "obra-1",
+          numeroRdo: "RDO-1",
+          dataRdo: "2026-07-22",
+          status: "RASCUNHO",
+        },
+      }),
+    );
+
+    const button = await screen.findByRole("button", { name: "Exportar XLSX" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    await expectExportStateToContain("não foi persistido neste RDO");
+    expect(mocks.downloadServer).not.toHaveBeenCalled();
+    expect(mocks.downloadLocal).not.toHaveBeenCalled();
+  });
+
   it("does not silently fall back to local export after a server rejection", async () => {
     Object.defineProperty(window.navigator, "onLine", {
       configurable: true,

@@ -519,7 +519,22 @@ export async function exportRdoWorkbook(
   return output;
 }
 
-export function rdoWorkbookFilename(snapshot: RdoWorkbookSnapshot): string {
+/**
+ * O mínimo para pedir o arquivo ao servidor: quem é o documento.
+ *
+ * <p>A exportação autorizada não monta nada aqui — ela pede ao servidor, que
+ * tem o RDO inteiro, e só precisa do identificador para saber qual. Exigir o
+ * retrato completo do documento neste aparelho era o que matava o botão sobre
+ * o RDO que chegou como cabeçalho, ou cuja obra ainda não estava no cache.
+ *
+ * <p>O retrato completo satisfaz esta forma, então quem já o tem continua
+ * passando o que sempre passou.
+ */
+export interface RdoExportIdentidade {
+  rdo: { id: string; numeroRdo: string };
+}
+
+export function rdoWorkbookFilename(snapshot: RdoExportIdentidade): string {
   const raw = snapshot.rdo.numeroRdo.trim() || snapshot.rdo.id.trim() || "rdo";
   let candidate = raw
     .normalize("NFKD")
@@ -545,7 +560,7 @@ export async function downloadRdoWorkbook(
 }
 
 export async function downloadAuthoritativeRdoWorkbook(
-  snapshot: RdoWorkbookSnapshot,
+  snapshot: RdoExportIdentidade,
   permit: RdoExportDownloadPermit,
 ): Promise<void> {
   assertRdoExportDownloadPermit(permit);

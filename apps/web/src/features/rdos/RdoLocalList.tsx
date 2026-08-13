@@ -92,6 +92,59 @@ type ProfileTarget =
   | { type: "RDO"; id: string; label: string }
   | { type: "COLABORADOR"; id: string; label: string };
 
+/**
+ * O RDO que o servidor guarda, o servidor exporta.
+ *
+ * <p>A exportação era decidida só pela cópia deste aparelho, e a cópia deste
+ * aparelho quase nunca é o documento inteiro: o RDO que outra pessoa preencheu
+ * chega primeiro como cabeçalho — número, data, obra — e o conteúdo vem depois.
+ * Sobre esse cabeçalho o portão local dizia, com razão, "o segmento canônico
+ * local de mão de obra não foi persistido neste RDO", e desligava os dois
+ * botões. Só que o documento existe inteiro no servidor, que sabe montar o
+ * XLSX e o PDF sozinho e não precisa de nada daqui além do identificador. O
+ * gestor via a exportação morta justamente nos RDOs que ele mais exporta: os
+ * dos outros.
+ *
+ * <p>O mesmo valia para qualquer tropeço no retrato local — obra fora do cache
+ * offline, leitura do snapshot falhando. Nenhum deles impede o servidor de
+ * entregar o arquivo.
+ *
+ * <p>Estar sincronizado é a condição, e é a condição certa: significa que o
+ * servidor tem este documento com este identificador. Sem rede, o caminho volta
+ * a ser o local, e aí a recusa do portão é verdadeira — o arquivo realmente não
+ * pode ser montado aqui.
+ */
+function exportavelPeloServidor(record: LocalRdoRecord): boolean {
+  return record.syncStatus === "SYNCED";
+}
+
+const DISPONIVEL_PELO_SERVIDOR: RdoExportAvailability = {
+  ready: true,
+  code: null,
+  message: "Disponível pelo servidor",
+};
+
+function comQuemOServidorExporta(
+  records: readonly LocalRdoRecord[],
+  local: Map<string, RdoExportAvailability>,
+): Map<string, RdoExportAvailability> {
+  const statuses = new Map<string, RdoExportAvailability>();
+  for (const record of records) {
+    const disponivel = local.get(record.id);
+    statuses.set(
+      record.id,
+      disponivel?.ready || !exportavelPeloServidor(record)
+        ? disponivel ?? {
+            ready: false,
+            code: null,
+            message: "Exportação indisponível",
+          }
+        : DISPONIVEL_PELO_SERVIDOR,
+    );
+  }
+  return statuses;
+}
+
 function exportStateSummary(
   record: LocalRdoRecord,
   xlsxAvailability: RdoExportAvailability | undefined,
@@ -102,10 +155,9 @@ function exportStateSummary(
     { format: "XLSX", availability: xlsxAvailability },
     { format: "PDF", availability: pdfAvailability },
   ] as const;
-  const origin =
-    record.syncStatus === "SYNCED" && record.versaoEntidade !== null
-      ? "Origem da exportação · Servidor · cópia local disponível offline"
-      : "Origem da exportação · Dados locais pendentes · disponível offline";
+  const origin = exportavelPeloServidor(record)
+    ? "Origem da exportação · Servidor · cópia local disponível offline"
+    : "Origem da exportação · Dados locais pendentes · disponível offline";
   const allReady = formats.every(({ availability }) => availability?.ready);
   const allUnavailable = formats.every(
     ({ availability }) => !availability?.ready,
@@ -479,7 +531,7 @@ export function RdoLocalList({
     };
   }, [worksiteRequestKey]);
 
-  const exportAvailabilityByRdo = useMemo(() => {
+  const localExportAvailabilityByRdo = useMemo(() => {
     const statuses = new Map<string, RdoExportAvailability>();
     for (const record of records) {
       if (isLoadingWorksites) {
@@ -507,10 +559,10 @@ export function RdoLocalList({
     return statuses;
   }, [cachedWorksites, isLoadingWorksites, records, worksiteError]);
 
-  const pdfExportAvailabilityByRdo = useMemo(() => {
+  const localPdfExportAvailabilityByRdo = useMemo(() => {
     const statuses = new Map<string, RdoExportAvailability>();
     for (const record of records) {
-      const availability = exportAvailabilityByRdo.get(record.id);
+      const availability = localExportAvailabilityByRdo.get(record.id);
       if (!availability?.ready) {
         statuses.set(record.id, availability ?? {
           ready: false,
@@ -530,9 +582,19 @@ export function RdoLocalList({
     return statuses;
   }, [
     cachedWorksites,
-    exportAvailabilityByRdo,
+    localExportAvailabilityByRdo,
     records,
   ]);
+
+  const exportAvailabilityByRdo = useMemo(
+    () => comQuemOServidorExporta(records, localExportAvailabilityByRdo),
+    [localExportAvailabilityByRdo, records],
+  );
+
+  const pdfExportAvailabilityByRdo = useMemo(
+    () => comQuemOServidorExporta(records, localPdfExportAvailabilityByRdo),
+    [localPdfExportAvailabilityByRdo, records],
+  );
 
   function rememberExportNotice(
     rdoId: string,
@@ -564,15 +626,22 @@ export function RdoLocalList({
         throw new Error(RDO_EXPORT_SESSION_CHANGED_MESSAGE);
       }
       assertRdoExportSessionGuard(guard, record.obraId);
-      const snapshot = rdoWorkbookSnapshotFromLocalRecord(
-        record,
-        cachedWorksites.get(record.obraId),
-      );
+      // Com rede e documento no servidor, é ele quem exporta — mesmo que a
+      // cópia daqui seja só o cabeçalho. Sem rede, resta o que este aparelho
+      // tem, e se não der para montar o arquivo a recusa é honesta.
       const useAuthoritativeServer =
         typeof navigator !== "undefined" &&
         navigator.onLine &&
-        record.syncStatus === "SYNCED" &&
-        record.versaoEntidade !== null;
+        exportavelPeloServidor(record);
+      const localPronto = (format === "PDF"
+        ? localPdfExportAvailabilityByRdo
+        : localExportAvailabilityByRdo).get(record.id);
+      if (!useAuthoritativeServer && !localPronto?.ready) {
+        throw new Error(
+          localPronto?.message ??
+            "Este RDO ainda não pode ser exportado por este aparelho.",
+        );
+      }
       const downloadPermit: RdoExportDownloadPermit = {
         assertCurrentAuthorization: () => {
           assertRdoExportSessionGuard(guard, record.obraId);
@@ -581,16 +650,26 @@ export function RdoLocalList({
       };
 
       if (useAuthoritativeServer) {
+        // Só a identidade: o arquivo vem pronto do servidor, e montar o
+        // retrato completo aqui derrubaria a exportação do RDO que ainda é
+        // cabeçalho — justamente o dos outros, que é o que mais se exporta.
+        const identidade = {
+          rdo: { id: record.id, numeroRdo: record.numeroRdo ?? "" },
+        };
         if (format === "PDF") {
           const { downloadAuthoritativeRdoPdf } = await import("./export/exportRdoPdf");
           assertRdoExportSessionGuard(guard, record.obraId);
-          await downloadAuthoritativeRdoPdf(snapshot, downloadPermit);
+          await downloadAuthoritativeRdoPdf(identidade, downloadPermit);
         } else {
           const { downloadAuthoritativeRdoWorkbook } = await import("./export/exportRdoWorkbook");
           assertRdoExportSessionGuard(guard, record.obraId);
-          await downloadAuthoritativeRdoWorkbook(snapshot, downloadPermit);
+          await downloadAuthoritativeRdoWorkbook(identidade, downloadPermit);
         }
       } else {
+        const snapshot = rdoWorkbookSnapshotFromLocalRecord(
+          record,
+          cachedWorksites.get(record.obraId),
+        );
         if (format === "PDF") {
           const { downloadRdoPdf } = await import("./export/exportRdoPdf");
           assertRdoExportSessionGuard(guard, record.obraId);
