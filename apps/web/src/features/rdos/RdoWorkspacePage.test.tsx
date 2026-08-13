@@ -10,11 +10,13 @@ const {
   listOperationalEvents,
   listAllRdoAttachments,
   importarRdoArquivo,
+  reconciliar,
 } = vi.hoisted(() => ({
   listLocalRdos: vi.fn(),
   listOperationalEvents: vi.fn(),
   listAllRdoAttachments: vi.fn(),
   importarRdoArquivo: vi.fn(),
+  reconciliar: vi.fn(),
 }));
 
 vi.mock("../../components/shell/CortexShell", () => ({
@@ -37,6 +39,10 @@ vi.mock("../../lib/db/rdoAttachmentRepository", () => ({
 
 vi.mock("./importRdoExcel", () => ({
   importarRdoArquivo,
+}));
+
+vi.mock("./rdosDoServidor", () => ({
+  reconciliarRdosDoServidor: reconciliar,
 }));
 
 vi.mock("./RdoLocalList", () => ({
@@ -236,6 +242,33 @@ describe("RdoWorkspacePage: entrada do novo RDO", () => {
     });
 
     expect(screen.queryByText("RDO-ANTIGO")).not.toBeInTheDocument();
+    await waitFor(() => expect(listLocalRdos).toHaveBeenCalledTimes(2));
+  });
+
+  /*
+   * A API do Córtex hiberna: no primeiro acesso do dia a reconciliação leva
+   * segundos. Enquanto ela vinha antes da leitura local, a tela ficava em
+   * "Carregando RDOs locais…" sobre dados que já estavam no aparelho — o
+   * oposto do que um produto offline-first promete.
+   */
+  it("mostra o que o aparelho já tem sem esperar o servidor", async () => {
+    const rede = deferred<void>();
+    reconciliar.mockReturnValue(rede.promise);
+    listLocalRdos.mockResolvedValue([
+      { id: "rdo-local", numeroRdo: "RDO-DO-APARELHO" },
+    ]);
+    listOperationalEvents.mockResolvedValue([]);
+    listAllRdoAttachments.mockResolvedValue([]);
+
+    render(<RdoWorkspacePage />);
+
+    // A rede ainda não respondeu, e o RDO do aparelho já está na tela.
+    expect(await screen.findByText("RDO-DO-APARELHO")).toBeInTheDocument();
+
+    rede.resolve();
+    await waitFor(() => expect(reconciliar).toHaveBeenCalled());
+    // E o servidor continua entrando: a leitura se repete para incorporar o
+    // que ele trouxe.
     await waitFor(() => expect(listLocalRdos).toHaveBeenCalledTimes(2));
   });
 });

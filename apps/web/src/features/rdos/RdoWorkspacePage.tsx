@@ -101,6 +101,29 @@ export function RdoWorkspacePage() {
   const [exportSessionGuard, setExportSessionGuard] =
     useState<RdoExportSessionGuard | null>(null);
 
+  /**
+   * Lê o que este aparelho já tem e entrega à tela.
+   *
+   * <p>Separado para poder rodar duas vezes na mesma abertura: uma antes da
+   * rede, que é a que faz a tela aparecer, e outra depois dela, que incorpora
+   * o que o servidor trouxe.
+   */
+  const lerDoAparelho = useCallback(
+    async (generation: number, guard: RdoExportSessionGuard | null) => {
+      const [localRecords, localEvents, localAttachments] = await Promise.all([
+        listLocalRdos(),
+        listOperationalEvents(),
+        listAllRdoAttachments(),
+      ]);
+      if (generation !== loadGenerationRef.current) return;
+      setRecords(localRecords);
+      setEvents(localEvents);
+      setAttachments(localAttachments);
+      setExportSessionGuard(guard);
+    },
+    [],
+  );
+
   const loadRecords =
     useCallback(async () => {
       const generation = ++loadGenerationRef.current;
@@ -110,35 +133,27 @@ export function RdoWorkspacePage() {
       try {
         const guard = captureRdoExportSessionGuard();
         /*
-         * O servidor entra antes da leitura local, não no lugar dela.
+         * O aparelho primeiro, a rede depois.
          *
-         * O banco deste aparelho é por pessoa — o nome dele deriva de
-         * {ownerId, escopo} —, então a lista mostrava só o que este aparelho
-         * havia criado. Quem abria a própria conta numa obra em que outra
-         * pessoa apontava via a tela vazia, com acesso à obra e com os RDOs já
-         * sincronizados, e não tinha como descobrir o porquê.
+         * <p>A reconciliação com o servidor vinha antes da leitura local, e a
+         * tela inteira ficava em "Carregando RDOs locais…" até a ida e volta
+         * terminar. Com a API adormecida — o caso comum no primeiro acesso do
+         * dia —, isso são segundos de tela morta sobre dados que já estavam
+         * aqui, no banco deste aparelho. É o contrário do que um produto
+         * offline-first promete: quem tem o dado mostra o dado.
          *
-         * A reconciliação nunca derruba a abertura da tela: sem rede ela
-         * simplesmente não traz nada, e o que está no aparelho continua sendo
-         * servido — que é o contrato do modo offline.
+         * <p>Agora a leitura local pinta a tela e encerra o carregamento; a
+         * reconciliação corre atrás e repinta quando trouxer novidade. O
+         * servidor continua entrando — ele é quem traz o RDO que outra pessoa
+         * apontou —, só deixou de ser pedágio para ver o que é nosso.
          */
+        await lerDoAparelho(generation, guard);
+        if (generation !== loadGenerationRef.current) return;
+        setIsLoading(false);
+
         await reconciliarRdosDoServidor().catch(() => undefined);
         if (generation !== loadGenerationRef.current) return;
-        const [
-          localRecords,
-          localEvents,
-          localAttachments,
-        ] = await Promise.all([
-          listLocalRdos(),
-          listOperationalEvents(),
-          listAllRdoAttachments(),
-        ]);
-
-        if (generation !== loadGenerationRef.current) return;
-        setRecords(localRecords);
-        setEvents(localEvents);
-        setAttachments(localAttachments);
-        setExportSessionGuard(guard);
+        await lerDoAparelho(generation, guard);
       } catch (error: unknown) {
         if (generation !== loadGenerationRef.current) return;
         setLoadError(
@@ -151,7 +166,7 @@ export function RdoWorkspacePage() {
           setIsLoading(false);
         }
       }
-    }, []);
+    }, [lerDoAparelho]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
