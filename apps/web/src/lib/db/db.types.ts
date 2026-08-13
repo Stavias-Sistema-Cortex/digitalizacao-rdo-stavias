@@ -854,7 +854,7 @@ export interface MemorySearchDocumentRecord {
     entityVersion: number | null;
   };
   review: {
-    status: "CONFLICT" | "REJECTED";
+    status: "CONFLICT" | "REJECTED" | "SYNC_FAILED";
     clientMutationId: string | null;
     baseVersion: number | null;
     eventVersion: number | null;
@@ -866,6 +866,7 @@ export interface MemorySearchDocumentRecord {
     canReconcile: boolean;
     unavailableReason:
       | "SUPERSEDED_BY_LOCAL_EDIT"
+      | "SEND_INCOMPLETE"
       | "REJECTED"
       | "LOCAL_EVIDENCE_UNAVAILABLE"
       | "REMOTE_SNAPSHOT_UNAVAILABLE"
