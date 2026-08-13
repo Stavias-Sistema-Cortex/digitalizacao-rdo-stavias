@@ -23,7 +23,7 @@ import static org.mockito.Mockito.when;
 class PostgresqlSchemaReadinessGuardTest {
 
     @Test
-    void configuredGuardRequiresTheCompleteV81Chain() throws Exception {
+    void configuredGuardRequiresTheCompleteV82Chain() throws Exception {
         assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("82");
     }
 
@@ -85,12 +85,12 @@ class PostgresqlSchemaReadinessGuardTest {
 
         assertThatThrownBy(guard::verifyReadiness)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V81")
+                .hasMessageContaining("cadeia de migrações até V82")
                 .hasCauseInstanceOf(DataAccessResourceFailureException.class);
     }
 
     @Test
-    void refusesWhenTheExplicitV81RowIsAbsent() {
+    void refusesWhenTheExplicitV82RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
@@ -100,7 +100,7 @@ class PostgresqlSchemaReadinessGuardTest {
 
         assertThatThrownBy(guard::verifyReadiness)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V81");
+                .hasMessageContaining("cadeia de migrações até V82");
         verify(jdbcTemplate).queryForObject(
                 contains("FROM public.flyway_schema_history"),
                 eq(Integer.class)
@@ -108,7 +108,7 @@ class PostgresqlSchemaReadinessGuardTest {
     }
 
     @Test
-    void acceptsACompletedV81MigrationChain() {
+    void acceptsACompletedV82MigrationChain() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1);
 

@@ -14,7 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class PostgresqlActivationReadinessTest {
 
     @Test
-    void reportsPendingWhenV81AndDatabaseAreAvailableWithoutAnActiveAlfa() {
+    void reportsPendingWhenV82AndDatabaseAreAvailableWithoutAnActiveAlfa() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForObject(anyString(), eq(Integer.class))).thenAnswer(
                 invocation -> 1
@@ -36,7 +36,7 @@ class PostgresqlActivationReadinessTest {
     }
 
     @Test
-    void rejectsMissingOrMalformedV81WithoutCheckingForAnAlfa() {
+    void rejectsMissingOrMalformedV82WithoutCheckingForAnAlfa() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForObject(anyString(), eq(Integer.class))).thenAnswer(
                 invocation -> "SELECT 1".equals(invocation.getArgument(0))
@@ -47,6 +47,6 @@ class PostgresqlActivationReadinessTest {
 
         assertThatThrownBy(readiness::verifyRuntimeReadiness)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V81");
+                .hasMessageContaining("V82");
     }
 }

@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
 class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
-    void configuredRuntimeRequiresTheCompleteV81Chain() throws Exception {
+    void configuredRuntimeRequiresTheCompleteV82Chain() throws Exception {
         assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("82");
     }
 
@@ -139,13 +139,13 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void refusesWhenTheExplicitV81RowIsAbsent() {
+    void refusesWhenTheExplicitV82RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V81");
+                .hasMessageContaining("cadeia de migrações até V82");
         verify(jdbcTemplate).queryForObject(contains("version = '82'"), eq(Integer.class));
     }
 
@@ -161,7 +161,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void acceptsOnlyV81AcademyIdentityOwnerFlagAndReleasedSurfaceTogether() {
+    void acceptsOnlyV82AcademyIdentityOwnerFlagAndReleasedSurfaceTogether() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
 
