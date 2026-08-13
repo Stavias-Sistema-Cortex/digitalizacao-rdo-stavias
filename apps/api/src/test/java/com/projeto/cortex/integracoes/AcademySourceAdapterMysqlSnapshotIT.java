@@ -114,6 +114,66 @@ class AcademySourceAdapterMysqlSnapshotIT {
         }
     }
 
+    /*
+     * A função é a coluna mais nova da origem, e a origem é o banco de outro
+     * time. Se ela ainda não estiver lá — ou tiver outro nome — uma consulta
+     * que a exige derruba o snapshot inteiro, e com ele param nomes,
+     * admissões e desligamentos. O sync de colaboradores é a espinha do
+     * Córtex; ele não pode morrer por causa de um campo acessório.
+     */
+    @Test
+    void semAColunaDeFuncaoOSyncSegueTrazendoTodoOResto() throws Exception {
+        try (Connection admin = adminConnection();
+             Statement statement = admin.createStatement()) {
+            statement.execute("ALTER TABLE usuarios DROP COLUMN funcao");
+        }
+        try {
+            AcademyUserSnapshot snapshot = new AcademySourceAdapter(
+                    jdbcUrl(), READER_USER, READER_PASSWORD
+            ).fetchCompleteSnapshot(2);
+
+            assertThat(snapshot.complete()).isTrue();
+            assertThat(snapshot.users()).isNotEmpty();
+            assertThat(snapshot.users())
+                    .extracting(
+                            AcademySourceAdapter.UsuarioAcademyRecord::nome
+                    )
+                    .contains("Academy 10");
+            // Sem a coluna, a função vem nula — e nada mais se perde.
+            assertThat(snapshot.users())
+                    .allSatisfy(usuario ->
+                            assertThat(usuario.funcao()).isNull());
+        } finally {
+            try (Connection admin = adminConnection();
+                 Statement statement = admin.createStatement()) {
+                statement.execute(
+                        "ALTER TABLE usuarios ADD COLUMN funcao VARCHAR(255)"
+                );
+            }
+        }
+    }
+
+    /* Com a coluna presente, o ofício viaja como qualquer outro campo. */
+    @Test
+    void comAColunaDeFuncaoOOficioViajaNoSnapshot() throws Exception {
+        try (Connection admin = adminConnection();
+             Statement statement = admin.createStatement()) {
+            statement.executeUpdate(
+                    "UPDATE usuarios SET funcao = 'PEDREIRO' WHERE id_usuario = 10"
+            );
+        }
+
+        AcademyUserSnapshot snapshot = new AcademySourceAdapter(
+                jdbcUrl(), READER_USER, READER_PASSWORD
+        ).fetchCompleteSnapshot(2);
+
+        assertThat(snapshot.users())
+                .filteredOn(usuario -> usuario.idUsuario() == 10L)
+                .singleElement()
+                .satisfies(usuario ->
+                        assertThat(usuario.funcao()).isEqualTo("PEDREIRO"));
+    }
+
     @Test
     void readOnlyUserAndRepeatableReadKeepAllPagesOnOneSnapshot()
             throws Exception {

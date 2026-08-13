@@ -1,5 +1,7 @@
 package com.projeto.cortex.integracoes;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.projeto.cortex.common.SecurityRuntimeMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +23,9 @@ import java.util.Optional;
 
 @Component
 public class AcademySourceAdapter {
+
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(AcademySourceAdapter.class);
 
     private static final int DEFAULT_QUERY_TIMEOUT_SECONDS = 30;
     private static final int DEFAULT_PAGE_SIZE = 500;
@@ -50,12 +55,24 @@ public class AcademySourceAdapter {
         }
     }
 
+    /**
+     * A função é lida por template, não fixa na consulta.
+     *
+     * <p>Ela é a coluna mais nova da origem, e a origem é um banco de outro
+     * time: se ela ainda não existir ali — ou tiver outro nome —, uma consulta
+     * que a exige derruba o snapshot inteiro, e com ele param nomes, admissões
+     * e desligamentos. O sync de colaboradores é a espinha do Córtex; ele não
+     * pode morrer por causa de um campo acessório. Sem a coluna, a função vem
+     * nula e todo o resto continua entrando.
+     */
+    private static final String COLUNA_FUNCAO = "funcao";
+
     private static final String SQL_SELECT_USUARIOS = """
             SELECT
                 u.id_usuario,
                 u.cpf,
                 u.nome,
-                u.funcao,
+                %1$su.funcao,%2$s
                 u.email,
                 u.ativo,
                 u.id_grupo,
@@ -68,7 +85,7 @@ public class AcademySourceAdapter {
                     source.id_usuario,
                     source.cpf,
                     source.nome,
-                    source.funcao,
+                    %1$ssource.funcao,%2$s
                     source.email,
                     source.ativo,
                     source.id_grupo,
@@ -221,16 +238,65 @@ public class AcademySourceAdapter {
         }
     }
 
+    /** A consulta com ou sem a coluna de função, conforme a origem a tenha. */
+    private static String sqlSelectUsuarios(boolean comFuncao) {
+        return comFuncao
+                ? SQL_SELECT_USUARIOS.formatted("", "")
+                // Os marcadores comentam a coluna sem desalinhar o resto do
+                // texto, que é o mesmo dos dois jeitos.
+                : SQL_SELECT_USUARIOS.formatted("-- ", "");
+    }
+
+    /**
+     * A origem tem a coluna de função?
+     *
+     * <p>A pergunta vai ao dicionário do próprio driver — {@code
+     * DatabaseMetaData} —, e não a uma consulta nossa: é a via padrão do JDBC
+     * para saber se uma coluna existe, funciona igual em qualquer versão do
+     * MySQL e não gasta uma linha do instantâneo que a paginação vai ler.
+     *
+     * <p>Qualquer tropeço responde "não". O sync sem a função é o
+     * comportamento de sempre e vale mil vezes mais que um sync que não roda:
+     * a coluna é acessória, mas a consulta que a exige derrubaria o snapshot
+     * inteiro — e com ele parariam nomes, admissões e desligamentos.
+     */
+    private boolean origemTemFuncao(Connection connection) {
+        try (ResultSet colunas = connection.getMetaData().getColumns(
+                connection.getCatalog(),
+                null,
+                "usuarios",
+                COLUNA_FUNCAO
+        )) {
+            if (colunas != null && colunas.next()) {
+                return true;
+            }
+            LOGGER.warn(
+                    "Academy sem a coluna 'usuarios.{}': o sync segue sem a"
+                            + " função do colaborador.",
+                    COLUNA_FUNCAO
+            );
+            return false;
+        } catch (Exception ignored) {
+            LOGGER.warn(
+                    "Não foi possível conferir a coluna 'usuarios.{}' na"
+                            + " Academy; o sync segue sem a função.",
+                    COLUNA_FUNCAO
+            );
+            return false;
+        }
+    }
+
     private List<UsuarioAcademyRecord> readAllPages(
             Connection connection,
             int pageSize
     ) throws Exception {
+        boolean comFuncao = origemTemFuncao(connection);
         List<UsuarioAcademyRecord> users = new ArrayList<>();
         long lastSourceId = 0L;
 
         try (
                 PreparedStatement statement = connection.prepareStatement(
-                        SQL_SELECT_USUARIOS
+                        sqlSelectUsuarios(comFuncao)
                 )
         ) {
             statement.setQueryTimeout(DEFAULT_QUERY_TIMEOUT_SECONDS);
@@ -243,7 +309,7 @@ public class AcademySourceAdapter {
                 List<UsuarioAcademyRecord> page = new ArrayList<>(pageSize);
                 try (ResultSet resultSet = statement.executeQuery()) {
                     while (resultSet.next()) {
-                        page.add(readUser(resultSet));
+                        page.add(readUser(resultSet, comFuncao));
                     }
                 }
 
@@ -332,8 +398,10 @@ public class AcademySourceAdapter {
         }
     }
 
-    private UsuarioAcademyRecord readUser(ResultSet resultSet)
-            throws Exception {
+    private UsuarioAcademyRecord readUser(
+            ResultSet resultSet,
+            boolean comFuncao
+    ) throws Exception {
         Timestamp criadoEm =
                 resultSet.getTimestamp("criado_em");
 
@@ -341,7 +409,7 @@ public class AcademySourceAdapter {
                 resultSet.getLong("id_usuario"),
                 resultSet.getString("cpf"),
                 resultSet.getString("nome"),
-                resultSet.getString("funcao"),
+                comFuncao ? resultSet.getString(COLUNA_FUNCAO) : null,
                 resultSet.getString("email"),
                 resultSet.getBoolean("ativo"),
                 nullableString(resultSet, "id_grupo"),
