@@ -14,6 +14,7 @@ import type {
   ConversaLocalRecord,
   MensagemAnexoLocalRecord,
   ObraLocalRecord,
+  PreferenciaDeConversaLocal,
 } from "../../lib/db/db.types";
 import { listObrasLocais } from "../../lib/db/obraLocalRepository";
 import { syncNow } from "../../lib/sync/syncEngine";
@@ -28,8 +29,6 @@ import { MessageThread } from "./components/MessageThread";
 import {
   arquivarConversaApi,
   limparConversaApi,
-  listConversationsApi,
-  type ConversationApi,
 } from "./mensagensApi";
 import { messageFrom } from "./mensagensFormat";
 import {
@@ -41,6 +40,8 @@ import {
   refreshConversationList,
 } from "./mensagensHydration";
 import {
+  gravarPreferenciaDaConversa,
+  listarPreferenciasDeConversa,
   localAttachmentBlob,
   listLocalConversationPreviews,
   listLocalConversations,
@@ -90,7 +91,9 @@ export function MensagensPage() {
    * retrato autoritativo: gravá-la apagaria do aparelho tudo o que NÃO está
    * arquivado, que é justamente a lista principal.
    */
-  const [arquivadas, setArquivadas] = useState<ConversationApi[] | null>(null);
+  const [arquivadas, setArquivadas] = useState<
+    ConversaLocalRecord[] | null
+  >(null);
   const [arrumando, setArrumando] = useState(false);
   const [mobilePane, setMobilePane] = useState<"list" | "thread" | "context">("list");
   const [contextOpen, setContextOpen] = useState(false);
@@ -103,12 +106,21 @@ export function MensagensPage() {
   const { snapshot } = useSyncStatus();
 
   const loadLocal = useCallback(async () => {
-    const [localConversations, localPreviews, localWorksites] = await Promise.all([
-      listLocalConversations(),
-      listLocalConversationPreviews(),
-      listObrasLocais({ includeArchived: true }),
-    ]);
-    setConversations(localConversations);
+    const [localConversations, localPreviews, localWorksites, preferencias] =
+      await Promise.all([
+        listLocalConversations(),
+        listLocalConversationPreviews(),
+        listObrasLocais({ includeArchived: true }),
+        listarPreferenciasDeConversa(),
+      ]);
+    // Quem esta pessoa tirou da própria lista sai daqui, e não da resposta do
+    // servidor: assim o gesto vale no aparelho, sem rede, e a conversa segue
+    // inteira para quem estava junto.
+    setConversations(
+      localConversations.filter(
+        (conversa) => !preferencias.get(conversa.id)?.arquivadoEm,
+      ),
+    );
     setPreviews(localPreviews);
     setWorksites(localWorksites);
     setSelectedId((current) => {
@@ -398,25 +410,50 @@ export function MensagensPage() {
    * conversa sumir aqui e reaparecer depois sem explicação.
    */
   const arrumarCaixa = useCallback(
-    async (acao: () => Promise<void>, aviso: string) => {
+    async (
+      conversaId: string,
+      mudanca: Partial<Omit<PreferenciaDeConversaLocal, "conversaId">>,
+      enviar: () => Promise<void>,
+      aviso: string,
+    ) => {
       setArrumando(true);
       setError("");
       try {
-        await acao();
-        await refreshConversationList();
+        // O aparelho obedece primeiro. A tela lê a preferência local, então o
+        // efeito é imediato e vale no modo avião — que é onde metade do
+        // Córtex vive.
+        await gravarPreferenciaDaConversa(conversaId, {
+          ...mudanca,
+          pendente: true,
+        });
         await loadLocal();
-        if (arquivadas !== null) {
-          setArquivadas(await listConversationsApi(100, true));
+        await loadMessages(selectedId);
+        try {
+          await enviar();
+          await gravarPreferenciaDaConversa(conversaId, { pendente: false });
+        } catch (semRede: unknown) {
+          // Sem rede o gesto continua valendo aqui e sobe na próxima
+          // sincronização. Avisar é honesto; desfazer seria pior.
+          setError(
+            "Arrumação guardada neste aparelho; ela sobe quando a rede voltar." +
+              ` (${messageFrom(semRede)})`,
+          );
         }
+        await loadLocal();
       } catch (causa: unknown) {
         setError(`${aviso} ${messageFrom(causa)}`);
       } finally {
         setArrumando(false);
       }
     },
-    [arquivadas, loadLocal],
+    [loadLocal, loadMessages, selectedId],
   );
 
+  /*
+   * A gaveta sai do próprio aparelho: quem arquivou sem rede precisa conseguir
+   * desarquivar sem rede. Buscá-la no servidor deixaria a saída trancada
+   * justamente para quem está em campo.
+   */
   const abrirGaveta = useCallback(async () => {
     if (arquivadas !== null) {
       setArquivadas(null);
@@ -425,7 +462,13 @@ export function MensagensPage() {
     setArrumando(true);
     setError("");
     try {
-      setArquivadas(await listConversationsApi(100, true));
+      const preferencias = await listarPreferenciasDeConversa();
+      const guardadas = await listLocalConversations();
+      setArquivadas(
+        guardadas.filter(
+          (conversa) => preferencias.get(conversa.id)?.arquivadoEm,
+        ),
+      );
     } catch (causa: unknown) {
       setError(`Não foi possível abrir as arquivadas. ${messageFrom(causa)}`);
     } finally {
@@ -454,6 +497,8 @@ export function MensagensPage() {
                     className="mensagens-secondary"
                     disabled={arrumando}
                     onClick={() => void arrumarCaixa(
+                      selected.id,
+                      { limpoAte: new Date().toISOString() },
                       () => limparConversaApi(selected.id, true),
                       "Não foi possível limpar a conversa.",
                     )}
@@ -466,6 +511,8 @@ export function MensagensPage() {
                     className="mensagens-secondary"
                     disabled={arrumando}
                     onClick={() => void arrumarCaixa(
+                      selected.id,
+                      { arquivadoEm: new Date().toISOString() },
                       () => arquivarConversaApi(selected.id, true),
                       "Não foi possível arquivar a conversa.",
                     )}
@@ -529,6 +576,8 @@ export function MensagensPage() {
                       type="button"
                       disabled={arrumando}
                       onClick={() => void arrumarCaixa(
+                        conversa.id,
+                        { arquivadoEm: null },
                         () => arquivarConversaApi(conversa.id, false),
                         "Não foi possível devolver a conversa à lista.",
                       )}

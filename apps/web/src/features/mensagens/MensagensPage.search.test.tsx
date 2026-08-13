@@ -69,6 +69,8 @@ vi.mock("./mensagensRepository", () => ({
   searchLocalMessages: mocks.searchLocalMessages,
   storeServerConversations: vi.fn(),
   storeServerMessages: vi.fn(),
+  gravarPreferenciaDaConversa: vi.fn(),
+  listarPreferenciasDeConversa: vi.fn(async () => new Map()),
 }));
 
 import { MensagensPage } from "./MensagensPage";

@@ -7,6 +7,7 @@ import {
 } from "idb";
 
 import type {
+  PreferenciaDeConversaLocal,
   ColaboradorLocalRecord,
   ConversaLocalRecord,
   LocalRdoControleGeometricoRecord,
@@ -42,7 +43,7 @@ import type {
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 22;
+export const CORTEX_DATABASE_VERSION = 23;
 const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
 export interface CortexDbSchema extends DBSchema {
@@ -191,6 +192,18 @@ export interface CortexDbSchema extends DBSchema {
     indexes: {
       "by-nome": string;
     };
+  };
+
+  /**
+   * Como esta pessoa arrumou a própria caixa, guardado neste aparelho.
+   *
+   * <p>Mora fora de {@code mensagem_conversas} porque aquele retrato é
+   * substituído inteiro pela resposta do servidor; a preferência precisa
+   * sobreviver a isso enquanto a fila não a levou para cima.
+   */
+  mensagem_preferencias: {
+    key: string;
+    value: PreferenciaDeConversaLocal;
   };
 
   mensagem_conversas: {
@@ -787,6 +800,12 @@ export async function getCortexDb(): Promise<
           );
           conversationStore.createIndex("by-type", "tipo");
           conversationStore.createIndex("by-obra-id", "obraId");
+        }
+
+        if (!database.objectStoreNames.contains("mensagem_preferencias")) {
+          database.createObjectStore("mensagem_preferencias", {
+            keyPath: "conversaId",
+          });
         }
 
         if (!database.objectStoreNames.contains("mensagens")) {

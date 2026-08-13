@@ -491,6 +491,25 @@ export interface ConversaLocalRecord {
   versaoEntidade: number | null;
 }
 
+/**
+ * A arrumação da caixa desta pessoa, neste aparelho.
+ *
+ * <p>Arquivar e limpar são decisões de leitor, e por isso valem na hora, sem
+ * rede: a tela obedece ao que está aqui e a fila leva o mesmo gesto ao servidor
+ * quando houver conexão. Enquanto {@code pendente} for verdadeiro, o que manda
+ * é este registro — a resposta do servidor ainda não sabe do gesto.
+ *
+ * <p>{@code limpoAte} é um instante, nunca uma exclusão: o que veio antes dele
+ * sai desta tela e continua no banco, inteiro, para quem estava junto.
+ */
+export interface PreferenciaDeConversaLocal {
+  conversaId: string;
+  arquivadoEm: string | null;
+  limpoAte: string | null;
+  /** Verdadeiro enquanto o servidor não confirmou este gesto. */
+  pendente: boolean;
+}
+
 export interface MensagemLocalRecord {
   id: string;
   conversaId: string;

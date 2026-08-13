@@ -14,6 +14,8 @@ import {
 } from "../../lib/db/cortexDb";
 import { captureOnlineSyncSession } from "../../lib/sync/syncSession";
 import {
+  gravarPreferenciaDaConversa,
+  listLocalMessages,
   queueMessage,
   storeServerConversations,
   storeServerMessages,
@@ -33,6 +35,56 @@ describe("mensagens IndexedDB repository", () => {
       obraIds: ["00000000-0000-4000-8000-000000000001"],
       expiraEm: new Date(Date.now() + 60_000).toISOString(),
     });
+  });
+
+  /*
+   * Limpar é cortina, e a cortina mora aqui. O servidor também a guarda, mas a
+   * tela lê o aparelho: sem este filtro, "limpar" gravava no servidor e o
+   * histórico continuava na tela, com o botão parecendo morto.
+   *
+   * <p>Os instantes são absurdos de propósito — muito antes e muito depois de
+   * qualquer mensagem — para o teste provar a regra sem depender de dois
+   * relógios caírem em milissegundos diferentes.
+   */
+  it("esconde do histórico local o que veio antes da cortina", async () => {
+    const conversaId = "00000000-0000-4000-8000-000000000030";
+    await queueMessage({
+      conversaId,
+      corpo: "Combinado de ontem",
+      files: [],
+    });
+
+    await gravarPreferenciaDaConversa(conversaId, {
+      limpoAte: "2999-01-01T00:00:00.000Z",
+      pendente: true,
+    });
+    expect(await listLocalMessages(conversaId)).toHaveLength(0);
+
+    // Cortina antiga não esconde nada: o que veio depois dela continua à vista.
+    await gravarPreferenciaDaConversa(conversaId, {
+      limpoAte: "2000-01-01T00:00:00.000Z",
+    });
+    expect(await listLocalMessages(conversaId)).toHaveLength(1);
+  });
+
+  it("reabrir a conversa devolve o que a cortina escondia", async () => {
+    const conversaId = "00000000-0000-4000-8000-000000000031";
+    const antiga = await queueMessage({
+      conversaId,
+      corpo: "Registro que volta",
+      files: [],
+    });
+    await gravarPreferenciaDaConversa(conversaId, {
+      limpoAte: "2999-01-01T00:00:00.000Z",
+      pendente: true,
+    });
+    expect(await listLocalMessages(conversaId)).toHaveLength(0);
+
+    await gravarPreferenciaDaConversa(conversaId, { limpoAte: null });
+
+    // A mensagem nunca foi apagada — estava atrás da cortina.
+    expect((await listLocalMessages(conversaId)).map((item) => item.id))
+      .toEqual([antiga.id]);
   });
 
   it("persists the attachment Blob and dependency graph for a later reload", async () => {

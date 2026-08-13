@@ -1,5 +1,6 @@
 import { getCortexDb } from "../../lib/db/cortexDb";
 import type {
+  PreferenciaDeConversaLocal,
   ConversaLocalRecord,
   MensagemAnexoLocalRecord,
   MensagemLocalRecord,
@@ -201,10 +202,64 @@ export async function listLocalConversationPreviews(): Promise<
   );
 }
 
+/**
+ * A arrumação da caixa desta pessoa, lida do aparelho.
+ *
+ * <p>Sem registro, a conversa está na lista e o histórico inteiro à vista —
+ * que é o estado de quem nunca arrumou nada.
+ */
+export async function lerPreferenciaDaConversa(
+  conversaId: string,
+): Promise<PreferenciaDeConversaLocal> {
+  const database = await getCortexDb();
+  const guardada = await database.get("mensagem_preferencias", conversaId);
+  return guardada ?? {
+    conversaId,
+    arquivadoEm: null,
+    limpoAte: null,
+    pendente: false,
+  };
+}
+
+export async function listarPreferenciasDeConversa(): Promise<
+  Map<string, PreferenciaDeConversaLocal>
+> {
+  const database = await getCortexDb();
+  const todas = await database.getAll("mensagem_preferencias");
+  return new Map(todas.map((item) => [item.conversaId, item]));
+}
+
+/**
+ * Grava o gesto no aparelho antes de qualquer rede.
+ *
+ * <p>É o que faz "limpar" limpar de verdade: a tela lê daqui, então o efeito é
+ * imediato e sobrevive ao modo avião. A ida ao servidor vem depois e, quando
+ * confirma, apaga a marca de pendente.
+ */
+export async function gravarPreferenciaDaConversa(
+  conversaId: string,
+  mudanca: Partial<Omit<PreferenciaDeConversaLocal, "conversaId">>,
+): Promise<PreferenciaDeConversaLocal> {
+  const database = await getCortexDb();
+  const atual = await lerPreferenciaDaConversa(conversaId);
+  const proxima: PreferenciaDeConversaLocal = {
+    ...atual,
+    ...mudanca,
+    conversaId,
+  };
+  await database.put("mensagem_preferencias", proxima);
+  return proxima;
+}
+
 export async function listLocalMessages(
   conversationId: string,
 ): Promise<MensagemComAnexos[]> {
   const database = await getCortexDb();
+  // A cortina de quem limpou a conversa. Sem ela aqui, "limpar" só valia na
+  // resposta do servidor e a tela seguia mostrando o cache do aparelho — o
+  // botão parecia morto, e só arquivar e desarquivar (que descarta e rebaixa
+  // o cache) fazia o histórico sumir.
+  const preferencia = await lerPreferenciaDaConversa(conversationId);
   const messages = await database.getAllFromIndex(
     "mensagens",
     "by-conversation-id",
@@ -222,6 +277,11 @@ export async function listLocalMessages(
     byMessage.set(attachment.mensagemId, current);
   }
   return messages
+    .filter(
+      (message) =>
+        !preferencia.limpoAte ||
+        message.criadaNoClienteEm > preferencia.limpoAte,
+    )
     .sort((left, right) =>
       left.criadaNoClienteEm.localeCompare(right.criadaNoClienteEm),
     )
