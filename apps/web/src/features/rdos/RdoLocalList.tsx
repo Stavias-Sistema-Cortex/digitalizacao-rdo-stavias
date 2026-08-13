@@ -113,9 +113,19 @@ type ProfileTarget =
  * servidor tem este documento com este identificador. Sem rede, o caminho volta
  * a ser o local, e aí a recusa do portão é verdadeira — o arquivo realmente não
  * pode ser montado aqui.
+ *
+ * <p>O conflito de versão entra na mesma regra, e por um motivo que é o seu
+ * próprio enunciado: conflito significa que o servidor tem uma versão MAIS
+ * NOVA que a deste aparelho. O documento que vale existe lá, inteiro, e mesmo
+ * assim os dois botões morriam — a exportação apagava justamente quando a
+ * cópia do servidor era a única digna do arquivo. A alteração local em
+ * conflito não entra no arquivo, e o aviso diz isso; ela continua aguardando a
+ * decisão dela na Memória. Pendente de envio é diferente e fica de fora: ali a
+ * cópia local é a mais nova, e o arquivo honesto é o local.
  */
 function exportavelPeloServidor(record: LocalRdoRecord): boolean {
-  return record.syncStatus === "SYNCED";
+  return record.syncStatus === "SYNCED" ||
+    (record.syncStatus === "CONFLICT" && record.versaoEntidade !== null);
 }
 
 const DISPONIVEL_PELO_SERVIDOR: RdoExportAvailability = {
@@ -155,9 +165,11 @@ function exportStateSummary(
     { format: "XLSX", availability: xlsxAvailability },
     { format: "PDF", availability: pdfAvailability },
   ] as const;
-  const origin = exportavelPeloServidor(record)
-    ? "Origem da exportação · Servidor · cópia local disponível offline"
-    : "Origem da exportação · Dados locais pendentes · disponível offline";
+  const origin = !exportavelPeloServidor(record)
+    ? "Origem da exportação · Dados locais pendentes · disponível offline"
+    : record.syncStatus === "CONFLICT"
+      ? "Origem da exportação · Servidor · a alteração local em conflito fica fora do arquivo"
+      : "Origem da exportação · Servidor · cópia local disponível offline";
   const allReady = formats.every(({ availability }) => availability?.ready);
   const allUnavailable = formats.every(
     ({ availability }) => !availability?.ready,
@@ -683,7 +695,9 @@ export function RdoLocalList({
 
       rememberExportNotice(record.id, format, {
         message: useAuthoritativeServer
-          ? `${format} autorizado pelo servidor baixado.`
+          ? record.syncStatus === "CONFLICT"
+            ? `${format} autorizado pelo servidor baixado; a alteração local em conflito não está no arquivo.`
+            : `${format} autorizado pelo servidor baixado.`
           : record.syncStatus === "SYNCED"
             ? `${format} gerado com a cópia local disponível offline.`
             : `${format} local gerado; o RDO ainda está pendente de sincronização.`,

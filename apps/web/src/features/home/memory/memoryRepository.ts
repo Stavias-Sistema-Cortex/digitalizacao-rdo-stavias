@@ -173,6 +173,26 @@ export function createMemoryRepository(
           mutation,
         ]),
       );
+      /*
+       * O evento legado não tem clientMutationId, mas a mutação legada nomeia
+       * os eventos que carrega em payload.operationalEvents. Sem esta ligação
+       * a Memória lia o evento sozinho e perdia o desfecho que só a fila
+       * conhece: um conflito de versão aparecia como falha muda, sem código
+       * seguro e sem a saída do descarte.
+       */
+      const mutationByCarriedEventId = new Map<
+        string,
+        (typeof outboxMutations)[number]
+      >();
+      for (
+        const mutation of [...outboxMutations].sort((left, right) =>
+          left.criadaNoClienteEm.localeCompare(right.criadaNoClienteEm),
+        )
+      ) {
+        for (const eventId of carriedOperationalEventIds(mutation)) {
+          mutationByCarriedEventId.set(eventId, mutation);
+        }
+      }
       const localDocuments = localEvents
         .filter((event) => authorizedLocalEvent(event, request.userId, allowed))
         .map((event) =>
@@ -182,7 +202,7 @@ export function createMemoryRepository(
             event,
             event.clientMutationId
               ? mutationsById.get(event.clientMutationId)
-              : null,
+              : mutationByCarriedEventId.get(event.id) ?? null,
           ),
         );
       const merged = new Map<string, MemorySearchDocument>();
@@ -270,6 +290,19 @@ function abortTransaction(transaction: AbortableMemoryTransaction): void {
   } catch {
     // Transaction already completed or aborted.
   }
+}
+
+/** Os ids de evento que uma mutação legada declara carregar no envelope. */
+function carriedOperationalEventIds(mutation: {
+  payload: Record<string, unknown>;
+}): string[] {
+  const events = mutation.payload.operationalEvents;
+  if (!Array.isArray(events)) return [];
+  return events.flatMap((event) => {
+    if (!event || typeof event !== "object") return [];
+    const id = (event as Record<string, unknown>).id;
+    return typeof id === "string" && id.length > 0 ? [id] : [];
+  });
 }
 
 function authorizedLocalEvent(

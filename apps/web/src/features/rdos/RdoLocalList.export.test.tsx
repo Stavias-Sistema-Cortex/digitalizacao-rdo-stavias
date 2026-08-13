@@ -425,6 +425,51 @@ describe("RdoLocalList offline export", () => {
     expect(mocks.downloadLocal).not.toHaveBeenCalled();
   });
 
+  /*
+   * Conflito de versão significa que o servidor tem uma versão MAIS NOVA que a
+   * deste aparelho: o documento que vale existe lá, inteiro. Os dois botões
+   * morriam justamente nesse estado, e quem precisava do arquivo ficava sem
+   * ele enquanto a decisão do conflito não saía. O arquivo sai do servidor, e
+   * o aviso deixa claro que a alteração local em conflito não está nele.
+   */
+  it("exports the conflicted server-versioned RDO from the server copy", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList(record({ syncStatus: "CONFLICT", versaoEntidade: 7 }));
+
+    await expectExportStateToContain(
+      "Origem da exportação · Servidor · a alteração local em conflito fica fora do arquivo",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Exportar XLSX" }));
+
+    await waitFor(() => expect(mocks.downloadServer).toHaveBeenCalledOnce());
+    expect(mocks.downloadLocal).not.toHaveBeenCalled();
+    await expectExportStateToContain(
+      "a alteração local em conflito não está no arquivo",
+    );
+  });
+
+  /** Sem versão no servidor não há cópia de lá: o conflito local não inventa uma. */
+  it("keeps a conflicted RDO without server version on the local gate", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList(record({ syncStatus: "CONFLICT", versaoEntidade: null }));
+
+    await expectExportStateToContain(
+      "Origem da exportação · Dados locais pendentes",
+    );
+  });
+
   it("uses the authenticated server only for a synced server-versioned PDF", async () => {
     Object.defineProperty(window.navigator, "onLine", {
       configurable: true,

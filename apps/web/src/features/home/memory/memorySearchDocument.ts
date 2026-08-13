@@ -247,6 +247,7 @@ export function localEventToSearchDocument(
   const principalEntityId = protectedIdentity ? null : event.principalEntity.id;
   const principalName = protectedIdentity ? null : event.principalEntity.nome ?? null;
   const result = event.result ?? null;
+  const syncStatus = localStatus(event, mutation);
   return {
     key: documentKey(userId, scopeHash, event.id),
     userId,
@@ -276,7 +277,7 @@ export function localEventToSearchDocument(
       origin: event.origin,
       result,
     },
-    syncStatus: localStatus(event),
+    syncStatus,
     sourceKind: "LOCAL",
     occurredAt: event.occurredAt,
     eventType: event.type,
@@ -285,7 +286,12 @@ export function localEventToSearchDocument(
     worksiteName: null,
     rdoNumber: null,
     serviceName: null,
-    errorCategory: event.errorCategory ?? null,
+    // O evento legado não grava código seguro; o da fila responde por ele
+    // quando o desfecho é terminal — é ele que explica o "por quê" na tela.
+    errorCategory: event.errorCategory ??
+      (isTerminalStatus(syncStatus)
+        ? mutation?.lastSafeCode ?? null
+        : null),
     responsibleUserName: event.responsibleUserName,
     trace: {
       clientMutationId: event.clientMutationId ?? mutation?.clientMutationId ?? null,
@@ -407,7 +413,10 @@ const SUPERSESSAO: ReadonlySet<string> = new Set([
   "NON_APPLIED_SUPERSEDED_BY_LOCAL_EDIT",
 ]);
 
-function localStatus(event: OperationalEventRecord): MemoryDocumentStatus {
+function localStatus(
+  event: OperationalEventRecord,
+  mutation?: OutboxMutationRecord | null,
+): MemoryDocumentStatus {
   if (event.result === "SUPERSEDED") return "SUPERSEDED";
   if (event.errorCategory && SUPERSESSAO.has(event.errorCategory)) {
     return "SUPERSEDED";
@@ -432,13 +441,50 @@ function localStatus(event: OperationalEventRecord): MemoryDocumentStatus {
    * legados do RDO, que nascem em `schemaVersion: 1` sem `result` e recebem
    * apenas `SYNC_FAILED` quando o envio termina mal.
    *
-   * Até aqui a escada caía num `REJECTED` implícito, e um tropeço de rede
-   * aparecia como recusa do servidor: crachá "Rejeitado", cobertura inteira
-   * "Rejeitado", cartão de revisão sem versão-base, sem versão remota e sem
-   * nada a decidir. Quem tinha acabado de salvar em campo lia recusa onde
-   * houve fila. Falha de envio é falha de envio, e é o que passa a dizer.
+   * Antes de desistir num "falha no envio" genérico, a fila é consultada: a
+   * mutação que carregou este evento sabe o desfecho que o evento não gravou.
+   * Um conflito de versão aparecia como falha muda — a tarja de sincronização
+   * dizia "Conflito de versão" e a Memória dizia "Falha no envio", duas vozes
+   * sobre o mesmo registro sem que nenhuma oferecesse a saída.
    */
+  const veredito = mutation ? verdictoDaFila(mutation) : null;
+  if (veredito) return veredito;
   return "SYNC_FAILED";
+}
+
+/** Desfechos que pararam a subida e por isso têm um "por quê" a mostrar. */
+function isTerminalStatus(
+  status: MemoryDocumentStatus,
+): status is "CONFLICT" | "REJECTED" | "SYNC_FAILED" {
+  return status === "CONFLICT" ||
+    status === "REJECTED" ||
+    status === "SYNC_FAILED";
+}
+
+/**
+ * O desfecho que a fila conhece e o evento legado não gravou.
+ *
+ * <p>Só é consultado quando o próprio evento não tem veredito: um `result`
+ * carimbado no evento vem do caminho que decidiu o desfecho e continua valendo
+ * mais que o estado momentâneo da fila.
+ */
+function verdictoDaFila(
+  mutation: OutboxMutationRecord,
+): MemoryDocumentStatus | null {
+  switch (mutation.status) {
+    case "CONFLICT":
+      return "CONFLICT";
+    case "REJECTED":
+      return "REJECTED";
+    case "SYNCING":
+      return "SYNCING";
+    case "PENDING":
+      return "LOCAL_PENDING";
+    case "SYNCED":
+      return "UPDATED";
+    default:
+      return null;
+  }
 }
 
 function serverStatus(result: string | null): MemoryDocumentStatus {
@@ -474,12 +520,8 @@ function localReview(
   event: OperationalEventRecord,
   mutation: OutboxMutationRecord | null | undefined,
 ): MemoryReviewEvidence | null {
-  const status = localStatus(event);
-  if (
-    status !== "CONFLICT" &&
-    status !== "REJECTED" &&
-    status !== "SYNC_FAILED"
-  ) {
+  const status = localStatus(event, mutation);
+  if (!isTerminalStatus(status)) {
     return null;
   }
 
