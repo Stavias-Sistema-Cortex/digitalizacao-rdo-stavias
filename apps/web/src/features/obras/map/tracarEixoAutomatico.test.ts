@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  TracadoRecusado,
   calibrarPelosMarcos,
   consultaOverpass,
   costurarTrechos,
   referenciaDaRodovia,
   rodoviaDaResposta,
+  tracarEixoPelaRodovia,
 } from "./tracarEixoAutomatico";
 
 /*
@@ -161,6 +163,104 @@ describe("a calibração pelos marcos", () => {
         { lat: 0, lng: 0.025, km: 130 },
       ]),
     ).toBeNull();
+  });
+});
+
+/*
+ * O Overpass é infraestrutura voluntária e compartilhada: o espelho principal
+ * vive ocupado em horário comercial. Com um endereço só, "ocupado agora" virava
+ * "não deu para traçar" — e a rodovia estava lá o tempo todo, no espelho
+ * seguinte, servindo a mesma base.
+ */
+describe("a insistência entre os espelhos do mapa público", () => {
+  const ENDERECO = { rodovia: "RR-101", cidade: "Cidade" };
+  const CIDADE = [
+    {
+      lat: "0",
+      lon: "0.015",
+      boundingbox: ["-0.1", "0.1", "-0.1", "0.1"],
+    },
+  ];
+  /* Uma reta com dois marcos que sustentam a régua. */
+  const MAPA = {
+    elements: [
+      {
+        type: "way",
+        geometry: [
+          { lat: 0, lon: 0 },
+          { lat: 0, lon: 0.03 },
+        ],
+      },
+      {
+        type: "node",
+        lat: 0,
+        lon: 0.005,
+        tags: { highway: "milestone", distance: "100" },
+      },
+      {
+        type: "node",
+        lat: 0,
+        lon: 0.025,
+        tags: { highway: "milestone", distance: "102.2" },
+      },
+    ],
+  };
+
+  function respostaJson(corpo: unknown): Response {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => corpo,
+    } as unknown as Response;
+  }
+
+  it("segue para o próximo espelho quando o primeiro está ocupado", async () => {
+    const pedidos: string[] = [];
+    const eixo = await tracarEixoPelaRodovia(
+      ENDERECO,
+      (async (entrada: string) => {
+        pedidos.push(String(entrada));
+        if (String(entrada).includes("nominatim")) return respostaJson(CIDADE);
+        if (pedidos.filter((p) => p.includes("interpreter")).length === 1) {
+          return { ok: false, status: 429 } as unknown as Response;
+        }
+        return respostaJson(MAPA);
+      }) as unknown as typeof fetch,
+    );
+
+    expect(eixo.marcosUsados).toBe(2);
+    const espelhos = pedidos.filter((p) => p.includes("interpreter"));
+    expect(espelhos).toHaveLength(2);
+    expect(espelhos[0]).not.toBe(espelhos[1]);
+  });
+
+  /* Consulta malformada é igual em todo espelho: insistir só faz esperar. */
+  it("não repete a pergunta que o espelho recusou por conteúdo", async () => {
+    const espelhos: string[] = [];
+    await expect(
+      tracarEixoPelaRodovia(
+        ENDERECO,
+        (async (entrada: string) => {
+          if (String(entrada).includes("nominatim")) return respostaJson(CIDADE);
+          espelhos.push(String(entrada));
+          return { ok: false, status: 400 } as unknown as Response;
+        }) as unknown as typeof fetch,
+      ),
+    ).rejects.toThrow(TracadoRecusado);
+
+    expect(espelhos).toHaveLength(1);
+  });
+
+  it("com todos calados, a frase diz o que houve no último", async () => {
+    await expect(
+      tracarEixoPelaRodovia(
+        ENDERECO,
+        (async (entrada: string) => {
+          if (String(entrada).includes("nominatim")) return respostaJson(CIDADE);
+          throw new Error("rede caiu");
+        }) as unknown as typeof fetch,
+      ),
+    ).rejects.toThrow(/não respondeu/);
   });
 });
 

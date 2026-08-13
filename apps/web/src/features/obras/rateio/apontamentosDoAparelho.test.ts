@@ -380,6 +380,28 @@ describe("apontamentos lidos dos RDOs do aparelho", () => {
       expect(apontamento.funcao).toBe("APONTADOR DE OBRA");
     });
 
+    /*
+     * Quem preenche assina em texto livre, sem identificador. O servidor acha
+     * o ofício desse nome no cadastro e o manda junto — é o que tira a linha
+     * mais comum do rateio do rótulo genérico.
+     */
+    it("usa o ofício de quem preencheu quando o servidor o achou", () => {
+      const [apontamento] = extrairApontamentos(
+        [
+          rdo({
+            payload: {
+              preenchidoPor: "PESSOA QUE ASSINA",
+              preenchidoPorFuncao: "ENCARREGADO DE TURMA",
+              maoObra: [],
+            },
+          }),
+        ],
+        JULHO,
+      ).apontamentos;
+
+      expect(apontamento.funcao).toBe("ENCARREGADO DE TURMA");
+    });
+
     it("o apontador escolhido da lista entra com o cadastro dele", () => {
       const [apontamento] = extrairApontamentos(
         [

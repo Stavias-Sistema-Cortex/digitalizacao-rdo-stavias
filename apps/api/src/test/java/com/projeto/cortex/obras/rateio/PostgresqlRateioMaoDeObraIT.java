@@ -146,6 +146,121 @@ class PostgresqlRateioMaoDeObraIT {
         assertThat(encontrado.apontadorFuncao()).isEqualTo("APONTADOR DE OBRA");
     }
 
+    /*
+     * Quem preenche o RDO assina em texto livre — o campo nasce do nome da
+     * sessão e é editável —, então não há identificador para ligá-lo ao
+     * cadastro. Sem achar o ofício pelo nome, a pessoa que mais aparece no
+     * rateio era justamente a única a nunca mostrar a função do Academy: a
+     * matriz dizia "Preencheu o RDO" onde deveria dizer o ofício dela.
+     */
+    @Test
+    void oOficioDeQuemPreencheuEAchadoPeloNomeNoCadastro() {
+        String obraId = obra("quem preencheu");
+        String cadastrado = colaborador("José Antônio da Costa");
+        jdbc.update(
+                "UPDATE colaborador SET funcao = 'ENCARREGADO DE TURMA'"
+                        + " WHERE id = ?",
+                cadastrado
+        );
+        String rdoId = rdo(obraId, "2026-07-12", "RDO-0021");
+        // Digitado em caixa alta, sem acento e com espaço sobrando: é assim
+        // que o mesmo nome chega escrito do campo.
+        jdbc.update(
+                "UPDATE rdo SET preenchido_por = '  JOSE  ANTONIO DA COSTA '"
+                        + " WHERE id = ?",
+                rdoId
+        );
+
+        RateioMaoDeObraResponse.RdoDoRateio encontrado =
+                servicoPara(alfa(), true)
+                        .apontamentosDoPeriodo(
+                                LocalDate.parse("2026-07-01"),
+                                LocalDate.parse("2026-07-31")
+                        )
+                        .rdos().stream()
+                        .filter(item -> item.id().equals(rdoId))
+                        .findFirst()
+                        .orElseThrow();
+
+        assertThat(encontrado.preenchidoPorFuncao())
+                .isEqualTo("ENCARREGADO DE TURMA");
+    }
+
+    /*
+     * O nome resolve quase sempre, mas não resolve homônimo — e aí mostrar o
+     * ofício de outra pessoa é pior do que mostrar o rótulo do papel, que é
+     * sempre verdadeiro.
+     */
+    @Test
+    void oHomonimoComOficiosDiferentesNaoEntregaOficioNenhum() {
+        String obraId = obra("homonimo");
+        for (String funcao : new String[] {"PEDREIRO", "TOPOGRAFO"}) {
+            String id = colaborador("Nome Repetido");
+            jdbc.update(
+                    "UPDATE colaborador SET funcao = ? WHERE id = ?",
+                    funcao,
+                    id
+            );
+        }
+        String rdoId = rdo(obraId, "2026-07-13", "RDO-0022");
+        jdbc.update(
+                "UPDATE rdo SET preenchido_por = 'NOME REPETIDO' WHERE id = ?",
+                rdoId
+        );
+
+        RateioMaoDeObraResponse.RdoDoRateio encontrado =
+                servicoPara(alfa(), true)
+                        .apontamentosDoPeriodo(
+                                LocalDate.parse("2026-07-01"),
+                                LocalDate.parse("2026-07-31")
+                        )
+                        .rdos().stream()
+                        .filter(item -> item.id().equals(rdoId))
+                        .findFirst()
+                        .orElseThrow();
+
+        assertThat(encontrado.preenchidoPorFuncao()).isNull();
+    }
+
+    /*
+     * O apontador digitado à mão — sem escolher da lista — também tem cadastro
+     * atrás do nome. O identificador continua mandando quando existe; o nome é
+     * a porta de quem não passou pela lista.
+     */
+    @Test
+    void oApontadorDigitadoAchaOOficioPeloNome() {
+        String obraId = obra("apontador digitado");
+        String cadastrado = colaborador("Maria Aparecida Nogueira");
+        jdbc.update(
+                "UPDATE colaborador SET funcao = 'TOPOGRAFA' WHERE id = ?",
+                cadastrado
+        );
+        String rdoId = rdo(obraId, "2026-07-14", "RDO-0023");
+        jdbc.update(
+                """
+                UPDATE rdo
+                   SET apontador_rdo = 'MARIA APARECIDA NOGUEIRA',
+                       apontador_colaborador_id = NULL
+                 WHERE id = ?
+                """,
+                rdoId
+        );
+
+        RateioMaoDeObraResponse.RdoDoRateio encontrado =
+                servicoPara(alfa(), true)
+                        .apontamentosDoPeriodo(
+                                LocalDate.parse("2026-07-01"),
+                                LocalDate.parse("2026-07-31")
+                        )
+                        .rdos().stream()
+                        .filter(item -> item.id().equals(rdoId))
+                        .findFirst()
+                        .orElseThrow();
+
+        assertThat(encontrado.apontadorColaboradorId()).isNull();
+        assertThat(encontrado.apontadorFuncao()).isEqualTo("TOPOGRAFA");
+    }
+
     @Test
     void aMaoDeObraApontadaChegaComNomeECargo() {
         String obraId = obra("gente");

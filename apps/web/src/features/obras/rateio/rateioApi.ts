@@ -93,6 +93,10 @@ export function lerRespostaDoRateio(
         // função da linha dele no rateio é esta, não o rótulo do papel.
         apontadorFuncao: rdo.apontadorFuncao,
         preenchidoPor: rdo.preenchidoPor,
+        // Quem preencheu assina em texto livre, sem identificador: o servidor
+        // procura esse nome no cadastro e só manda o ofício quando ele aponta
+        // para uma pessoa só. Vindo vazio, a linha fica com o rótulo do papel.
+        preenchidoPorFuncao: rdo.preenchidoPorFuncao,
         obraNome: rdo.obraNome,
         maoObra,
       },

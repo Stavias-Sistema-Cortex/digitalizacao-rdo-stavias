@@ -85,6 +85,22 @@ public class RateioMaoDeObraService {
             LIMIT %d
             """.formatted(TETO_DE_APONTAMENTOS + 1);
 
+    /**
+     * O cadastro que sabe o ofício de cada um.
+     *
+     * <p>Vem inteiro, e de propósito: a alternativa seria comparar nomes dentro
+     * do SQL, o que exigiria repetir ali a mesma normalização que o produto já
+     * faz em dois lugares — e uma terceira cópia da regra de "mesmo nome" é
+     * exatamente o tipo de divergência que faz a mesma pessoa aparecer duas
+     * vezes. A tabela tem o tamanho do quadro da empresa, e a consulta só sai
+     * quando há assinatura para resolver.
+     */
+    private static final String CONSULTA_OFICIOS = """
+            SELECT nome, funcao
+            FROM colaborador
+            WHERE funcao IS NOT NULL AND btrim(funcao) <> ''
+            """;
+
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserService currentUserService;
 
@@ -185,13 +201,80 @@ public class RateioMaoDeObraService {
             );
         }
 
+        Map<String, String> oficios = oficiosPorNome(porRdo.values());
+
         List<RateioMaoDeObraResponse.RdoDoRateio> rdos =
                 new ArrayList<>(porRdo.size());
         for (ConstrucaoDeRdo construcao : porRdo.values()) {
-            rdos.add(construcao.concluir());
+            rdos.add(construcao.concluir(oficios));
         }
 
         return new RateioMaoDeObraResponse(inicio, fim, rdos, completo);
+    }
+
+    /**
+     * O nome como duas grafias do mesmo nome ficam iguais.
+     *
+     * <p>Sem acento, sem caixa e com um espaço só entre as palavras: é assim
+     * que "José da Silva" digitado em campo alcança "JOSE DA  SILVA" vindo da
+     * planilha. A mesma regra que o aparelho usa para não contar a pessoa duas
+     * vezes — se as duas divergirem, o rateio soma um dia a quem trabalhou um.
+     */
+    static String nomeComparavel(String nome) {
+        if (nome == null) return "";
+        return java.text.Normalizer
+                .normalize(nome, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toUpperCase(java.util.Locale.ROOT)
+                .trim()
+                .replaceAll("\\s+", " ");
+    }
+
+    /**
+     * O ofício de cada assinatura, quando o nome aponta para uma pessoa só.
+     *
+     * <p>Assinar o RDO é texto livre: não há identificador para ligar quem
+     * preencheu ao seu cadastro, e o ofício que o Academy guarda ficaria
+     * inalcançável justamente para quem mais aparece no rateio. O nome resolve
+     * isso na esmagadora maioria dos casos — ele nasce da sessão de quem criou
+     * o documento, logo é o nome do cadastro.
+     *
+     * <p>O que não se resolve pelo nome é o homônimo, e aí o silêncio é a
+     * resposta certa: dois cadastros com o mesmo nome e ofícios diferentes não
+     * entregam ofício nenhum. Errar o ofício de alguém é pior do que mostrar o
+     * rótulo do papel, que é sempre verdadeiro.
+     */
+    private Map<String, String> oficiosPorNome(
+            Iterable<ConstrucaoDeRdo> construcoes
+    ) {
+        java.util.Set<String> procurados = new java.util.HashSet<>();
+        for (ConstrucaoDeRdo construcao : construcoes) {
+            String preenchidoPor = nomeComparavel(construcao.preenchidoPor());
+            if (!preenchidoPor.isEmpty()) procurados.add(preenchidoPor);
+            // O apontador escolhido da lista já chegou com o ofício pelo
+            // identificador; só o digitado precisa ser achado pelo nome.
+            if (construcao.apontadorFuncao() == null) {
+                String apontador = nomeComparavel(construcao.apontadorRdo());
+                if (!apontador.isEmpty()) procurados.add(apontador);
+            }
+        }
+        if (procurados.isEmpty()) return Map.of();
+
+        Map<String, String> oficios = new java.util.HashMap<>();
+        java.util.Set<String> homonimos = new java.util.HashSet<>();
+        jdbcTemplate.query(CONSULTA_OFICIOS, resultado -> {
+            String chave = nomeComparavel(resultado.getString("nome"));
+            if (chave.isEmpty() || !procurados.contains(chave)) return;
+            String funcao = resultado.getString("funcao").trim();
+            String jaVisto = oficios.putIfAbsent(chave, funcao);
+            if (jaVisto != null && !jaVisto.equals(funcao)) {
+                homonimos.add(chave);
+            }
+        });
+        for (String chave : homonimos) {
+            oficios.remove(chave);
+        }
+        return oficios;
     }
 
     private void validarPeriodo(LocalDate inicio, LocalDate fim) {
@@ -258,7 +341,14 @@ public class RateioMaoDeObraService {
             );
         }
 
-        RateioMaoDeObraResponse.RdoDoRateio concluir() {
+        RateioMaoDeObraResponse.RdoDoRateio concluir(
+                Map<String, String> oficiosPorNome
+        ) {
+            // O identificador manda sobre o nome: quem foi escolhido da lista
+            // já veio ligado ao seu cadastro, e nenhum homônimo desfaz isso.
+            String oficioDoApontador = apontadorFuncao != null
+                    ? apontadorFuncao
+                    : oficiosPorNome.get(nomeComparavel(apontadorRdo));
             return new RateioMaoDeObraResponse.RdoDoRateio(
                     id,
                     obraId,
@@ -268,8 +358,9 @@ public class RateioMaoDeObraService {
                     encarregadoObra,
                     apontadorRdo,
                     apontadorColaboradorId,
-                    apontadorFuncao,
+                    oficioDoApontador,
                     preenchidoPor,
+                    oficiosPorNome.get(nomeComparavel(preenchidoPor)),
                     List.copyOf(maoObra)
             );
         }

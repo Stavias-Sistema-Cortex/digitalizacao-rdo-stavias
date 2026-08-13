@@ -165,7 +165,11 @@ const PAPEIS_QUE_ASSINAM: readonly {
     campoFuncao: "apontadorFuncao",
     funcao: "Apontador do RDO",
   },
-  { campoNome: "preenchidoPor", funcao: "Preencheu o RDO" },
+  {
+    campoNome: "preenchidoPor",
+    campoFuncao: "preenchidoPorFuncao",
+    funcao: "Preencheu o RDO",
+  },
 ];
 
 /**

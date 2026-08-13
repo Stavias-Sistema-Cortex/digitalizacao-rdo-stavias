@@ -74,6 +74,19 @@ public record RateioMaoDeObraResponse(
              * de trabalho entrava no rateio como dia de ninguém.
              */
             String preenchidoPor,
+            /**
+             * O ofício de quem preencheu, achado no cadastro pelo nome.
+             *
+             * <p>Este campo é texto livre — nasce do nome da sessão e é
+             * editável —, então não há identificador para ligar à pessoa. O que
+             * há é o nome, e o nome basta quando ele aponta para uma pessoa só:
+             * o cadastro é consultado por nome comparável (sem acento e sem
+             * caixa) e o ofício só viaja quando não há dúvida sobre de quem ele
+             * é. Havendo dois cadastros com o mesmo nome e ofícios diferentes,
+             * nada vem — e a tela mostra o rótulo do papel, que é verdadeiro,
+             * em vez de arriscar o ofício de outra pessoa.
+             */
+            String preenchidoPorFuncao,
             List<MaoDeObraDoRateio> maoObra
     ) {}
 

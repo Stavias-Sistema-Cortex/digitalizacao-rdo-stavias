@@ -27,16 +27,43 @@ import {
  * que move a linha de verdade.
  */
 
-const OVERPASS_PADRAO = "https://overpass-api.de/api/interpreter";
-const TEMPO_LIMITE_MS = 20_000;
+/**
+ * Os espelhos do mapa público, na ordem em que são tentados.
+ *
+ * <p>O Overpass é infraestrutura voluntária e compartilhada pelo mundo: o
+ * espelho principal vive saturado em horário comercial e responde 429, 504 ou
+ * simplesmente não responde. Um endereço só transformava isso em "o serviço
+ * não respondeu" — verdadeiro e inútil, porque a rodovia estava lá o tempo
+ * todo, atrás de outro espelho que serve exatamente a mesma base de dados.
+ *
+ * <p>Tentar em ordem custa espera no pior caso e resolve o caso comum, que é o
+ * primeiro estar ocupado. Configurar {@code VITE_OVERPASS_URL} substitui a
+ * lista inteira, para quem tiver um espelho próprio.
+ */
+const ESPELHOS_OVERPASS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.osm.ch/api/interpreter",
+] as const;
+const TEMPO_LIMITE_MS = 25_000;
+
+/**
+ * O que se tenta de novo no espelho seguinte.
+ *
+ * <p>Ocupado, sobrecarregado ou atrás de um portal quebrado é circunstância do
+ * espelho e não da pergunta. Recusa de conteúdo — 400 na consulta malformada —
+ * seria igual em todos, e insistir só faria a pessoa esperar três vezes pela
+ * mesma negativa.
+ */
+const ESTADOS_QUE_MERECEM_OUTRO_ESPELHO = new Set([408, 429, 500, 502, 503, 504]);
 /** O recorte máximo de vértices enviado ao cadastro: curva preservada, payload contido. */
 const MAXIMO_DE_VERTICES = 400;
 /** Dois marcos coladas não seguram régua nenhuma: exigem-se 2 km entre eles. */
 const AMPLITUDE_MINIMA_DOS_MARCOS_KM = 2;
 
-function servicoOverpass(): string {
+function servicosOverpass(): readonly string[] {
   const configurado = import.meta.env?.VITE_OVERPASS_URL?.trim?.();
-  return configurado || OVERPASS_PADRAO;
+  return configurado ? [configurado] : ESPELHOS_OVERPASS;
 }
 
 /** "SP-330", "SP 330", "sp330" — a referência como o OSM a escreve: "SP-330". */
@@ -338,6 +365,46 @@ function enxugar(
 export class TracadoRecusado extends Error {}
 
 /**
+ * Faz a pergunta ao mapa público, insistindo espelho a espelho.
+ *
+ * <p>Devolve o JSON do primeiro que responder. Só desiste quando a lista
+ * inteira falhou, e a frase final diz o que aconteceu no último — "recusou
+ * (429)" e "não respondeu" pedem coisas diferentes de quem lê.
+ */
+async function consultarMapaPublico(
+  consulta: string,
+  fetchImpl: typeof fetch,
+): Promise<unknown> {
+  const espelhos = servicosOverpass();
+  let ultimoMotivo = "não respondeu";
+
+  for (const espelho of espelhos) {
+    const controlador = new AbortController();
+    const cronometro = setTimeout(() => controlador.abort(), TEMPO_LIMITE_MS);
+    try {
+      const resposta = await fetchImpl(espelho, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(consulta)}`,
+        signal: controlador.signal,
+      });
+      if (resposta.ok) return await resposta.json();
+      ultimoMotivo = `recusou a consulta (${resposta.status})`;
+      if (!ESTADOS_QUE_MERECEM_OUTRO_ESPELHO.has(resposta.status)) break;
+    } catch {
+      ultimoMotivo = "não respondeu";
+    } finally {
+      clearTimeout(cronometro);
+    }
+  }
+
+  throw new TracadoRecusado(
+    `O serviço de mapa público ${ultimoMotivo}; tente de novo daqui a pouco` +
+      " ou cadastre à mão.",
+  );
+}
+
+/**
  * Traça o eixo da obra a partir do endereço do cadastro.
  *
  * <p>Cidade enquadra, rodovia acha a linha, marcos calibram. Qualquer elo
@@ -376,35 +443,12 @@ export async function tracarEixoPelaRodovia(
     );
   }
 
-  const controlador = new AbortController();
-  const cronometro = setTimeout(
-    () => controlador.abort(),
-    TEMPO_LIMITE_MS,
+  const rodoviaDoMapa = rodoviaDaResposta(
+    await consultarMapaPublico(
+      consultaOverpass(referencia, enquadramento.limites),
+      fetchImpl,
+    ),
   );
-  let resposta: Response;
-  try {
-    resposta = await fetchImpl(servicoOverpass(), {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(
-        consultaOverpass(referencia, enquadramento.limites),
-      )}`,
-      signal: controlador.signal,
-    });
-  } catch {
-    throw new TracadoRecusado(
-      "O serviço de mapa público não respondeu; tente de novo ou cadastre à mão.",
-    );
-  } finally {
-    clearTimeout(cronometro);
-  }
-  if (!resposta.ok) {
-    throw new TracadoRecusado(
-      `O serviço de mapa público recusou a consulta (${resposta.status}).`,
-    );
-  }
-
-  const rodoviaDoMapa = rodoviaDaResposta(await resposta.json());
   if (rodoviaDoMapa.trechos.length === 0) {
     throw new TracadoRecusado(
       `A ${referencia} não aparece mapeada na região de ${
