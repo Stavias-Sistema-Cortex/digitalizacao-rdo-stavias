@@ -169,8 +169,7 @@
   display: block;
 }
 
-.cortex-shell--collapsed .sidebar-label,
-.cortex-shell--collapsed .badge-soon {
+.cortex-shell--collapsed .sidebar-label {
   display: none;
 }
 
@@ -322,12 +321,6 @@
   font-weight: 600;
 }
 
-.profile-menu-cpf {
-  margin: 2px 0 6px;
-  color: var(--color-muted);
-  font-size: 0.75rem;
-}
-
 .profile-menu-scope {
   align-self: flex-start;
   margin: 0 0 10px;
@@ -367,17 +360,6 @@
   color: var(--color-danger);
   font-size: 0.75rem;
   line-height: 1.4;
-}
-
-.badge-soon {
-  margin-left: auto;
-  padding: 2px 6px;
-  border-radius: var(--radius-control);
-  background: var(--color-brand-yellow);
-  color: #0a423d;
-  font-size: 0.55rem;
-  font-weight: 500;
-  text-transform: lowercase;
 }
 
 @media (max-width: 900px) {

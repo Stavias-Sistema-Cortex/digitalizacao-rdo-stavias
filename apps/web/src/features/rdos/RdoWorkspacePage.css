@@ -21,29 +21,6 @@
   margin-bottom: 18px;
 }
 
-.rdo-create-workspace .workspace-actions,
-.rdo-header-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.rdo-header-status {
-  min-height: 42px;
-  padding: 6px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-}
-
-.rdo-header-status .status-label,
-.rdo-header-status .status-id {
-  color: var(--color-muted);
-  font-size: 0.68rem;
-  font-weight: 500;
-  text-transform: uppercase;
-}
-
 .rdo-dashboard .institutional-page-header h1,
 .rdo-create-workspace .institutional-page-header h1,
 .rdo-dashboard h2,
@@ -591,21 +568,6 @@
 }
 
 @media (max-width: 620px) {
-  .rdo-create-workspace .workspace-actions,
-  .rdo-header-status {
-    align-items: stretch;
-    width: 100%;
-  }
-
-  .rdo-create-workspace .workspace-actions {
-    flex-direction: column;
-  }
-
-  .rdo-header-status {
-    align-items: center;
-    justify-content: space-between;
-  }
-
   .rdo-register-summary dl,
   .rdo-document-status dl,
   .rdo-document-index ol {

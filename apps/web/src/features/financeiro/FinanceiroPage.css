@@ -922,15 +922,6 @@
   max-width: 52ch;
 }
 
-/*
- * O glifo decorativo de 3rem (↳, ⊘, ∅) saiu de cena: um sinal tipográfico
- * gigante não explica nada e é a assinatura de tela gerada. O texto do estado
- * vazio se sustenta sozinho.
- */
-.finance-empty-mark {
-  display: none;
-}
-
 /* ------------------------------------------- Serviço fora de circulação */
 
 /*

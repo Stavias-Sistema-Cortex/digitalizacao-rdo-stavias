@@ -220,15 +220,6 @@
 .mensagens-pane-heading strong { font-size: 0.82rem; }
 .mensagens-pane-heading span { color: var(--color-muted); font-size: 0.65rem; }
 
-.mensagens-visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
 /* Busca declarada: rótulo visível e botão nomeado, no lugar da pílula com lupa.
    O campo é um controle de formulário do sistema, não um widget de chat. */
 .mensagens-search {
@@ -1515,7 +1506,6 @@
 .mensagens-composer > label,
 .mensagens-search button,
 .mensagens-search-results header button,
-.mensagem-sync,
 .mensagem-item article > footer button,
 .mensagem-item details summary,
 .mensagens-attach,

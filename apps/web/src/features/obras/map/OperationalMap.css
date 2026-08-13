@@ -52,8 +52,7 @@
 }
 
 .operational-map-controls select,
-.operational-map-center-button,
-.operational-map-view-toggle button {
+.operational-map-center-button {
   min-height: 34px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -72,31 +71,6 @@
 .operational-map-center-button {
   border-radius: 2px;
   padding: 0 11px;
-}
-
-.operational-map-view-toggle {
-  display: flex;
-}
-
-.operational-map-view-toggle button {
-  min-width: 40px;
-  padding: 0 8px;
-}
-
-.operational-map-view-toggle button:first-child {
-  border-radius: 2px 0 0 2px;
-}
-
-.operational-map-view-toggle button:last-child {
-  margin-left: -1px;
-  border-radius: 0 2px 2px 0;
-}
-
-.operational-map-view-toggle button.active {
-  z-index: 1;
-  border-color: var(--color-focus);
-  background: var(--color-focus);
-  color: var(--color-surface);
 }
 
 .operational-map-controls button:disabled {

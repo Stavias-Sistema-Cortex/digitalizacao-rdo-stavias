@@ -62,15 +62,6 @@
   font-weight: 600;
 }
 
-.rdo-workforce-empty {
-  margin: 16px 0 0;
-  padding: 14px;
-  border: 1px solid #d8dfda;
-  color: #2c3330;
-  font-size: 0.8rem;
-  font-weight: 500;
-}
-
 .rdo-workforce-table-region {
   max-width: 100%;
   max-height: 420px;
@@ -162,12 +153,6 @@
   font-weight: 600;
 }
 
-.rdo-workforce-row--carried > th[scope="row"] {
-  border-left: 1px solid var(--color-brand-yellow);
-  box-shadow: none;
-  padding-left: 12px;
-}
-
 .rdo-workforce-table input,
 .rdo-workforce-table select {
   width: 100%;
@@ -182,22 +167,6 @@
   width: 18px;
   min-height: 18px;
   margin: 0;
-}
-
-.rdo-workforce-remove {
-  min-height: 32px;
-  padding: 5px 8px;
-  border: 1px solid #c9d2cd;
-  border-radius: 2px;
-  background: #fff;
-  color: #7d3030;
-  font: inherit;
-  font-weight: 500;
-}
-
-.rdo-workforce-remove:hover {
-  border-color: #9f4a4a;
-  background: #fbf3f3;
 }
 
 .rdo-workforce-table :disabled {
