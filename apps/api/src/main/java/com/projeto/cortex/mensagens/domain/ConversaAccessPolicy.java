@@ -23,11 +23,28 @@ public class ConversaAccessPolicy {
     public ConversationScope requireAccess(String conversationId) {
         ConversationScope scope = requireExisting(conversationId);
         String userId = currentUserService.requireUserId();
-        if (currentUserService.isAlfa(userId)) {
+        /*
+         * Conversa direta é de duas pessoas, e de mais ninguém.
+         *
+         * <p>Alfa alcança tudo o que é registro de obra — conversa de obra, de
+         * equipe, de grupo de trabalho — porque isso é documentação do
+         * empreendimento e alguém precisa responder por ela. Conversa direta
+         * não é: é correspondência particular entre dois colaboradores, e o
+         * papel administrativo não dá a ninguém o direito de abri-la.
+         *
+         * <p>Sem esta porta fechada, quem tem Alfa lia a caixa de mensagens de
+         * qualquer pessoa da empresa, e as duas pontas da conversa não tinham
+         * como saber. É a única regra aqui que protege gente, e não dado.
+         */
+        boolean alfa = currentUserService.isAlfa(userId);
+        if (alfa && scope.type() != ConversationType.DIRETA) {
             return scope;
         }
         if (!isActiveParticipant(scope.id(), userId)) {
             throw forbidden();
+        }
+        if (alfa) {
+            return scope;
         }
 
         switch (scope.type()) {

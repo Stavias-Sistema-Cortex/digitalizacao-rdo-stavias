@@ -180,11 +180,29 @@ public class ConversaService {
         String sql;
         List<Object> arguments = new ArrayList<>();
         if (currentUserService.isAlfa(userId)) {
+            /*
+             * Alfa alcança o que é registro de obra; conversa direta é
+             * correspondência particular e só aparece para quem participa
+             * dela. Sem este recorte, a lista de quem tem Alfa trazia a caixa
+             * de mensagens de toda a empresa.
+             */
             sql = """
                     SELECT c.*
                     FROM conversa c
                     WHERE c.status = 'ATIVA' AND c.deletado_em IS NULL
+                      AND (
+                        c.tipo <> 'DIRETA'
+                        OR EXISTS (
+                            SELECT 1 FROM conversa_participante cp
+                            WHERE cp.conversa_id = c.id
+                              AND cp.colaborador_id = ?
+                              AND cp.status = 'ATIVO'
+                              AND cp.removido_em IS NULL
+                              AND cp.deletado_em IS NULL
+                        )
+                      )
                     """;
+            arguments.add(userId);
         } else {
             sql = """
                     SELECT DISTINCT c.*

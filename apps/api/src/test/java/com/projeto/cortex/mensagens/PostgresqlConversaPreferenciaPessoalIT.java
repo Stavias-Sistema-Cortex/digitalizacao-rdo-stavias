@@ -1,6 +1,7 @@
 package com.projeto.cortex.mensagens;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import com.projeto.cortex.auth.CurrentUserService;
@@ -27,6 +28,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
+import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -170,6 +172,66 @@ class PostgresqlConversaPreferenciaPessoalIT {
 
         preferencias.desfazerLimpeza(conversaId);
         assertThat(idsDoHistorico(conversaId)).containsExactly(antiga);
+    }
+
+    /*
+     * O papel administrativo alcança registro de obra, não a caixa de
+     * mensagens alheia. Sem esta regra, quem tinha Alfa lia a conversa direta
+     * de qualquer pessoa da empresa — e as duas pontas não tinham como saber.
+     */
+    @Test
+    void oAlfaNaoAlcancaAConversaDiretaDeOutrasDuasPessoas() {
+        String um = colaborador("Quem conversa");
+        String outro = colaborador("Com quem conversa");
+        String alfa = colaboradorAlfa("Quem administra");
+        String conversaId = conversaDireta(um, outro);
+        participante(conversaId, um, um);
+        participante(conversaId, outro, um);
+        String reservada = mensagem(conversaId, um, "Assunto particular");
+
+        autenticar(alfa);
+        assertThat(idsDaLista(false)).doesNotContain(conversaId);
+        assertThatThrownBy(() -> mensagens.history(conversaId, null, 50))
+                .isInstanceOf(ResponseStatusException.class);
+
+        // Quem participa continua vendo tudo.
+        autenticar(um);
+        assertThat(idsDoHistorico(conversaId)).containsExactly(reservada);
+    }
+
+    /* Conversa de obra continua alcançável por Alfa: aquilo é documentação. */
+    @Test
+    void oAlfaSegueAlcancandoAConversaDeTrabalho() {
+        String dono = colaborador("Quem abriu o grupo");
+        String alfa = colaboradorAlfa("Quem administra o grupo");
+        String conversaId = conversa(dono, "Assunto de obra");
+        participante(conversaId, dono, dono);
+
+        autenticar(alfa);
+        assertThat(idsDaLista(false)).contains(conversaId);
+    }
+
+    private static String colaboradorAlfa(String nome) {
+        String id = colaborador(nome);
+        jdbc.update(
+                "UPDATE colaborador SET papel_acesso = 'ALFA' WHERE id = ?",
+                id
+        );
+        return id;
+    }
+
+    private static String conversaDireta(String um, String outro) {
+        String id = UUID.randomUUID().toString();
+        jdbc.update("""
+                INSERT INTO conversa
+                    (id, tipo, criado_por, chave_participantes_direta)
+                VALUES (?, 'DIRETA', ?, ?)
+                """,
+                id,
+                um,
+                id.replace("-", "").repeat(2).substring(0, 64)
+        );
+        return id;
     }
 
     private static List<String> idsDaLista(boolean arquivadas) {

@@ -219,7 +219,22 @@ public class MensagemService {
         List<Object> arguments = new ArrayList<>();
         String access;
         if (currentUserService.isAlfa(userId)) {
-            access = "";
+            // Mesma regra da listagem: a busca de Alfa varre o registro de
+            // obra, nunca a correspondência particular de outras pessoas.
+            access = """
+                    AND (
+                        cv.tipo <> 'DIRETA'
+                        OR EXISTS (
+                            SELECT 1 FROM conversa_participante cp
+                            WHERE cp.conversa_id = cv.id
+                              AND cp.colaborador_id = ?
+                              AND cp.status = 'ATIVO'
+                              AND cp.removido_em IS NULL
+                              AND cp.deletado_em IS NULL
+                        )
+                    )
+                    """;
+            arguments.add(userId);
         } else {
             access = """
                     AND EXISTS (
