@@ -4549,10 +4549,13 @@ export async function recoverRejectedRdoMutationsForSync(
           "Dependência canônica religada por envelope substituto.",
         updatedAt: timestamp,
       });
+      // Religar a dependência substitui o envelope; não o recusa. Afirmar
+      // `REJECTED`/`SYNC_FAILED` aqui punha na Memória uma recusa que ninguém
+      // deu — o mesmo engano já corrigido nas outras substituições.
       await eventStore.put({
         ...dependent.originalEvent,
-        result: "REJECTED",
-        syncStatus: "SYNC_FAILED",
+        result: "SUPERSEDED",
+        syncStatus: "LOCAL_ONLY",
         errorCategory: "SUPERSEDED_BY_DEPENDENCY_REWIRE",
       });
       await outboxStore.add(dependent.built.mutation);
