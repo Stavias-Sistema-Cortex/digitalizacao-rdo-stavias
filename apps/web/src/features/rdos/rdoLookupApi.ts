@@ -258,6 +258,11 @@ export interface RdoContextCollaborator {
   papelNaObra: string | null;
   nomePerfil: string | null;
   /**
+   * O ofício vindo do Academy — a primeira porta para o cargo da mão de
+   * obra. Opcional porque contexto guardado antes desta versão não o tem.
+   */
+  funcao?: string | null;
+  /**
    * Se a pessoa está ligada a esta obra, por vínculo direto ou por equipe.
    *
    * <p>Deixou de decidir quem aparece e passou a decidir a ordem: a lista traz
@@ -910,6 +915,7 @@ function scopedCollaborators(values: unknown): RdoContextCollaborator[] {
       nome: nullableText(value.nome),
       papelNaObra: null,
       nomePerfil: nullableText(value.nomePerfil),
+      funcao: nullableText(value.funcao),
       naObra: typeof value.naObra === "boolean" ? value.naObra : undefined,
     };
   });

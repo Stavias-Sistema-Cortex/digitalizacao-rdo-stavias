@@ -1435,6 +1435,7 @@ class PostgresqlAcademyImportAtomicityIT {
                 sourceId,
                 cpf,
                 name,
+                        "FUNCAO DE TESTE",
                 email,
                 active,
                 "grupo-teste",

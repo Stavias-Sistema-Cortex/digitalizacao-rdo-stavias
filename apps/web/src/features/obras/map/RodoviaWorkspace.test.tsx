@@ -511,8 +511,15 @@ describe("RodoviaWorkspace", () => {
     expect(aviso).toHaveTextContent(/km 200 ao 202/);
     // A data do RDO, não a da leitura do mapa.
     expect(aviso).toHaveTextContent(/08\/08\/2026/);
+    // As duas saídas, lado a lado: o traçado automático pela rodovia do
+    // cadastro e o gesto manual de sempre.
     expect(
-      within(aviso).getByRole("button", { name: "Cadastrar o eixo" }),
+      within(aviso).getByRole("button", {
+        name: "Traçar pela rodovia (automático)",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(aviso).getByRole("button", { name: "Cadastrar à mão" }),
     ).toBeInTheDocument();
   });
 

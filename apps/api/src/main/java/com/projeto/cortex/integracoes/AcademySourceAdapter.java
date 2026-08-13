@@ -55,6 +55,7 @@ public class AcademySourceAdapter {
                 u.id_usuario,
                 u.cpf,
                 u.nome,
+                u.funcao,
                 u.email,
                 u.ativo,
                 u.id_grupo,
@@ -67,6 +68,7 @@ public class AcademySourceAdapter {
                     source.id_usuario,
                     source.cpf,
                     source.nome,
+                    source.funcao,
                     source.email,
                     source.ativo,
                     source.id_grupo,
@@ -339,6 +341,7 @@ public class AcademySourceAdapter {
                 resultSet.getLong("id_usuario"),
                 resultSet.getString("cpf"),
                 resultSet.getString("nome"),
+                resultSet.getString("funcao"),
                 resultSet.getString("email"),
                 resultSet.getBoolean("ativo"),
                 nullableString(resultSet, "id_grupo"),
@@ -487,6 +490,12 @@ public class AcademySourceAdapter {
             long idUsuario,
             String cpf,
             String nome,
+            /**
+             * O ofício declarado na origem — pedreiro, apontador de obra,
+             * topógrafo. Não confundir com {@code nomePerfil}, que é perfil
+             * de ACESSO ao sistema.
+             */
+            String funcao,
             String email,
             boolean ativo,
             String idGrupo,

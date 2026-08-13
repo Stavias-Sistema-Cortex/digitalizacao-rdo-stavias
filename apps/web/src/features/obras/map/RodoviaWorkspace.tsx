@@ -57,6 +57,10 @@ import {
 } from "./eixoDaObra";
 import { avisoDoQueEsperaARegua } from "./avisoDoQueEsperaARegua";
 import { interdicoesLocaisDaObra } from "../trecho/trechoLocal";
+import {
+  TracadoRecusado,
+  tracarEixoPelaRodovia,
+} from "./tracarEixoAutomatico";
 import type { InterdicaoLocal } from "./eixoDaObra";
 import { corrigirKmPeloMapa } from "./corrigirKmPeloMapa";
 import type { SegmentoTrecho } from "../trecho/trechoGeometry";
@@ -278,6 +282,7 @@ export function RodoviaWorkspace({
    * primeiro acerto de um deles.
    */
   const [cadastrandoEixo, setCadastrandoEixo] = useState(false);
+  const [tracandoEixo, setTracandoEixo] = useState(false);
   const [kmDoEixo, setKmDoEixo] = useState({ inicial: "", final: "" });
   const [salvandoEixo, setSalvandoEixo] = useState(false);
   /*
@@ -786,6 +791,48 @@ export function RodoviaWorkspace({
     setLocalIdDaLinha(crypto.randomUUID());
     setAviso(null);
   }, []);
+
+  /*
+   * O eixo traçado pelo mapa público: a rodovia do cadastro dá a linha, os
+   * marcos quilométricos dão a régua, e o cadastro sai pronto — editável como
+   * qualquer eixo. Recusa explicada quando falta rodovia, linha ou marco:
+   * cadastrar errado sozinho seria pior que pedir os dois cliques.
+   */
+  const tracarEixoAutomaticamente = useCallback(async () => {
+    setTracandoEixo(true);
+    setAviso(null);
+    try {
+      const eixoTracado = await tracarEixoPelaRodovia({
+        cidade: endereco?.cidade ?? null,
+        uf: endereco?.uf ?? null,
+        rodovia: endereco?.rodovia ?? null,
+      });
+      await registrarEixoDaObra({
+        obraId: obra.id,
+        pontos: eixoTracado.pontos,
+        kmInicial: eixoTracado.kmInicial,
+        kmFinal: eixoTracado.kmFinal,
+        rodovia: rodoviaDaObra ?? null,
+      });
+      setAviso(
+        `Eixo traçado pela rodovia e cadastrado: km ${eixoTracado.kmInicial.toLocaleString(
+          "pt-BR",
+        )} ao ${eixoTracado.kmFinal.toLocaleString("pt-BR")}, calibrado por ${
+          eixoTracado.marcosUsados
+        } marcos quilométricos do mapa público. Confira o traçado — ele é
+ editável como qualquer eixo.`,
+      );
+      recarregar();
+    } catch (motivo: unknown) {
+      setAviso(
+        motivo instanceof TracadoRecusado || motivo instanceof Error
+          ? motivo.message
+          : "Não foi possível traçar o eixo automaticamente.",
+      );
+    } finally {
+      setTracandoEixo(false);
+    }
+  }, [endereco, obra.id, recarregar, rodoviaDaObra]);
 
   const abrirCadastroDoEixo = useCallback(() => {
     setAviso(null);
@@ -1330,13 +1377,28 @@ export function RodoviaWorkspace({
             <strong>{esperandoARegua.titulo}</strong> {esperandoARegua.detalhe}
           </p>
           {esperandoARegua.pedeOEixo && podeDesenhar && !cadastrandoEixo ? (
-            <button
-              type="button"
-              className="rodovia-desenho-botao"
-              onClick={abrirCadastroDoEixo}
-            >
-              Cadastrar o eixo
-            </button>
+            <div className="rodovia-workspace-aviso__acoes">
+              <button
+                type="button"
+                className="rodovia-desenho-botao"
+                disabled={tracandoEixo}
+                onClick={() => {
+                  void tracarEixoAutomaticamente();
+                }}
+              >
+                {tracandoEixo
+                  ? "Traçando pela rodovia…"
+                  : "Traçar pela rodovia (automático)"}
+              </button>
+              <button
+                type="button"
+                className="rodovia-desenho-botao"
+                disabled={tracandoEixo}
+                onClick={abrirCadastroDoEixo}
+              >
+                Cadastrar à mão
+              </button>
+            </div>
           ) : null}
         </div>
       ) : null}

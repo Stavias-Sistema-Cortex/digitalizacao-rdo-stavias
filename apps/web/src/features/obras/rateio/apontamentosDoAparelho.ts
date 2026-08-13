@@ -155,11 +155,14 @@ function encarregadoDoRdo(
 const PAPEIS_QUE_ASSINAM: readonly {
   campoNome: string;
   campoId?: string;
+  /** O ofício do cadastro, quando o payload o trouxer. */
+  campoFuncao?: string;
   funcao: string;
 }[] = [
   {
     campoNome: "apontadorRdo",
     campoId: "apontadorColaboradorId",
+    campoFuncao: "apontadorFuncao",
     funcao: "Apontador do RDO",
   },
   { campoNome: "preenchidoPor", funcao: "Preencheu o RDO" },
@@ -257,10 +260,15 @@ export function apontamentosDoRdo(
     for (const chave of chaves) {
       jaContados.add(chave);
     }
+    // A função do Academy manda quando o servidor a conhece; o rótulo do
+    // papel é o que resta quando não há cadastro por trás da assinatura.
+    const funcaoDoCadastro = papel.campoFuncao
+      ? texto(registro.payload[papel.campoFuncao])
+      : "";
     apontamentos.push({
       colaboradorId: colaboradorId || null,
       nome,
-      funcao: papel.funcao,
+      funcao: funcaoDoCadastro || papel.funcao,
       obraId: registro.obraId,
       obraNome: texto(registro.payload.obraNome),
       data: registro.dataRdo,

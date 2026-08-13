@@ -108,6 +108,11 @@ class PostgresqlRateioMaoDeObraIT {
     void aAssinaturaDoRdoViajaParaOQuemContaAPresenca() {
         String obraId = obra("assinatura");
         String apontador = colaborador("Quem Aponta");
+        // A função vem do Academy pelo sync; aqui ela já está no cadastro.
+        jdbc.update(
+                "UPDATE colaborador SET funcao = 'APONTADOR DE OBRA' WHERE id = ?",
+                apontador
+        );
         String rdoId = rdo(obraId, "2026-07-10", "RDO-0009");
         jdbc.update(
                 """
@@ -136,6 +141,9 @@ class PostgresqlRateioMaoDeObraIT {
         assertThat(encontrado.preenchidoPor()).isEqualTo("QUEM PREENCHEU");
         assertThat(encontrado.apontadorRdo()).isEqualTo("QUEM APONTA");
         assertThat(encontrado.apontadorColaboradorId()).isEqualTo(apontador);
+        // O ofício do cadastro viaja junto: é ele que a matriz mostra no
+        // lugar do rótulo genérico "Apontador do RDO".
+        assertThat(encontrado.apontadorFuncao()).isEqualTo("APONTADOR DE OBRA");
     }
 
     @Test

@@ -59,6 +59,13 @@ public record RateioMaoDeObraResponse(
              */
             String apontadorColaboradorId,
             /**
+             * O ofício do apontador no cadastro (Academy), quando o RDO o
+             * escolheu da lista. É o que faz o rateio mostrar "Apontador de
+             * obra" em vez de um rótulo genérico — a função é da pessoa, não
+             * do papel que ela exerceu no documento.
+             */
+            String apontadorFuncao,
+            /**
              * Quem preencheu o documento — nasce do nome da sessão de quem o
              * criou e é editável.
              *

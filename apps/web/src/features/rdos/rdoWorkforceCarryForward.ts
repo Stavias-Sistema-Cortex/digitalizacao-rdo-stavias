@@ -96,7 +96,12 @@ export function carryForwardWorkforce(
        * sobrescrever isso com o perfil do cadastro desfaria a escolha dele.
        */
       cargo:
-        item.roleSnapshot?.trim() || current?.nomePerfil?.trim() || "",
+        item.roleSnapshot?.trim() ||
+        // O ofício do Academy vem antes do perfil de acesso: "PEDREIRO" é
+        // cargo; "Apontador" é permissão de sistema.
+        current?.funcao?.trim() ||
+        current?.nomePerfil?.trim() ||
+        "",
       tipoVinculo: item.linkType?.trim() ?? "",
       quantidade: item.quantity ?? "",
       horaInicio: compactTime(item.startTime),
@@ -136,6 +141,7 @@ export function addAuthorizedWorkforceMember(
         collaborator.codigoColaborador?.trim() ||
         "",
       cargo:
+        collaborator.funcao?.trim() ||
         collaborator.nomePerfil?.trim() ||
         collaborator.papelNaObra?.trim() ||
         "",

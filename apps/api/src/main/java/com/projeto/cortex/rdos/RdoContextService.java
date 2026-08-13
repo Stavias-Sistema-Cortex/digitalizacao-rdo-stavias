@@ -886,6 +886,7 @@ public class RdoContextService {
                     collaborator.nome,
                     MIN(origem.papel_na_obra) AS papel_na_obra,
                     collaborator.nome_perfil,
+                    collaborator.funcao,
                     bool_or(origem.colaborador_id IS NOT NULL) AS na_obra
                 FROM colaborador collaborator
                 LEFT JOIN (
@@ -924,7 +925,8 @@ public class RdoContextService {
                     collaborator.id,
                     collaborator.codigo_colaborador,
                     collaborator.nome,
-                    collaborator.nome_perfil
+                    collaborator.nome_perfil,
+                    collaborator.funcao
                 ORDER BY na_obra DESC, collaborator.nome, collaborator.id
                 """,
                 (rs, rowNum) -> new RdoContextResponse.ColaboradorContexto(
@@ -933,6 +935,7 @@ public class RdoContextService {
                         rs.getString("nome"),
                         rs.getString("papel_na_obra"),
                         rs.getString("nome_perfil"),
+                        rs.getString("funcao"),
                         rs.getBoolean("na_obra")
                 ),
                 obraId,

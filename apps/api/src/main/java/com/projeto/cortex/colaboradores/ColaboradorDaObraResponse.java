@@ -11,6 +11,12 @@ public record ColaboradorDaObraResponse(
         String nome,
         String cpfMascarado,
         String nomePerfil,
-        String nomeGrupo
+        String nomeGrupo,
+        /**
+         * O ofício vindo do Academy — o que a pessoa faz na obra. É a
+         * primeira porta para o cargo da mão de obra do RDO; o perfil de
+         * acesso ({@code nomePerfil}) vira o que sempre foi: permissão.
+         */
+        String funcao
 ) {
 }

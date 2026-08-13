@@ -190,7 +190,7 @@ class ColaboradorDaObraControllerMockMvcTest {
         when(service.buscarParaFormarEquipe("adao")).thenReturn(List.of(
                 new ColaboradorDaObraResponse(
                         "col-1", "ADAO LEITE", "***.111.***-**",
-                        "Encarregado", "OPERACIONAL")
+                        "Encarregado", "OPERACIONAL", "ENCARREGADO DE OBRA")
         ));
 
         mockMvc.perform(get("/api/obras/obra-1/colaboradores/busca")

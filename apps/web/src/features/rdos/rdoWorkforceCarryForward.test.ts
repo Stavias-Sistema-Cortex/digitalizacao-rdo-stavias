@@ -11,7 +11,7 @@ import type {
 
 const source = "00000000-0000-4000-8000-000000000099";
 const catalog: RdoContextCollaborator[] = [
-  { id: "worker-a", codigoColaborador: null, nome: "Ana", papelNaObra: "APONTADOR", nomePerfil: "Apontadora" },
+  { id: "worker-a", codigoColaborador: null, nome: "Ana", papelNaObra: "APONTADOR", nomePerfil: "Apontadora", funcao: "TOPÓGRAFA" },
   { id: "worker-b", codigoColaborador: null, nome: "Bruno", papelNaObra: "OPERACIONAL", nomePerfil: "Operador" },
 ];
 
@@ -208,5 +208,24 @@ describe("carry-forward determinístico da equipe", () => {
       .toThrow("Este colaborador já está na equipe do RDO.");
     expect(() => addAuthorizedWorkforceMember([], "foreign", catalog))
       .toThrow("Colaborador não autorizado para esta obra.");
+  });
+});
+
+/*
+ * O ofício do Academy é cargo; o perfil de acesso é permissão. Quando o Paulo
+ * preenche a função na origem, é ela que o RDO sugere — "Apontadora" era o
+ * perfil de sistema vazando para a frente de serviço.
+ */
+describe("a função do Academy como cargo sugerido", () => {
+  it("prefere a função ao perfil de acesso ao adicionar alguém", () => {
+    const rows = addAuthorizedWorkforceMember([], "worker-a", catalog);
+
+    expect(rows[0].cargo).toBe("TOPÓGRAFA");
+  });
+
+  it("sem função no cadastro, o perfil continua sendo o fallback", () => {
+    const rows = addAuthorizedWorkforceMember([], "worker-b", catalog);
+
+    expect(rows[0].cargo).toBe("Operador");
   });
 });

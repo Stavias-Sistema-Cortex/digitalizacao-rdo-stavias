@@ -72,6 +72,7 @@ class AcademySourceAdapterMysqlSnapshotIT {
                         id_usuario INT UNSIGNED PRIMARY KEY,
                         cpf VARCHAR(32),
                         nome VARCHAR(255) NOT NULL,
+                        funcao VARCHAR(255),
                         email VARCHAR(255),
                         ativo TINYINT(1) NOT NULL,
                         id_grupo INT UNSIGNED,

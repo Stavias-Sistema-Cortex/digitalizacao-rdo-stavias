@@ -122,6 +122,11 @@ public record RdoContextResponse(
             String papelNaObra,
             String nomePerfil,
             /**
+             * O ofício do Academy — a primeira porta para o cargo da mão de
+             * obra. Perfil de acesso não descreve trabalho; isto descreve.
+             */
+            String funcao,
+            /**
              * Se a pessoa está ligada a esta obra — por vínculo direto ou por
              * equipe alocada.
              *
@@ -140,7 +145,7 @@ public record RdoContextResponse(
                 String papelNaObra,
                 String nomePerfil
         ) {
-            this(id, codigoColaborador, nome, papelNaObra, nomePerfil, true);
+            this(id, codigoColaborador, nome, papelNaObra, nomePerfil, null, true);
         }
     }
 

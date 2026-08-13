@@ -443,6 +443,7 @@ public class ColaboradorImportService {
                         ? null
                         : CpfHasher.mascarar(cpfNormalizado),
                 sourceUser.nome(),
+                sourceUser.funcao(),
                 sourceUser.email(),
                 sourceUser.idGrupo(),
                 sourceUser.nomeGrupo(),
@@ -464,6 +465,7 @@ public class ColaboradorImportService {
                     cpf_hash,
                     cpf_mascarado,
                     nome,
+                    funcao,
                     email,
                     id_grupo_origem,
                     nome_grupo,
@@ -477,7 +479,7 @@ public class ColaboradorImportService {
                     visto_por_ultimo_em,
                     deletado_em
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BETA', ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BETA', ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
                 ON CONFLICT (banco_origem, tabela_origem, pk_origem) DO UPDATE SET
                     codigo_colaborador = EXCLUDED.codigo_colaborador,
                     cpf_mascarado = CASE
@@ -492,6 +494,7 @@ public class ColaboradorImportService {
                         ELSE EXCLUDED.cpf_mascarado
                     END,
                     nome = EXCLUDED.nome,
+                    funcao = EXCLUDED.funcao,
                     email = EXCLUDED.email,
                     id_grupo_origem = EXCLUDED.id_grupo_origem,
                     nome_grupo = EXCLUDED.nome_grupo,
@@ -554,6 +557,7 @@ public class ColaboradorImportService {
                 usuario.cpfHash(),
                 usuario.cpfMascarado(),
                 usuario.nome(),
+                usuario.funcao(),
                 usuario.email(),
                 usuario.idGrupoOrigem(),
                 usuario.nomeGrupo(),
@@ -876,6 +880,7 @@ public class ColaboradorImportService {
                 nullToEmpty(usuario.codigoColaborador()),
                 nullToEmpty(usuario.cpfMascarado()),
                 nullToEmpty(usuario.nome()),
+                nullToEmpty(usuario.funcao()),
                 nullToEmpty(usuario.email()),
                 nullToEmpty(usuario.idGrupoOrigem()),
                 nullToEmpty(usuario.nomeGrupo()),
@@ -1182,6 +1187,7 @@ public class ColaboradorImportService {
             String cpfHash,
             String cpfMascarado,
             String nome,
+            String funcao,
             String email,
             String idGrupoOrigem,
             String nomeGrupo,

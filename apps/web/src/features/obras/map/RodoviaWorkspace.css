@@ -454,6 +454,12 @@
   margin-top: 8px;
 }
 
+.rodovia-workspace-aviso__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .rodovia-workspace-aviso--aproximado strong {
   color: var(--color-ink);
 }

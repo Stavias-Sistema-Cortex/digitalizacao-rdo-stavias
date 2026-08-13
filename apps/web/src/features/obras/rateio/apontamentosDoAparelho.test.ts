@@ -357,6 +357,29 @@ describe("apontamentos lidos dos RDOs do aparelho", () => {
       });
     });
 
+    /*
+     * A função é da pessoa, não do papel: quando o cadastro do Academy diz o
+     * ofício do apontador, é ele que aparece na coluna — "Apontador do RDO"
+     * fica para quem assinou sem cadastro por trás.
+     */
+    it("usa a função do Academy quando o servidor a conhece", () => {
+      const [apontamento] = extrairApontamentos(
+        [
+          rdo({
+            payload: {
+              apontadorRdo: "QUEM APONTA",
+              apontadorColaboradorId: "col-77",
+              apontadorFuncao: "APONTADOR DE OBRA",
+              maoObra: [],
+            },
+          }),
+        ],
+        JULHO,
+      ).apontamentos;
+
+      expect(apontamento.funcao).toBe("APONTADOR DE OBRA");
+    });
+
     it("o apontador escolhido da lista entra com o cadastro dele", () => {
       const [apontamento] = extrairApontamentos(
         [

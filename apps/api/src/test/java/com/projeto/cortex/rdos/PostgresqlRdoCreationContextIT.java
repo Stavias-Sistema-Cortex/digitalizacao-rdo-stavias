@@ -127,8 +127,11 @@ class PostgresqlRdoCreationContextIT {
                     obraId,
                     "CTR-" + obraId
             );
+            // Números distintos de propósito: a V79 cerca o número do RDO
+            // por obra, e este banco vai migrar até o esquema canônico —
+            // duplicata aqui seria colapsada pela própria migração.
             upgradeJdbc.update(
-                    "INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo) VALUES (?, ?, 'RDO-0041', ?)",
+                    "INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo) VALUES (?, ?, 'RDO-0040', ?)",
                     id(), obraId, SELECTED_DATE.minusDays(2)
             );
             upgradeJdbc.update(
@@ -147,8 +150,10 @@ class PostgresqlRdoCreationContextIT {
                     .load()
                     .migrate();
 
-            // Exercise the context service against the current canonical schema.
-            // The assertions below still prove V48/V49/V50 upgrade preservation.
+            // Exercise the context service against the CURRENT canonical
+            // schema — no pinned target, so this rehearsal stops rotting every
+            // time a migration lands. The assertions below still prove the
+            // V48/V49/V50 upgrade preservation.
             Flyway.configure()
                     .dataSource(
                             upgradeDatabase.getJdbcUrl(),
@@ -156,12 +161,12 @@ class PostgresqlRdoCreationContextIT {
                             upgradeDatabase.getPassword()
                     )
                     .locations("classpath:db/migration-postgresql")
-                    .target("57")
                     .load()
                     .migrate();
 
             assertThat(upgradeJdbc.queryForObject(
-                    "SELECT count(*) FROM rdo WHERE obra_id = ? AND numero_rdo = 'RDO-0041'",
+                    "SELECT count(*) FROM rdo WHERE obra_id = ?"
+                            + " AND numero_rdo IN ('RDO-0040', 'RDO-0041')",
                     Integer.class,
                     obraId
             )).isEqualTo(2);

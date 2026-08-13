@@ -89,6 +89,9 @@ export function lerRespostaDoRateio(
         // assinatura atravessam inteiros: sem eles o retrato do servidor teria
         // menos gente que a leitura do aparelho, para os mesmos RDOs.
         apontadorColaboradorId: rdo.apontadorColaboradorId,
+        // O ofício do apontador no cadastro (Academy): quando presente, a
+        // função da linha dele no rateio é esta, não o rótulo do papel.
+        apontadorFuncao: rdo.apontadorFuncao,
         preenchidoPor: rdo.preenchidoPor,
         obraNome: rdo.obraNome,
         maoObra,

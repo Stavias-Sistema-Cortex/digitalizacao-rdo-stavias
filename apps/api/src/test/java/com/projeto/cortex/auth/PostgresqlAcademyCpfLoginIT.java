@@ -225,6 +225,7 @@ class PostgresqlAcademyCpfLoginIT
                 sourceId,
                 cpf,
                 "Operador Academy Sintético " + sourceId,
+                "OPERADOR DE CAMPO",
                 email,
                 active,
                 "grupo-teste",

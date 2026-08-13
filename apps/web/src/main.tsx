@@ -5,6 +5,13 @@ import "./index.css";
 import { probeActivationOnly } from "./features/auth/activationBootstrap";
 import { resolveCortexAuthMode } from "./features/auth/cortexAuthMode";
 import { despertarApi } from "./features/auth/despertarApi";
+import { armarRecargaPorChunkPerdido } from "./lib/pwa/chunkPerdido";
+
+// Antes de qualquer import sob demanda: um deploy no meio do uso deixa os
+// chunks da build aberta órfãos no servidor, e o clique seguinte numa tela
+// pesada — a exportação de PDF/XLSX do RDO é o caso maior — morre calado.
+// A recarga única leva a pessoa para a build nova, onde tudo existe.
+armarRecargaPorChunkPerdido();
 
 async function bootstrap(): Promise<void> {
   // Primeira linha do dia: o serviço sobe sob demanda, e daqui até alguém

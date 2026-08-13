@@ -58,7 +58,8 @@ public class ColaboradorDaObraService {
                     c.nome,
                     c.cpf_mascarado,
                     c.nome_perfil,
-                    c.nome_grupo
+                    c.nome_grupo,
+                    c.funcao
                 FROM colaborador c
                 WHERE c.ativo = TRUE
                   AND c.deletado_em IS NULL
@@ -71,7 +72,8 @@ public class ColaboradorDaObraService {
                         rs.getString("nome"),
                         rs.getString("cpf_mascarado"),
                         rs.getString("nome_perfil"),
-                        rs.getString("nome_grupo")
+                        rs.getString("nome_grupo"),
+                        rs.getString("funcao")
                 ),
                 "%" + alvo + "%"
         );
@@ -85,7 +87,8 @@ public class ColaboradorDaObraService {
                     c.nome,
                     c.cpf_mascarado,
                     c.nome_perfil,
-                    c.nome_grupo
+                    c.nome_grupo,
+                    c.funcao
                 FROM colaborador c
                 WHERE c.ativo = TRUE
                   AND c.deletado_em IS NULL
@@ -143,7 +146,8 @@ public class ColaboradorDaObraService {
                         rs.getString("nome"),
                         rs.getString("cpf_mascarado"),
                         rs.getString("nome_perfil"),
-                        rs.getString("nome_grupo")
+                        rs.getString("nome_grupo"),
+                        rs.getString("funcao")
                 ),
                 // Quatro vezes, uma por EXISTS: vínculo, alocação, presença
                 // em RDO e equipe. Faltar argumento para um `?` não devolve
