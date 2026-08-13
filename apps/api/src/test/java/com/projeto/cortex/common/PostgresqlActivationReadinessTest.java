@@ -29,7 +29,7 @@ class PostgresqlActivationReadinessTest {
         verify(jdbc).queryForObject(
                 org.mockito.ArgumentMatchers.argThat(
                         sql -> sql.contains("FROM public.flyway_schema_history")
-                                && sql.contains("version = '81'")
+                                && sql.contains("version = '82'")
                 ),
                 eq(Integer.class)
         );

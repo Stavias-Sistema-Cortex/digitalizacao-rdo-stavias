@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.mensagens.domain.ConversaService;
 import com.projeto.cortex.mensagens.domain.MensagemService;
+import com.projeto.cortex.mensagens.domain.PreferenciaDeConversaService;
 import com.projeto.cortex.mensagens.domain.MessagingDirectoryService;
 import com.projeto.cortex.mensagens.domain.MessagingAuditContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +40,8 @@ class MensagensArchivedObraControllerMockMvcTest {
         when(currentUser.requireUserId()).thenReturn(ACTOR);
         mockMvc = MockMvcBuilders.standaloneSetup(
                 new MensagensController(conversations, messages, currentUser,
-                mock(MessagingDirectoryService.class))
+                mock(MessagingDirectoryService.class),
+                mock(PreferenciaDeConversaService.class))
         ).build();
     }
 

@@ -37,14 +37,17 @@ public class ConversaService {
     private final ConversaAccessPolicy accessPolicy;
     private final MessagingOperationalEventService eventService;
     private final ObraOperabilityGuard operabilityGuard;
+    private final PreferenciaDeConversaService preferencias;
 
     public ConversaService(
             JdbcTemplate jdbcTemplate,
             CurrentUserService currentUserService,
             ConversaAccessPolicy accessPolicy,
             MessagingOperationalEventService eventService,
-            ObraOperabilityGuard operabilityGuard
+            ObraOperabilityGuard operabilityGuard,
+            PreferenciaDeConversaService preferencias
     ) {
+        this.preferencias = preferencias;
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserService = currentUserService;
         this.accessPolicy = accessPolicy;
@@ -157,6 +160,21 @@ public class ConversaService {
     }
 
     public List<ConversationResponse> list(int requestedLimit) {
+        return list(requestedLimit, false);
+    }
+
+    /**
+     * As conversas desta pessoa.
+     *
+     * <p>Com {@code arquivadas}, devolve exatamente o que ela tirou da lista —
+     * é a gaveta, e ela existe para nada ficar irrecuperável. Sem, devolve o
+     * resto. As duas leituras saem da mesma consulta de acesso: arquivar é
+     * organização de tela, não perda de alcance.
+     */
+    public List<ConversationResponse> list(
+            int requestedLimit,
+            boolean arquivadas
+    ) {
         String userId = currentUserService.requireUserId();
         int limit = normalizeLimit(requestedLimit);
         String sql;
@@ -166,8 +184,6 @@ public class ConversaService {
                     SELECT c.*
                     FROM conversa c
                     WHERE c.status = 'ATIVA' AND c.deletado_em IS NULL
-                    ORDER BY c.atualizado_em DESC, c.id
-                    LIMIT ?
                     """;
         } else {
             sql = """
@@ -206,21 +222,52 @@ public class ConversaService {
                               AND em.deletado_em IS NULL
                         ))
                       )
-                    ORDER BY c.atualizado_em DESC, c.id
-                    LIMIT ?
                     """;
             arguments.add(userId);
             arguments.add(userId);
             arguments.add(userId);
             arguments.add(userId);
         }
+        // O recorte pessoal entra na consulta, não depois dela: filtrar o
+        // resultado já cortado pelo LIMIT faria as conversas arquivadas
+        // gastarem vagas, e quem tivesse arquivado bastante abriria a tela
+        // vazia com conversas ativas esperando fora do corte.
+        sql += arquivadas ? RECORTE_ARQUIVADAS : RECORTE_ATIVAS;
+        arguments.add(userId);
+        sql += """
+                ORDER BY c.atualizado_em DESC, c.id
+                LIMIT ?
+                """;
         arguments.add(limit);
+        Set<String> arquivadasDaPessoa = arquivadas
+                ? preferencias.conversasArquivadas()
+                : Set.<String>of();
         return jdbcTemplate.query(
                 sql,
-                (rs, rowNum) -> mapConversation(rs),
+                (rs, rowNum) -> mapConversation(rs, arquivadasDaPessoa),
                 arguments.toArray()
         );
     }
+
+    /** O que esta pessoa guardou na gaveta. */
+    private static final String RECORTE_ARQUIVADAS = """
+            AND EXISTS (
+                SELECT 1 FROM conversa_preferencia_pessoal p
+                WHERE p.conversa_id = c.id
+                  AND p.colaborador_id = ?
+                  AND p.arquivado_em IS NOT NULL
+            )
+            """;
+
+    /** O que sobrou na lista dela. */
+    private static final String RECORTE_ATIVAS = """
+            AND NOT EXISTS (
+                SELECT 1 FROM conversa_preferencia_pessoal p
+                WHERE p.conversa_id = c.id
+                  AND p.colaborador_id = ?
+                  AND p.arquivado_em IS NOT NULL
+            )
+            """;
 
     public ConversationResponse get(String conversationId) {
         ConversationScope scope = accessPolicy.requireAccess(conversationId);
@@ -349,6 +396,13 @@ public class ConversaService {
 
     private ConversationResponse mapConversation(ResultSet rs)
             throws SQLException {
+        return mapConversation(rs, preferencias.conversasArquivadas());
+    }
+
+    private ConversationResponse mapConversation(
+            ResultSet rs,
+            Set<String> arquivadasDaPessoa
+    ) throws SQLException {
         String id = rs.getString("id");
         return new ConversationResponse(
                 id,
@@ -360,6 +414,7 @@ public class ConversaService {
                 rs.getTimestamp("criado_em").toLocalDateTime(),
                 rs.getTimestamp("atualizado_em").toLocalDateTime(),
                 rs.getLong("versao_linha"),
+                arquivadasDaPessoa.contains(id),
                 loadParticipants(id)
         );
     }

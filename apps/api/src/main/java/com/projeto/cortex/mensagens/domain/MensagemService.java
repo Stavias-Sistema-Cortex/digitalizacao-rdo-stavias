@@ -45,6 +45,7 @@ public class MensagemService {
     private final StoredObjectService objectService;
     private final MessagingOperationalEventService eventService;
     private final ObraOperabilityGuard operabilityGuard;
+    private final PreferenciaDeConversaService preferencias;
 
     public MensagemService(
             JdbcTemplate jdbcTemplate,
@@ -53,7 +54,8 @@ public class MensagemService {
             StoredObjectRepository objectRepository,
             StoredObjectService objectService,
             MessagingOperationalEventService eventService,
-            ObraOperabilityGuard operabilityGuard
+            ObraOperabilityGuard operabilityGuard,
+            PreferenciaDeConversaService preferencias
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserService = currentUserService;
@@ -62,6 +64,7 @@ public class MensagemService {
         this.objectService = objectService;
         this.eventService = eventService;
         this.operabilityGuard = operabilityGuard;
+        this.preferencias = preferencias;
     }
 
     @Transactional
@@ -171,34 +174,38 @@ public class MensagemService {
     ) {
         ConversationScope scope = accessPolicy.requireAccess(conversationId);
         int limit = normalizeLimit(requestedLimit);
-        if (before == null) {
-            return jdbcTemplate.query(
-                    """
-                    SELECT m.*, c.nome AS autor_nome
-                    FROM mensagem m
-                    JOIN colaborador c ON c.id = m.autor_id
-                    WHERE m.conversa_id = ?
-                    ORDER BY m.criado_em DESC, m.id DESC
-                    LIMIT ?
-                    """,
-                    (rs, rowNum) -> mapMessage(rs),
-                    scope.id(),
-                    limit
-            );
-        }
-        return jdbcTemplate.query(
-                """
+        // A cortina de quem lê: quem limpou a conversa vê o que veio depois
+        // daquele instante. Ela entra na consulta, e não na filtragem do
+        // resultado, para o que está escondido não gastar vagas do limite —
+        // senão a conversa recém-limpa abriria vazia com mensagens novas
+        // esperando fora do corte.
+        java.time.LocalDateTime cortina =
+                preferencias.cortinaDaConversa(scope.id());
+        StringBuilder sql = new StringBuilder("""
                 SELECT m.*, c.nome AS autor_nome
                 FROM mensagem m
                 JOIN colaborador c ON c.id = m.autor_id
-                WHERE m.conversa_id = ? AND m.criado_em < ?
-                ORDER BY m.criado_em DESC, m.id DESC
-                LIMIT ?
-                """,
+                WHERE m.conversa_id = ?
+                """);
+        List<Object> argumentos = new ArrayList<>();
+        argumentos.add(scope.id());
+        if (before != null) {
+            sql.append(" AND m.criado_em < ?");
+            argumentos.add(before);
+        }
+        if (cortina != null) {
+            sql.append(" AND m.criado_em > ?");
+            argumentos.add(cortina);
+        }
+        sql.append("""
+                 ORDER BY m.criado_em DESC, m.id DESC
+                 LIMIT ?
+                """);
+        argumentos.add(limit);
+        return jdbcTemplate.query(
+                sql.toString(),
                 (rs, rowNum) -> mapMessage(rs),
-                scope.id(),
-                before,
-                limit
+                argumentos.toArray()
         );
     }
 

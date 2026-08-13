@@ -11,6 +11,7 @@ import com.projeto.cortex.mensagens.api.MessageResponse;
 import com.projeto.cortex.mensagens.api.MensagensController;
 import com.projeto.cortex.mensagens.domain.ConversaAccessPolicy;
 import com.projeto.cortex.mensagens.domain.MensagemService;
+import com.projeto.cortex.mensagens.domain.PreferenciaDeConversaService;
 import com.projeto.cortex.mensagens.domain.MessagingDirectoryService;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.time.LocalDateTime;
@@ -68,14 +69,19 @@ class PostgresqlMessagingSearchIT {
                 new MockEnvironment(),
                 false
         );
+        ConversaAccessPolicy politica = new ConversaAccessPolicy(
+                jdbc,
+                currentUser
+        );
         messages = new MensagemService(
                 jdbc,
                 currentUser,
-                new ConversaAccessPolicy(jdbc, currentUser),
+                politica,
                 null,
                 null,
                 null,
-                mock(ObraOperabilityGuard.class)
+                mock(ObraOperabilityGuard.class),
+                new PreferenciaDeConversaService(jdbc, currentUser, politica)
         );
     }
 
@@ -101,7 +107,8 @@ class PostgresqlMessagingSearchIT {
         authenticate(userId);
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(
                 new MensagensController(null, messages, currentUser,
-                mock(MessagingDirectoryService.class))
+                mock(MessagingDirectoryService.class),
+                mock(PreferenciaDeConversaService.class))
         ).build();
 
         mockMvc.perform(get("/api/mensagens/busca")

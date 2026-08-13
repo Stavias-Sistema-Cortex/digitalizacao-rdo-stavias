@@ -24,7 +24,7 @@ class PostgresqlSchemaReadinessGuardTest {
 
     @Test
     void configuredGuardRequiresTheCompleteV81Chain() throws Exception {
-        assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("81");
+        assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("82");
     }
 
     @Test
@@ -80,7 +80,7 @@ class PostgresqlSchemaReadinessGuardTest {
                 .thenThrow(new DataAccessResourceFailureException("flyway_schema_history ausente"));
 
         PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(
-                jdbcTemplate, "81"
+                jdbcTemplate, "82"
         );
 
         assertThatThrownBy(guard::verifyReadiness)
@@ -95,7 +95,7 @@ class PostgresqlSchemaReadinessGuardTest {
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(
-                jdbcTemplate, "81"
+                jdbcTemplate, "82"
         );
 
         assertThatThrownBy(guard::verifyReadiness)
@@ -113,7 +113,7 @@ class PostgresqlSchemaReadinessGuardTest {
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1);
 
         PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(
-                jdbcTemplate, "81"
+                jdbcTemplate, "82"
         );
 
         assertThatCode(guard::verifyReadiness).doesNotThrowAnyException();

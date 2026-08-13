@@ -13,6 +13,14 @@ public record ConversationResponse(
         LocalDateTime criadaEm,
         LocalDateTime atualizadaEm,
         long versao,
+        /**
+         * Se quem está lendo tirou esta conversa da própria lista.
+         *
+         * <p>É por leitor, não pela conversa: a mesma conversa vem arquivada
+         * para mim e ativa para quem estava junto. O campo {@code status} acima
+         * segue sendo o da conversa, que é outra coisa.
+         */
+        boolean arquivadaParaMim,
         List<ParticipantResponse> participantes
 ) {
 }

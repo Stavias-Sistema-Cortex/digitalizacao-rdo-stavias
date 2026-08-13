@@ -360,7 +360,8 @@ class MessagingArchivedObraGuardTest {
                     objects,
                     objectService,
                     events,
-                    operabilityGuard
+                    operabilityGuard,
+                    mock(PreferenciaDeConversaService.class)
             );
         }
 
@@ -380,7 +381,8 @@ class MessagingArchivedObraGuardTest {
                 currentUser,
                 accessPolicy,
                 events,
-                operabilityGuard
+                operabilityGuard,
+                mock(PreferenciaDeConversaService.class)
         );
     }
 
@@ -427,6 +429,7 @@ class MessagingArchivedObraGuardTest {
                 LocalDateTime.of(2026, 7, 28, 12, 0),
                 LocalDateTime.of(2026, 7, 28, 12, 0),
                 0L,
+                false,
                 List.of()
         );
     }

@@ -40,7 +40,7 @@ class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
     void configuredRuntimeRequiresTheCompleteV81Chain() throws Exception {
-        assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("81");
+        assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("82");
     }
 
     @Test
@@ -146,7 +146,7 @@ class PostgresqlRuntimeReadinessGuardTest {
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cadeia de migrações até V81");
-        verify(jdbcTemplate).queryForObject(contains("version = '81'"), eq(Integer.class));
+        verify(jdbcTemplate).queryForObject(contains("version = '82'"), eq(Integer.class));
     }
 
     @Test
@@ -392,7 +392,7 @@ class PostgresqlRuntimeReadinessGuardTest {
         PostgresqlRuntimeReadinessGuard readinessGuard =
                 new PostgresqlRuntimeReadinessGuard(
                         jdbcTemplate,
-                        "81",
+                        "82",
                         true,
                         released(),
                         nanoTime::get
@@ -447,7 +447,7 @@ class PostgresqlRuntimeReadinessGuardTest {
         PostgresqlRuntimeReadinessGuard readinessGuard =
                 new PostgresqlRuntimeReadinessGuard(
                         jdbcTemplate,
-                        "81",
+                        "82",
                         true,
                         released(),
                         nanoTime::get
@@ -715,7 +715,7 @@ class PostgresqlRuntimeReadinessGuardTest {
             PostgresqlRuntimeSurfaceRegistry registry
     ) {
         return new PostgresqlRuntimeReadinessGuard(
-                jdbcTemplate, "81", runtimeReady, registry
+                jdbcTemplate, "82", runtimeReady, registry
         );
     }
 
@@ -724,7 +724,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     ) {
         return new PostgresqlRuntimeReadinessGuard(
                 jdbcTemplate,
-                "81",
+                "82",
                 true,
                 released()
         );

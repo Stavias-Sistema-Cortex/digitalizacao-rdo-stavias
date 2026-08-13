@@ -52,6 +52,25 @@
   opacity: 0.55;
 }
 
+.mensagens-secondary {
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  padding: 10px 18px;
+  background: transparent;
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+.mensagens-secondary:hover:not(:disabled) {
+  background: var(--color-ink);
+  color: var(--color-surface);
+}
+
+.mensagens-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .mensagens-alert {
   display: flex;
   align-items: center;
@@ -1512,4 +1531,59 @@
 .mensagens-file-preview li,
 .mensagens-context-documents button {
   border-radius: var(--radius-control);
+}
+
+/* A gaveta das arquivadas: fora do fluxo das três colunas, porque não é uma
+   quarta coluna — é um desvio momentâneo para devolver algo à lista. */
+.mensagens-gaveta {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  background: var(--color-surface);
+}
+
+.mensagens-gaveta h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.mensagens-gaveta p {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.mensagens-gaveta ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mensagens-gaveta li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mensagens-gaveta li button {
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--color-ink);
+}
+
+.mensagens-gaveta li button:hover:not(:disabled) {
+  background: var(--color-ink);
+  color: var(--color-surface);
+}
+
+.mensagens-gaveta-vazia {
+  margin: 0;
 }

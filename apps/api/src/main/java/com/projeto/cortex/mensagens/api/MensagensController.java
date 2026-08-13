@@ -4,6 +4,7 @@ import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.mensagens.domain.MessagingDirectoryService;
 import com.projeto.cortex.mensagens.domain.ConversaService;
 import com.projeto.cortex.mensagens.domain.MensagemService;
+import com.projeto.cortex.mensagens.domain.PreferenciaDeConversaService;
 import com.projeto.cortex.mensagens.domain.MessagingAuditContext;
 import com.projeto.cortex.storage.ObjectStorageException;
 import com.projeto.cortex.storage.StoredObjectDownload;
@@ -44,17 +45,20 @@ public class MensagensController {
     private final MensagemService mensagemService;
     private final CurrentUserService currentUserService;
     private final MessagingDirectoryService directoryService;
+    private final PreferenciaDeConversaService preferencias;
 
     public MensagensController(
             ConversaService conversaService,
             MensagemService mensagemService,
             CurrentUserService currentUserService,
-            MessagingDirectoryService directoryService
+            MessagingDirectoryService directoryService,
+            PreferenciaDeConversaService preferencias
     ) {
         this.conversaService = conversaService;
         this.mensagemService = mensagemService;
         this.currentUserService = currentUserService;
         this.directoryService = directoryService;
+        this.preferencias = preferencias;
     }
 
     @PostMapping("/api/mensagens/conversas")
@@ -69,9 +73,45 @@ public class MensagensController {
 
     @GetMapping("/api/mensagens/conversas")
     public List<ConversationResponse> listConversations(
-            @RequestParam(defaultValue = "50") int limit
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "false") boolean arquivadas
     ) {
-        return conversaService.list(limit);
+        return conversaService.list(limit, arquivadas);
+    }
+
+    /*
+     * Arrumar a própria caixa não pede papel nenhum: qualquer pessoa faz isso
+     * em qualquer conversa que já alcance, e o efeito para nos olhos dela. O
+     * acesso continua sendo conferido conversa a conversa, dentro do serviço —
+     * ninguém arquiva o que não podia nem ler.
+     */
+    @PostMapping("/api/mensagens/conversas/{conversationId}/arquivar")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void arquivarConversa(@PathVariable String conversationId) {
+        preferencias.arquivar(conversationId);
+    }
+
+    @PostMapping("/api/mensagens/conversas/{conversationId}/desarquivar")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void desarquivarConversa(@PathVariable String conversationId) {
+        preferencias.desarquivar(conversationId);
+    }
+
+    /*
+     * Limpar é fechar uma cortina sobre o que já passou, não apagar: as
+     * mensagens seguem no banco, visíveis para quem estava junto e intactas
+     * para auditoria. Por isso existe o gesto inverso.
+     */
+    @PostMapping("/api/mensagens/conversas/{conversationId}/limpar")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void limparConversa(@PathVariable String conversationId) {
+        preferencias.limpar(conversationId);
+    }
+
+    @PostMapping("/api/mensagens/conversas/{conversationId}/reabrir-historico")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void reabrirHistorico(@PathVariable String conversationId) {
+        preferencias.desfazerLimpeza(conversationId);
     }
 
     @GetMapping("/api/mensagens/conversas/{conversationId}")

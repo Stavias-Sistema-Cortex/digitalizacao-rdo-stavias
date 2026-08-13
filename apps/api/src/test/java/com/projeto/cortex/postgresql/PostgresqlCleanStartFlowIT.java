@@ -171,7 +171,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                 "44", "45", "45.1", "46", "47", "48", "49", "50", "51",
                 "52", "53", "54", "55", "56", "57", "58", "59", "60", "61",
                 "62", "63", "64", "65", "66", "67", "68", "69", "70", "71",
-                "72", "73", "74", "75", "76", "77", "78", "79", "80", "81"
+                "72", "73", "74", "75", "76", "77", "78", "79", "80", "81", "82"
         );
     }
 
@@ -193,6 +193,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
         expectedTables.add("cortex_release_marker");
         expectedTables.add("equipamento_terceirizado");
         expectedTables.add("trecho_derivado_silenciado");
+        expectedTables.add("conversa_preferencia_pessoal");
 
         Set<String> actualTables = new TreeSet<>(jdbc.queryForList("""
                 SELECT table_name
@@ -203,7 +204,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                 ORDER BY table_name
                 """, String.class));
 
-        assertThat(expectedTables).hasSize(127).doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES);
+        assertThat(expectedTables).hasSize(128).doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES);
         assertThat(actualTables)
                 .doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES)
                 .containsExactlyElementsOf(expectedTables);

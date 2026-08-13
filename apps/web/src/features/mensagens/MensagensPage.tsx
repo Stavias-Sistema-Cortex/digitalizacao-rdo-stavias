@@ -25,6 +25,12 @@ import { ConversationsPane } from "./components/ConversationsPane";
 import { CreateConversationDialog } from "./components/CreateConversationDialog";
 import { MessageComposer } from "./components/MessageComposer";
 import { MessageThread } from "./components/MessageThread";
+import {
+  arquivarConversaApi,
+  limparConversaApi,
+  listConversationsApi,
+  type ConversationApi,
+} from "./mensagensApi";
 import { messageFrom } from "./mensagensFormat";
 import {
   downloadMessageAttachmentApi,
@@ -79,6 +85,13 @@ export function MensagensPage() {
     null,
   );
   const [showCreate, setShowCreate] = useState(false);
+  /*
+   * A gaveta de arquivadas é lida direto do servidor e nunca gravada como
+   * retrato autoritativo: gravá-la apagaria do aparelho tudo o que NÃO está
+   * arquivado, que é justamente a lista principal.
+   */
+  const [arquivadas, setArquivadas] = useState<ConversationApi[] | null>(null);
+  const [arrumando, setArrumando] = useState(false);
   const [mobilePane, setMobilePane] = useState<"list" | "thread" | "context">("list");
   const [contextOpen, setContextOpen] = useState(false);
   const [infoCollapsed, setInfoCollapsed] = useState(
@@ -378,6 +391,48 @@ export function MensagensPage() {
     openContext();
   }
 
+  /*
+   * Arrumar a caixa é gesto de leitor: qualquer pessoa faz em qualquer conversa
+   * que alcance, e o efeito para nos olhos dela. Chamada direta, fora da fila
+   * do aparelho — sem rede o gesto falha na hora e a tela diz, em vez de a
+   * conversa sumir aqui e reaparecer depois sem explicação.
+   */
+  const arrumarCaixa = useCallback(
+    async (acao: () => Promise<void>, aviso: string) => {
+      setArrumando(true);
+      setError("");
+      try {
+        await acao();
+        await refreshConversationList();
+        await loadLocal();
+        if (arquivadas !== null) {
+          setArquivadas(await listConversationsApi(100, true));
+        }
+      } catch (causa: unknown) {
+        setError(`${aviso} ${messageFrom(causa)}`);
+      } finally {
+        setArrumando(false);
+      }
+    },
+    [arquivadas, loadLocal],
+  );
+
+  const abrirGaveta = useCallback(async () => {
+    if (arquivadas !== null) {
+      setArquivadas(null);
+      return;
+    }
+    setArrumando(true);
+    setError("");
+    try {
+      setArquivadas(await listConversationsApi(100, true));
+    } catch (causa: unknown) {
+      setError(`Não foi possível abrir as arquivadas. ${messageFrom(causa)}`);
+    } finally {
+      setArrumando(false);
+    }
+  }, [arquivadas]);
+
   return (
     <CortexShell
       active="mensagens"
@@ -391,13 +446,54 @@ export function MensagensPage() {
           description={`${conversations.length} conversas autorizadas`}
           legacyPrefix="mensagens-header"
           actions={(
-            <button
-              type="button"
-              className="mensagens-primary"
-              onClick={() => setShowCreate(true)}
-            >
-              Nova conversa
-            </button>
+            <>
+              {selected ? (
+                <>
+                  <button
+                    type="button"
+                    className="mensagens-secondary"
+                    disabled={arrumando}
+                    onClick={() => void arrumarCaixa(
+                      () => limparConversaApi(selected.id, true),
+                      "Não foi possível limpar a conversa.",
+                    )}
+                    title="Esconde o histórico anterior a agora só para você. Nada é apagado: quem estava junto continua vendo tudo."
+                  >
+                    Limpar conversa
+                  </button>
+                  <button
+                    type="button"
+                    className="mensagens-secondary"
+                    disabled={arrumando}
+                    onClick={() => void arrumarCaixa(
+                      () => arquivarConversaApi(selected.id, true),
+                      "Não foi possível arquivar a conversa.",
+                    )}
+                    title="Tira a conversa da sua lista. Ela continua na lista de quem estava junto."
+                  >
+                    Arquivar
+                  </button>
+                </>
+              ) : null}
+              <button
+                type="button"
+                className="mensagens-secondary"
+                disabled={arrumando}
+                onClick={() => void abrirGaveta()}
+                aria-expanded={arquivadas !== null}
+              >
+                {arquivadas === null
+                  ? "Arquivadas"
+                  : "Fechar arquivadas"}
+              </button>
+              <button
+                type="button"
+                className="mensagens-primary"
+                onClick={() => setShowCreate(true)}
+              >
+                Nova conversa
+              </button>
+            </>
           )}
         />
 
@@ -408,6 +504,42 @@ export function MensagensPage() {
               Fechar
             </button>
           </div>
+        ) : null}
+
+        {arquivadas !== null ? (
+          <section
+            className="mensagens-gaveta"
+            aria-label="Conversas que você arquivou"
+          >
+            <h2>Arquivadas por você</h2>
+            <p>
+              Estas conversas saíram da sua lista e continuam na lista de quem
+              estava junto. Devolvê-las não avisa ninguém.
+            </p>
+            {arquivadas.length === 0 ? (
+              <p className="mensagens-gaveta-vazia">
+                Você não arquivou nenhuma conversa.
+              </p>
+            ) : (
+              <ul>
+                {arquivadas.map((conversa) => (
+                  <li key={conversa.id}>
+                    <span>{conversa.titulo || "Conversa sem título"}</span>
+                    <button
+                      type="button"
+                      disabled={arrumando}
+                      onClick={() => void arrumarCaixa(
+                        () => arquivarConversaApi(conversa.id, false),
+                        "Não foi possível devolver a conversa à lista.",
+                      )}
+                    >
+                      Devolver à lista
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         ) : null}
 
         <div className="mensagens-frame" ref={frameRef}>

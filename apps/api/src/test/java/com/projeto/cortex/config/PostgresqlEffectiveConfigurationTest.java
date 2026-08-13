@@ -138,7 +138,7 @@ class PostgresqlEffectiveConfigurationTest {
                     ).verifyConfiguration())
                             .isInstanceOf(IllegalStateException.class)
                             .hasMessageContaining("required-schema-version")
-                            .hasMessageContaining("81");
+                            .hasMessageContaining("82");
                 });
     }
 

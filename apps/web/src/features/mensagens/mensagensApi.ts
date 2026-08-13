@@ -62,10 +62,58 @@ async function readJson<T>(response: Response): Promise<T> {
 
 export async function listConversationsApi(
   limit = 100,
+  arquivadas = false,
 ): Promise<ConversationApi[]> {
   return readJson<ConversationApi[]>(
-    await apiFetch(`/mensagens/conversas?limit=${limit}`),
+    await apiFetch(
+      `/mensagens/conversas?limit=${limit}&arquivadas=${arquivadas}`,
+    ),
   );
+}
+
+/**
+ * Arruma a caixa de quem está pedindo — e só a dela.
+ *
+ * <p>Chamadas diretas, fora da fila do aparelho: são preferência de leitura,
+ * não conteúdo de obra. Se não houver rede, o gesto falha na hora e a tela diz;
+ * enfileirá-lo faria a conversa sumir aqui e voltar depois, sem explicação.
+ */
+export async function arquivarConversaApi(
+  conversationId: string,
+  arquivar: boolean,
+): Promise<void> {
+  const acao = arquivar ? "arquivar" : "desarquivar";
+  const resposta = await apiFetch(
+    `/mensagens/conversas/${encodeURIComponent(conversationId)}/${acao}`,
+    { method: "POST" },
+  );
+  if (!resposta.ok) {
+    throw new Error(
+      responseErrorMessage(await readResponseBody(resposta), resposta.status),
+    );
+  }
+}
+
+/**
+ * Fecha (ou reabre) a cortina sobre o histórico, para quem pediu.
+ *
+ * <p>Nada é apagado: as mensagens seguem no servidor e na tela de quem estava
+ * junto. É por isso que reabrir existe.
+ */
+export async function limparConversaApi(
+  conversationId: string,
+  limpar: boolean,
+): Promise<void> {
+  const acao = limpar ? "limpar" : "reabrir-historico";
+  const resposta = await apiFetch(
+    `/mensagens/conversas/${encodeURIComponent(conversationId)}/${acao}`,
+    { method: "POST" },
+  );
+  if (!resposta.ok) {
+    throw new Error(
+      responseErrorMessage(await readResponseBody(resposta), resposta.status),
+    );
+  }
 }
 
 export async function getMessageHistoryApi(

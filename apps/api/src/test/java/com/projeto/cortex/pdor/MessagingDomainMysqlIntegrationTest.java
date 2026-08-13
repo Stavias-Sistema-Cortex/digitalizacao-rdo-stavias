@@ -21,6 +21,7 @@ import com.projeto.cortex.mensagens.api.MessageResponse;
 import com.projeto.cortex.mensagens.domain.ConversaAccessPolicy;
 import com.projeto.cortex.mensagens.domain.ConversaService;
 import com.projeto.cortex.mensagens.domain.MensagemService;
+import com.projeto.cortex.mensagens.domain.PreferenciaDeConversaService;
 import com.projeto.cortex.mensagens.domain.MessagingAuditContext;
 import com.projeto.cortex.mensagens.domain.MessagingOperationalEventService;
 import com.projeto.cortex.mensagens.sync.MessageSyncOperationHandler;
@@ -98,12 +99,15 @@ class MessagingDomainMysqlIntegrationTest {
                 );
         MessagingOperationalEventService events =
                 new MessagingOperationalEventService(jdbc, memory);
+        PreferenciaDeConversaService preferencias =
+                new PreferenciaDeConversaService(jdbc, currentUser, policy);
         ConversaService conversations = new ConversaService(
                 jdbc,
                 currentUser,
                 policy,
                 events,
-                mock(ObraOperabilityGuard.class)
+                mock(ObraOperabilityGuard.class),
+                preferencias
         );
         StoredObjectService storedObjects = mock(StoredObjectService.class);
         MensagemService messages = new MensagemService(
@@ -113,7 +117,8 @@ class MessagingDomainMysqlIntegrationTest {
                 new JdbcStoredObjectRepository(jdbc),
                 storedObjects,
                 events,
-                mock(ObraOperabilityGuard.class)
+                mock(ObraOperabilityGuard.class),
+                preferencias
         );
 
         authenticate(author);
