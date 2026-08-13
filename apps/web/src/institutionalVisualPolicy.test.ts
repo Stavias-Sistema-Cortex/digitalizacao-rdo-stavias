@@ -344,7 +344,7 @@ describe("Cortex 3 institutional visual policy", () => {
     const taskSubmit = lastRule(tasksCss, ".tarefa-form-enviar");
     const taskGeometry = lastRule(
       tasksCss,
-      ".tarefas-nova-equipe input,\n.tarefas-nova-equipe button,\n.tarefa-excluir,\n.tarefa-form input,\n.tarefa-form textarea,\n.tarefa-prio-botao,\n.tarefa-sugestoes,\n.tarefa-sugestoes button,\n.tarefa-form-enviar",
+      ".tarefa-excluir,\n.tarefa-form input,\n.tarefa-form textarea,\n.tarefa-prio-botao,\n.tarefa-sugestoes,\n.tarefa-sugestoes button",
     );
 
     expect(rdoPrimary).toContain("background: var(--color-ink);");

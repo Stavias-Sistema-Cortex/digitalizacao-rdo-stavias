@@ -1,3 +1,14 @@
+/*
+ * Quadro de tarefas da obra.
+ *
+ * A tela nasceu recortada por equipe — abas, filtro de arquivadas, criação de
+ * equipe nova — e a dinâmica de equipes acabou. O que sobrou aqui é o que a
+ * obra precisa: escolher a obra, ler a lista, criar a próxima tarefa. A folha
+ * segue os tokens do produto e não repinta o que o escopo compartilhado já
+ * resolve; onde havia uma base e um bloco de correções por cima, agora há uma
+ * declaração só por elemento.
+ */
+
 .tarefas-page {
   width: 100%;
   max-width: none;
@@ -8,158 +19,161 @@
 .tarefas-page > .operational-workspace__content {
   display: grid;
   align-content: start;
-  gap: 18px;
-}
-
-.tarefas-topbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.tarefas-topbar h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  margin-right: auto;
-}
-
-.tarefas-obra-tabs {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-}
-
-.tarefas-obra-tabs .chip {
-  white-space: nowrap;
+  gap: 14px;
 }
 
 .tarefas-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr);
+  gap: 14px;
   align-items: start;
 }
 
+/*
+ * A obra em foco é aba, não etiqueta: o mesmo gesto da tela de Obras, com o
+ * traço amarelo ligando a aba ao painel que ela abre. Preenchê-la de preto
+ * repetia o peso do cabeçalho logo acima e fazia a faixa competir com o
+ * conteúdo.
+ */
+.tarefas-obra-tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border-bottom: 1px solid var(--color-border);
+  scrollbar-width: thin;
+}
+
+.tarefas-obra-tab {
+  position: relative;
+  flex: 0 0 auto;
+  max-width: 240px;
+  min-height: 36px;
+  padding: 0 12px;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tarefas-obra-tab:hover {
+  color: var(--color-ink);
+}
+
+.tarefas-obra-tab--ativa {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.tarefas-obra-tab--ativa::after {
+  content: "";
+  position: absolute;
+  inset: auto 8px -1px 8px;
+  height: 2px;
+  background: var(--color-brand-yellow);
+}
+
 .tarefas-card {
+  min-width: 0;
+  padding: 16px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-container);
   background: var(--color-surface);
   box-shadow: none;
-  padding: 18px;
 }
 
 .tarefas-card--empty {
+  padding: 28px 16px;
+  color: var(--color-muted);
+  font-size: 0.88rem;
   text-align: center;
-  color: #5b6570;
+}
+
+.tarefas-card--empty p {
+  margin: 0;
 }
 
 .tarefas-error {
   margin: 0;
-  color: #b3382f;
-  font-size: 0.85rem;
+  color: var(--color-danger);
+  font-size: 0.82rem;
 }
 
-.tarefas-equipe-tabs {
+/*
+ * Gaveta de limpeza: saída para as equipes que ficaram cadastradas quando a
+ * tarefa voltou a ser da obra. Não é uma seção do trabalho do dia — é um
+ * resíduo com data para acabar, e a tela diz isso pelo tamanho que ela ocupa.
+ */
+.tarefas-limpeza {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-left: 2px solid var(--color-brand-yellow);
+  border-radius: var(--radius-control);
+  background: var(--color-canvas);
+}
+
+.tarefas-limpeza p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.tarefas-limpeza ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tarefas-limpeza li {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  border-bottom: 2px solid rgb(24 33 29 / 8%);
-  padding-bottom: 10px;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
 }
 
-.tarefas-equipe-filtro {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 10px;
+.tarefas-limpeza li + li {
+  border-top: 1px solid var(--color-border);
 }
 
-.tarefas-equipe-filtro-opcao {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid rgb(24 33 29 / 12%);
+.tarefas-limpeza li span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-ink);
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tarefas-limpeza li button {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
   background: transparent;
-  border-radius: 999px;
-  padding: 5px 12px;
-  font-size: 0.8rem;
+  color: var(--color-danger);
+  font-size: 0.76rem;
   font-weight: 500;
-  color: #5b6570;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-.tarefas-equipe-filtro-opcao:hover:not(.tarefas-equipe-filtro-opcao--ativa) {
-  background: rgb(24 33 29 / 5%);
+.tarefas-limpeza li button:disabled {
+  color: var(--color-muted);
+  cursor: default;
+  text-decoration: none;
 }
 
-.tarefas-equipe-filtro-opcao--ativa {
-  border-color: #18211d;
-  background: #18211d;
-  color: #f4f6f5;
-  font-weight: 600;
-}
-
-.tarefas-equipe-filtro-contagem {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.74rem;
-  opacity: 0.7;
-}
-
-.tarefas-equipe-aba {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.tarefas-equipe-tab {
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-sm);
-  padding: 7px 12px;
-  font-size: 0.88rem;
-  font-weight: 500;
-  color: #45514c;
-}
-
-.tarefas-equipe-tab--arquivada {
-  color: #7b8580;
-}
-
-.tarefas-equipe-selo {
-  margin-left: 6px;
-  border-radius: 999px;
-  background: rgb(24 33 29 / 8%);
-  padding: 1px 7px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.tarefas-equipe-acao {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-sm);
-  padding: 5px 7px;
-  font-size: 0.9rem;
-  line-height: 1;
-  color: #5b6570;
-  opacity: 0.55;
-}
-
-.tarefas-equipe-acao:hover:not(:disabled) {
-  background: rgb(24 33 29 / 8%);
-  opacity: 1;
-}
-
-.tarefas-equipe-acao:disabled {
-  opacity: 0.3;
+.tarefas-limpeza-erro {
+  color: var(--color-danger);
 }
 
 /*
@@ -171,158 +185,129 @@
   position: fixed;
   inset: 0;
   z-index: 1200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(12 18 15 / 42%);
+  display: grid;
+  place-items: center;
   padding: 20px;
+  background: rgb(24 33 31 / 45%);
 }
 
 .tarefas-confirma-caixa {
-  width: min(380px, 100%);
-  border: 1px solid rgb(24 33 29 / 10%);
-  border-radius: 16px;
-  background: #fff;
-  box-shadow: 0 18px 48px rgb(12 18 15 / 24%);
-  padding: 22px;
+  display: grid;
+  gap: 10px;
+  width: min(400px, 100%);
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
 }
 
 .tarefas-confirma-pergunta {
-  margin: 0 0 8px;
-  font-size: 1.08rem;
+  margin: 0;
+  color: var(--color-ink);
+  font-size: 1rem;
   font-weight: 600;
-  color: #18211d;
 }
 
 .tarefas-confirma-detalhe {
-  margin: 0 0 18px;
-  font-size: 0.88rem;
-  line-height: 1.45;
-  color: #5b6570;
-}
-
-.tarefas-confirma-erro {
-  margin: 0 0 14px;
-  border-radius: var(--radius-sm);
-  background: rgb(190 46 46 / 8%);
-  padding: 9px 11px;
+  margin: 0;
+  color: var(--color-muted);
   font-size: 0.84rem;
-  color: #a52c2c;
+  line-height: 1.5;
 }
 
 .tarefas-confirma-acoes {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  margin-top: 4px;
+}
+
+.tarefas-confirma-cancelar,
+.tarefas-confirma-perigo {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+  font-size: 0.8rem;
+  font-weight: 500;
 }
 
 .tarefas-confirma-cancelar {
-  border: 1px solid rgb(24 33 29 / 14%);
-  background: transparent;
-  border-radius: var(--radius-sm);
-  padding: 9px 16px;
-  font-size: 0.86rem;
-  font-weight: 500;
-  color: #45514c;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-graphite);
 }
 
 .tarefas-confirma-cancelar:hover {
-  background: rgb(24 33 29 / 5%);
+  border-color: var(--color-border-strong);
 }
 
-.tarefas-confirma-confirmar {
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 9px 18px;
-  font-size: 0.86rem;
-  font-weight: 600;
-  background: var(--color-brand-yellow);
-  color: #18211d;
+.tarefas-confirma-perigo {
+  border: 1px solid var(--color-danger);
+  background: var(--color-danger);
+  color: #fff;
 }
 
-.tarefas-confirma-confirmar:disabled {
+.tarefas-confirma-perigo:disabled {
   opacity: 0.55;
-}
-
-.tarefas-equipe-tab:hover:not(.tarefas-equipe-tab--active) {
-  background: rgb(24 33 29 / 6%);
-}
-
-.tarefas-equipe-tab--active {
-  background: var(--color-brand-yellow);
-  box-shadow: none;
-  color: #18211d;
-  font-weight: 600;
-}
-
-.tarefas-equipe-tab--new {
-  color: #0e857a;
-  font-weight: 600;
-}
-
-.tarefas-nova-equipe {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.tarefas-nova-equipe input {
-  border: 1px solid rgb(24 33 29 / 18%);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  font-size: 0.85rem;
-}
-
-.tarefas-nova-equipe button {
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 7px 12px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  background: var(--color-brand-yellow);
-  box-shadow: none;
-}
-
-.tarefas-vazio {
-  margin: 8px 0;
-  padding: 18px 8px;
-  color: #5b6570;
-  font-size: 0.92rem;
-  list-style: none;
+  cursor: default;
 }
 
 .tarefas-lista {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tarefas-vazio {
+  margin: 0;
+  padding: 12px 0;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  list-style: none;
 }
 
 .tarefa-item {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 12px;
+  gap: 10px;
+  padding: 10px 11px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: var(--color-surface);
+  transition:
+    background-color var(--transition-functional),
+    border-color var(--transition-functional);
+}
+
+.tarefa-item:hover {
+  border-color: var(--color-border-strong);
 }
 
 .tarefa-item--concluida {
-  opacity: 0.72;
+  opacity: 0.7;
 }
 
 .tarefa-item--concluida .tarefa-linha-titulo strong {
   text-decoration: line-through;
 }
 
+/*
+ * Tamanho de caixa de marcar, não de campo de texto.
+ *
+ * A regra global de `input` impõe 44px de altura mínima — medida de campo
+ * digitável. Aplicada aqui, ela deixava a caixa centrada num bloco de 44px e o
+ * risco de conclusão nascia uma linha abaixo do título que ele marca.
+ */
 .tarefa-check input {
-  width: 18px;
-  height: 18px;
-  margin-top: 2px;
-  accent-color: #0e857a;
+  width: 17px;
+  height: 17px;
+  min-height: 0;
+  margin: 2px 0 0;
+  accent-color: var(--color-brand-teal);
 }
 
 .tarefa-corpo {
@@ -333,31 +318,32 @@
 .tarefa-linha-titulo {
   display: flex;
   align-items: baseline;
-  gap: 10px;
   flex-wrap: wrap;
+  gap: 8px;
 }
 
 .tarefa-linha-titulo strong {
-  font-size: 0.98rem;
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .tarefa-prio {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 0.72rem;
-  font-weight: 600;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--color-border);
   border-radius: 999px;
-  padding: 2px 9px;
-  color: #45514c;
-  border: 1px solid rgb(24 33 29 / 15%);
-  background: var(--color-surface);
+  background: var(--color-canvas);
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
 }
 
 /* Bandeiras por grau: P1 azul, P2 amarela, P3 vermelha. */
 .tarefa-bandeira {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   flex-shrink: 0;
 }
 
@@ -375,70 +361,74 @@
 
 .tarefa-observacoes {
   margin: 4px 0 0;
-  font-size: 0.88rem;
-  color: #45514c;
+  color: var(--color-graphite);
+  font-size: 0.84rem;
   white-space: pre-wrap;
 }
 
 .tarefa-meta {
-  margin: 6px 0 0;
-  font-size: 0.78rem;
-  color: #7a8580;
+  margin: 5px 0 0;
+  color: var(--color-muted);
+  font-size: 0.74rem;
 }
 
 .tarefa-excluir {
-  border: none;
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 0;
   background: transparent;
-  color: #9aa4a0;
-  font-size: 1.1rem;
+  color: var(--color-muted);
+  font-size: 1.05rem;
   line-height: 1;
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
 }
 
 .tarefa-excluir:hover {
-  color: #b3382f;
-  background: rgb(179 56 47 / 8%);
+  color: var(--color-danger);
 }
 
 .tarefa-form {
-  margin-top: 16px;
-  border-top: 1px solid rgb(24 33 29 / 8%);
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
   padding-top: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  border-top: 1px solid var(--color-border);
 }
 
+/*
+ * "Nova tarefa" é etiqueta de campo, não manchete. Como título de seção ela
+ * disputava atenção com o nome da obra e com a própria lista, que é o que se
+ * veio ler.
+ */
 .tarefa-form h3 {
   margin: 0;
-  font-size: 0.95rem;
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .tarefa-form-linha {
   display: flex;
-  gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+  gap: 8px;
 }
 
 .tarefa-form input,
 .tarefa-form textarea {
   flex: 1;
   min-width: 180px;
+  padding: 9px 11px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 9px 12px;
-  font-size: 0.9rem;
   background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: 0.85rem;
   resize: vertical;
 }
 
-.tarefa-form input:focus-visible,
-.tarefa-form textarea:focus-visible,
-.tarefas-nova-equipe input:focus-visible {
-  outline: 2px solid #fed203;
-  outline-offset: 1px;
+.tarefa-form input {
+  min-height: 38px;
 }
 
 .tarefa-prioridade-grupo {
@@ -450,32 +440,33 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 38px;
+  padding: 0 11px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: #5b6570;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
 }
 
 .tarefa-prio-botao--ativo {
-  color: #18211d;
+  color: var(--color-ink);
+  font-weight: 600;
 }
 
 .tarefa-prio-botao--ativo.tarefa-prio-botao--1 {
   border-color: #2f6bd8;
-  background: rgb(47 107 216 / 10%);
+  background: rgb(47 107 216 / 8%);
 }
 
 .tarefa-prio-botao--ativo.tarefa-prio-botao--2 {
   border-color: #d9b400;
-  background: rgb(254 210 3 / 18%);
+  background: rgb(254 210 3 / 14%);
 }
 
 .tarefa-prio-botao--ativo.tarefa-prio-botao--3 {
   border-color: #d64545;
-  background: rgb(214 69 69 / 10%);
+  background: rgb(214 69 69 / 8%);
 }
 
 .tarefa-responsavel {
@@ -494,18 +485,17 @@
 .tarefa-sugestoes {
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
   right: 0;
+  left: 0;
   z-index: 20;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-  background: var(--color-surface);
-  border: 1px solid rgb(24 33 29 / 12%);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-overlay);
   max-height: 220px;
   overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+  list-style: none;
 }
 
 .tarefa-sugestoes button {
@@ -514,65 +504,87 @@
   align-items: flex-start;
   gap: 1px;
   width: 100%;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-sm);
   padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  font-size: 0.84rem;
   text-align: left;
-  font-size: 0.88rem;
 }
 
 .tarefa-sugestoes button:hover,
 .tarefa-sugestoes button:focus-visible {
-  background: rgb(254 210 3 / 20%);
+  background: var(--color-canvas);
 }
 
 .tarefa-sugestoes small {
-  color: #7a8580;
-  font-size: 0.74rem;
+  color: var(--color-muted);
+  font-size: 0.72rem;
 }
 
 .tarefa-reconhecido {
   margin: 0;
-  font-size: 0.76rem;
-  color: #0e857a;
+  color: var(--color-focus);
+  font-size: 0.74rem;
+}
+
+.tarefa-excluir,
+.tarefa-form input,
+.tarefa-form textarea,
+.tarefa-prio-botao,
+.tarefa-sugestoes,
+.tarefa-sugestoes button {
+  border-radius: var(--radius-control);
 }
 
 .tarefa-form-enviar {
-  border: none;
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 18px;
+  border: 1px solid var(--color-ink);
   border-radius: var(--radius-sm);
-  padding: 10px 20px;
-  font-weight: 600;
-  font-size: 0.9rem;
-  background: var(--color-brand-yellow);
+  background: var(--color-ink);
+  color: var(--color-surface);
+  font-size: 0.8rem;
+  font-weight: 500;
   box-shadow: none;
 }
 
+.tarefa-form-enviar:hover:not(:disabled) {
+  border-color: var(--color-brand-green);
+  background: var(--color-brand-green);
+}
+
 .tarefa-form-enviar:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: default;
 }
 
 .tarefas-eficiencia h3 {
-  margin: 0 0 6px;
-  font-size: 1rem;
+  margin: 0 0 8px;
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .tarefas-eficiencia-resumo {
   margin: 0;
-  font-size: 0.92rem;
-  color: #45514c;
+  color: var(--color-graphite);
+  font-size: 0.86rem;
 }
 
 .tarefas-eficiencia-resumo strong {
-  font-size: 1.05rem;
-  color: #18211d;
+  color: var(--color-ink);
+  font-size: 1.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .tarefas-eficiencia-periodo {
   margin: 4px 0 10px;
-  font-size: 0.78rem;
-  color: #7a8580;
+  color: var(--color-muted);
+  font-size: 0.74rem;
 }
 
 @media (max-width: 980px) {
@@ -585,103 +597,19 @@
   .tarefas-page {
     padding: 0;
   }
-}
 
-/* Quadro operacional: geometria contida e ações primárias em preto. */
-.tarefas-topbar {
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--color-ink);
-}
+  .tarefa-form-linha {
+    align-items: stretch;
+    flex-direction: column;
+  }
 
-.tarefas-topbar h1,
-.tarefa-form h3,
-.tarefas-eficiencia h3 {
-  color: var(--color-ink);
-  font-weight: 600;
-}
+  .tarefa-prioridade-grupo,
+  .tarefa-form-enviar {
+    width: 100%;
+  }
 
-.tarefas-card {
-  border: 1px solid var(--color-ink);
-  border-radius: var(--radius-control);
-}
-
-.tarefas-obra-tabs .chip {
-  min-height: 36px;
-  border: 1px solid var(--color-ink);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-ink);
-  font-weight: 500;
-}
-
-.tarefas-obra-tabs .chip--active,
-.tarefas-equipe-tab--active {
-  border-color: var(--color-ink);
-  background: var(--color-ink);
-  color: #fff;
-  font-weight: 500;
-  box-shadow: none;
-}
-
-.tarefas-equipe-tabs {
-  gap: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.tarefas-equipe-tab {
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-}
-
-.tarefas-nova-equipe input,
-.tarefas-nova-equipe button,
-.tarefa-excluir,
-.tarefa-form input,
-.tarefa-form textarea,
-.tarefa-prio-botao,
-.tarefa-sugestoes,
-.tarefa-sugestoes button,
-.tarefa-form-enviar {
-  border-radius: var(--radius-control);
-}
-
-.tarefas-nova-equipe button {
-  border: 1px solid var(--color-ink);
-  background: var(--color-surface);
-  color: var(--color-ink);
-}
-
-.tarefa-item {
-  gap: 10px;
-  padding: 10px 11px;
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  transition:
-    background-color var(--transition-functional),
-    border-color var(--transition-functional);
-}
-
-.tarefa-item:hover {
-  border-color: #aeb8b1;
-  background: #fcfdfc;
-}
-
-.tarefa-sugestoes {
-  border: 1px solid var(--color-ink);
-  box-shadow: none;
-}
-
-.tarefa-form-enviar {
-  border: 1px solid var(--color-ink);
-  background: var(--color-ink);
-  color: var(--color-surface);
-  font-weight: 500;
-}
-
-.tarefa-form-enviar:hover:not(:disabled) {
-  border-color: var(--color-brand-green);
-  background: var(--color-brand-green);
+  .tarefa-prio-botao {
+    flex: 1;
+    justify-content: center;
+  }
 }

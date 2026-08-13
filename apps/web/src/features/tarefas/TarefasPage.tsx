@@ -18,9 +18,7 @@ import {
 import {
   abasDeEquipe,
   chaveDaEquipe,
-  filtrarAbas,
   type EquipeNaAba,
-  type FiltroDeEquipe,
 } from "./abasDeEquipe";
 import {
   listObrasLocais,
@@ -183,15 +181,10 @@ export function TarefasPage() {
   // usuário fez na outra obra.
   const [equipesManuaisPorObra] =
     useState<Record<string, string[]>>({});
-  const [equipeEscolhidaPorObra] =
-    useState<Record<string, string>>({});
 
-  // As equipes cadastradas vêm do cache local: a aba abre e arquiva sem rede.
+  // As equipes cadastradas vêm do cache local: a gaveta abre e apaga sem rede.
   const [equipesCadastradas, setEquipesCadastradas] =
     useState<TeamDto[]>([]);
-  const filtroEquipe: FiltroDeEquipe = "TODAS";
-  // Arquivar e desarquivar são atos de Alfa. O servidor impõe o mesmo em
-  // EquipeService; aqui só se evita oferecer um botão que voltaria 403.
   /*
    * Apagar equipe é ato de Alfa, e o servidor impõe isso em
    * EquipeDeletionService. Aqui só se evita oferecer um botão que voltaria 403.
@@ -458,6 +451,12 @@ export function TarefasPage() {
     };
   }, [reloadTick]);
 
+  /*
+   * O que sobrou de equipe nesta obra — só para a gaveta de limpeza.
+   *
+   * A tarefa é da obra desde que a dinâmica de equipes acabou; estas abas não
+   * recortam mais nada, existem para dar saída ao que ficou cadastrado.
+   */
   const abasDaObra = useMemo(() => {
     const derivadas = equipesDaObra(obraRdos, tarefas);
     const existentes = new Set(
@@ -481,36 +480,10 @@ export function TarefasPage() {
     focusedObraId,
   ]);
 
-
-  const abasVisiveis = useMemo(
-    () => filtrarAbas(abasDaObra, filtroEquipe),
-    [abasDaObra, filtroEquipe],
+  const equipesQueSobraram = useMemo(
+    () => abasDaObra.filter((aba) => aba.equipe),
+    [abasDaObra],
   );
-
-  const equipes = useMemo(
-    () => abasVisiveis.map((aba) => aba.nome),
-    [abasVisiveis],
-  );
-
-  const selectedEquipe = useMemo(() => {
-    const escolha = focusedObraId
-      ? equipeEscolhidaPorObra[focusedObraId]
-      : undefined;
-
-    if (
-      escolha &&
-      equipes.some(
-        (equipe) =>
-          equipeKey(equipe) === equipeKey(escolha),
-      )
-    ) {
-      return escolha;
-    }
-
-    return equipes[0] ?? "";
-  }, [equipeEscolhidaPorObra, equipes, focusedObraId]);
-
-
 
   const responsaveis = useMemo(
     () => responsaveisSugeridos(obraRdos, tarefas),
@@ -877,8 +850,11 @@ export function TarefasPage() {
                 type="button"
                 className={
                   obra.id === focusedObraId
-                    ? "chip chip--active"
-                    : "chip"
+                    ? "tarefas-obra-tab tarefas-obra-tab--ativa"
+                    : "tarefas-obra-tab"
+                }
+                aria-current={
+                  obra.id === focusedObraId ? "true" : undefined
                 }
                 onClick={() => setFocusedObraId(obra.id)}
               >
@@ -907,34 +883,31 @@ export function TarefasPage() {
         ) : (
           <div className="tarefas-layout">
             <section className="tarefas-card">
-              {podeApagarEquipe && abasDaObra.some((aba) => aba.equipe) && (
+              {podeApagarEquipe && equipesQueSobraram.length > 0 && (
                 <section
                   className="tarefas-limpeza"
                   aria-label="Equipes que sobraram nesta obra"
                 >
                   <p>
-                    A tarefa agora é da obra, não de uma equipe. Estas equipes
-                    ficaram para trás e podem ser apagadas — as tarefas
-                    continuam onde estão.
+                    A tarefa é da obra. Estas equipes ficaram cadastradas e
+                    podem ser apagadas — nenhuma tarefa sai do lugar.
                   </p>
                   <ul>
-                    {abasDaObra
-                      .filter((aba) => aba.equipe)
-                      .map((aba) => (
-                        <li key={chaveDaEquipe(aba.nome)}>
-                          <span>{aba.nome}</span>
-                          <button
-                            type="button"
-                            disabled={equipeEmExclusao === aba.equipe?.id}
-                            onClick={() => {
-                              setErroDaExclusao("");
-                              setConfirmacaoDeExclusao(aba);
-                            }}
-                          >
-                            Apagar
-                          </button>
-                        </li>
-                      ))}
+                    {equipesQueSobraram.map((aba) => (
+                      <li key={chaveDaEquipe(aba.nome)}>
+                        <span>{aba.nome}</span>
+                        <button
+                          type="button"
+                          disabled={equipeEmExclusao === aba.equipe?.id}
+                          onClick={() => {
+                            setErroDaExclusao("");
+                            setConfirmacaoDeExclusao(aba);
+                          }}
+                        >
+                          Apagar
+                        </button>
+                      </li>
+                    ))}
                   </ul>
                   {erroDaExclusao && (
                     <p role="alert" className="tarefas-limpeza-erro">
@@ -951,28 +924,33 @@ export function TarefasPage() {
                   aria-modal="true"
                   aria-label={`Apagar a equipe ${confirmacaoDeExclusao.nome}`}
                 >
-                  <p>
-                    Apagar <strong>{confirmacaoDeExclusao.nome}</strong> de
-                    vez? Isso não apaga nenhuma tarefa nem nenhum RDO — some
-                    apenas a equipe, para todo mundo.
-                  </p>
-                  <div className="tarefas-confirma-acoes">
-                    <button
-                      type="button"
-                      onClick={() => setConfirmacaoDeExclusao(null)}
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
-                      className="tarefas-confirma-perigo"
-                      disabled={
-                        equipeEmExclusao === confirmacaoDeExclusao.equipe?.id
-                      }
-                      onClick={() => void handleApagarEquipe()}
-                    >
-                      Apagar equipe
-                    </button>
+                  <div className="tarefas-confirma-caixa">
+                    <p className="tarefas-confirma-pergunta">
+                      Apagar {confirmacaoDeExclusao.nome} de vez?
+                    </p>
+                    <p className="tarefas-confirma-detalhe">
+                      Nenhuma tarefa e nenhum RDO são apagados. Some apenas a
+                      equipe, para todo mundo.
+                    </p>
+                    <div className="tarefas-confirma-acoes">
+                      <button
+                        type="button"
+                        className="tarefas-confirma-cancelar"
+                        onClick={() => setConfirmacaoDeExclusao(null)}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        className="tarefas-confirma-perigo"
+                        disabled={
+                          equipeEmExclusao === confirmacaoDeExclusao.equipe?.id
+                        }
+                        onClick={() => void handleApagarEquipe()}
+                      >
+                        Apagar equipe
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -986,8 +964,10 @@ export function TarefasPage() {
                   <ul className="tarefas-lista">
                     {tarefasVisiveis.length === 0 && (
                       <li className="tarefas-vazio">
-                        Nenhuma tarefa neste recorte para
-                        {" "}{focusedObra?.nome ?? "esta obra"}.
+                        {statusFilter === "TODAS" &&
+                        prioridadeFilter === "TODAS"
+                          ? "Nenhuma tarefa nesta obra."
+                          : "Nenhuma tarefa no filtro atual."}
                       </li>
                     )}
                     {tarefasVisiveis.map((tarefa) => {
@@ -1024,13 +1004,14 @@ export function TarefasPage() {
                               </strong>
                               <span
                                 className={`tarefa-prio tarefa-prio--${tarefa.prioridade}`}
+                                title={`Prioridade ${prio.hint.toLocaleLowerCase("pt-BR")}`}
                               >
                                 <BandeiraPrioridade
                                   prioridade={
                                     tarefa.prioridade
                                   }
                                 />
-                                {prio.label} · {prio.hint}
+                                {prio.label}
                               </span>
                             </div>
                             {tarefa.observacoes && (
@@ -1078,9 +1059,7 @@ export function TarefasPage() {
                       void handleCreateTarefa(event);
                     }}
                   >
-                    <h3>
-                      Nova tarefa · {selectedEquipe}
-                    </h3>
+                    <h3>Nova tarefa</h3>
                     <div className="tarefa-form-linha">
                       <input
                         value={titulo}
@@ -1133,8 +1112,8 @@ export function TarefasPage() {
                       <div className="tarefa-responsavel">
                         <input
                           value={responsavel}
-                          placeholder="Responsável da equipe (Academy)"
-                          aria-label="Responsável da equipe"
+                          placeholder="Responsável (Academy)"
+                          aria-label="Responsável pela tarefa"
                           autoComplete="off"
                           onChange={(event) => {
                             const valor =
@@ -1207,7 +1186,7 @@ export function TarefasPage() {
                           )}
                         {responsavelReconhecido && (
                           <p className="tarefa-reconhecido">
-                            ✓ Reconhecido no Academy:{" "}
+                            Reconhecido no Academy:{" "}
                             {responsavelReconhecido.nome}
                           </p>
                         )}

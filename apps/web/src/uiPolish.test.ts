@@ -739,7 +739,9 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(priority).toContain("border: 1px solid var(--color-border);");
     expect(priority).toContain("background: var(--color-surface);");
 
-    expect(rule(tarefasCss, ".tarefas-equipe-tab--active")).toContain(
+    // A obra em foco é aba sublinhada, não etiqueta preenchida: o amarelo
+    // marca qual painel está aberto sem repetir o peso do cabeçalho.
+    expect(rule(tarefasCss, ".tarefas-obra-tab--ativa::after")).toContain(
       "background: var(--color-brand-yellow);",
     );
     expect(rule(tarefasCss, ".tarefa-form-enviar")).toContain(
