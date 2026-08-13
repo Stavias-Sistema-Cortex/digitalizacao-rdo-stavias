@@ -237,7 +237,10 @@ export function apontamentosDoRdo(
     apontamentos.push({
       colaboradorId: colaboradorId || null,
       nome,
-      funcao: texto(item.cargo),
+      // O ofício do cadastro manda sobre o cargo que o documento gravou: o
+      // rótulo de quando a pessoa foi apontada envelhece, e o rateio é retrato
+      // de gente. Sem cadastro por trás — ou sem rede —, vale o documento.
+      funcao: texto(item.funcaoCadastro) || texto(item.cargo),
       obraId: registro.obraId,
       obraNome: texto(registro.payload.obraNome),
       data: registro.dataRdo,

@@ -70,11 +70,13 @@ public class RateioMaoDeObraService {
                 r.preenchido_por    AS preenchido_por,
                 m.colaborador_id    AS colaborador_id,
                 m.nome_colaborador  AS nome_colaborador,
-                m.cargo             AS cargo
+                m.cargo             AS cargo,
+                mc.funcao           AS colaborador_funcao
             FROM rdo r
             JOIN obra o ON o.id = r.obra_id
             LEFT JOIN colaborador ap ON ap.id = r.apontador_colaborador_id
             LEFT JOIN rdo_mao_obra m ON m.rdo_id = r.id
+            LEFT JOIN colaborador mc ON mc.id = m.colaborador_id
             WHERE r.cancelado_em IS NULL
               AND r.status <> 'CANCELADA'
               AND r.data_rdo BETWEEN ? AND ?
@@ -185,7 +187,8 @@ public class RateioMaoDeObraService {
                     new RateioMaoDeObraResponse.MaoDeObraDoRateio(
                             colaboradorId,
                             nome,
-                            resultado.getString("cargo")
+                            resultado.getString("cargo"),
+                            resultado.getString("colaborador_funcao")
                     )
             );
         }, parametros);
@@ -256,6 +259,15 @@ public class RateioMaoDeObraService {
             if (construcao.apontadorFuncao() == null) {
                 String apontador = nomeComparavel(construcao.apontadorRdo());
                 if (!apontador.isEmpty()) procurados.add(apontador);
+            }
+            // Quem entrou na mão de obra sem cadastro ligado — somado à mão,
+            // ou de um RDO antigo em que o vínculo não foi gravado — também
+            // tem ofício, e o nome é a única porta que sobrou para ele.
+            for (RateioMaoDeObraResponse.MaoDeObraDoRateio pessoa
+                    : construcao.maoObra()) {
+                if (pessoa.funcaoCadastro() != null) continue;
+                String nome = nomeComparavel(pessoa.nomeColaborador());
+                if (!nome.isEmpty()) procurados.add(nome);
             }
         }
         if (procurados.isEmpty()) return Map.of();
@@ -349,6 +361,15 @@ public class RateioMaoDeObraService {
             String oficioDoApontador = apontadorFuncao != null
                     ? apontadorFuncao
                     : oficiosPorNome.get(nomeComparavel(apontadorRdo));
+            List<RateioMaoDeObraResponse.MaoDeObraDoRateio> comOficio =
+                    new ArrayList<>(maoObra.size());
+            for (RateioMaoDeObraResponse.MaoDeObraDoRateio pessoa : maoObra) {
+                comOficio.add(pessoa.funcaoCadastro() != null
+                        ? pessoa
+                        : pessoa.comFuncaoCadastro(oficiosPorNome.get(
+                                nomeComparavel(pessoa.nomeColaborador())))
+                );
+            }
             return new RateioMaoDeObraResponse.RdoDoRateio(
                     id,
                     obraId,
@@ -361,7 +382,7 @@ public class RateioMaoDeObraService {
                     oficioDoApontador,
                     preenchidoPor,
                     oficiosPorNome.get(nomeComparavel(preenchidoPor)),
-                    List.copyOf(maoObra)
+                    List.copyOf(comOficio)
             );
         }
     }

@@ -261,6 +261,69 @@ class PostgresqlRateioMaoDeObraIT {
         assertThat(encontrado.apontadorFuncao()).isEqualTo("TOPOGRAFA");
     }
 
+    /*
+     * O cargo do documento é o que foi digitado na época — e, nos RDOs
+     * anteriores à função existir, quase sempre o perfil de acesso. O rateio é
+     * retrato de gente, não cópia do documento: quem é pedreiro aparece como
+     * pedreiro mesmo num RDO de dois meses atrás. O que o documento gravou
+     * continua viajando ao lado, intacto, para quem for auditá-lo.
+     */
+    @Test
+    void oOficioDoCadastroValeSobreOCargoGravadoNoRdoAntigo() {
+        String obraId = obra("cargo antigo");
+        String rdoId = rdo(obraId, "2026-07-15", "RDO-0024");
+        String colaboradorId = colaborador("Quem Mudou De Oficio");
+        jdbc.update(
+                "UPDATE colaborador SET funcao = 'PEDREIRO' WHERE id = ?",
+                colaboradorId
+        );
+        maoDeObra(rdoId, colaboradorId, "Quem Mudou De Oficio", "Apontador");
+
+        RateioMaoDeObraResponse.MaoDeObraDoRateio pessoa =
+                servicoPara(alfa(), true)
+                        .apontamentosDoPeriodo(
+                                LocalDate.parse("2026-07-01"),
+                                LocalDate.parse("2026-07-31")
+                        )
+                        .rdos().stream()
+                        .filter(item -> item.id().equals(rdoId))
+                        .findFirst()
+                        .orElseThrow()
+                        .maoObra()
+                        .getFirst();
+
+        assertThat(pessoa.funcaoCadastro()).isEqualTo("PEDREIRO");
+        assertThat(pessoa.cargo()).isEqualTo("Apontador");
+    }
+
+    /* Somado à mão, sem cadastro ligado: o nome ainda alcança o ofício. */
+    @Test
+    void oSomadoAMaoAchaOOficioPeloNome() {
+        String obraId = obra("somado a mao");
+        String rdoId = rdo(obraId, "2026-07-16", "RDO-0025");
+        String cadastrado = colaborador("Ajudante Sem Vinculo");
+        jdbc.update(
+                "UPDATE colaborador SET funcao = 'SERVENTE' WHERE id = ?",
+                cadastrado
+        );
+        maoDeObra(rdoId, null, "AJUDANTE SEM VINCULO", "");
+
+        RateioMaoDeObraResponse.MaoDeObraDoRateio pessoa =
+                servicoPara(alfa(), true)
+                        .apontamentosDoPeriodo(
+                                LocalDate.parse("2026-07-01"),
+                                LocalDate.parse("2026-07-31")
+                        )
+                        .rdos().stream()
+                        .filter(item -> item.id().equals(rdoId))
+                        .findFirst()
+                        .orElseThrow()
+                        .maoObra()
+                        .getFirst();
+
+        assertThat(pessoa.funcaoCadastro()).isEqualTo("SERVENTE");
+    }
+
     @Test
     void aMaoDeObraApontadaChegaComNomeECargo() {
         String obraId = obra("gente");

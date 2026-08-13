@@ -381,6 +381,55 @@ describe("apontamentos lidos dos RDOs do aparelho", () => {
     });
 
     /*
+     * O cargo do documento envelhece — nos RDOs anteriores à função existir
+     * ele guarda o perfil de acesso. O rateio é retrato de gente: quem é
+     * pedreiro aparece como pedreiro, mesmo num RDO de meses atrás.
+     */
+    it("prefere o ofício do cadastro ao cargo gravado no RDO", () => {
+      const [apontamento] = extrairApontamentos(
+        [
+          rdo({
+            payload: {
+              maoObra: [
+                {
+                  colaboradorId: "col-9",
+                  nomeColaborador: "QUEM MUDOU",
+                  cargo: "Apontador",
+                  funcaoCadastro: "PEDREIRO",
+                },
+              ],
+            },
+          }),
+        ],
+        JULHO,
+      ).apontamentos;
+
+      expect(apontamento.funcao).toBe("PEDREIRO");
+    });
+
+    /* Sem cadastro por trás — ou sem rede —, vale o que o documento gravou. */
+    it("cai no cargo do documento quando o cadastro não sabe o ofício", () => {
+      const [apontamento] = extrairApontamentos(
+        [
+          rdo({
+            payload: {
+              maoObra: [
+                {
+                  colaboradorId: "col-9",
+                  nomeColaborador: "QUEM MUDOU",
+                  cargo: "Apontador",
+                },
+              ],
+            },
+          }),
+        ],
+        JULHO,
+      ).apontamentos;
+
+      expect(apontamento.funcao).toBe("Apontador");
+    });
+
+    /*
      * Quem preenche assina em texto livre, sem identificador. O servidor acha
      * o ofício desse nome no cadastro e o manda junto — é o que tira a linha
      * mais comum do rateio do rótulo genérico.

@@ -100,6 +100,33 @@ public record RateioMaoDeObraResponse(
     public record MaoDeObraDoRateio(
             String colaboradorId,
             String nomeColaborador,
-            String cargo
-    ) {}
+            /** O que o documento gravou naquele dia. Não é reescrito. */
+            String cargo,
+            /**
+             * O ofício que o cadastro (Academy) diz hoje sobre esta pessoa.
+             *
+             * <p>O cargo do documento é o que foi digitado — ou preenchido pelo
+             * perfil de acesso, antes de a função existir — e envelhece: o
+             * rateio de um mês inteiro mostrava "Apontador" para quem é pedreiro
+             * porque foi assim que entrou na época. Como o rateio é um retrato
+             * de gente, e não uma cópia do documento, a função de quem a pessoa
+             * é vale mais do que o rótulo de quando ela foi apontada.
+             *
+             * <p>Viaja ao lado do cargo, nunca no lugar dele: o RDO continua
+             * dizendo o que disse, e quem quiser auditar o documento ainda o
+             * encontra intacto. Nulo quando o cadastro não sabe o ofício —
+             * pessoa somada à mão, ou sync que ainda não trouxe a função.
+             */
+            String funcaoCadastro
+    ) {
+
+        MaoDeObraDoRateio comFuncaoCadastro(String funcao) {
+            return new MaoDeObraDoRateio(
+                    colaboradorId,
+                    nomeColaborador,
+                    cargo,
+                    funcao
+            );
+        }
+    }
 }
