@@ -63,11 +63,6 @@ const TarefasPage = lazy(() =>
   })),
 );
 
-const EquipesPage = lazy(() =>
-  import("./features/equipes/EquipesPage").then((module) => ({
-    default: module.EquipesPage,
-  })),
-);
 
 const IntegracoesPage = lazy(() =>
   import("./features/integracoes/IntegracoesPage").then((module) => ({
@@ -115,14 +110,14 @@ function FuncoesOperacionaisRoute() {
   const navigate = useNavigate();
 
   if (!isAlfa(getSession())) {
-    return <Navigate to="/equipes" replace />;
+    return <Navigate to="/tarefas" replace />;
   }
 
   return (
     <CortexShell active="equipes">
       <FuncoesOperacionaisPage
         onBack={() => {
-          navigate("/equipes");
+          navigate("/tarefas");
         }}
       />
     </CortexShell>
@@ -362,7 +357,6 @@ function App({ initialAuthUnavailable = false }: AppProps) {
           <Route path="/obras/gestao" element={<GestaoObrasRoute />} />
           <Route path="/rdos" element={<RdoWorkspacePage />} />
           <Route path="/tarefas" element={<TarefasPage />} />
-          <Route path="/equipes" element={<EquipesPage />} />
           <Route path="/financeiro" element={<FinanceiroPage />} />
           <Route path="/mensagens" element={<MensagensPage />} />
           <Route

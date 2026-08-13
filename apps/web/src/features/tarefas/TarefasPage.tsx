@@ -11,15 +11,13 @@ import { CortexShell } from "../../components/shell/CortexShell";
 import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import { getSession, isAlfa } from "../auth/authSession";
 import type { TeamDto } from "../equipes/teamApi";
+import { apagarEquipeDefinitivamente } from "../equipes/apagarEquipe";
 import {
   listLocalTeams,
-  queueArchiveTeam,
-  queueUnarchiveTeam,
 } from "../equipes/teamLocalRepository";
 import {
   abasDeEquipe,
   chaveDaEquipe,
-  contagemPorFiltro,
   filtrarAbas,
   type EquipeNaAba,
   type FiltroDeEquipe,
@@ -126,46 +124,7 @@ function prioridadeInfo(value: TarefaPrioridade) {
  * interface. Como SVG de contorno o ícone herda `currentColor` e acompanha o
  * estado do botão.
  */
-function IconeArquivar() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8Z" />
-      <path d="M3 4h18v4H3z" />
-      <path d="M10 12h4" />
-    </svg>
-  );
-}
 
-function IconeDesarquivar() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8Z" />
-      <path d="M3 4h18v4H3z" />
-      <path d="M12 16v-4" />
-      <path d="m9.5 14 2.5-2.5 2.5 2.5" />
-    </svg>
-  );
-}
 
 function BandeiraPrioridade({
   prioridade,
@@ -222,29 +181,27 @@ export function TarefasPage() {
 
   // Estado por obra: trocar de aba não descarta o que o
   // usuário fez na outra obra.
-  const [equipesManuaisPorObra, setEquipesManuaisPorObra] =
+  const [equipesManuaisPorObra] =
     useState<Record<string, string[]>>({});
-  const [equipeEscolhidaPorObra, setEquipeEscolhidaPorObra] =
+  const [equipeEscolhidaPorObra] =
     useState<Record<string, string>>({});
-  const [isAddingEquipe, setIsAddingEquipe] =
-    useState(false);
-  const [novaEquipeNome, setNovaEquipeNome] =
-    useState("");
 
   // As equipes cadastradas vêm do cache local: a aba abre e arquiva sem rede.
   const [equipesCadastradas, setEquipesCadastradas] =
     useState<TeamDto[]>([]);
-  const [filtroEquipe, setFiltroEquipe] =
-    useState<FiltroDeEquipe>("ATIVAS");
-  const [equipeEmArquivamento, setEquipeEmArquivamento] =
-    useState<string | null>(null);
-  const [erroDoArquivamento, setErroDoArquivamento] =
-    useState("");
-  const [confirmacaoDeArquivamento, setConfirmacaoDeArquivamento] =
-    useState<EquipeNaAba | null>(null);
+  const filtroEquipe: FiltroDeEquipe = "TODAS";
   // Arquivar e desarquivar são atos de Alfa. O servidor impõe o mesmo em
   // EquipeService; aqui só se evita oferecer um botão que voltaria 403.
-  const podeArquivarEquipe = isAlfa(session);
+  /*
+   * Apagar equipe é ato de Alfa, e o servidor impõe isso em
+   * EquipeDeletionService. Aqui só se evita oferecer um botão que voltaria 403.
+   */
+  const podeApagarEquipe = isAlfa(session);
+  const [equipeEmExclusao, setEquipeEmExclusao] =
+    useState<string | null>(null);
+  const [erroDaExclusao, setErroDaExclusao] = useState("");
+  const [confirmacaoDeExclusao, setConfirmacaoDeExclusao] =
+    useState<EquipeNaAba | null>(null);
 
   const [statusFilter, setStatusFilter] =
     useState<StatusFilter>("TODAS");
@@ -524,10 +481,6 @@ export function TarefasPage() {
     focusedObraId,
   ]);
 
-  const contagemDeEquipes = useMemo(
-    () => contagemPorFiltro(abasDaObra),
-    [abasDaObra],
-  );
 
   const abasVisiveis = useMemo(
     () => filtrarAbas(abasDaObra, filtroEquipe),
@@ -558,19 +511,6 @@ export function TarefasPage() {
   }, [equipeEscolhidaPorObra, equipes, focusedObraId]);
 
 
-  const selectEquipe = useCallback(
-    (equipe: string) => {
-      if (!focusedObraId) {
-        return;
-      }
-
-      setEquipeEscolhidaPorObra((current) => ({
-        ...current,
-        [focusedObraId]: equipe,
-      }));
-    },
-    [focusedObraId],
-  );
 
   const responsaveis = useMemo(
     () => responsaveisSugeridos(obraRdos, tarefas),
@@ -631,18 +571,19 @@ export function TarefasPage() {
     };
   }
 
-  const tarefasDaEquipe = useMemo(
-    () =>
-      tarefas.filter(
-        (tarefa) =>
-          equipeKey(tarefa.equipe) ===
-          equipeKey(selectedEquipe),
-      ),
-    [tarefas, selectedEquipe],
-  );
+  /*
+   * A tarefa é da obra.
+   *
+   * <p>Ela já nascia assim no banco — obra_id obrigatório —, e a equipe era só
+   * um texto ao lado, usado para recortar a lista. Com a dinâmica de equipes
+   * encerrada, esse recorte escondia tarefa de gente que precisava vê-la: quem
+   * abria a obra via um pedaço do trabalho e tinha de adivinhar em que aba
+   * estava o resto.
+   */
+  const tarefasDaObra = tarefas;
 
   const tarefasVisiveis = useMemo(() => {
-    return tarefasDaEquipe
+    return tarefasDaObra
       .filter((tarefa) => {
         if (
           statusFilter === "PENDENTES" &&
@@ -670,20 +611,20 @@ export function TarefasPage() {
         }
         return a.createdAt < b.createdAt ? 1 : -1;
       });
-  }, [tarefasDaEquipe, statusFilter, prioridadeFilter]);
+  }, [tarefasDaObra, statusFilter, prioridadeFilter]);
 
   const serie = useMemo(
     () =>
       filterTarefaSeriesByPeriod(
-        buildTarefaSeries(tarefasDaEquipe),
+        buildTarefaSeries(tarefasDaObra),
         period,
       ),
-    [tarefasDaEquipe, period],
+    [tarefasDaObra, period],
   );
 
   const resumo = useMemo(
-    () => eficienciaConclusao(tarefasDaEquipe),
-    [tarefasDaEquipe],
+    () => eficienciaConclusao(tarefasDaObra),
+    [tarefasDaObra],
   );
 
   const periodoLabel = useMemo(() => {
@@ -701,73 +642,45 @@ export function TarefasPage() {
       : `Período: ${first} – ${last}`;
   }, [serie]);
 
-  async function confirmarArquivamento() {
-    const aba = confirmacaoDeArquivamento;
-    if (!aba?.equipe || !podeArquivarEquipe) {
+
+  /*
+   * Apagar de vez, não arquivar. A equipe some do produto inteiro — é o que
+   * sobra a fazer com a que ficou para trás quando a dinâmica de equipes
+   * acabou. Nenhuma tarefa e nenhum RDO são tocados: a tarefa é da obra, e o
+   * RDO guarda os nomes que gravou no dia.
+   */
+  async function handleApagarEquipe() {
+    const aba = confirmacaoDeExclusao;
+    if (!aba?.equipe || !podeApagarEquipe) {
       return;
     }
-
-    setEquipeEmArquivamento(aba.equipe.id);
-    setErroDoArquivamento("");
+    setEquipeEmExclusao(aba.equipe.id);
+    setErroDaExclusao("");
     try {
-      const atualizada = aba.arquivada
-        ? await queueUnarchiveTeam(aba.equipe)
-        : await queueArchiveTeam(aba.equipe);
+      await apagarEquipeDefinitivamente(aba.equipe);
       setEquipesCadastradas((current) =>
-        current.map((equipe) =>
-          equipe.id === atualizada.id ? atualizada : equipe,
-        ),
+        current.filter((equipe) => equipe.id !== aba.equipe?.id),
       );
-      setConfirmacaoDeArquivamento(null);
+      setConfirmacaoDeExclusao(null);
     } catch (error) {
-      // O erro fica no diálogo, junto da mão de quem clicou.
-      setErroDoArquivamento(
+      setErroDaExclusao(
         error instanceof Error
           ? error.message
-          : aba.arquivada
-            ? "Não foi possível desarquivar a equipe."
-            : "Não foi possível arquivar a equipe.",
+          : "Não foi possível apagar a equipe.",
       );
     } finally {
-      setEquipeEmArquivamento(null);
+      setEquipeEmExclusao(null);
     }
   }
 
-  function handleAddEquipe() {
-    const nome = novaEquipeNome.trim();
-
-    if (!nome || !focusedObraId) {
-      return;
-    }
-
-    const jaExiste = equipes.some(
-      (equipe) => equipeKey(equipe) === equipeKey(nome),
-    );
-
-    if (!jaExiste) {
-      setEquipesManuaisPorObra((current) => ({
-        ...current,
-        [focusedObraId]: [
-          ...(current[focusedObraId] ?? []),
-          nome,
-        ],
-      }));
-    }
-
-    selectEquipe(nome);
-    setNovaEquipeNome("");
-    setIsAddingEquipe(false);
-  }
 
   async function handleCreateTarefa(
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
 
-    if (!focusedObraId || !selectedEquipe.trim()) {
-      setFormError(
-        "Escolha uma obra e uma equipe antes de criar a tarefa.",
-      );
+    if (!focusedObraId) {
+      setFormError("Escolha uma obra antes de criar a tarefa.");
       return;
     }
 
@@ -784,7 +697,9 @@ export function TarefasPage() {
       const criada = await createTarefa(
         {
           obraId: focusedObraId,
-          equipe: selectedEquipe,
+          // O campo continua existindo no registro e guarda a obra: ele é
+          // obrigatório no banco e nenhuma tarefa antiga precisa ser tocada.
+          equipe: focusedObra?.nome ?? "Obra",
           titulo,
           observacoes,
           criadaPor: ator.nome,
@@ -992,204 +907,72 @@ export function TarefasPage() {
         ) : (
           <div className="tarefas-layout">
             <section className="tarefas-card">
-              <div
-                className="tarefas-equipe-filtro"
-                role="group"
-                aria-label="Mostrar equipes"
-              >
-                {(
-                  [
-                    ["ATIVAS", "Ativas"],
-                    ["ARQUIVADAS", "Arquivadas"],
-                    ["TODAS", "Todas"],
-                  ] as [FiltroDeEquipe, string][]
-                ).map(([valor, rotulo]) => (
-                  <button
-                    key={valor}
-                    type="button"
-                    aria-pressed={filtroEquipe === valor}
-                    className={
-                      filtroEquipe === valor
-                        ? "tarefas-equipe-filtro-opcao tarefas-equipe-filtro-opcao--ativa"
-                        : "tarefas-equipe-filtro-opcao"
-                    }
-                    onClick={() => setFiltroEquipe(valor)}
-                  >
-                    {rotulo}
-                    <span className="tarefas-equipe-filtro-contagem">
-                      {contagemDeEquipes[valor]}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              {podeApagarEquipe && abasDaObra.some((aba) => aba.equipe) && (
+                <section
+                  className="tarefas-limpeza"
+                  aria-label="Equipes que sobraram nesta obra"
+                >
+                  <p>
+                    A tarefa agora é da obra, não de uma equipe. Estas equipes
+                    ficaram para trás e podem ser apagadas — as tarefas
+                    continuam onde estão.
+                  </p>
+                  <ul>
+                    {abasDaObra
+                      .filter((aba) => aba.equipe)
+                      .map((aba) => (
+                        <li key={chaveDaEquipe(aba.nome)}>
+                          <span>{aba.nome}</span>
+                          <button
+                            type="button"
+                            disabled={equipeEmExclusao === aba.equipe?.id}
+                            onClick={() => {
+                              setErroDaExclusao("");
+                              setConfirmacaoDeExclusao(aba);
+                            }}
+                          >
+                            Apagar
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                  {erroDaExclusao && (
+                    <p role="alert" className="tarefas-limpeza-erro">
+                      {erroDaExclusao}
+                    </p>
+                  )}
+                </section>
+              )}
 
-              <div
-                className="tarefas-equipe-tabs"
-                role="tablist"
-                aria-label={`Equipes da obra ${focusedObra?.nome ?? ""}`}
-              >
-                {abasVisiveis.map((aba) => (
-                  <span
-                    key={chaveDaEquipe(aba.nome)}
-                    className="tarefas-equipe-aba"
-                  >
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={
-                        equipeKey(aba.nome) ===
-                        equipeKey(selectedEquipe)
-                      }
-                      className={[
-                        "tarefas-equipe-tab",
-                        equipeKey(aba.nome) ===
-                        equipeKey(selectedEquipe)
-                          ? "tarefas-equipe-tab--active"
-                          : "",
-                        aba.arquivada
-                          ? "tarefas-equipe-tab--arquivada"
-                          : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onClick={() => selectEquipe(aba.nome)}
-                    >
-                      {aba.nome}
-                      {aba.arquivada && (
-                        <span className="tarefas-equipe-selo">
-                          arquivada
-                        </span>
-                      )}
-                    </button>
-                    {podeArquivarEquipe && aba.equipe && (
-                      <button
-                        type="button"
-                        className="tarefas-equipe-acao"
-                        title={
-                          aba.arquivada
-                            ? `Desarquivar ${aba.nome}`
-                            : `Arquivar ${aba.nome}`
-                        }
-                        aria-label={
-                          aba.arquivada
-                            ? `Desarquivar ${aba.nome}`
-                            : `Arquivar ${aba.nome}`
-                        }
-                        disabled={
-                          equipeEmArquivamento === aba.equipe.id
-                        }
-                        onClick={() => {
-                          setErroDoArquivamento("");
-                          setConfirmacaoDeArquivamento(aba);
-                        }}
-                      >
-                        {aba.arquivada ? (
-                          <IconeDesarquivar />
-                        ) : (
-                          <IconeArquivar />
-                        )}
-                      </button>
-                    )}
-                  </span>
-                ))}
-
-                {isAddingEquipe ? (
-                  <span className="tarefas-nova-equipe">
-                    <input
-                      value={novaEquipeNome}
-                      autoFocus
-                      placeholder="Nome da equipe"
-                      aria-label="Nome da nova equipe"
-                      onChange={(event) =>
-                        setNovaEquipeNome(
-                          event.target.value,
-                        )
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          handleAddEquipe();
-                        }
-                        if (event.key === "Escape") {
-                          setIsAddingEquipe(false);
-                          setNovaEquipeNome("");
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddEquipe}
-                    >
-                      Adicionar
-                    </button>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    className="tarefas-equipe-tab tarefas-equipe-tab--new"
-                    onClick={() =>
-                      setIsAddingEquipe(true)
-                    }
-                  >
-                    + Nova equipe
-                  </button>
-                )}
-              </div>
-
-              {confirmacaoDeArquivamento && (
+              {confirmacaoDeExclusao && (
                 <div
                   className="tarefas-confirma"
                   role="dialog"
                   aria-modal="true"
-                  aria-label={
-                    confirmacaoDeArquivamento.arquivada
-                      ? "Desarquivar equipe"
-                      : "Arquivar equipe"
-                  }
+                  aria-label={`Apagar a equipe ${confirmacaoDeExclusao.nome}`}
                 >
-                  <div className="tarefas-confirma-caixa">
-                    <p className="tarefas-confirma-pergunta">
-                      Tem certeza?
-                    </p>
-                    <p className="tarefas-confirma-detalhe">
-                      {confirmacaoDeArquivamento.arquivada
-                        ? `${confirmacaoDeArquivamento.nome} volta para as equipes ativas. Os membros continuam desligados — recomponha a equipe depois.`
-                        : `${confirmacaoDeArquivamento.nome} sai das equipes ativas e os membros são desligados. As tarefas já registradas continuam no histórico.`}
-                    </p>
-                    {erroDoArquivamento && (
-                      <p
-                        className="tarefas-confirma-erro"
-                        role="alert"
-                      >
-                        {erroDoArquivamento}
-                      </p>
-                    )}
-                    <div className="tarefas-confirma-acoes">
-                      <button
-                        type="button"
-                        className="tarefas-confirma-cancelar"
-                        onClick={() => {
-                          setConfirmacaoDeArquivamento(null);
-                          setErroDoArquivamento("");
-                        }}
-                      >
-                        Cancelar
-                      </button>
-                      <button
-                        type="button"
-                        className="tarefas-confirma-confirmar"
-                        disabled={equipeEmArquivamento !== null}
-                        onClick={() => {
-                          void confirmarArquivamento();
-                        }}
-                      >
-                        {erroDoArquivamento
-                          ? "Tentar de novo"
-                          : confirmacaoDeArquivamento.arquivada
-                            ? "Desarquivar"
-                            : "Arquivar"}
-                      </button>
-                    </div>
+                  <p>
+                    Apagar <strong>{confirmacaoDeExclusao.nome}</strong> de
+                    vez? Isso não apaga nenhuma tarefa nem nenhum RDO — some
+                    apenas a equipe, para todo mundo.
+                  </p>
+                  <div className="tarefas-confirma-acoes">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmacaoDeExclusao(null)}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      className="tarefas-confirma-perigo"
+                      disabled={
+                        equipeEmExclusao === confirmacaoDeExclusao.equipe?.id
+                      }
+                      onClick={() => void handleApagarEquipe()}
+                    >
+                      Apagar equipe
+                    </button>
                   </div>
                 </div>
               )}
@@ -1198,21 +981,13 @@ export function TarefasPage() {
                 <p className="tarefas-vazio">
                   Carregando tarefas da obra…
                 </p>
-              ) : abasVisiveis.length === 0 ? (
-                <p className="tarefas-vazio">
-                  {filtroEquipe === "ARQUIVADAS"
-                    ? "Nenhuma equipe arquivada nesta obra."
-                    : contagemDeEquipes.ARQUIVADAS > 0
-                      ? "Nenhuma equipe ativa nesta obra. Veja as arquivadas no filtro acima."
-                      : "Nenhuma equipe nesta obra. Elas aparecem após alocações de RDO; use “+ Nova equipe” para criar uma."}
-                </p>
               ) : (
                 <>
                   <ul className="tarefas-lista">
                     {tarefasVisiveis.length === 0 && (
                       <li className="tarefas-vazio">
-                        Nenhuma tarefa neste recorte para a
-                        equipe {selectedEquipe}.
+                        Nenhuma tarefa neste recorte para
+                        {" "}{focusedObra?.nome ?? "esta obra"}.
                       </li>
                     )}
                     {tarefasVisiveis.map((tarefa) => {
