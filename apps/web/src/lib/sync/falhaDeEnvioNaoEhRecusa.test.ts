@@ -16,6 +16,7 @@ import type {
 import { databaseNameForScope } from "../db/localDataNamespace";
 import {
   localEventToSearchDocument,
+  memoryCoverage,
   memoryStatusLabel,
 } from "../../features/home/memory/memorySearchDocument";
 import { applyPushResultAtomically } from "./syncStorage";
@@ -153,15 +154,48 @@ describe("falha de envio não é recusa", () => {
     expect(memoryStatusLabel(documento.syncStatus)).toBe("Falha no envio");
   });
 
-  /** Sem evidência de revisão não há pendência: não há o que decidir aqui. */
-  it("não pede revisão de quem só tropeçou no envio", async () => {
+  /*
+   * A tarja de sincronização abre a Memória já filtrada nas pendências, e esse
+   * recorte é montado sobre `review`. Sem evidência aqui, a tarja acusava
+   * "Falha no envio" e o recorte abria com zero eventos e a frase de cache
+   * vazio — sobre um cache íntegro. Aparecer é obrigatório; prometer uma
+   * decisão que ninguém tem a tomar é que não pode.
+   */
+  it("aparece no recorte de pendências, mas sem decisão a tomar", async () => {
     const database = await getCortexDb();
     await database.put("operational_events", {
       ...eventoLegado(EVENTO_ID),
       syncStatus: "SYNC_FAILED",
     });
 
-    expect((await statusNaMemoria(EVENTO_ID)).review).toBeNull();
+    const review = (await statusNaMemoria(EVENTO_ID)).review;
+    expect(review).not.toBeNull();
+    expect(review?.status).toBe("SYNC_FAILED");
+    expect(review?.unavailableReason).toBe("SEND_INCOMPLETE");
+    expect(review?.canReconcile).toBe(false);
+  });
+
+  /*
+   * A tarja e o recorte precisam concordar. Se a cobertura acusa pendência, o
+   * recorte de pendências tem de ter o que mostrar — do contrário a tela se
+   * contradiz: aviso amarelo em cima, "0 eventos" embaixo, e nada a fazer.
+   */
+  it("mantém a cobertura e o recorte de pendências de acordo", async () => {
+    const database = await getCortexDb();
+    await database.put("operational_events", {
+      ...eventoLegado(EVENTO_ID),
+      syncStatus: "SYNC_FAILED",
+    });
+
+    const documento = await statusNaMemoria(EVENTO_ID);
+    const cobertura = memoryCoverage({
+      online: true,
+      metadata: null,
+      localStatuses: [documento.syncStatus],
+    });
+
+    expect(cobertura.code).toBe("SYNC_FAILED");
+    expect([documento].filter((item) => item.review !== null)).toHaveLength(1);
   });
 
   it("devolve o evento à fila quando o erro do servidor é retentável", async () => {

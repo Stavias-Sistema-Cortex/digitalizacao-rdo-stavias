@@ -68,6 +68,16 @@ export type MemoryReviewUnavailableReason =
    * quem lia concluía, com toda razão, que tinha perdido trabalho.
    */
   | "SUPERSEDED_BY_LOCAL_EDIT"
+  /**
+   * O último envio deste registro não se completou.
+   *
+   * <p>Não há decisão humana esperando: o envelope segue íntegro no aparelho e
+   * volta a subir quando a fila andar. Precisa aparecer mesmo assim, porque é
+   * disto que a tarja de sincronização fala — e o atalho dela abre a Memória
+   * justamente no recorte das pendências. Sem uma razão própria aqui, a tarja
+   * acusava e o recorte não tinha o que mostrar.
+   */
+  | "SEND_INCOMPLETE"
   | "REJECTED"
   | "LOCAL_EVIDENCE_UNAVAILABLE"
   | "REMOTE_SNAPSHOT_UNAVAILABLE"
@@ -77,7 +87,7 @@ export type MemoryReviewUnavailableReason =
   | "FIELD_CONFLICT";
 
 export interface MemoryReviewEvidence {
-  status: "CONFLICT" | "REJECTED";
+  status: "CONFLICT" | "REJECTED" | "SYNC_FAILED";
   clientMutationId: string | null;
   baseVersion: number | null;
   eventVersion: number | null;
@@ -465,7 +475,13 @@ function localReview(
   mutation: OutboxMutationRecord | null | undefined,
 ): MemoryReviewEvidence | null {
   const status = localStatus(event);
-  if (status !== "CONFLICT" && status !== "REJECTED") return null;
+  if (
+    status !== "CONFLICT" &&
+    status !== "REJECTED" &&
+    status !== "SYNC_FAILED"
+  ) {
+    return null;
+  }
 
   const canonical = isCanonicalMutation(mutation) ? mutation : null;
   const remote = remoteSnapshotEvidence(mutation?.conflito);
@@ -492,6 +508,28 @@ function localReview(
       conflictFields,
       canReconcile: false,
       unavailableReason: "SUPERSEDED_BY_LOCAL_EDIT",
+    };
+  }
+
+  /*
+   * Envio que não se completou aparece no recorte, mas sem fingir que há
+   * conciliação a fazer: não há versão remota para comparar porque o servidor
+   * pode nem ter visto este envelope.
+   */
+  if (status === "SYNC_FAILED") {
+    return {
+      status,
+      clientMutationId:
+        event.clientMutationId ?? mutation?.clientMutationId ?? null,
+      baseVersion: safeVersion(canonical?.baseVersion ?? mutation?.baseVersao),
+      eventVersion: safeVersion(event.entityVersion),
+      remoteVersion,
+      localStateAvailable: isRecord(event.newState),
+      remoteStateAvailable: remote.complete,
+      changedFields,
+      conflictFields,
+      canReconcile: false,
+      unavailableReason: "SEND_INCOMPLETE",
     };
   }
 

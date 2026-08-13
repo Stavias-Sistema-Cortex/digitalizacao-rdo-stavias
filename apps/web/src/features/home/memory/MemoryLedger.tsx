@@ -271,7 +271,7 @@ export function MemoryLedgerView({
             // "Revisão necessária", em vermelho, fazia quem editou concluir
             // que tinha perdido o trabalho. O recorte só alarma quando há algo
             // de fato parado esperando decisão humana.
-            soSubstituicoes(reviewItems)
+            semDecisaoHumana(reviewItems)
               ? "memory-review memory-review--substituicao"
               : "memory-review"
           }
@@ -280,14 +280,16 @@ export function MemoryLedgerView({
           <header>
             <div>
               <span>
-                {soSubstituicoes(reviewItems)
+                {semDecisaoHumana(reviewItems)
                   ? "Histórico da fila"
                   : "Evidência terminal preservada"}
               </span>
               <h3 id="memory-review-title">
                 {soSubstituicoes(reviewItems)
                   ? "Envelopes substituídos por edição sua"
-                  : "Revisão necessária"}
+                  : soEnviosIncompletos(reviewItems)
+                    ? "Envios que não se completaram"
+                    : "Revisão necessária"}
               </h3>
             </div>
             <span>{reviewItems.length} no recorte visível</span>
@@ -335,15 +337,25 @@ export function MemoryLedgerView({
           <div className="memory-empty" role="status">Lendo a Memória deste dispositivo…</div>
         ) : ledger.items.length === 0 ? (
           <div className="memory-empty">
+            {/*
+              O recorte de pendências é um filtro como outro qualquer, e vazio
+              nele não significa cache vazio. Dizer "nenhum evento autorizado
+              foi armazenado ainda" sobre um cache íntegro contradizia a tarja
+              logo acima, que naquele mesmo instante apontava uma pendência.
+            */}
             <strong>
-              {activeFilters > 0
-                ? "Nenhum evento corresponde aos filtros ativos."
-                : "Nenhum evento autorizado foi armazenado ainda."}
+              {ledger.somenteRevisao
+                ? "Nenhum registro pendente neste recorte."
+                : activeFilters > 0
+                  ? "Nenhum evento corresponde aos filtros ativos."
+                  : "Nenhum evento autorizado foi armazenado ainda."}
             </strong>
             <span>
-              {activeFilters > 0
-                ? "Ajuste ou limpe o recorte para consultar outros registros."
-                : "Conecte-se para carregar o histórico ou registre uma alteração local."}
+              {ledger.somenteRevisao
+                ? "A Memória deste dispositivo continua inteira: use “Mostrar toda a Memória” para consultá-la."
+                : activeFilters > 0
+                  ? "Ajuste ou limpe o recorte para consultar outros registros."
+                  : "Conecte-se para carregar o histórico ou registre uma alteração local."}
             </span>
           </div>
         ) : (
@@ -496,7 +508,9 @@ function MemoryRow({ item }: { item: MemorySearchDocument }) {
             <div><dt>Código seguro</dt><dd>{item.errorCategory}</dd></div>
           ) : null}
         </dl>
-        {(item.syncStatus === "CONFLICT" || item.syncStatus === "REJECTED") && item.structuralKeys.rdoId ? (
+        {(item.syncStatus === "CONFLICT" ||
+          item.syncStatus === "REJECTED" ||
+          item.syncStatus === "SYNC_FAILED") && item.structuralKeys.rdoId ? (
           <a
             className="memory-entry__action"
             href={`/rdos?rdoId=${encodeURIComponent(item.structuralKeys.rdoId)}&eventId=${encodeURIComponent(item.eventId)}`}
@@ -534,6 +548,32 @@ function soSubstituicoes(
   );
 }
 
+/**
+ * O recorte inteiro é envio que não chegou ao fim?
+ *
+ * <p>Também não há decisão humana pendente: o envelope segue íntegro e sobe de
+ * novo na próxima tentativa. Precisa aparecer — é disto que a tarja fala —, mas
+ * não sob a palavra "revisão", que promete uma escolha que ninguém tem a fazer.
+ */
+function soEnviosIncompletos(
+  itens: readonly MemorySearchDocument[],
+): boolean {
+  return itens.every(
+    (item) => item.review?.unavailableReason === "SEND_INCOMPLETE",
+  );
+}
+
+/** Nada aqui espera alguém decidir: o bloco narra, em vez de alarmar. */
+function semDecisaoHumana(
+  itens: readonly MemorySearchDocument[],
+): boolean {
+  return itens.every(
+    (item) =>
+      item.review?.unavailableReason === "SUPERSEDED_BY_LOCAL_EDIT" ||
+      item.review?.unavailableReason === "SEND_INCOMPLETE",
+  );
+}
+
 function versionLabel(version: number | null): string {
   return version === null ? "Não informada" : String(version);
 }
@@ -542,6 +582,8 @@ function reviewReason(
   reason: NonNullable<MemorySearchDocument["review"]>["unavailableReason"],
 ): string {
   const reasons: Record<NonNullable<typeof reason>, string> = {
+    SEND_INCOMPLETE:
+      "O último envio deste registro não se completou. Nada foi recusado: o que está aqui segue inteiro e sobe de novo na próxima tentativa.",
     SUPERSEDED_BY_LOCAL_EDIT:
       "Este envelope foi substituído pela sua edição seguinte. Nada se perdeu: a versão que vale é a mais nova, e é ela que sobe.",
     REJECTED: "A alteração foi rejeitada; a evidência permanece somente para revisão.",
