@@ -81,6 +81,7 @@ export function lerRespostaDoRateio(
       id,
       obraId,
       dataRdo,
+      numeroRdo: texto(rdo.numeroRdo),
       payload: {
         encarregadoObra: rdo.encarregadoObra,
         apontadorRdo: rdo.apontadorRdo,

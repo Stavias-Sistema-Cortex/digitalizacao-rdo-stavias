@@ -317,6 +317,118 @@ describe("apoiarTrechosNoEixo", () => {
     ).toBeUndefined();
   });
 
+  /*
+   * A interdição da Identificação também desenha por aqui — é o que faz o RDO
+   * preenchido em campo aparecer no mapa sem rede, antes de subir. A linha
+   * derivada do servidor nunca entra no cache de geometrias, então offline
+   * esta é a única derivação que existe.
+   */
+  describe("a interdição declarada no RDO local", () => {
+    const interdicao = {
+      rdoId: "rdo-1",
+      numeroRdo: "RDO-0009",
+      data: "2026-08-08",
+      kmInicial: 102,
+      kmFinal: 104,
+    };
+
+    it("desenha com a mesma identidade que o servidor emitiria", () => {
+      const resultado = apoiarTrechosNoEixo(
+        colecao(FEICAO_DO_EIXO),
+        [],
+        [],
+        [interdicao],
+      );
+
+      expect(resultado.features).toHaveLength(2);
+      const derivada = resultado.features[1];
+      expect(derivada.id).toBe("eixo:rdo:rdo-1");
+      expect(derivada.properties[PROPRIEDADE_DERIVADA]).toBe(true);
+      expect(derivada.properties.objetoId).toBe("rdo-1");
+      // Datada pelo dia do RDO: é o que faz o filtro "Ver o dia" encontrá-la.
+      expect(derivada.properties.validoDesde).toBe("2026-08-08");
+      // Sem linha de serviço não há para onde levar correção de km.
+      expect(derivada.properties.execucaoId).toBeUndefined();
+    });
+
+    /* A mesma regra reserva do servidor: com serviço posicionável, ela cede. */
+    it("cede a vez ao serviço do mesmo RDO que declara os dois km", () => {
+      const resultado = apoiarTrechosNoEixo(
+        colecao(FEICAO_DO_EIXO),
+        [segmento()],
+        [],
+        [interdicao],
+      );
+
+      expect(resultado.features).toHaveLength(2);
+      expect(resultado.features[1].id).toBe("eixo:seg-1");
+    });
+
+    it("não dobra o RDO que o servidor já desenha, nem o silenciado", () => {
+      const doServidor = {
+        type: "Feature" as const,
+        id: "eixo:rdo:rdo-1",
+        geometry: {
+          type: "LineString" as const,
+          coordinates: [
+            [0.4, 0],
+            [0.8, 0],
+          ],
+        },
+        properties: {
+          categoria: "TRECHO",
+          [PROPRIEDADE_DERIVADA]: true,
+          objetoTipo: "RDO",
+          objetoId: "rdo-1",
+        },
+      };
+
+      expect(
+        apoiarTrechosNoEixo(
+          colecao(FEICAO_DO_EIXO, doServidor),
+          [],
+          [],
+          [interdicao],
+        ).features,
+      ).toHaveLength(2);
+      expect(
+        apoiarTrechosNoEixo(
+          colecao(FEICAO_DO_EIXO),
+          [],
+          ["rdo-1"],
+          [interdicao],
+        ).features,
+      ).toHaveLength(1);
+    });
+
+    /* Sem eixo, ela entra na espera — era o vazio mudo do RDO do dia 8. */
+    it("sem eixo, espera a régua com a data do RDO", () => {
+      const espera = oQueEsperaARegua(colecao(), [], [], [interdicao]);
+
+      expect(espera?.motivo).toBe("SEM_EIXO");
+      expect(espera?.total).toBe(1);
+      expect(espera?.primeiraData).toBe("2026-08-08");
+    });
+
+    it("fora do eixo, espera dizendo a faixa da régua", () => {
+      const espera = oQueEsperaARegua(
+        colecao(FEICAO_DO_EIXO),
+        [],
+        [],
+        [{ ...interdicao, kmInicial: 200, kmFinal: 202 }],
+      );
+
+      expect(espera?.motivo).toBe("FORA_DO_EIXO");
+      expect(espera?.eixoKmInicial).toBe(100);
+    });
+
+    it("dentro do eixo, não espera nada", () => {
+      expect(
+        oQueEsperaARegua(colecao(FEICAO_DO_EIXO), [], [], [interdicao]),
+      ).toBeUndefined();
+    });
+  });
+
   /* O silêncio é de um RDO, não da obra: o vizinho continua desenhando. */
   it("cala só o RDO silenciado", () => {
     const resultado = apoiarTrechosNoEixo(

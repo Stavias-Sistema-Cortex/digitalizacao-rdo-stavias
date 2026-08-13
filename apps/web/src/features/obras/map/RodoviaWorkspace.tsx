@@ -56,6 +56,8 @@ import {
   oQueEsperaARegua,
 } from "./eixoDaObra";
 import { avisoDoQueEsperaARegua } from "./avisoDoQueEsperaARegua";
+import { interdicoesLocaisDaObra } from "../trecho/trechoLocal";
+import type { InterdicaoLocal } from "./eixoDaObra";
 import { corrigirKmPeloMapa } from "./corrigirKmPeloMapa";
 import type { SegmentoTrecho } from "../trecho/trechoGeometry";
 import { quilometroDigitado } from "../../../lib/numeros/quilometroDigitado";
@@ -322,6 +324,17 @@ export function RodoviaWorkspace({
    * voltaria para todo mundo menos para quem a silenciou.
    */
   const [silenciadasAgora, setSilenciadasAgora] = useState<string[]>([]);
+  /*
+   * As interdições declaradas nos RDOs deste aparelho.
+   *
+   * A linha derivada delas nunca entra no cache de geometrias, então sem rede
+   * — ou antes de o RDO subir — só esta leitura sabe que elas existem. A
+   * derivação local as desenha com a mesma identidade e a mesma regra reserva
+   * do servidor; online, o dedupe cala a cópia local.
+   */
+  const [interdicoesLocais, setInterdicoesLocais] = useState<
+    readonly InterdicaoLocal[]
+  >([]);
   const [aproximado, setAproximado] =
     useState<EnquadramentoAproximado | null>(null);
   const [ciclo, setCiclo] = useState(0);
@@ -375,6 +388,15 @@ export function RodoviaWorkspace({
 
   useEffect(() => {
     let cancelado = false;
+    interdicoesLocaisDaObra(obraId)
+      .then((interdicoes) => {
+        if (!cancelado) setInterdicoesLocais(interdicoes);
+      })
+      // Sem IndexedDB legível não há interdição local — e não há o que
+      // derrubar: o mapa segue com o que a leitura entregar.
+      .catch(() => {
+        if (!cancelado) setInterdicoesLocais([]);
+      });
     carregarMapaObra({ id: obraId, nome: obraNome, latitude, longitude })
       .then((leitura) => {
         if (cancelado) return;
@@ -461,8 +483,14 @@ export function RodoviaWorkspace({
         // aparelho redesenhava por conta própria a linha que o servidor
         // acabou de calar — e a substituta local nem lixeira tem.
         leituraVisivel?.dados.rdosComLinhaSilenciada ?? [],
+        interdicoesLocais,
       ),
-    [colecaoPersistida, segmentos, leituraVisivel?.dados.rdosComLinhaSilenciada],
+    [
+      colecaoPersistida,
+      segmentos,
+      leituraVisivel?.dados.rdosComLinhaSilenciada,
+      interdicoesLocais,
+    ],
   );
   const eixo = useMemo(
     () => lerEixoDaColecao(colecaoPersistida),
@@ -485,6 +513,7 @@ export function RodoviaWorkspace({
             colecaoPersistida,
             segmentos ?? [],
             leituraVisivel?.dados.rdosComLinhaSilenciada ?? [],
+            interdicoesLocais,
           ),
       ),
     [
@@ -492,6 +521,7 @@ export function RodoviaWorkspace({
       leituraVisivel?.dados.rdosComLinhaSilenciada,
       colecaoPersistida,
       segmentos,
+      interdicoesLocais,
     ],
   );
   // O recorte é decidido aqui, no pai dos dois mapas, e desce pronto para

@@ -50,6 +50,13 @@ export interface ApontamentoDeMaoDeObra {
   /** A frente: quem responde pelo RDO em que a pessoa foi apontada. */
   encarregado: string;
   rdoId: string;
+  /**
+   * O número do RDO, quando quem entregou o apontamento o conhece.
+   *
+   * <p>É o que dá à célula do dia o rastro de volta ao documento: a matriz
+   * responde "quem, onde, quando", e o número responde "segundo qual RDO".
+   */
+  numeroRdo?: string;
 }
 
 /** O que uma pessoa fez num dia, já com o dia repartido entre as obras. */
@@ -59,6 +66,13 @@ export interface DiaDoColaborador {
   obraIds: readonly string[];
   /** A fatia que coube a cada obra naquele dia: 1 dividido pelas obras. */
   fracaoPorObra: number;
+  /**
+   * Números dos RDOs que apontaram a pessoa neste dia, em ordem estável.
+   *
+   * <p>Vazio quando nenhum apontamento trouxe o número — a célula continua
+   * de pé, só sem o rastro.
+   */
+  rdos: readonly string[];
 }
 
 /** A linha de uma pessoa na matriz. */
@@ -184,6 +198,8 @@ interface AcumuladorDePessoa {
   encarregado: Votacao;
   /** data -> obras daquele dia (conjunto: o mesmo par não conta duas vezes). */
   obrasPorDia: Map<string, Set<string>>;
+  /** data -> números dos RDOs do dia, para a célula apontar o documento. */
+  rdosPorDia: Map<string, Set<string>>;
   primeiroNome: string;
 }
 
@@ -217,6 +233,7 @@ export function apurarRateio(
         funcao: new Votacao(),
         encarregado: new Votacao(),
         obrasPorDia: new Map(),
+        rdosPorDia: new Map(),
         primeiroNome: nome,
       };
       pessoas.set(chave, pessoa);
@@ -228,6 +245,13 @@ export function apurarRateio(
     const obrasDoDia = pessoa.obrasPorDia.get(data) ?? new Set<string>();
     obrasDoDia.add(obraId);
     pessoa.obrasPorDia.set(data, obrasDoDia);
+
+    const numeroRdo = texto(apontamento.numeroRdo);
+    if (numeroRdo) {
+      const rdosDoDia = pessoa.rdosPorDia.get(data) ?? new Set<string>();
+      rdosDoDia.add(numeroRdo);
+      pessoa.rdosPorDia.set(data, rdosDoDia);
+    }
   }
 
   const totaisPorObra = new Map<string, TotalDaObra>();
@@ -243,7 +267,8 @@ export function apurarRateio(
     for (const [data, obrasDoDia] of pessoa.obrasPorDia) {
       const obraIds = [...obrasDoDia].sort();
       const fracaoPorObra = 1 / obraIds.length;
-      dias.set(data, { data, obraIds, fracaoPorObra });
+      const rdos = [...(pessoa.rdosPorDia.get(data) ?? [])].sort();
+      dias.set(data, { data, obraIds, fracaoPorObra, rdos });
       diasComApontamento.add(data);
 
       for (const obraId of obraIds) {

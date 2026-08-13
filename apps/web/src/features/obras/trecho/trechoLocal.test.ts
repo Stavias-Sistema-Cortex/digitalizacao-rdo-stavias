@@ -5,6 +5,7 @@ import type {
   LocalRdoRecord,
 } from "../../../lib/db/db.types";
 import {
+  interdicaoDoRdoLocal,
   quilometroDeTexto,
   rodoviaDosRdosLocais,
   segmentosDoRdoLocal,
@@ -246,5 +247,65 @@ describe("rodoviaDosRdosLocais", () => {
 
   it("devolve nulo quando nenhum RDO declara rodovia", () => {
     expect(rodoviaDosRdosLocais([rdo({ payload: {} })])).toBeNull();
+  });
+});
+
+/*
+ * A interdição da Identificação é o km do RDO que não mora em serviço nenhum.
+ * Sem esta leitura, o RDO preenchido em campo — como o que declarou o km 200
+ * ao 202 — ficava invisível no mapa até subir e voltar do servidor.
+ */
+describe("interdicaoDoRdoLocal", () => {
+  it("lê o trecho interditado com número e data do RDO", () => {
+    const interdicao = interdicaoDoRdoLocal(
+      rdo({
+        payload: {
+          kmInicialInterditado: "200",
+          kmFinalInterditado: "202",
+        },
+      }),
+    );
+
+    expect(interdicao).toEqual({
+      rdoId: "rdo-local-1",
+      numeroRdo: "RDO-118",
+      data: "2026-03-09",
+      kmInicial: 200,
+      kmFinal: 202,
+    });
+  });
+
+  it("aceita o km com vírgula, como o campo digita", () => {
+    const interdicao = interdicaoDoRdoLocal(
+      rdo({
+        payload: {
+          kmInicialInterditado: "196,120",
+          kmFinalInterditado: "198",
+        },
+      }),
+    );
+
+    expect(interdicao?.kmInicial).toBeCloseTo(196.12, 3);
+  });
+
+  it("sem os dois extremos não há trecho", () => {
+    expect(
+      interdicaoDoRdoLocal(rdo({ payload: { kmInicialInterditado: "200" } })),
+    ).toBeNull();
+    expect(interdicaoDoRdoLocal(rdo({ payload: {} }))).toBeNull();
+  });
+
+  it("o RDO apagado não declara interdição nenhuma", () => {
+    expect(
+      interdicaoDoRdoLocal(
+        rdo({
+          canceladoEm: "2026-03-10T09:00:00.000Z",
+          payload: {
+            kmInicialInterditado: "200",
+            kmFinalInterditado: "202",
+          },
+        }),
+      ),
+    ).toBeNull();
   });
 });

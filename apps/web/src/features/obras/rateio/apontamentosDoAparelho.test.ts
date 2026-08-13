@@ -55,6 +55,7 @@ describe("apontamentos lidos dos RDOs do aparelho", () => {
         data: "2026-07-10",
         encarregado: "FRENTE A",
         rdoId: "rdo-1",
+        numeroRdo: "RDO-0001",
       },
     ]);
   });

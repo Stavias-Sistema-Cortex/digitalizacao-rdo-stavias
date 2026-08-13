@@ -324,6 +324,24 @@ export function kmDoPonto(
 }
 
 /**
+ * A interdição declarada na Identificação de um RDO deste aparelho.
+ *
+ * <p>É a mesma linha reserva que o servidor deriva: quando nenhum serviço do
+ * RDO declara quilômetro, o trecho interditado é o único km do dia. O
+ * servidor a desenha na leitura — mas a linha derivada nunca entra no cache
+ * de geometrias do aparelho, então sem rede ela simplesmente não existia, e o
+ * RDO preenchido em campo ficava invisível no mapa até subir e voltar.
+ */
+export interface InterdicaoLocal {
+  rdoId: string;
+  numeroRdo: string | null;
+  /** `YYYY-MM-DD` do RDO — é ela que o filtro de dia recorta. */
+  data: string | null;
+  kmInicial: number;
+  kmFinal: number;
+}
+
+/**
  * Um trecho só se apoia no eixo quando declara os dois quilômetros.
  * Um extremo isolado descreveria um ponto, não um trecho percorrido.
  */
@@ -402,6 +420,78 @@ export function feicoesApoiadasNoEixo(
 }
 
 /**
+ * RDOs cujos serviços declaram os dois quilômetros.
+ *
+ * <p>É a régua da regra reserva, a mesma do servidor: a interdição só desenha
+ * quando nenhum serviço do RDO tem km próprio — com serviço posicionável, a
+ * linha fina do serviço fala pelo dia, e a interdição por cima mostraria o
+ * mesmo trabalho duas vezes.
+ */
+function rdosComServicoPosicionavel(
+  segmentos: readonly SegmentoTrecho[],
+): Set<string> {
+  const rdos = new Set<string>();
+  for (const segmento of segmentos) {
+    if (
+      segmento.origem === "EXECUCAO_SERVICO" &&
+      segmento.rdoId &&
+      posicionavel(segmento)
+    ) {
+      rdos.add(segmento.rdoId);
+    }
+  }
+  return rdos;
+}
+
+/** As interdições que a derivação local deve tentar desenhar. */
+function interdicoesQueDesenham(
+  interdicoes: readonly InterdicaoLocal[],
+  segmentos: readonly SegmentoTrecho[],
+  jaNoMapa: ReadonlySet<string>,
+): InterdicaoLocal[] {
+  if (interdicoes.length === 0) return [];
+  const comServico = rdosComServicoPosicionavel(segmentos);
+  const vistas = new Set<string>();
+  return interdicoes.filter((interdicao) => {
+    if (!interdicao.rdoId || vistas.has(interdicao.rdoId)) return false;
+    vistas.add(interdicao.rdoId);
+    return (
+      !jaNoMapa.has(interdicao.rdoId) && !comServico.has(interdicao.rdoId)
+    );
+  });
+}
+
+/** A linha da interdição, com a mesma identidade que o servidor emite. */
+function feicaoDeInterdicao(
+  eixo: EixoDaObra,
+  interdicao: InterdicaoLocal,
+  recorte: readonly Coordenada[],
+): OperationalFeature {
+  return {
+    type: "Feature",
+    // A mesma identidade da derivação do servidor: a lixeira de silêncio fala
+    // dela pelo mesmo nome, esteja a linha vindo de lá ou daqui.
+    id: `eixo:rdo:${interdicao.rdoId}`,
+    geometry: { type: "LineString", coordinates: [...recorte] },
+    properties: {
+      categoria: "TRECHO",
+      [PROPRIEDADE_DERIVADA]: true,
+      eixoId: eixo.id,
+      objetoTipo: "RDO",
+      objetoId: interdicao.rdoId,
+      // Sem execucaoId de propósito: não há linha de serviço para onde levar
+      // uma correção de km — é o que desliga o lápis no balão.
+      numeroRdo: interdicao.numeroRdo,
+      kmInicial: interdicao.kmInicial,
+      kmFinal: interdicao.kmFinal,
+      fonte: "APONTAMENTO_RDO",
+      validoDesde: interdicao.data,
+      validoAte: null,
+    },
+  };
+}
+
+/**
  * RDOs que o mapa já mostra — desenhados à mão ou derivados pelo servidor.
  *
  * A mesma derivação roda na API, que é onde ela pertence: assim qualquer
@@ -456,6 +546,7 @@ export function oQueEsperaARegua(
   collection: OperationalFeatureCollection,
   segmentos: readonly SegmentoTrecho[],
   rdosSilenciados: readonly string[] = [],
+  interdicoes: readonly InterdicaoLocal[] = [],
 ): {
   motivo: "SEM_EIXO" | "FORA_DO_EIXO";
   total: number;
@@ -472,7 +563,8 @@ export function oQueEsperaARegua(
     ...rdosSilenciados,
   ]);
 
-  const esperando: SegmentoTrecho[] = [];
+  const esperando: { kmInicial: number; kmFinal: number; data: string | null }[] =
+    [];
   for (const segmento of segmentos) {
     if (segmento.origem === "PROGRAMACAO" || !posicionavel(segmento)) continue;
     if (segmento.rdoId && jaNoMapa.has(segmento.rdoId)) continue;
@@ -486,16 +578,40 @@ export function oQueEsperaARegua(
     ) {
       continue;
     }
-    esperando.push(segmento);
+    esperando.push({
+      kmInicial: segmento.kmInicial as number,
+      kmFinal: segmento.kmFinal as number,
+      data: segmento.data,
+    });
+  }
+  // A interdição espera a régua do mesmo jeito — é o caso do RDO que só
+  // declarou o trecho interditado da Identificação, e era exatamente o que a
+  // tela vazia escondia.
+  for (const interdicao of interdicoesQueDesenham(
+    interdicoes,
+    segmentos,
+    jaNoMapa,
+  )) {
+    if (
+      eixo &&
+      recortarEixoPorKm(eixo, interdicao.kmInicial, interdicao.kmFinal)
+    ) {
+      continue;
+    }
+    esperando.push({
+      kmInicial: interdicao.kmInicial,
+      kmFinal: interdicao.kmFinal,
+      data: interdicao.data,
+    });
   }
   if (esperando.length === 0) return undefined;
 
-  const quilometros = esperando.flatMap((segmento) => [
-    segmento.kmInicial as number,
-    segmento.kmFinal as number,
+  const quilometros = esperando.flatMap((espera) => [
+    espera.kmInicial,
+    espera.kmFinal,
   ]);
   const datas = esperando
-    .map((segmento) => segmento.data)
+    .map((espera) => espera.data)
     .filter((data): data is string => Boolean(data))
     .sort();
 
@@ -515,16 +631,34 @@ export function apoiarTrechosNoEixo(
   collection: OperationalFeatureCollection,
   segmentos: readonly SegmentoTrecho[],
   rdosSilenciados: readonly string[] = [],
+  interdicoes: readonly InterdicaoLocal[] = [],
 ): OperationalFeatureCollection {
   const eixo = lerEixoDaColecao(collection);
-  if (!eixo || segmentos.length === 0) {
+  if (!eixo || (segmentos.length === 0 && interdicoes.length === 0)) {
     return collection;
   }
-  const derivadas = feicoesApoiadasNoEixo(
-    eixo,
+  const excluidos = new Set([
+    ...rdosJaNoMapa(collection),
+    ...rdosSilenciados,
+  ]);
+  const derivadas = feicoesApoiadasNoEixo(eixo, segmentos, excluidos);
+  // A interdição vem depois dos serviços e cede a vez a eles: é a mesma linha
+  // reserva que o servidor desenha quando o RDO só declarou o km da
+  // Identificação.
+  for (const interdicao of interdicoesQueDesenham(
+    interdicoes,
     segmentos,
-    new Set([...rdosJaNoMapa(collection), ...rdosSilenciados]),
-  );
+    excluidos,
+  )) {
+    const recorte = recortarEixoPorKm(
+      eixo,
+      interdicao.kmInicial,
+      interdicao.kmFinal,
+    );
+    if (recorte) {
+      derivadas.push(feicaoDeInterdicao(eixo, interdicao, recorte));
+    }
+  }
   if (derivadas.length === 0) {
     return collection;
   }

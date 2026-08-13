@@ -203,6 +203,8 @@ export interface RdoParaRateio {
   id: string;
   obraId: string;
   dataRdo: string;
+  /** O número do documento, para a célula do rateio apontar de volta. */
+  numeroRdo?: string | null;
   payload: Record<string, unknown>;
 }
 
@@ -234,6 +236,7 @@ export function apontamentosDoRdo(
       data: registro.dataRdo,
       encarregado,
       rdoId: registro.id,
+      numeroRdo: texto(registro.numeroRdo),
     });
   }
 
@@ -263,6 +266,7 @@ export function apontamentosDoRdo(
       data: registro.dataRdo,
       encarregado,
       rdoId: registro.id,
+      numeroRdo: texto(registro.numeroRdo),
     });
   }
 

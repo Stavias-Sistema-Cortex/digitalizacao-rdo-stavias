@@ -40,6 +40,7 @@ describe("a leitura da resposta do servidor", () => {
         data: "2026-07-10",
         encarregado: "FRENTE A",
         rdoId: "rdo-1",
+        numeroRdo: "RDO-0001",
       },
       // Quem assina o documento entra pelo mesmo núcleo dos dois lados: se só
       // o caminho local o contasse, o mesmo mês mudaria de gente ao entrar e
@@ -53,6 +54,7 @@ describe("a leitura da resposta do servidor", () => {
         data: "2026-07-10",
         encarregado: "FRENTE A",
         rdoId: "rdo-1",
+        numeroRdo: "RDO-0001",
       },
     ]);
   });

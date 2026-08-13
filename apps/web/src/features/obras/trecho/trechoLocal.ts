@@ -5,6 +5,7 @@ import type {
   LocalRdoRecord,
 } from "../../../lib/db/db.types";
 import { herdarPistaDoControle, type SegmentoTrecho } from "./trechoGeometry";
+import type { InterdicaoLocal } from "../map/eixoDaObra";
 
 /**
  * O que o apontador lançou no RDO e ainda não subiu.
@@ -171,6 +172,59 @@ export function rodoviaDosRdosLocais(
 export interface LancamentosLocais {
   segmentos: SegmentoTrecho[];
   rodovia: string | null;
+}
+
+/**
+ * A interdição declarada na Identificação, lida de um RDO do aparelho.
+ *
+ * <p>Regra reserva idêntica à do servidor: quando algum serviço do RDO
+ * declara os dois quilômetros, a interdição cede a vez — desenhá-la por cima
+ * mostraria o mesmo dia duas vezes. Aqui só a leitura do documento; quem
+ * decide desenhar é a derivação do mapa, com a mesma regra dos segmentos.
+ */
+export function interdicaoDoRdoLocal(
+  rdo: LocalRdoRecord,
+): InterdicaoLocal | null {
+  if (rdo.canceladoEm || rdo.statusRdo === "CANCELADA") {
+    return null;
+  }
+  const payload = objeto(rdo.payload);
+  const kmInicial = quilometroDeTexto(payload.kmInicialInterditado);
+  const kmFinal = quilometroDeTexto(payload.kmFinalInterditado);
+  if (kmInicial === null || kmFinal === null) {
+    return null;
+  }
+  return {
+    rdoId: rdo.id,
+    numeroRdo: rdo.numeroRdo || texto(payload.numeroRdo),
+    data: rdo.dataRdo || texto(payload.dataRdo),
+    kmInicial,
+    kmFinal,
+  };
+}
+
+/**
+ * As interdições declaradas nos RDOs desta obra que o aparelho conhece.
+ *
+ * <p>Diferente dos segmentos, o RDO já sincronizado NÃO fica de fora. Os
+ * segmentos podem ignorá-lo porque a projeção do servidor os devolve — mas a
+ * linha derivada da interdição nunca entra no cache de geometrias, então sem
+ * rede ela só existe se for lida daqui. Online não há dobra: a derivação pula
+ * o RDO que o servidor já desenha.
+ */
+export async function interdicoesLocaisDaObra(
+  obraId: string,
+): Promise<InterdicaoLocal[]> {
+  const database = await getCortexDb();
+  const rdos = await database.getAllFromIndex("rdos", "by-obra-id", obraId);
+  const interdicoes: InterdicaoLocal[] = [];
+  for (const rdo of rdos) {
+    const interdicao = interdicaoDoRdoLocal(rdo);
+    if (interdicao) {
+      interdicoes.push(interdicao);
+    }
+  }
+  return interdicoes;
 }
 
 /**

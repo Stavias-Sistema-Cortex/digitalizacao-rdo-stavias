@@ -307,6 +307,34 @@ describe("rateio de mão de obra", () => {
   });
 });
 
+/*
+ * A célula do dia precisa apontar de volta ao documento: quem confere um dia
+ * do rateio quer abrir o RDO que o sustenta, e caçá-lo pela data era o único
+ * caminho.
+ */
+describe("o rastro do RDO no dia", () => {
+  it("junta os números dos RDOs do dia, sem repetir", () => {
+    const rateio = apurarRateio([
+      apontamento({ data: "2026-07-10", obraId: "obra-a", numeroRdo: "RDO-1" }),
+      apontamento({ data: "2026-07-10", obraId: "obra-a", numeroRdo: "RDO-1" }),
+      apontamento({ data: "2026-07-10", obraId: "obra-b", numeroRdo: "RDO-2" }),
+    ]);
+
+    expect(rateio.colaboradores[0].dias.get("2026-07-10")?.rdos).toEqual([
+      "RDO-1",
+      "RDO-2",
+    ]);
+  });
+
+  it("sem número, o dia fica de pé com o rastro vazio", () => {
+    const rateio = apurarRateio([
+      apontamento({ data: "2026-07-10", obraId: "obra-a" }),
+    ]);
+
+    expect(rateio.colaboradores[0].dias.get("2026-07-10")?.rdos).toEqual([]);
+  });
+});
+
 describe("o calendário do período", () => {
   it("abre todos os dias do mês, inclusive os parados", () => {
     const dias = diasDoPeriodo("2026-07-01", "2026-07-31");

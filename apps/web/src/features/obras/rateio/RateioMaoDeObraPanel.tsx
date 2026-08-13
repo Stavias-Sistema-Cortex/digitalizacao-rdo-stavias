@@ -646,6 +646,14 @@ function MatrizDoRateio({
                     const nomes = visiveis
                       .map((obraId) => nomePorObra.get(obraId) ?? obraId)
                       .join(" e ");
+                    // O rastro de volta ao documento: a matriz responde quem,
+                    // onde e quando; o número do RDO responde "segundo qual
+                    // RDO" — sem ele, conferir um dia exigia caçar o documento
+                    // pela data.
+                    const rdosDoDia = (registro?.rdos ?? []).join(", ");
+                    const rotulo = rdosDoDia
+                      ? `${dia.slice(8)}: ${nomes} · ${rdosDoDia}`
+                      : `${dia.slice(8)}: ${nomes}`;
                     return (
                       <td
                         key={dia}
@@ -657,9 +665,9 @@ function MatrizDoRateio({
                         style={corDoDia(
                           visiveis.map((obraId) => cores.get(obraId) ?? 1),
                         )}
-                        title={`${dia.slice(8)}: ${nomes}`}
+                        title={rotulo}
                       >
-                        <span className="visually-hidden">{nomes}</span>
+                        <span className="visually-hidden">{rotulo}</span>
                       </td>
                     );
                   })}
