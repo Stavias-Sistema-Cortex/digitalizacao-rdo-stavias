@@ -864,6 +864,7 @@ export interface MemorySearchDocumentRecord {
     conflictFields: string[];
     canReconcile: boolean;
     unavailableReason:
+      | "SUPERSEDED_BY_LOCAL_EDIT"
       | "REJECTED"
       | "LOCAL_EVIDENCE_UNAVAILABLE"
       | "REMOTE_SNAPSHOT_UNAVAILABLE"

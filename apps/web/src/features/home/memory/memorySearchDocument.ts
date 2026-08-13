@@ -50,6 +50,16 @@ export interface MemoryTraceMetadata {
 }
 
 export type MemoryReviewUnavailableReason =
+  /**
+   * O envelope anterior foi trocado pela edição seguinte da própria pessoa.
+   *
+   * <p>Não é recusa de ninguém: o Córtex substitui o envelope na fila para não
+   * subir duas versões concorrentes do mesmo registro, e a edição nova segue
+   * inteira. Só existe como razão separada porque tratá-la como rejeição fazia
+   * a Memória gritar "Revisão necessária" sobre um gesto que deu certo — e
+   * quem lia concluía, com toda razão, que tinha perdido trabalho.
+   */
+  | "SUPERSEDED_BY_LOCAL_EDIT"
   | "REJECTED"
   | "LOCAL_EVIDENCE_UNAVAILABLE"
   | "REMOTE_SNAPSHOT_UNAVAILABLE"
@@ -436,6 +446,23 @@ function localReview(
   const conflictFields = safeFieldNames(
     resolution?.conflicts.map((conflict) => conflict.field) ?? [],
   );
+  if (foiSubstituidaPelaEdicaoSeguinte(mutation)) {
+    return {
+      status,
+      clientMutationId:
+        event.clientMutationId ?? mutation?.clientMutationId ?? null,
+      baseVersion: safeVersion(canonical?.baseVersion ?? mutation?.baseVersao),
+      eventVersion: safeVersion(event.entityVersion),
+      remoteVersion,
+      localStateAvailable: isRecord(event.newState),
+      remoteStateAvailable: remote.complete,
+      changedFields,
+      conflictFields,
+      canReconcile: false,
+      unavailableReason: "SUPERSEDED_BY_LOCAL_EDIT",
+    };
+  }
+
   const unavailableReason = reconciliationUnavailableReason({
     status,
     mutation: canonical,
@@ -460,6 +487,20 @@ function localReview(
     canReconcile: unavailableReason === null,
     unavailableReason,
   };
+}
+
+/**
+ * A marca que o coordenador deixa ao trocar o envelope por causa de uma edição
+ * nova. Vem em duas formas porque as duas são gravadas juntas; basta uma.
+ */
+function foiSubstituidaPelaEdicaoSeguinte(
+  mutation: OutboxMutationRecord | null | undefined,
+): boolean {
+  if (!mutation) return false;
+  return (
+    mutation.lastSafeCode === "SUPERSEDED_BY_LOCAL_EDIT" ||
+    (mutation.blockedReason ?? "").startsWith("SUPERSEDED_BY:")
+  );
 }
 
 function reconciliationUnavailableReason(input: {

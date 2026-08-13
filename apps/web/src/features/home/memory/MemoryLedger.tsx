@@ -266,13 +266,29 @@ export function MemoryLedgerView({
 
       {reviewItems.length > 0 ? (
         <section
-          className="memory-review"
+          className={
+            // Substituição por edição própria não é pendência: chamá-la de
+            // "Revisão necessária", em vermelho, fazia quem editou concluir
+            // que tinha perdido o trabalho. O recorte só alarma quando há algo
+            // de fato parado esperando decisão humana.
+            soSubstituicoes(reviewItems)
+              ? "memory-review memory-review--substituicao"
+              : "memory-review"
+          }
           aria-labelledby="memory-review-title"
         >
           <header>
             <div>
-              <span>Evidência terminal preservada</span>
-              <h3 id="memory-review-title">Revisão necessária</h3>
+              <span>
+                {soSubstituicoes(reviewItems)
+                  ? "Histórico da fila"
+                  : "Evidência terminal preservada"}
+              </span>
+              <h3 id="memory-review-title">
+                {soSubstituicoes(reviewItems)
+                  ? "Envelopes substituídos por edição sua"
+                  : "Revisão necessária"}
+              </h3>
             </div>
             <span>{reviewItems.length} no recorte visível</span>
           </header>
@@ -503,6 +519,21 @@ function dateInputValue(value: string | undefined): string {
   return value?.slice(0, 10) ?? "";
 }
 
+/**
+ * O recorte inteiro é só troca de envelope pela edição seguinte?
+ *
+ * <p>Nesse caso não há decisão humana pendente: a versão nova já está na fila
+ * com o trabalho completo. O bloco então narra histórico, não alarme.
+ */
+function soSubstituicoes(
+  itens: readonly MemorySearchDocument[],
+): boolean {
+  return itens.every(
+    (item) =>
+      item.review?.unavailableReason === "SUPERSEDED_BY_LOCAL_EDIT",
+  );
+}
+
 function versionLabel(version: number | null): string {
   return version === null ? "Não informada" : String(version);
 }
@@ -511,6 +542,8 @@ function reviewReason(
   reason: NonNullable<MemorySearchDocument["review"]>["unavailableReason"],
 ): string {
   const reasons: Record<NonNullable<typeof reason>, string> = {
+    SUPERSEDED_BY_LOCAL_EDIT:
+      "Este envelope foi substituído pela sua edição seguinte. Nada se perdeu: a versão que vale é a mais nova, e é ela que sobe.",
     REJECTED: "A alteração foi rejeitada; a evidência permanece somente para revisão.",
     LOCAL_EVIDENCE_UNAVAILABLE:
       "A evidência canônica local necessária não está disponível.",

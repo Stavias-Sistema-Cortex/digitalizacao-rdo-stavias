@@ -730,3 +730,12 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Substituição por edição própria narra histórico: sem a borda de alarme. */
+.memory-review--substituicao {
+  border-left-color: var(--color-line);
+}
+
+.memory-review--substituicao h3 {
+  color: var(--color-ink);
+}
