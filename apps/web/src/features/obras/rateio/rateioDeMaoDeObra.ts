@@ -83,6 +83,22 @@ export interface RateioDeColaborador {
   nome: string;
   funcao: string;
   encarregado: string;
+  /**
+   * Esta pessoa é a frente que nomeia o próprio bloco.
+   *
+   * <p>A frente quase nunca tem nome próprio: o campo "encarregado" do RDO é
+   * texto livre e costuma vir vazio, e aí o rateio a nomeia pela pessoa que
+   * responde por ela — quem tem cargo de encarregado na equipe, ou, no último
+   * caso, quem assinou o documento. Quando essa pessoa também está apontada, e
+   * ela quase sempre está, o mesmo nome saía duas vezes na tela, coladas: uma
+   * como título do bloco e outra como linha, sem nada explicando a repetição.
+   *
+   * <p>Marcada aqui, a linha dispensa o título — ela mesma abre o bloco e diz
+   * que responde pela frente. O título continua existindo para a frente que
+   * tem nome próprio ("FRENTE A", vinda da importação) e para quem não tem
+   * frente declarada, que são os casos em que ele acrescenta alguma coisa.
+   */
+  respondePelaFrente: boolean;
   /** Dias em que a pessoa aparece em algum RDO do período. */
   diasApontados: number;
   /** Por data (`YYYY-MM-DD`), o que a pessoa fez naquele dia. */
@@ -349,12 +365,21 @@ export function apurarRateio(
       );
     }
 
+    const nome = pessoa.nome.vencedor() || pessoa.primeiroNome;
+    const encarregado = pessoa.encarregado.vencedor();
+
     colaboradores.push({
       chave: pessoa.chave,
       colaboradorId: pessoa.colaboradorId,
-      nome: pessoa.nome.vencedor() || pessoa.primeiroNome,
+      nome,
       funcao: pessoa.funcao.vencedor(),
-      encarregado: pessoa.encarregado.vencedor(),
+      encarregado,
+      // Pela mesma régua de nome que o resto do módulo usa: a frente vem do
+      // campo do RDO ou do cargo da equipe, e as duas grafias do mesmo nome
+      // precisam se reconhecer, senão a repetição escapa e volta à tela.
+      respondePelaFrente:
+        encarregado !== "" &&
+        normalizarNome(encarregado) === normalizarNome(nome),
       diasApontados,
       dias,
       diasPorObra,
@@ -393,6 +418,11 @@ export function apurarRateio(
  * <p>É como a planilha era lida — cada encarregado conferindo o próprio bloco.
  * Quem não tem frente declarada vai para o fim, junto, em vez de se espalhar
  * entre os blocos de quem tem.
+ *
+ * <p>Dentro do bloco, quem responde pela frente encabeça. Não é hierarquia: é
+ * que o bloco perdeu o título quando o título era o nome dela repetido, e
+ * alguém precisa abri-lo. Se ela caísse no meio da ordem alfabética, o bloco
+ * começaria sem dizer de quem é.
  */
 function compararLinhas(
   a: RateioDeColaborador,
@@ -402,6 +432,9 @@ function compararLinhas(
     if (!a.encarregado) return 1;
     if (!b.encarregado) return -1;
     return a.encarregado.localeCompare(b.encarregado, "pt-BR");
+  }
+  if (a.respondePelaFrente !== b.respondePelaFrente) {
+    return a.respondePelaFrente ? -1 : 1;
   }
   return a.nome.localeCompare(b.nome, "pt-BR");
 }

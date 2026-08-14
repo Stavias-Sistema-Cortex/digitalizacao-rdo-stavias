@@ -392,4 +392,66 @@ describe("a tela do rateio", () => {
       await screen.findByRole("button", { name: /Exportar planilha/ }),
     ).toBeDisabled();
   });
+
+  /*
+   * A frente quase nunca tem nome próprio: o campo do RDO vem vazio e o rateio
+   * a nomeia pela pessoa que responde por ela — o encarregado da equipe, ou
+   * quem assinou o documento. Quando essa pessoa também está apontada, e ela
+   * quase sempre está, o mesmo nome saía duas vezes, coladas: título do bloco
+   * e linha logo abaixo, sem nada explicando a repetição.
+   */
+  it("não repete o nome quando a frente é a própria pessoa", async () => {
+    mocks.lerLocal.mockResolvedValue(
+      leitura([
+        apontamento("2026-07-14", "obra-a", {
+          nome: "HENRIQUE DE SOUZA RUFINO",
+          funcao: "",
+          encarregado: "HENRIQUE DE SOUZA RUFINO",
+        }),
+      ]),
+    );
+
+    render(<RateioMaoDeObraPanel obras={OBRAS} mesInicial="2026-07" />);
+
+    const linha = await screen.findByRole("row", {
+      name: /HENRIQUE DE SOUZA RUFINO/,
+    });
+    const tabela = screen.getByRole("table");
+    expect(
+      within(tabela).getAllByText(/HENRIQUE DE SOUZA RUFINO/),
+    ).toHaveLength(1);
+    // A linha diz por que carrega o nome da frente, no lugar do título sumido.
+    expect(within(linha).getByText(/responde pela frente/)).toBeInTheDocument();
+  });
+
+  /*
+   * O título continua existindo onde acrescenta alguma coisa: a frente com
+   * nome próprio, vinda da importação, e quem não tem frente declarada.
+   */
+  it("mantém o título da frente que não é uma pessoa da lista", async () => {
+    mocks.lerLocal.mockResolvedValue(
+      leitura([
+        apontamento("2026-07-01", "obra-a", {
+          colaboradorId: "col-1",
+          nome: "PESSOA UM",
+          encarregado: "FRENTE A",
+        }),
+        apontamento("2026-07-02", "obra-a", {
+          colaboradorId: "col-2",
+          nome: "PESSOA DOIS",
+          encarregado: "",
+        }),
+      ]),
+    );
+
+    render(<RateioMaoDeObraPanel obras={OBRAS} mesInicial="2026-07" />);
+
+    await screen.findByRole("row", { name: /PESSOA UM/ });
+    const tabela = screen.getByRole("table");
+    expect(within(tabela).getByText("FRENTE A")).toBeInTheDocument();
+    expect(
+      within(tabela).getByText("Sem frente declarada"),
+    ).toBeInTheDocument();
+    expect(within(tabela).queryByText(/responde pela frente/)).toBeNull();
+  });
 });
