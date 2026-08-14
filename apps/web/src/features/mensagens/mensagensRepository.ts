@@ -21,7 +21,7 @@ import {
   type ConversationPreview,
 } from "./mensagensView";
 import { guardSyncTransaction } from "../../lib/sync/guardedSyncTransaction";
-import { LOCAL_MUTATION_QUEUED_EVENT } from "../../lib/sync/localMutationCoordinator";
+import { anunciarEscritaLocal } from "../../lib/sync/localMutationCoordinator";
 import {
   assertSyncSession,
   type SyncSessionGuard,
@@ -619,9 +619,3 @@ export function emitMessagesChanged(): void {
   }
 }
 
-/** Avisa o agendador que há trabalho novo na fila, como toda escrita local. */
-function anunciarEscritaLocal(): void {
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(LOCAL_MUTATION_QUEUED_EVENT));
-  }
-}

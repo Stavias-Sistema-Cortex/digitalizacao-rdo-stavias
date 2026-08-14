@@ -61,6 +61,7 @@ import {
 } from "../sync/syncExecutionLease";
 import {
   assertCanonicalMutationEventProvenance,
+  encerrarLinhaSemSubir,
   MAO_OBRA_SEM_VINCULO_EXIGE_DECISAO,
 } from "../sync/syncStorage";
 import { getSession } from "../../features/auth/authSession";
@@ -69,6 +70,7 @@ import {
   updateSyncState,
 } from "./syncStateRepository";
 import {
+  anunciarEscritaLocal,
   commitLocalMutation,
   type LocalMutationDomainWrite,
 } from "../sync/localMutationCoordinator";
@@ -105,6 +107,27 @@ export function canCoalesceLegacyRdoMutation(
     mutation.status === "PENDING" &&
     mutation.tentativas === 0 &&
     mutation.ultimaTentativaEm === null;
+}
+
+/**
+ * Aborta a transação e consome a rejeição que o aborto produz.
+ *
+ * <p>`transaction.done` rejeita com `AbortError` quando a transação é abortada.
+ * Ninguém aguarda essa promessa no caminho de recusa — o código lança em
+ * seguida —, então ela vira rejeição não tratada: ruído que o vitest conta como
+ * erro da suíte e que, no navegador, aparece no console como se algo tivesse
+ * quebrado. O aborto aqui é decisão, não falha; consumir a rejeição é dizer
+ * isso ao ambiente. A mensagem de verdade vai no `throw` de quem chama.
+ */
+async function abortarSemRuido(
+  transaction: { abort: () => void; done: Promise<unknown> },
+): Promise<void> {
+  try {
+    transaction.abort();
+  } catch {
+    // Uma requisição que já falhou pode ter abortado a transação antes.
+  }
+  await transaction.done.catch(() => undefined);
 }
 
 interface RdoChildStoreWriter {
@@ -4700,20 +4723,51 @@ export async function saveExistingRdoDraftAtomically(
     await rdoStore.get(draft.id);
 
   if (!existingRdo) {
-    transaction.abort();
+    await abortarSemRuido(transaction);
 
     throw new Error(
       `O RDO local ${draft.id} não foi encontrado.`,
     );
   }
 
+  /*
+   * Conflito não é fim de linha — é o servidor dizendo que a versão-base
+   * envelheceu. O motor já preparou a saída: `rdoAfterConflict` adota a versão
+   * atual informada pelo servidor no registro local exatamente para que, nas
+   * palavras do próprio comentário de lá, "a próxima edição do usuário
+   * ... recupere a sincronização".
+   *
+   * Recusar a edição aqui era o que impedia essa recuperação de acontecer. E o
+   * preço não era um aviso a mais na tela: quem estava com o RDO aberto e uma
+   * correção digitada perdia o direito de gravá-la. A correção não sumia — ela
+   * ficava presa no formulário, sem poder ir para o banco e sem existir em
+   * nenhum outro lugar. Bastava fechar a aba para acabar. A única saída
+   * oferecida era o descarte, na Memória, que joga fora exatamente o trabalho
+   * que a pessoa está tentando salvar.
+   *
+   * O que a edição seguinte faz é decidir. A tela já mostra a versão do
+   * servidor — `applyPersistedRdo` a trouxe quando o conflito chegou —, então
+   * salvar por cima dela é a pessoa dizendo "vi o que veio e é isto que vale".
+   * A linha morta do conflito sai da fila e o rastro dela fica na Memória
+   * marcado como substituído, que é o que de fato aconteceu: não houve
+   * abandono, houve reescrita.
+   *
+   * Sem versão do servidor, porém, não há decisão possível: a base que subiria
+   * seria a mesma que já conflitou, e o RDO voltaria ao conflito no ciclo
+   * seguinte — trocaríamos um beco visível por um laço silencioso. Nesse caso a
+   * recusa continua, porque continua verdadeira, e agora diz o que fazer.
+   */
+  const resolvendoConflito =
+    existingRdo.syncStatus === "CONFLICT";
+
   if (
-    existingRdo.syncStatus === "CONFLICT"
+    resolvendoConflito &&
+    existingRdo.versaoEntidade === null
   ) {
-    transaction.abort();
+    await abortarSemRuido(transaction);
 
     throw new Error(
-      "Este RDO possui um conflito pendente. Resolva o conflito antes de editar.",
+      "Este RDO está em conflito e o servidor ainda não informou a versão atual. Sincronize para receber a versão do servidor e edite em seguida.",
     );
   }
 
@@ -4769,7 +4823,7 @@ export async function saveExistingRdoDraftAtomically(
     if (
       existingRdo.versaoEntidade === null
     ) {
-      transaction.abort();
+      await abortarSemRuido(transaction);
 
       throw new Error(
         "O RDO já existe no servidor, mas sua versão local não foi registrada. A sincronização precisa salvar versaoEntidade antes de permitir esta atualização.",
@@ -4871,7 +4925,47 @@ export async function saveExistingRdoDraftAtomically(
     ),
   ]);
 
+  /*
+   * As linhas mortas saem depois de a nova estar gravada, e na mesma
+   * transação: se algo falhar no meio, o RDO continua em conflito com a sua
+   * linha, que é um estado ruim mas verdadeiro — melhor do que um RDO sem
+   * conflito e sem a edição que deveria resolvê-lo.
+   *
+   * Só o conflito é aposentado. Uma linha em SYNCING está no ar e o resultado
+   * dela ainda vai chegar; uma PENDING é trabalho que ainda vai subir, e a
+   * coalescência logo acima já cuidou dela. Apagar qualquer uma das duas aqui
+   * seria perder envio alheio a pretexto de limpar o impasse.
+   */
+  if (resolvendoConflito) {
+    for (const morta of entityMutations) {
+      if (morta.status !== "CONFLICT") continue;
+      if (morta.clientMutationId === mutation.clientMutationId) continue;
+      await encerrarLinhaSemSubir(
+        { outbox: outboxStore, eventos: eventStore },
+        morta,
+        {
+          result: "SUPERSEDED",
+          syncStatus: "LOCAL_ONLY",
+          errorCategory: "SUPERSEDED_BY_LOCAL_EDIT",
+        },
+      );
+    }
+  }
+
   await transaction.done;
+
+  /*
+   * O aviso vem depois do commit, e não antes: o agendador pode começar o ciclo
+   * no mesmo instante, e ele precisa achar a fila no estado que esta transação
+   * acabou de deixar.
+   *
+   * Sem esta linha a edição de um RDO já sincronizado era a única escrita de
+   * usuário do Córtex que não acordava o motor — a criação passa pelo
+   * coordenador e avisa, esta monta o envelope na mão e ficava calada. Quem
+   * corrigia um RDO no fim do dia e fechava o navegador em seguida saía com a
+   * correção gravada no aparelho e nada no servidor, até reabrir o aplicativo.
+   */
+  anunciarEscritaLocal();
 
   return {
     rdo: updatedRdo,
@@ -5043,4 +5137,31 @@ export async function saveRdoDraftAtomically(
   }
 
   return saveNewRdoDraftAtomically(draft);
+}
+
+/**
+ * O rascunho na tela diz algo que o banco ainda não diz?
+ *
+ * <p>A pergunta existe para quem vai sincronizar: enviar sem gravar antes sobe
+ * o estado antigo e deixa a correção na tela para trás, mas gravar sempre — até
+ * quando nada mudou — enfileira uma edição vazia, que o servidor aplica, que
+ * consome uma versão da entidade e que aparece na Memória como se alguém
+ * tivesse mexido no RDO. Um botão de sincronizar apertado três vezes viraria
+ * três edições inventadas.
+ *
+ * <p>A comparação é feita sobre exatamente o que o salvamento gravaria, contra
+ * exatamente o que está gravado, em JSON canônico — ordem de chave não conta,
+ * só o conteúdo. Um RDO que ainda não existe no banco conta como diferente:
+ * não há o que comparar, e há o que gravar.
+ */
+export async function rascunhoDifereDoQueEstaGravado(
+  draft: RdoDraft,
+): Promise<boolean> {
+  const database = await getCortexDb();
+  const existingRdo = await database.get("rdos", draft.id);
+
+  if (!existingRdo) return true;
+
+  return canonicalMutationJson(buildRdoLocalPayload(draft)) !==
+    canonicalMutationJson(existingRdo.payload);
 }

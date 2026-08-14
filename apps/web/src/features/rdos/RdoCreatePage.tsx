@@ -19,6 +19,7 @@ import {
   putRdoAttachment,
 } from "../../lib/db/rdoAttachmentRepository";
 import { getLocalRdo } from "../../lib/db/rdoRepository";
+import { rascunhoDifereDoQueEstaGravado } from "../../lib/db/localRdoService";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 import type {
@@ -1006,6 +1007,30 @@ export function RdoCreatePage({
   }
 
   async function handleSyncNow() {
+    /*
+     * Sincronizar é mandar embora o que está na tela — e o que está na tela só
+     * sai daqui se estiver gravado. Antes disto o botão enviava a última versão
+     * salva e devolvia "sincronização concluída" para quem tinha acabado de
+     * digitar algo que continuava sem sair do aparelho: a frase era verdadeira
+     * sobre a fila e falsa sobre a intenção de quem apertou.
+     *
+     * Grava só quando há diferença. Gravar sempre enfileiraria uma edição vazia
+     * a cada toque no botão — versão consumida no servidor e linha inventada na
+     * Memória, por nada.
+     *
+     * Se a gravação falhar, não sincroniza. Subir o estado antigo depois de a
+     * pessoa ver um erro de salvamento seria a pior das duas metades: ela fica
+     * achando que mandou o que está vendo.
+     */
+    try {
+      if (await rascunhoDifereDoQueEstaGravado(draft)) {
+        await saveLocally(draft);
+      }
+    } catch {
+      // O hook já registra e exibe o erro do salvamento.
+      return;
+    }
+
     try {
       await synchronize();
     } catch {

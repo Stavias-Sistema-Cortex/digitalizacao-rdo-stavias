@@ -4802,6 +4802,70 @@ export async function rejectMutationLocally(
 }
 
 /**
+ * O desfecho carimbado nos eventos de uma linha que sai da fila sem subir.
+ *
+ * <p>São dois, e a diferença entre eles é a intenção de quem os provoca.
+ * `DISCARDED` é abrir mão: a pessoa olhou o impasse e escolheu a versão do
+ * servidor. `SUPERSEDED` é reescrever: a pessoa não abandonou o trabalho, ela
+ * o refez por cima do que o servidor tinha. Confundir os dois faria a Memória
+ * contar a história errada — "descartado" para quem não descartou nada.
+ */
+export interface DesfechoDeLinhaEncerrada {
+  result: "DISCARDED" | "SUPERSEDED";
+  syncStatus: "SYNC_FAILED" | "LOCAL_ONLY";
+  errorCategory: string;
+}
+
+interface LojasDeEncerramento {
+  outbox: { delete: (key: string) => Promise<void> };
+  eventos: {
+    index: (name: "by-client-mutation-id") => {
+      getAll: (query: string) => Promise<OperationalEventRecord[]>;
+    };
+    get: (key: string) => Promise<OperationalEventRecord | undefined>;
+    put: (value: OperationalEventRecord) => Promise<IDBValidKey>;
+  };
+}
+
+/**
+ * Tira da fila uma linha que não vai subir, preservando a evidência dela.
+ *
+ * <p>O que sai é a intenção de escrita; o que fica é o rastro. Quem for
+ * auditar depois continua vendo que a edição existiu, quando foi feita e qual
+ * foi o seu desfecho. Apagar o rastro para limpar um aviso seria trocar um
+ * incômodo de tela por um buraco no histórico.
+ *
+ * <p>Os eventos são alcançados por dois caminhos porque as duas gerações de
+ * envelope os prendem de formas diferentes: o canônico pelo índice
+ * `by-client-mutation-id`, o legado nomeando-os dentro do próprio payload. Sem
+ * o segundo caminho, encerrar uma linha legada deixava os eventos órfãos como
+ * "falha no envio" para sempre — sem fila que os reenviasse e sem decisão que
+ * os alcançasse.
+ */
+export async function encerrarLinhaSemSubir(
+  lojas: LojasDeEncerramento,
+  mutation: OutboxMutationRecord,
+  desfecho: DesfechoDeLinhaEncerrada,
+): Promise<void> {
+  await lojas.outbox.delete(mutation.clientMutationId);
+
+  const events = await lojas.eventos
+    .index("by-client-mutation-id")
+    .getAll(mutation.clientMutationId);
+  for (const event of events) {
+    await lojas.eventos.put({ ...event, ...desfecho });
+  }
+
+  const carimbados = new Set(events.map((event) => event.id));
+  for (const eventId of mutationOperationalEventIds(mutation)) {
+    if (carimbados.has(eventId)) continue;
+    const legacyEvent = await lojas.eventos.get(eventId);
+    if (!legacyEvent || legacyEvent.syncStatus === "SYNCED") continue;
+    await lojas.eventos.put({ ...legacyEvent, ...desfecho });
+  }
+}
+
+/**
  * Descarta a edição local presa em conflito, mantendo a versão do servidor.
  *
  * <p>Quando os dois lados alteram o mesmo campo, não existe fusão automática
@@ -4848,39 +4912,16 @@ export async function descartarEdicaoEmConflito(
     return null;
   }
   const timestamp = nowUtc();
-  await outbox.delete(clientMutationId);
-
   const eventStore = transaction.objectStore("operational_events");
-  const events = await eventStore
-    .index("by-client-mutation-id")
-    .getAll(clientMutationId);
-  for (const event of events) {
-    await eventStore.put({
-      ...event,
+  await encerrarLinhaSemSubir(
+    { outbox, eventos: eventStore },
+    mutation,
+    {
       result: "DISCARDED",
       syncStatus: "SYNC_FAILED",
       errorCategory: "VERSION_CONFLICT_DISCARDED",
-    });
-  }
-  /*
-   * A mutação legada não liga seus eventos pelo índice: ela os nomeia no
-   * payload. Sem carimbá-los aqui, o descarte apagava a mutação e deixava os
-   * eventos órfãos como "falha no envio" para sempre — sem fila que os
-   * reenviasse e sem decisão que os alcançasse. O rastro fica, como no caso
-   * canônico: descartado, não apagado.
-   */
-  const carimbados = new Set(events.map((event) => event.id));
-  for (const eventId of mutationOperationalEventIds(mutation)) {
-    if (carimbados.has(eventId)) continue;
-    const legacyEvent = await eventStore.get(eventId);
-    if (!legacyEvent || legacyEvent.syncStatus === "SYNCED") continue;
-    await eventStore.put({
-      ...legacyEvent,
-      result: "DISCARDED",
-      syncStatus: "SYNC_FAILED",
-      errorCategory: "VERSION_CONFLICT_DISCARDED",
-    });
-  }
+    },
+  );
 
   if (mutation.entidadeTipo === "RDO") {
     const rdoStore = transaction.objectStore("rdos");

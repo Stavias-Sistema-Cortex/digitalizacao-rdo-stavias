@@ -30,17 +30,26 @@ const storageSource = source("../../../lib/sync/syncStorage.ts");
  * justamente o que este produto promete não ter.
  */
 describe("descarte da edição em conflito", () => {
+  /*
+   * O recorte começa em `encerrarLinhaSemSubir` porque é lá que mora, hoje, o
+   * ato de tirar a linha da fila preservando o rastro — o descarte é um dos
+   * dois chamadores, e a edição que resolve um conflito é o outro. Fixar o
+   * recorte na função do descarte fixava o LUGAR do código, não o efeito, e
+   * quebrava assim que o idioma fosse compartilhado, mesmo preservando
+   * exatamente aquilo que este teste existe para proteger.
+   */
   it("remove a mutação da fila e preserva o evento na Memória", () => {
     const funcao = storageSource.slice(
-      storageSource.indexOf("export async function descartarEdicaoEmConflito"),
+      storageSource.indexOf("export async function encerrarLinhaSemSubir"),
       storageSource.indexOf("export async function returnMutationToPending"),
     );
 
-    expect(funcao).toContain("outbox.delete(clientMutationId)");
+    expect(funcao).toContain("outbox.delete(");
     // O evento é reescrito, nunca removido: é ele que prova que a edição
-    // existiu e foi abandonada por decisão de alguém.
+    // existiu e teve um desfecho.
     expect(funcao).toContain('result: "DISCARDED"');
-    expect(funcao).toContain("eventStore.put");
+    expect(funcao).toContain("eventos.put");
+    expect(funcao).not.toContain("eventos.delete");
     expect(funcao).not.toContain("eventStore.delete");
     // Só conflito é descartável por aqui; pendente e recusado têm outra saída.
     expect(funcao).toContain('mutation.status !== "CONFLICT"');

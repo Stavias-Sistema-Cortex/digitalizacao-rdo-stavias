@@ -28,6 +28,30 @@ import {
 
 export const LOCAL_MUTATION_QUEUED_EVENT = "cortex:local-mutation-queued";
 
+/**
+ * Avisa o agendador que há trabalho novo na fila.
+ *
+ * <p>O motor não vigia o IndexedDB: fora deste aviso, ele só acorda no
+ * intervalo de trinta segundos, na volta à aba, na volta da rede ou na próxima
+ * abertura do aplicativo. Uma gravação que não avisa não se perde — ela fica
+ * gravada e sobe depois —, mas fica parada por até meio minuto, e quem salvou
+ * e fechou o navegador em seguida sai sem ter subido nada.
+ *
+ * <p>Por isso o aviso mora aqui, ao lado do nome do evento, e não copiado em
+ * cada arquivo que grava na fila: quem enfileira trabalho do usuário fora do
+ * coordenador chama esta função e passa a ter o mesmo despertar de quem passa
+ * por ele.
+ *
+ * <p>Quem NÃO deve chamar: os reparos que rodam dentro do próprio ciclo de
+ * sincronização. Eles reescrevem linhas da fila para desatolá-la, e avisar dali
+ * pediria um ciclo novo a cada ciclo, para sempre.
+ */
+export function anunciarEscritaLocal(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(LOCAL_MUTATION_QUEUED_EVENT));
+  }
+}
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const ENTITY_TYPE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
@@ -492,9 +516,7 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
     }
   }
 
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(LOCAL_MUTATION_QUEUED_EVENT));
-  }
+  anunciarEscritaLocal();
 
   return { mutation: built.mutation, event };
 }

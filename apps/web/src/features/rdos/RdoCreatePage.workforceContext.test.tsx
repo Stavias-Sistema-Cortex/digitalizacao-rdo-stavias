@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   getLocalRdo: vi.fn(),
   synchronize: vi.fn(),
   buscarColaboradores: vi.fn(),
+  rascunhoDiferente: vi.fn(),
 }));
 
 vi.mock("../../lib/db/rdoAttachmentRepository", () => ({
@@ -42,6 +43,16 @@ vi.mock("./rdoCreationContextRepository", () => ({
 
 vi.mock("../../lib/db/rdoRepository", () => ({
   getLocalRdo: mocks.getLocalRdo,
+}));
+
+/*
+ * Sincronizar grava antes de enviar, e a pergunta "mudou alguma coisa?" vai ao
+ * IndexedDB. Aqui o assunto é a reidratação do número depois da sincronização,
+ * não a decisão de gravar: a pergunta é dublada para que o teste continue
+ * falando de uma coisa só.
+ */
+vi.mock("../../lib/db/localRdoService", () => ({
+  rascunhoDifereDoQueEstaGravado: mocks.rascunhoDiferente,
 }));
 
 vi.mock("./useRdoLocalPersistence", () => ({
@@ -263,6 +274,8 @@ beforeEach(() => {
   mocks.getLocalRdo.mockReset();
   mocks.synchronize.mockReset();
   mocks.synchronize.mockResolvedValue(undefined);
+  mocks.rascunhoDiferente.mockReset();
+  mocks.rascunhoDiferente.mockResolvedValue(false);
   mocks.buscarColaboradores.mockReset();
   mocks.buscarColaboradores.mockResolvedValue([
     {
