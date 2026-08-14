@@ -3,10 +3,10 @@ import {
   toNumberOrNull,
 } from "../../lib/db/homeRecordMappers";
 import {
-  mergeObraLocal,
+  mergeObrasLocais,
 } from "../../lib/db/obraLocalRepository";
 import {
-  putPrevisaoSnapshot,
+  putPrevisaoSnapshots,
 } from "../../lib/db/previsaoSnapshotRepository";
 import {
   assertSyncSession,
@@ -91,13 +91,10 @@ export async function hydrateObrasRelacionadas(): Promise<number> {
   assertSyncSession(guard);
   const nowIso = new Date().toISOString();
 
-  for (const obra of obras) {
-    assertSyncSession(guard);
-    await mergeObraLocal(
-      obraRecordFromApi(obra, nowIso),
-      guard,
-    );
-  }
+  await mergeObrasLocais(
+    obras.map((obra) => obraRecordFromApi(obra, nowIso)),
+    guard,
+  );
 
   assertSyncSession(guard);
   return obras.length;
@@ -108,18 +105,16 @@ export async function hydrateObrasArquivadas(): Promise<number> {
   const obras = await buscarObrasArquivadas();
   assertAlfaSyncSession(guard);
   const nowIso = new Date().toISOString();
-  let saved = 0;
 
-  for (const obra of obras) {
-    assertAlfaSyncSession(guard);
-    const record = obraRecordFromPayload({ ...obra }, nowIso);
-    if (!record) continue;
-    await mergeObraLocal(record, guard);
-    saved += 1;
-  }
+  const records = obras
+    .map((obra) => obraRecordFromPayload({ ...obra }, nowIso))
+    .filter((record): record is ObraLocalRecord => record !== null);
 
   assertAlfaSyncSession(guard);
-  return saved;
+  await mergeObrasLocais(records, guard);
+
+  assertAlfaSyncSession(guard);
+  return records.length;
 }
 
 function captureAlfaSyncSession(): SyncSessionGuard {
@@ -148,18 +143,15 @@ export async function hydrateHistoricoObra(
   assertSyncSession(guard);
   const nowIso = new Date().toISOString();
 
-  let saved = 0;
-
-  for (const item of historico) {
-    assertSyncSession(guard);
-    const record = snapshotRecordFromApi(item, nowIso);
-
-    if (record) {
-      await putPrevisaoSnapshot(record, guard);
-      saved += 1;
-    }
-  }
+  const records = historico
+    .map((item) => snapshotRecordFromApi(item, nowIso))
+    .filter(
+      (record): record is PrevisaoSnapshotRecord => record !== null,
+    );
 
   assertSyncSession(guard);
-  return saved;
+  await putPrevisaoSnapshots(records, guard);
+
+  assertSyncSession(guard);
+  return records.length;
 }
