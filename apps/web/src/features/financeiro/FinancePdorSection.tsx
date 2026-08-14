@@ -8,7 +8,7 @@ import {
   loadPdorRevenueSnapshot,
   type PdorRevenueSnapshot,
 } from "./pdorRevenueCacheRepository";
-import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
+import { formatarEmBrasilia } from "../../lib/tempo/fusoBrasilia";
 
 interface FinancePdorSectionProps {
   obraId: string;
@@ -200,13 +200,26 @@ export function FinancePdorSection({
               ? "consulta atual"
               : "disponível offline"}
           </strong>
+          {/*
+            Quando a projeção foi calculada, e não quando esta tela a leu.
+            "Atualizado em" mostrava `fetchedAt` — a hora da requisição —, que é
+            sempre agora: uma projeção parada há semanas, calculada sobre RDOs
+            que a obra já apagou, aparecia carimbada com o relógio de quem abriu
+            a página. Era o carimbo que fazia dado morto passar por vivo.
+          */}
           <span>
-            Atualizado em{" "}
-            {new Intl.DateTimeFormat("pt-BR", {
+            Projeção calculada em{" "}
+            {formatarEmBrasilia(snapshot.provenance.executedAtUtc ?? "", {
               dateStyle: "short",
               timeStyle: "short",
-              timeZone: FUSO_BRASILIA,
-            }).format(new Date(snapshot.fetchedAt))}
+            }) ?? "data não informada pelo servidor"}
+          </span>
+          <span>
+            Lida do servidor às{" "}
+            {formatarEmBrasilia(snapshot.fetchedAt, {
+              dateStyle: "short",
+              timeStyle: "short",
+            }) ?? "—"}
           </span>
           <span>
             {coverageLabel(snapshot.provenance.coverageCode)} ·{" "}

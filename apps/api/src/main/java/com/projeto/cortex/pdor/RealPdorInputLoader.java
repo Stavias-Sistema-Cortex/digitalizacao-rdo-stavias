@@ -830,6 +830,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 SELECT COUNT(*)
                 FROM obra_geometria
                 WHERE obra_id = ?
+                  AND status = 'ATIVA'
                   AND DATE(valido_desde) <= ?
                   AND (valido_ate IS NULL OR DATE(valido_ate) >= ?)
                 """,
@@ -1001,6 +1002,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 SELECT id, criado_em AS observed_at
                 FROM obra_geometria
                 WHERE obra_id = ?
+                  AND status = 'ATIVA'
                   AND DATE(valido_desde) <= ?
                   AND (valido_ate IS NULL OR DATE(valido_ate) >= ?)
                 ORDER BY valido_desde DESC, id
@@ -1373,6 +1375,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         SELECT id
                         FROM rdo
                         WHERE obra_id = ?
+                          AND cancelado_em IS NULL
                    )
                 """,
                 (rs, rowNum) -> new SyncStats(

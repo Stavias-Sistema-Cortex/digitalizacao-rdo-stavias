@@ -20,6 +20,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 
 /**
  * As recusas, e o que elas garantem: que nada foi apagado antes.
@@ -37,8 +38,11 @@ class RdoDeletionServiceTest {
             mock(CurrentUserService.class);
     private final RdoMemoryPublisher memoryPublisher =
             mock(RdoMemoryPublisher.class);
+    private final PrevisaoFinanceiraService previsaoFinanceiraService =
+            mock(PrevisaoFinanceiraService.class);
     private final RdoDeletionService service = new RdoDeletionService(
-            jdbcTemplate, currentUserService, memoryPublisher
+            jdbcTemplate, currentUserService, memoryPublisher,
+            previsaoFinanceiraService
     );
 
     @BeforeEach
@@ -131,6 +135,49 @@ class RdoDeletionServiceTest {
 
         verify(currentUserService).requireAlfa();
         verify(currentUserService).requireWorksiteAccess("obra-1");
+    }
+
+    /*
+     * Apagar de vez é a mudança de RDO mais forte que existe, e era a única
+     * que não mandava a previsão recalcular.
+     *
+     * <p>Criar, editar, enviar, cancelar, restaurar e importar recalculam o
+     * PDOR na volta da operação; este caminho entregava a projeção só ao
+     * gatilho por evento, que roda em thread daemon depois de um debounce e
+     * engole a própria falha. Perdido o gatilho, nada mais dispara sozinho: a
+     * obra segue exibindo a projeção da produção que ela acabou de apagar.
+     *
+     * <p>A data de referência vai nula porque o RDO que a daria deixou de
+     * existir — nula manda reler a obra como ela está agora.
+     */
+    @Test
+    void mandaRecalcularAPrevisaoDepoisDeApagarDeVez() {
+        existeRdo("ENVIADO");
+        servicosMedidos(0);
+        semDependentes();
+        when(jdbcTemplate.update(contains("DELETE FROM rdo WHERE id"), eq("rdo-1")))
+                .thenReturn(1);
+
+        service.apagar("rdo-1");
+
+        verify(previsaoFinanceiraService)
+                .recalcularAposMudancaRdo("obra-1", null, null);
+    }
+
+    /*
+     * Recusado o apagamento, nada mudou — e recalcular anunciaria uma mudança
+     * que não houve, trocando o snapshot atual da obra por outro à toa.
+     */
+    @Test
+    void naoRecalculaQuandoORdoNaoChegaASerApagado() {
+        existeRdo("ENVIADO");
+        servicosMedidos(1);
+
+        assertThatThrownBy(() -> service.apagar("rdo-1"))
+                .isInstanceOf(ResponseStatusException.class);
+
+        verify(previsaoFinanceiraService, never())
+                .recalcularAposMudancaRdo(anyString(), any(), any());
     }
 
     /* Enviado é registro entregue; desfazer entrega é decisão de quem responde. */

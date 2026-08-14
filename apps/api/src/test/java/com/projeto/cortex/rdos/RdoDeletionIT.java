@@ -22,6 +22,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 
 /**
  * Apagar RDO contra PostgreSQL de verdade.
@@ -166,7 +167,8 @@ class RdoDeletionIT {
         CurrentUserService usuario = mock(CurrentUserService.class);
         when(usuario.requireUserId()).thenReturn(actorId);
         return new RdoDeletionService(
-                jdbc, usuario, mock(RdoMemoryPublisher.class)
+                jdbc, usuario, mock(RdoMemoryPublisher.class),
+                mock(PrevisaoFinanceiraService.class)
         );
     }
 
@@ -176,7 +178,8 @@ class RdoDeletionIT {
         doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Apenas ALFA."))
                 .when(usuario).requireAlfa();
         return new RdoDeletionService(
-                jdbc, usuario, mock(RdoMemoryPublisher.class)
+                jdbc, usuario, mock(RdoMemoryPublisher.class),
+                mock(PrevisaoFinanceiraService.class)
         );
     }
 

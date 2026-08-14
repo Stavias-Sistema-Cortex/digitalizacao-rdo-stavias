@@ -1,6 +1,7 @@
 package com.projeto.cortex.rdos;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -38,15 +39,18 @@ public class RdoDeletionService {
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserService currentUserService;
     private final RdoMemoryPublisher memoryPublisher;
+    private final PrevisaoFinanceiraService previsaoFinanceiraService;
 
     public RdoDeletionService(
             JdbcTemplate jdbcTemplate,
             CurrentUserService currentUserService,
-            RdoMemoryPublisher memoryPublisher
+            RdoMemoryPublisher memoryPublisher,
+            PrevisaoFinanceiraService previsaoFinanceiraService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserService = currentUserService;
         this.memoryPublisher = memoryPublisher;
+        this.previsaoFinanceiraService = previsaoFinanceiraService;
     }
 
     @Transactional
@@ -127,6 +131,28 @@ public class RdoDeletionService {
         memoryPublisher.registrarRdoApagado(
                 id, alvo.obraId(), null, alvo.numeroRdo()
         );
+
+        /*
+         * Apagar de vez também é mudança de RDO, e a previsão precisa saber.
+         *
+         * <p>Todo o resto que mexe em RDO — criar, editar, enviar, cancelar,
+         * restaurar, importar — recalcula o PDOR aqui mesmo, na volta da
+         * operação. Este caminho, que é o mais radical dos sete, era o único
+         * que não recalculava: entregava a projeção ao gatilho por evento e
+         * mais nada. E o gatilho é melhor esforço — roda numa thread daemon
+         * depois de um debounce de cinco segundos e engole a própria falha —,
+         * então uma reinicialização no meio da janela perde o recálculo, e
+         * nada volta a disparar sozinho. A obra ficava exibindo, sem prazo
+         * para sair, a projeção de uma produção que ela mesma apagou.
+         *
+         * <p>A data de referência vai nula de propósito: o RDO que a daria
+         * acabou de deixar de existir, e nula é o pedido para reler a obra
+         * como ela está agora.
+         */
+        previsaoFinanceiraService.recalcularAposMudancaRdo(
+                alvo.obraId(), null, null
+        );
+
         return new RdoDeletionResponse(id, alvo.obraId(), alvo.numeroRdo(), anexos);
     }
 

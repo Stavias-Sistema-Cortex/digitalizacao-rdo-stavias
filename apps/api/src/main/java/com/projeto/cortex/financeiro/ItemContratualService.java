@@ -16,7 +16,9 @@ import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -114,6 +116,41 @@ public class ItemContratualService {
                 "PERTENCE_A",
                 FONTE,
                 "Item contratual pertence à obra."
+        );
+
+        /*
+         * O item contratual muda o valor do contrato, e o PDOR precisa saber.
+         *
+         * <p>Registrar o objeto e a relação não avisa ninguém: quem acorda o
+         * recálculo é o evento, e só ele publica a observação vinculada à obra.
+         * Sem isso, este item entrava no banco — e o `item_contratual` é a base
+         * contratual de fallback, que sozinha forma o teto do contrato quando o
+         * catálogo versionado não tem quantidade contratada — enquanto a
+         * projeção na tela continuava a do contrato anterior, sem prazo para
+         * sair de lá.
+         */
+        memoryService.registrarEventoDetalhado(
+                null,
+                "ITEM_CONTRATUAL",
+                id,
+                "ITEM_CONTRATUAL_REGISTRADO",
+                FONTE,
+                obra.getId(),
+                null,
+                null,
+                List.of(Map.of("tipo", "OBRA", "id", obra.getId())),
+                "ONLINE",
+                "SYNCED",
+                null,
+                LocalDateTime.now(ZoneOffset.UTC),
+                1,
+                Map.of(
+                        "itemContratualId", id,
+                        "obraId", obra.getId(),
+                        "codigoItem", request.codigoItem().trim(),
+                        "status", status,
+                        "valorTotal", valorTotal.toPlainString()
+                )
         );
 
         return buscarPorId(id);

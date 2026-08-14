@@ -18,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -38,6 +39,45 @@ class ItemContratualServiceTest {
             memoryService,
             obraOperabilityGuard
     );
+
+    /**
+     * O item contratual forma o teto do contrato — e o PDOR só recalcula
+     * quando um evento vinculado à obra é publicado.
+     *
+     * <p>Registrar o objeto e a relação não acorda ninguém: nenhum dos dois
+     * publica observação. O item entrava no banco e a projeção na tela
+     * continuava sendo a do contrato anterior, sem prazo para sair de lá.
+     */
+    @Test
+    void publishesAWorksiteBoundEventSoThePdorRecalculates() {
+        Obra obra = obra("CW-001");
+        ItemContratualRequest request = new ItemContratualRequest(
+                "CT-001", "ITEM-001", "Pavimentação", "m2",
+                new BigDecimal("10"), new BigDecimal("12.50"),
+                null, null, 1, "ATIVO", "MANUAL"
+        );
+        when(obraRepository.findByIdentificador("CW-001")).thenReturn(List.of(obra));
+
+        service.criar("CW-001", request);
+
+        verify(memoryService).registrarEventoDetalhado(
+                isNull(),
+                eq("ITEM_CONTRATUAL"),
+                anyString(),
+                eq("ITEM_CONTRATUAL_REGISTRADO"),
+                anyString(),
+                eq(obra.getId()),
+                isNull(),
+                isNull(),
+                any(),
+                anyString(),
+                anyString(),
+                isNull(),
+                any(),
+                eq(1),
+                any()
+        );
+    }
 
     @Test
     void archivedWorksiteBlocksContractItemBeforeInsertAndMemoryPublication() {

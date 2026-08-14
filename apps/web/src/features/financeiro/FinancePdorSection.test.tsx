@@ -95,6 +95,31 @@ describe("FinancePdorSection", () => {
     });
   });
 
+  /*
+   * A idade da projeção é a primeira coisa que denuncia dado morto, e era
+   * justamente o que a faixa escondia: ela carimbava `fetchedAt`, a hora da
+   * requisição, sob o rótulo "Atualizado em". Uma projeção parada há semanas
+   * — calculada sobre RDOs que a obra já apagou — aparecia com o relógio de
+   * quem abriu a página, e nada na tela dizia o contrário.
+   *
+   * <p>Neste cenário o snapshot foi calculado em 22/07 às 11:59 de Brasília e
+   * lido em 23/07 ao meio-dia. Os dois aparecem, cada um dizendo o que é.
+   */
+  it("mostra quando a projeção foi calculada, não quando a tela a leu", async () => {
+    render(
+      <FinancePdorSection
+        obraId={WORKSITE_ID}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/projeção calculada em 22\/07\/2026,? 11:59/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/lida do servidor às 23\/07\/2026,? 12:00/i))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/atualizado em/i)).not.toBeInTheDocument();
+  });
+
   it("recarrega automaticamente após sync, reconexão e mudança de sessão", async () => {
     render(
       <FinancePdorSection
