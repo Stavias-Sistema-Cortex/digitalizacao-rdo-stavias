@@ -996,6 +996,19 @@ textarea:focus {
   color: #a1382f;
 }
 
+.rdo-observation-budget {
+  display: block;
+  margin-top: 6px;
+  color: #5e6d65;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.rdo-observation-budget--over {
+  color: #a1382f;
+  font-weight: 600;
+}
+
 .profile-drawer h3 {
   margin: 0 0 12px;
   color: #203429;

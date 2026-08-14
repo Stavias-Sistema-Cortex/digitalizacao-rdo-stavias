@@ -638,3 +638,60 @@ describe("catálogo contextual de mão de obra em RDO legado/importado", () => {
     expect(mocks.requireContext).not.toHaveBeenCalled();
   });
 });
+
+describe("orçamento da caixa de observações", () => {
+  afterEach(cleanup);
+
+  /*
+   * A tela dizia "XLSX e PDF disponíveis" e o servidor recusava logo depois,
+   * porque nada avisava que a caixa de observações já não comportava o texto.
+   * O aviso mede o agregado inteiro — as linhas automáticas e as observações
+   * de cada item entram nele — com a mesma função que a exportação usa.
+   */
+  it("says how much of the observation box the RDO already fills", async () => {
+    const draft = legacyDraft();
+
+    render(
+      <RdoCreatePage
+        initialDraft={draft}
+        isExisting
+        creationContext={context()}
+        onBackToList={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    const budget = await screen.findByTestId("rdo-observation-budget");
+    expect(budget).toHaveTextContent(/de 8 linhas/);
+    expect(budget.className).not.toContain("--over");
+  });
+
+  it("warns before the export refuses, without cutting what was written", async () => {
+    const draft = legacyDraft();
+    const longo = Array.from(
+      { length: 12 },
+      (_, index) => `Ocorrencia ${index + 1} registrada na frente de servico`,
+    ).join("\n");
+
+    render(
+      <RdoCreatePage
+        initialDraft={draft}
+        isExisting
+        creationContext={context()}
+        onBackToList={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    const campo = await screen.findByPlaceholderText(
+      "Interferências, ocorrências, paralisações e informações relevantes.",
+    );
+    fireEvent.change(campo, { target: { value: longo } });
+
+    const budget = screen.getByTestId("rdo-observation-budget");
+    expect(budget.className).toContain("--over");
+    expect(budget).toHaveTextContent(/não exporta assim/);
+    // O texto continua inteiro no campo: avisar não é cortar.
+    expect(campo).toHaveValue(longo);
+  });
+});

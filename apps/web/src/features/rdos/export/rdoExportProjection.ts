@@ -325,13 +325,36 @@ function wrappedLineCount(line: string, width: number): number {
 const OBSERVATION_LINES = 8;
 const OBSERVATION_LINE_WIDTH = 120;
 
-function assertObservationPrintable(value: string): void {
-  if (!value) return;
+function observationLineCount(value: string): number {
+  if (!value) return 0;
   let used = 0;
-  for (const line of value.split(/\r?\n/)) {
-    used += wrappedLineCount(line, OBSERVATION_LINE_WIDTH);
-    if (used > OBSERVATION_LINES) error("RDO_EXPORT_PRINT_OVERFLOW", `O conteúdo de observações gerais não permanece legível no RDO (limite de ${OBSERVATION_LINES} linhas de ${OBSERVATION_LINE_WIDTH} caracteres); nenhum conteúdo foi truncado.`);
-  }
+  for (const line of value.split(/\r?\n/)) used += wrappedLineCount(line, OBSERVATION_LINE_WIDTH);
+  return used;
+}
+
+function assertObservationPrintable(value: string): void {
+  if (observationLineCount(value) > OBSERVATION_LINES) error("RDO_EXPORT_PRINT_OVERFLOW", `O conteúdo de observações gerais não permanece legível no RDO (limite de ${OBSERVATION_LINES} linhas de ${OBSERVATION_LINE_WIDTH} caracteres); nenhum conteúdo foi truncado.`);
+}
+
+export interface RdoObservationBudget {
+  readonly used: number;
+  readonly capacity: number;
+  readonly fits: boolean;
+}
+
+/**
+ * Quanto da caixa de observações o RDO já ocupa, para a tela poder dizer antes.
+ *
+ * Mede o mesmo agregado que vai para o arquivo — as linhas automáticas de
+ * continuidade, praticabilidade e clima, mais as observações de cada item — com
+ * a mesma quebra que a exportação aplica. É de propósito a mesma função: um
+ * contador próprio acabaria discordando do servidor, que foi justamente o que
+ * fazia a tela prometer "XLSX e PDF disponíveis" e a exportação recusar em
+ * seguida.
+ */
+export function rdoObservationBudget(rdo: RdoDraft): RdoObservationBudget {
+  const used = observationLineCount(observations(rdo));
+  return { used, capacity: OBSERVATION_LINES, fits: used <= OBSERVATION_LINES };
 }
 
 function validateSnapshot(snapshot: RdoWorkbookSnapshot): void {

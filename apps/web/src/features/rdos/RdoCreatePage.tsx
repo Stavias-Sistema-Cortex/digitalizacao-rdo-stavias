@@ -57,6 +57,7 @@ import {
   quantidadeDoServico,
   rotuloDaQuantidade,
 } from "./quantidadeDoServico";
+import { rdoObservationBudget } from "./export/rdoExportProjection";
 import { useRdoLocalPersistence } from "./useRdoLocalPersistence";
 import { UNIDADES_RDO, normalizarUnidade } from "./unidades";
 import { requireRdoCreationContext } from "./rdoCreationContextRepository";
@@ -645,6 +646,15 @@ export function RdoCreatePage({
         : null,
     [canViewRawPayload, draft],
   );
+  // A caixa de observações do RDO é compartilhada: além do que se escreve aqui,
+  // ela recebe as linhas de continuidade, praticabilidade e clima, e ainda a
+  // observação de cada colaborador, equipamento, material, controle e serviço.
+  // Por isso o aviso mede o agregado, e não o tamanho deste campo.
+  const observationBudget = useMemo(
+    () => rdoObservationBudget(draft),
+    [draft],
+  );
+  const observationBudgetId = useId();
   const serviceCatalog = activeCreationContext?.serviceCatalog ?? [];
   const priceCatalogSelectable = isRdoPriceCatalogSelectable(
     activeCreationContext?.coverage.serviceCatalog,
@@ -1606,6 +1616,7 @@ export function RdoCreatePage({
           Observações
           <textarea
             rows={5}
+            aria-describedby={observationBudgetId}
             value={draft.observacoes}
             onChange={(event) =>
               updateField(
@@ -1616,6 +1627,21 @@ export function RdoCreatePage({
             placeholder="Interferências, ocorrências, paralisações e informações relevantes."
           />
         </label>
+        <small
+          id={observationBudgetId}
+          data-testid="rdo-observation-budget"
+          className={
+            observationBudget.fits
+              ? "rdo-observation-budget full-width"
+              : "rdo-observation-budget rdo-observation-budget--over full-width"
+          }
+          aria-live="polite"
+        >
+          {`Caixa de observações do RDO: ${observationBudget.used} de ${observationBudget.capacity} linhas`}
+          {observationBudget.fits
+            ? ""
+            : " · não cabe na folha; o RDO não exporta assim, e nada será cortado por conta própria"}
+        </small>
       </section>
 
           <section className="form-card" id="rdo-fotos">

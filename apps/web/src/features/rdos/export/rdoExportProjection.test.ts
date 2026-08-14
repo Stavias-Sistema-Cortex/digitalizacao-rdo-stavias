@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createEmptyRdo } from "../createEmptyRdo";
 import {
   buildRdoExportProjection,
+  rdoObservationBudget,
   type RdoWorkbookSnapshot,
 } from "./rdoExportProjection";
 
@@ -169,5 +170,45 @@ describe("RDO export projection", () => {
       ...base,
       rdo: { ...base.rdo, observacoes: overflowing },
     })).toThrow(/observações gerais.*não permanece legível/);
+  });
+});
+
+describe("RDO observation budget", () => {
+  // A caixa é compartilhada: continuidade, praticabilidade e clima entram nela
+  // antes de qualquer digitação, e a observação de cada item entra depois. Um
+  // contador preso ao campo geral mediria a coisa errada.
+  it("counts the automatic lines and the per-item notes, not just the field", () => {
+    const base = snapshot();
+    const semCampoGeral = { ...base.rdo, observacoes: "" };
+
+    const budget = rdoObservationBudget(semCampoGeral);
+
+    expect(budget.capacity).toBe(8);
+    expect(budget.used).toBeGreaterThan(0);
+    expect(budget.fits).toBe(true);
+  });
+
+  // A razão de existir do indicador: a tela dizia "XLSX e PDF disponíveis" e a
+  // exportação recusava logo depois. Medir com a mesma função é o que impede
+  // esse desencontro de voltar.
+  it("never disagrees with what the export actually accepts", () => {
+    const base = snapshot();
+
+    for (let lines = 1; lines <= 14; lines += 1) {
+      const observacoes = Array.from(
+        { length: lines },
+        (_, index) => `Ocorrencia ${index + 1} registrada na frente de servico`,
+      ).join("\n");
+      const rdo = { ...base.rdo, observacoes };
+
+      let exportAccepts = true;
+      try {
+        buildRdoExportProjection({ ...base, rdo });
+      } catch {
+        exportAccepts = false;
+      }
+
+      expect(rdoObservationBudget(rdo).fits).toBe(exportAccepts);
+    }
   });
 });
