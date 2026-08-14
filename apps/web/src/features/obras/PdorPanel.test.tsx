@@ -74,12 +74,14 @@ describe("PdorPanel", () => {
     expect(html).toContain("O risco subiu");
     expect(html).toContain("Capacidade de mão de obra em horas");
     expect(html).toContain("Revisar fatores de risco");
-    expect(html).toContain("PDOR-ASSUMPTIONS-0.2.0");
-    expect(html).toContain("rdo-1");
-    expect(html).toContain("PDOR-REVENUE-1");
-    expect(html).toContain("COMPLETE_ACCEPTED_EXACT");
-    expect(html).toContain("812");
-    expect(html).toContain("evidence-1");
+    // O que sustenta o número, contado em português — a lista de UUIDs,
+    // versões e o JSON de premissas eram diagnóstico de máquina e saíram.
+    expect(html).toContain("1 RDO, 1 evidência de receita aceita");
+    expect(html).not.toContain("rdo-1");
+    expect(html).not.toContain("evidence-1");
+    expect(html).not.toContain("PDOR-ASSUMPTIONS-0.2.0");
+    expect(html).not.toContain("PDOR-REVENUE-1");
+    expect(html).not.toContain("COMPLETE_ACCEPTED_EXACT");
   });
 
 
@@ -192,8 +194,7 @@ describe("a justificativa fica atrás de uma porta", () => {
     expect(detalhe).toContain("Principais fatores de risco");
     expect(detalhe).toContain("Capacidade de mão de obra em horas");
     expect(detalhe).toContain("Revisar fatores de risco");
-    expect(detalhe).toContain("PDOR-ASSUMPTIONS-0.2.0");
-    expect(detalhe).toContain("evidence-1");
+    expect(detalhe).toContain("registros vivos da obra");
   });
 
   it("o número e a faixa continuam fora da porta", () => {

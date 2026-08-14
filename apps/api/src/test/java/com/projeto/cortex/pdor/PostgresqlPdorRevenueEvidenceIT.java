@@ -274,6 +274,77 @@ class PostgresqlPdorRevenueEvidenceIT {
                 .doesNotContain("EXECUCAO_SERVICO_RDO");
     }
 
+    /*
+     * O teto do contrato só se sustenta em cadastro vivo.
+     *
+     * O valor contratual soma quantidade_contratada × valor_unitario das
+     * versões vigentes de serviços ACTIVE. Excluir o serviço no catálogo — ou
+     * cancelar a versão de preço — tem de derrubar o teto no recálculo
+     * seguinte. Sem isso, a obra que tirou o serviço do contrato continuava
+     * exibindo como previsão o teto formado por ele, e "recalcular" devolvia o
+     * mesmo número.
+     */
+    @Test
+    void oServicoExcluidoEOPrecoCanceladoDeixamDeFormarOTetoDoContrato() {
+        Obra obra = Obra.criar(
+                "PDOR-CATALOGO-VIVO", null, null, "Obra PDOR catálogo vivo",
+                null, null, null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+
+        PdorInputBundle vivo = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+        assertThat(vivo.sourceValues().contractValue())
+                .isEqualByComparingTo("12500.00");
+
+        // É o que ServicePriceCatalogService.excluirServico grava.
+        jdbc.update(
+                "UPDATE catalogo_servico SET status = 'EXCLUIDO' WHERE id = ?",
+                fixture.serviceId()
+        );
+
+        PdorInputBundle excluido = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+        assertThat(excluido.inputs().get("contractValue")).isNull();
+        assertThat(excluido.missingRequiredFields()).contains("contractValue");
+        assertThat(excluido.evidenceReferences())
+                .extracting(PdorEvidenceReference::entityType)
+                .doesNotContain("SERVICE_PRICE_VERSION");
+
+        // Restaurado, o teto volta — a exclusão é estado, não perda.
+        jdbc.update(
+                "UPDATE catalogo_servico SET status = 'ACTIVE' WHERE id = ?",
+                fixture.serviceId()
+        );
+        assertThat(new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE)
+                .sourceValues()
+                .contractValue())
+                .isEqualByComparingTo("12500.00");
+
+        // Cancelar a versão de preço a partir da referência encerra a
+        // vigência efetiva na véspera: o teto cai pelo mesmo caminho que o
+        // catálogo usa em produção, a service_price_version_cancellation.
+        String canceladorId = id();
+        jdbc.update("""
+                INSERT INTO colaborador (
+                    id, banco_origem, tabela_origem, pk_origem, nome, papel_acesso
+                ) VALUES (?, 'pdor-it', 'colaborador', ?, 'PDOR cancelador', 'ALFA')
+                """, canceladorId, canceladorId);
+        jdbc.update("""
+                INSERT INTO service_price_version_cancellation (
+                    id, price_version_id, obra_id, vigencia_cancelamento,
+                    motivo, criado_por
+                ) VALUES (?, ?, ?, ?, 'Preço cancelado no teste.', ?)
+                """, id(), fixture.priceId(), fixture.obraId(),
+                REFERENCE_DATE, canceladorId);
+
+        PdorInputBundle cancelado = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+        assertThat(cancelado.inputs().get("contractValue")).isNull();
+        assertThat(cancelado.missingRequiredFields()).contains("contractValue");
+    }
+
     private static void apontamentoSemReceita(
             Fixture fixture,
             String quantity

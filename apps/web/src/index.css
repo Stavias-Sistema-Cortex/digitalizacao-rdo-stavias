@@ -2530,6 +2530,12 @@ textarea:focus {
   content: "▾";
 }
 
+.obras-pdor-fontes {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted, #5c6b66);
+}
+
 .obras-pdor-detalhe-corpo {
   padding-top: 14px;
 }
@@ -2538,76 +2544,14 @@ textarea:focus {
  * A proveniência é uma tabela de versões: pares curtos, lidos de relance. Ela
  * saía sem estilo nenhum, como uma lista de definição crua do navegador.
  */
-.obras-pdor-proveniencia {
-  display: grid;
-  /*
-   * Os valores são identificadores longos e indivisíveis —
-   * NO_ACCEPTED_EVIDENCE, PDOR-ASSUMPTIONS-0.2.0, um timestamp UTC. Em coluna
-   * estreita eles quebram no meio da palavra e param de se ler.
-   */
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 8px 20px;
-  margin: 16px 0 0;
-}
 
-.obras-pdor-proveniencia div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid #eef2f0;
-  padding-bottom: 4px;
-}
 
-.obras-pdor-proveniencia dt {
-  color: #718078;
-  font-size: 0.68rem;
-}
 
-.obras-pdor-proveniencia dd {
-  margin: 0;
-  color: #25342d;
-  font-size: 0.68rem;
-  font-weight: 500;
-  text-align: right;
-  word-break: break-word;
-}
 
-.obras-pdor-evidence-list {
-  list-style: none;
-  margin: 12px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 
-.obras-pdor-evidence-list li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 0.66rem;
-}
 
-.obras-pdor-evidence-list strong {
-  color: #718078;
-  font-weight: 500;
-}
 
-.obras-pdor-evidence-list code {
-  color: #25342d;
-  word-break: break-all;
-}
 
-.obras-pdor-assumptions {
-  margin: 12px 0 0;
-  border-radius: 10px;
-  background: #f5f7f6;
-  padding: 10px 12px;
-  overflow-x: auto;
-  color: #4a5b52;
-  font-size: 0.66rem;
-  line-height: 1.5;
-}
 
 @media (max-width: 620px) {
   .home-dashboard {

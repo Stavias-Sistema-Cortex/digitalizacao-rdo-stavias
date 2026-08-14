@@ -144,17 +144,69 @@ function ExplanationList({
 }
 
 /**
- * O painel mostrava tudo o que sabia, de uma vez.
+ * Rótulos humanos para o que sustenta o cálculo.
  *
- * <p>Fatores de risco, dados ausentes, limitações, alertas, recomendações,
- * proveniência: cinco blocos de texto corrido abaixo dos números, sempre
- * abertos, somando mais de vinte parágrafos numa tela cuja pergunta é "quanto
- * esta obra deve faturar". O número que importa ficava espremido no topo de uma
- * parede de justificativa.
+ * <p>[singular, plural]. Tipo que a ontologia inventar depois e não estiver
+ * aqui aparece como "registro", que continua verdadeiro.
+ */
+const NOME_DA_EVIDENCIA: Record<string, readonly [string, string]> = {
+  RDO: ["RDO", "RDOs"],
+  PROGRAMACAO: ["programação", "programações"],
+  SERVICE_PRICE_VERSION: ["preço do catálogo", "preços do catálogo"],
+  ITEM_CONTRATUAL: ["item contratual", "itens contratuais"],
+  EXECUCAO_SERVICO_RDO: ["execução de serviço", "execuções de serviço"],
+  EQUIPE: ["equipe", "equipes"],
+  EQUIPE_MEMBRO: ["membro de equipe", "membros de equipe"],
+  OBRA_GEOMETRIA: ["geometria da obra", "geometrias da obra"],
+  EVENTO_OPERACIONAL: ["evento operacional", "eventos operacionais"],
+};
+
+/**
+ * O que o cálculo leu, contado em português.
  *
- * <p>Nada disso foi jogado fora — quem precisa auditar o cálculo precisa de
- * tudo. Passa a ficar atrás de uma só porta, fechada, que se abre quando a
- * pergunta deixa de ser "quanto" e vira "por quê".
+ * <p>O painel despejava a lista crua: "SERVICE_PRICE_VERSION 8aa4fc2e-…",
+ * dezenas de identificadores que ninguém consegue conferir. A informação útil
+ * dessa lista é outra, e é curta: quantos registros vivos de cada tipo
+ * sustentam o número. "3 preços do catálogo" responde na hora de onde vem um
+ * teto de contrato que se acreditava excluído — o identificador não.
+ */
+function resumoDasEvidencias(pdor: ObraPdor): string {
+  const porTipo = new Map<string, number>();
+  for (const evidencia of pdor.evidencias) {
+    porTipo.set(
+      evidencia.entityType,
+      (porTipo.get(evidencia.entityType) ?? 0) + 1,
+    );
+  }
+  const partes = [...porTipo.entries()].map(([tipo, quantos]) => {
+    const nomes = NOME_DA_EVIDENCIA[tipo] ?? ["registro", "registros"];
+    return `${quantos} ${quantos === 1 ? nomes[0] : nomes[1]}`;
+  });
+  if (pdor.evidenceIds.length > 0) {
+    partes.push(
+      `${pdor.evidenceIds.length} ${
+        pdor.evidenceIds.length === 1
+          ? "evidência de receita aceita"
+          : "evidências de receita aceitas"
+      }`,
+    );
+  }
+  if (partes.length === 0) {
+    return "O cálculo não encontrou registro vivo na obra.";
+  }
+  return `O cálculo leu os registros vivos da obra: ${partes.join(", ")}.`;
+}
+
+/**
+ * A justificativa fica atrás de uma porta fechada — e fala português.
+ *
+ * <p>O detalhe chegou a despejar a proveniência inteira: versões de modelo,
+ * hash dos dados, identificador do iniciador, a lista de UUIDs das evidências
+ * e o JSON cru das premissas. Diagnóstico de máquina, numa tela cuja pergunta
+ * é "quanto esta obra deve faturar" — e que já viaja completo na resposta da
+ * API para quem for auditar de verdade. Aqui ficam as listas que se leem:
+ * fatores de risco, lacunas, limitações, alertas, recomendações e a contagem
+ * do que sustenta o número.
  */
 function DetalheDoCalculo({
   pdor,
@@ -180,48 +232,11 @@ function DetalheDoCalculo({
           <ExplanationList title="Alertas derivados" items={pdor.alertas} />
           <ExplanationList title="Ações recomendadas" items={pdor.recomendacoes} />
         </div>
-        <dl className="obras-pdor-proveniencia">
-          <div><dt>Modelo</dt><dd>{pdor.versaoModelo ?? "-"}</dd></div>
-          <div><dt>Algoritmo da receita</dt><dd>{pdor.algorithmVersion ?? "-"}</dd></div>
-          <div><dt>Premissas</dt><dd>{pdor.versaoPremissas ?? "-"}</dd></div>
-          <div><dt>Dados</dt><dd>{pdor.versaoDados ?? "-"}</dd></div>
-          <div><dt>Cobertura</dt><dd>{pdor.coverageCode ?? "-"}</dd></div>
-          <div><dt>High-water ontológico</dt><dd>{pdor.evidenceHighWaterMark ?? "-"}</dd></div>
-          <div><dt>Execução UTC</dt><dd>{pdor.executedAtUtc ?? "-"}</dd></div>
-          <div>
-            <dt>Estado</dt>
-            <dd>
-              {pdor.stale
-                ? "Histórico · vencido"
-                : pdor.current
-                  ? "Atual"
-                  : "Histórico"}
-            </dd>
-          </div>
-          <div><dt>Iniciador</dt><dd>{pdor.iniciadoPor ?? "Não registrado"}</dd></div>
-          <div><dt>Features avaliadas</dt><dd>{pdor.featuresUtilizadas.length}</dd></div>
-          <div><dt>Evidências de receita</dt><dd>{pdor.evidenceIds.length}</dd></div>
-        </dl>
-        {pdor.evidenceIds.length > 0 || pdor.evidencias.length > 0 ? (
-          <ul className="obras-pdor-evidence-list">
-            {pdor.evidenceIds.slice(0, 12).map((evidenceId) => (
-              <li key={evidenceId}>
-                <strong>REVENUE_EVIDENCE</strong>
-                <code>{evidenceId}</code>
-              </li>
-            ))}
-            {pdor.evidencias.slice(0, 8).map((evidence) => (
-              <li key={`${evidence.entityType}-${evidence.entityId}`}>
-                <strong>{evidence.entityType}</strong>
-                <code>{evidence.entityId}</code>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {Object.keys(pdor.assumptions).length > 0 ? (
-          <pre className="obras-pdor-assumptions">
-            {JSON.stringify(pdor.assumptions, null, 2)}
-          </pre>
+        <p className="obras-pdor-fontes">{resumoDasEvidencias(pdor)}</p>
+        {pdor.stale ? (
+          <p className="obras-pdor-fontes">
+            Este snapshot já venceu; um mais novo o substituiu.
+          </p>
         ) : null}
       </div>
     </details>
