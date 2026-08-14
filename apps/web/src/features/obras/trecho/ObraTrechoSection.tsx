@@ -13,7 +13,10 @@ import { TrechoPeriodoFiltro } from "./TrechoPeriodoFiltro";
 import { TrechoResumo } from "./TrechoResumo";
 import { recortarProjecao, type Periodo } from "./trechoGeometry";
 import "./TrechoEsquematico.css";
-import { FUSO_BRASILIA } from "../../../lib/tempo/fusoBrasilia";
+import {
+  FUSO_BRASILIA,
+  instanteDoServidor,
+} from "../../../lib/tempo/fusoBrasilia";
 
 interface ObraTrechoSectionProps {
   obra: WorksiteMapPoint;
@@ -44,7 +47,7 @@ function procedencia(leitura: LeituraTrecho): string | null {
   if (leitura.origem === "DISPOSITIVO") {
     return "Somente lançamentos deste aparelho";
   }
-  const data = new Date(leitura.obtidoEm);
+  const data = instanteDoServidor(leitura.obtidoEm);
   if (Number.isNaN(data.getTime())) {
     return "Dados do dispositivo, sem rede";
   }

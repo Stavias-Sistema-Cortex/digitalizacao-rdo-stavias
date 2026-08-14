@@ -81,6 +81,16 @@ describe("formatClock", () => {
     expect(formatClock("2026-08-14T12:03:00Z")).toBe("09:03");
   });
 
+  /*
+   * O payload real não traz o Z: o backend produz UTC mas serializa
+   * LocalDateTime, que não carrega fuso. Sem normalizar na fronteira, este é o
+   * caso em que a leitura errada e a exibição certa se cancelavam e a tela
+   * mostrava 12:03 para quem estava em Brasília.
+   */
+  it("lê também o carimbo sem fuso que a API manda hoje", () => {
+    expect(formatClock("2026-08-14T12:03:00")).toBe("09:03");
+  });
+
   it("devolve vazio para data inválida", () => {
     expect(formatClock("não é data")).toBe("");
   });

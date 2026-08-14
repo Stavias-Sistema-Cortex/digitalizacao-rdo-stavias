@@ -3,7 +3,10 @@ import type {
   ConversaTipo,
   MensagemLocalRecord,
 } from "../../lib/db/db.types";
-import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
+import {
+  FUSO_BRASILIA,
+  instanteDoServidor,
+} from "../../lib/tempo/fusoBrasilia";
 
 export interface ConversationPreview {
   messageId: string;
@@ -132,7 +135,7 @@ function previewText(message: MensagemLocalRecord, hasAttachment: boolean): stri
 }
 
 function localDateKey(value: string): string {
-  const date = new Date(value);
+  const date = instanteDoServidor(value);
   if (Number.isNaN(date.getTime())) return value;
   const parts = new Intl.DateTimeFormat("pt-BR", {
     year: "numeric",
@@ -146,7 +149,7 @@ function localDateKey(value: string): string {
 }
 
 function formatDateLabel(value: string): string {
-  const date = new Date(value);
+  const date = instanteDoServidor(value);
   return Number.isNaN(date.getTime())
     ? value
     : new Intl.DateTimeFormat("pt-BR", {

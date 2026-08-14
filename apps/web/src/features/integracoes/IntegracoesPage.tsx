@@ -21,7 +21,10 @@ import type {
   IntegracaoRequestOutcome,
 } from "./integracoesApi";
 import type { IntegracaoStatus } from "./integracoes.types";
-import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
+import {
+  FUSO_BRASILIA,
+  instanteDoServidor,
+} from "../../lib/tempo/fusoBrasilia";
 import "./IntegracoesPage.css";
 
 interface IntegracoesPageProps {
@@ -35,7 +38,7 @@ function formatDateTime(
     return "Sem sincronização";
   }
 
-  const date = new Date(value);
+  const date = instanteDoServidor(value);
 
   if (Number.isNaN(date.getTime())) {
     return value;

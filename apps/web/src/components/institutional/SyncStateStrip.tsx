@@ -4,7 +4,10 @@ import {
   InstitutionalStatus,
   type InstitutionalStatusState,
 } from "./InstitutionalStatus";
-import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
+import {
+  FUSO_BRASILIA,
+  instanteDoServidor,
+} from "../../lib/tempo/fusoBrasilia";
 import "./institutional.css";
 
 export interface SyncStateStripProps {
@@ -46,7 +49,7 @@ function formatLastSync(
     return null;
   }
 
-  const date = new Date(completedAt);
+  const date = instanteDoServidor(completedAt);
 
   if (Number.isNaN(date.getTime())) {
     return null;

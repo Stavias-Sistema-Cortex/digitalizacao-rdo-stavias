@@ -12,7 +12,10 @@ import {
 } from "../mensagensView";
 import { ConversationAvatar, PersonAvatar } from "./Avatar";
 import { IconClose } from "./icons";
-import { FUSO_BRASILIA } from "../../../lib/tempo/fusoBrasilia";
+import {
+  FUSO_BRASILIA,
+  instanteDoServidor,
+} from "../../../lib/tempo/fusoBrasilia";
 
 export interface ConversationsPaneProps {
   loadState: "loading" | "ready" | "failed";
@@ -185,7 +188,7 @@ function SearchResults(props: {
 }
 
 function formatMessageTime(value: string) {
-  const date = new Date(value);
+  const date = instanteDoServidor(value);
   return Number.isNaN(date.getTime())
     ? value
     : new Intl.DateTimeFormat("pt-BR", {

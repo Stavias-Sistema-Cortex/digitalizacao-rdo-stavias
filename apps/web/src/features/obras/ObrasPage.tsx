@@ -41,7 +41,10 @@ import {
 import { ObraAccessibleDialog } from "./ObraAccessibleDialog";
 import { RateioMaoDeObraPanel } from "./rateio/RateioMaoDeObraPanel";
 import { ObraTrechoSection } from "./trecho/ObraTrechoSection";
-import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
+import {
+  FUSO_BRASILIA,
+  instanteDoServidor,
+} from "../../lib/tempo/fusoBrasilia";
 import "./gestao/gestaoObras.css";
 
 type ObrasView = "ATIVAS" | "DESATIVADAS" | "RATEIO" | "LIXEIRA";
@@ -75,7 +78,7 @@ function formatDateTime(value: string | null | undefined): string {
     return "";
   }
 
-  const date = new Date(value);
+  const date = instanteDoServidor(value);
   if (Number.isNaN(date.getTime())) {
     return value;
   }

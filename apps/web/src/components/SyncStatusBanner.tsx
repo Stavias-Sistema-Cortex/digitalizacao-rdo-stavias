@@ -22,7 +22,10 @@ import {
   contarTrabalhoQueSeriaPerdido,
   type TrabalhoNaoEnviado,
 } from "../lib/sync/recomecoDoZero";
-import { FUSO_BRASILIA } from "../lib/tempo/fusoBrasilia";
+import {
+  FUSO_BRASILIA,
+  instanteDoServidor,
+} from "../lib/tempo/fusoBrasilia";
 import "./SyncStatusBanner.css";
 
 interface StatusContent {
@@ -224,7 +227,7 @@ function formatLastSync(
     return null;
   }
 
-  const date = new Date(value);
+  const date = instanteDoServidor(value);
 
   if (Number.isNaN(date.getTime())) {
     return null;

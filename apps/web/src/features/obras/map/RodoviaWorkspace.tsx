@@ -88,7 +88,10 @@ import {
   type EnquadramentoAproximado,
 } from "./enquadramentoAproximado";
 import "./RodoviaWorkspace.css";
-import { FUSO_BRASILIA } from "../../../lib/tempo/fusoBrasilia";
+import {
+  FUSO_BRASILIA,
+  instanteDoServidor,
+} from "../../../lib/tempo/fusoBrasilia";
 
 interface RodoviaWorkspaceProps {
   obra: WorksiteMapPoint;
@@ -150,7 +153,7 @@ function formatarInstante(valor: string | null): string {
   if (!valor) {
     return "ainda não sincronizado";
   }
-  const data = new Date(valor);
+  const data = instanteDoServidor(valor);
   if (Number.isNaN(data.getTime())) {
     return "ainda não sincronizado";
   }

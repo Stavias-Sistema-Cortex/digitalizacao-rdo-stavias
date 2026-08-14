@@ -10,7 +10,10 @@ import {
   type PasskeyRegistrationResult,
 } from "./passkeyApi";
 
-import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
+import {
+  FUSO_BRASILIA,
+  instanteDoServidor,
+} from "../../lib/tempo/fusoBrasilia";
 import "./DeviceSecurityPage.css";
 
 type RegistrationState =
@@ -199,7 +202,7 @@ export function DeviceSecurityPage() {
 }
 
 function formatDateTime(value: string): string {
-  const date = new Date(value);
+  const date = instanteDoServidor(value);
   if (Number.isNaN(date.getTime())) {
     return "Data indisponível";
   }

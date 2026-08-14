@@ -1,4 +1,7 @@
-import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
+import {
+  FUSO_BRASILIA,
+  instanteDoServidor,
+} from "../../lib/tempo/fusoBrasilia";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -30,7 +33,7 @@ const dayKeyFormat = new Intl.DateTimeFormat("pt-BR", {
  * forma curta que o layout pede).
  */
 export function formatRelativeTime(value: string, now: Date): string {
-  const date = new Date(value);
+  const date = instanteDoServidor(value);
   if (Number.isNaN(date.getTime())) {
     return "";
   }
@@ -51,7 +54,7 @@ export function formatRelativeTime(value: string, now: Date): string {
 }
 
 export function formatClock(value: string): string {
-  const date = new Date(value);
+  const date = instanteDoServidor(value);
   return Number.isNaN(date.getTime()) ? "" : clockFormat.format(date);
 }
 
