@@ -1941,6 +1941,13 @@ textarea:focus {
   text-decoration: none;
 }
 
+.home-card--brand a::after {
+  content: "↗";
+  margin-left: 6px;
+  color: var(--color-brand-yellow);
+  font-size: 0.85em;
+}
+
 .home-card--brand a:hover {
   text-decoration: underline;
 }

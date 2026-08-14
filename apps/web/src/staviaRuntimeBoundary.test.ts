@@ -1095,8 +1095,8 @@ describe("StavIA runtime boundary", () => {
       path.join(WEB_ROOT, "src/features/home/MaisStaviasCard.tsx"),
       "utf8",
     ).replace(
-      "↗ {link.label}",
-      `↗ {link.label}{"-Assistant"}`,
+      "{link.label}",
+      `{link.label}{"-Assistant"}`,
     );
     expect(
       inspectSourceBoundary([
