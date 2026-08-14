@@ -161,7 +161,7 @@ describe("RDO export projection", () => {
   it("still refuses whole when the wrapped observations outgrow the box", () => {
     const base = snapshot();
     const overflowing = Array.from(
-      { length: 4 },
+      { length: 6 },
       () => "P".repeat(99) + " " + "Q".repeat(99),
     ).join("\n");
 

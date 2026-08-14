@@ -315,16 +315,22 @@ function wrappedLineCount(line: string, width: number): number {
   }
 }
 
-// A caixa de observações é a célula mesclada B63:AD68 — seis linhas de cerca de
-// cem caracteres — e sai com quebra automática, igual à área do PDF. Nenhuma
-// das duas pede que o apontador aperte Enter a cada cem caracteres, então medir
-// a linha digitada em vez da desenhada recusava o parágrafo corrido que cabe.
+// A caixa de observações é a célula mesclada B63:AD68 — colunas B..AD somando
+// 246 unidades de largura, linhas 63..68 somando 230 pontos, em Myriad Pro 20 —
+// e sai com quebra automática, igual à área do PDF, que é maior ainda. Nenhuma
+// das duas pede que o apontador aperte Enter a cada tantos caracteres, então
+// medir a linha digitada em vez da desenhada recusava o parágrafo que cabe.
+// Oito por cento e vinte fica abaixo do medido de propósito: Myriad Pro costuma
+// faltar em quem abre a planilha, e a substituta pode vir mais larga.
+const OBSERVATION_LINES = 8;
+const OBSERVATION_LINE_WIDTH = 120;
+
 function assertObservationPrintable(value: string): void {
   if (!value) return;
   let used = 0;
   for (const line of value.split(/\r?\n/)) {
-    used += wrappedLineCount(line, 100);
-    if (used > 6) error("RDO_EXPORT_PRINT_OVERFLOW", "O conteúdo de observações gerais não permanece legível no RDO (limite de 6 linhas de 100 caracteres); nenhum conteúdo foi truncado.");
+    used += wrappedLineCount(line, OBSERVATION_LINE_WIDTH);
+    if (used > OBSERVATION_LINES) error("RDO_EXPORT_PRINT_OVERFLOW", `O conteúdo de observações gerais não permanece legível no RDO (limite de ${OBSERVATION_LINES} linhas de ${OBSERVATION_LINE_WIDTH} caracteres); nenhum conteúdo foi truncado.`);
   }
 }
 

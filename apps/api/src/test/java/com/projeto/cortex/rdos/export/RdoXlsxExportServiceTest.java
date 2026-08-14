@@ -693,9 +693,12 @@ class RdoXlsxExportServiceTest {
                         copyRdo(
                                 base,
                                 null, null, null,
+                                // Nove linhas desenhadas para as oito da caixa;
+                                // a primeira ainda leva o rótulo "RDO: ".
                                 String.join("\n", List.of(
                                         "linha 1", "linha 2", "linha 3", "linha 4",
-                                        "linha 5", "linha 6", "linha 7"
+                                        "linha 5", "linha 6", "linha 7", "linha 8",
+                                        "linha 9"
                                 )),
                                 List.of(), List.of(), List.of(), List.of(), List.of()
                         ),

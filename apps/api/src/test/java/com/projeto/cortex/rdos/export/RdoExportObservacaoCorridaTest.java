@@ -72,9 +72,35 @@ class RdoExportObservacaoCorridaTest {
         assertThat(pdf.filename()).endsWith(".pdf");
     }
 
+    /**
+     * O teto subiu, e subir teto não pode derrubar quem já passava.
+     *
+     * <p>O contorno antigo — seis linhas de cem caracteres — é o pior caso que
+     * a regra anterior aceitava. Alargar a linha e somar linhas só relaxa a
+     * conta, nunca aperta, então o que exportava antes exporta agora; e a folga
+     * nova, aqui exercitada logo acima do teto velho, também sai.
+     */
+    @Test
+    void keepsExportingWhatTheOldCeilingAllowedAndThenSome() {
+        // Seis linhas que o rótulo "RDO: " completa em exatos cem caracteres.
+        givenObservations("rdo-teto-antigo", ("y".repeat(95) + "\n").repeat(6));
+        assertThat(xlsxService.export("rdo-teto-antigo").content())
+                .startsWith(new byte[] {'P', 'K'});
+        assertThat(pdfService.export("rdo-teto-antigo").content()).startsWith(
+                "%PDF-".getBytes(StandardCharsets.US_ASCII)
+        );
+
+        givenObservations("rdo-folga-nova", (PARAGRAFO + "\n").repeat(3));
+        assertThat(xlsxService.export("rdo-folga-nova").content())
+                .startsWith(new byte[] {'P', 'K'});
+        assertThat(pdfService.export("rdo-folga-nova").content()).startsWith(
+                "%PDF-".getBytes(StandardCharsets.US_ASCII)
+        );
+    }
+
     @Test
     void stillRefusesWholeWhenTheWrappedTextOutgrowsTheObservationBox() {
-        givenObservations("rdo-transbordo", (PARAGRAFO + "\n").repeat(4));
+        givenObservations("rdo-transbordo", (PARAGRAFO + "\n").repeat(6));
 
         Map<String, ThrowingCallable> exports = new LinkedHashMap<>();
         exports.put("XLSX", () -> xlsxService.export("rdo-transbordo"));

@@ -23,8 +23,22 @@ public class RdoExportAggregateFactory {
     private static final int MAX_MATERIAL_ROWS = 30;
     private static final int MAX_GEOMETRY_ROWS = 36;
     private static final int MAX_CELL_TEXT_LENGTH = 32_767;
-    private static final int OBSERVATION_LINES = 6;
-    private static final int OBSERVATION_LINE_WIDTH = 100;
+    /*
+     * A caixa de observações medida, e não estimada por baixo.
+     *
+     * No XLSX é a célula mesclada B63:AD68 da aba "v.1 RDO verso": as colunas
+     * B..AD somam 246 unidades de largura e as linhas 63..68 somam 230 pontos
+     * de altura, com a célula em Myriad Pro 20. Isso dá cerca de 129 caracteres
+     * por linha e nove linhas. No PDF a área é maior ainda — 12 linhas de cerca
+     * de 160 caracteres em Helvetica 6,5.
+     *
+     * Fica-se abaixo do medido de propósito: Myriad Pro costuma faltar na
+     * máquina de quem abre a planilha, e a fonte substituta pode vir mais
+     * larga. Oito linhas de cento e vinte cabem nas duas caixas com folga, e
+     * são o dobro do que a conferência antiga deixava passar.
+     */
+    private static final int OBSERVATION_LINES = 8;
+    private static final int OBSERVATION_LINE_WIDTH = 120;
     private static final Pattern UUID_TEXT = Pattern.compile(
             "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
             Pattern.CASE_INSENSITIVE
