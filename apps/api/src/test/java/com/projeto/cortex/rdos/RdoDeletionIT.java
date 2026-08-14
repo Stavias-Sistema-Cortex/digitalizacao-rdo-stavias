@@ -21,8 +21,10 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
 
 /**
  * Apagar RDO contra PostgreSQL de verdade.
@@ -154,6 +156,47 @@ class RdoDeletionIT {
         assertThat(existeRdo(enviado)).isFalse();
     }
 
+    /**
+     * Apagar de vez tem de apagar a aresta também.
+     *
+     * <p>O publicador da Memória é o mesmo para criar, editar e apagar, e é ele
+     * que grava {@code RDO --PERTENCE_A--> OBRA} como relação ativa. No
+     * apagamento definitivo isso rodava depois do {@code DELETE}: a linha do
+     * RDO já não existia e a aresta era regravada mesmo assim. O grafo passava
+     * a afirmar, no presente, um vínculo cujo lado esquerdo não existe — a obra
+     * seguia listando o RDO apagado entre os seus, e quem lê pela ontologia, e
+     * não pela tabela, o encontrava vivo.
+     *
+     * <p>O que fica é a história: o objeto continua no grafo com status
+     * {@code APAGADO} e a relação continua na tabela, com {@code encerrado_em}
+     * carimbado. Quem perguntar amanhã pelo relatório do dia 12 acha a
+     * resposta; quem perguntar quais RDOs a obra tem hoje, não acha ele.
+     */
+    @Test
+    void apagarEncerraAsArestasDoRdoNoGrafoESoDeixaAHistoria() {
+        String obraId = inserirObra("grafo");
+        String rdoId = inserirRdo(
+                obraId, "RDO-0040", LocalDate.of(2026, 7, 25), "RASCUNHO", null
+        );
+        RdoMemoryPublisher memoria = memoriaReal();
+        memoria.registrarRdoCriado(rdoId, obraId, null, "RDO-0040", "RASCUNHO");
+
+        assertThat(arestas(rdoId, true)).isPositive();
+
+        servico("alfa", memoria).apagar(rdoId);
+
+        assertThat(existeRdo(rdoId)).isFalse();
+        assertThat(arestas(rdoId, true)).isZero();
+        assertThat(arestas(rdoId, false)).isPositive();
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT status FROM cortex_objeto
+                WHERE tipo_entidade = 'RDO' AND entidade_id = ?
+                """,
+                String.class, rdoId
+        )).isEqualTo("APAGADO");
+    }
+
     @Test
     void recusaRdoInexistente() {
         assertThatThrownBy(() -> servico("alfa").apagar(UUID.randomUUID().toString()))
@@ -164,12 +207,45 @@ class RdoDeletionIT {
     // ---------------------------------------------------------------
 
     private RdoDeletionService servico(String actorId) {
+        return servico(actorId, mock(RdoMemoryPublisher.class));
+    }
+
+    private RdoDeletionService servico(
+            String actorId,
+            RdoMemoryPublisher memoria
+    ) {
         CurrentUserService usuario = mock(CurrentUserService.class);
         when(usuario.requireUserId()).thenReturn(actorId);
         return new RdoDeletionService(
-                jdbc, usuario, mock(RdoMemoryPublisher.class),
+                jdbc, usuario, memoria,
                 mock(PrevisaoFinanceiraService.class)
         );
+    }
+
+    private RdoMemoryPublisher memoriaReal() {
+        return new RdoMemoryPublisher(
+                new CortexOperationalMemoryService(
+                        jdbc, new ObjectMapper(), evento -> {
+                        }
+                ),
+                jdbc
+        );
+    }
+
+    private int arestas(String rdoId, boolean ativas) {
+        Integer total = jdbc.queryForObject(
+                """
+                SELECT count(*)
+                FROM cortex_relacao
+                WHERE ativa = ?
+                  AND (
+                      (origem_tipo = 'RDO' AND origem_id = ?)
+                      OR (destino_tipo = 'RDO' AND destino_id = ?)
+                  )
+                """,
+                Integer.class, ativas, rdoId, rdoId
+        );
+        return total == null ? 0 : total;
     }
 
     private RdoDeletionService servicoQueRecusaAlfa() {

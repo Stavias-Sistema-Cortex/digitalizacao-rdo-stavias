@@ -188,6 +188,19 @@ public class RdoMemoryPublisher {
      * O RDO some da operação, mas o fato de ter existido não some da Memória.
      * Quem procurar amanhã por que o relatório do dia 12 não está mais lá
      * encontra aqui quem apagou e quando.
+     *
+     * <p>O que não pode continuar é a aresta. Este caminho é o apagamento
+     * definitivo — a linha do RDO deixou de existir no banco —, e mesmo assim
+     * {@link #registrarObjetoERelacoes} acabava de regravar
+     * {@code RDO --PERTENCE_A--> OBRA} como relação ativa, porque ele é o mesmo
+     * código que publica criação e edição. O grafo passava a afirmar, no
+     * presente, um vínculo cujo lado esquerdo já não existe: a obra continuava
+     * listando o RDO apagado entre os seus, e qualquer leitura que parta da
+     * ontologia — e não da tabela — o encontrava vivo.
+     *
+     * <p>Encerrar não apaga: {@code cortex_relacao} guarda a linha com
+     * {@code encerrado_em} carimbado, e o objeto fica com status
+     * {@code APAGADO}. A história continua legível; o presente para de mentir.
      */
     public void registrarRdoApagado(
             String rdoId,
@@ -203,6 +216,8 @@ public class RdoMemoryPublisher {
                 "APAGADO",
                 "RDO_APAGADO"
         );
+
+        memoryService.encerrarRelacoesAtivasDaEntidade("RDO", rdoId);
     }
 
     private void registrarCicloDeVida(

@@ -30,6 +30,68 @@ public class RealPdorInputLoader implements PdorInputLoader {
     private static final int MINIMUM_CALIBRATION_WEEKS =
             PdorEngine.MINIMUM_HISTORY_OBSERVATIONS;
 
+    /**
+     * O evento fica na ontologia; a evidência do cálculo, não.
+     *
+     * <p>A tabela {@code cortex_evento_operacional} é registro histórico e não
+     * tem chave estrangeira para {@code rdo}: apagar o RDO — marcando
+     * {@code cancelado_em} ou removendo a linha de vez — deixa lá tudo o que ele
+     * causou, e é assim que deve ser, senão não haveria como responder amanhã
+     * por que o relatório do dia 12 sumiu. Só que a leitura do PDOR pegava a
+     * obra inteira e trazia esses eventos como evidência do número de hoje. A
+     * tela então dizia "o cálculo leu os registros vivos da obra: … 50 eventos
+     * operacionais", contando como vivo o rastro de um RDO que a obra já tinha
+     * apagado, e o snapshot ainda gravava no grafo uma relação
+     * {@code GERADO_A_PARTIR_DE} apontando para ele.
+     *
+     * <p>Um evento só entra como evidência se o RDO que ele nomeia ainda
+     * existir. Ele nomeia o RDO por duas colunas — {@code rdo_id} em qualquer
+     * evento de obra, e {@code entidade_id} quando o próprio sujeito do evento é
+     * o RDO —, e as duas precisam apontar para RDO vivo da mesma obra. Evento
+     * sem RDO nenhum (contrato, equipe, geometria) passa como sempre passou.
+     */
+    private static final String SOMENTE_EVENTO_DE_RDO_VIVO = """
+              AND (
+                  event.rdo_id IS NULL
+                  OR EXISTS (
+                      SELECT 1
+                      FROM rdo vivo
+                      WHERE vivo.id = event.rdo_id
+                        AND vivo.obra_id = event.obra_id
+                        AND vivo.cancelado_em IS NULL
+                  )
+              )
+              AND (
+                  event.tipo_entidade <> 'RDO'
+                  OR EXISTS (
+                      SELECT 1
+                      FROM rdo vivo
+                      WHERE vivo.id = event.entidade_id
+                        AND vivo.obra_id = event.obra_id
+                        AND vivo.cancelado_em IS NULL
+                  )
+              )
+            """;
+
+    /**
+     * A projeção não é evidência de si mesma.
+     *
+     * <p>Cada cálculo grava na ontologia o seu próprio evento — {@code PDOR}
+     * como entidade e como fonte —, e a leitura seguinte encontrava esse evento
+     * na obra e o citava como uma das entradas do número novo. Duas coisas
+     * saíam disso: a projeção passava a se apoiar na projeção anterior em vez
+     * de se apoiar só no que a obra registrou, e a versão dos dados mudava a
+     * cada execução mesmo com a obra parada — o que fazia todo recálculo
+     * publicar snapshot novo e a idempotência nunca valer.
+     *
+     * <p>O gatilho por evento já ignora o que vem do PDOR, pela mesma razão e
+     * com o mesmo par de campos. A leitura passa a ignorar também.
+     */
+    private static final String SEM_EVENTO_DO_PROPRIO_PDOR = """
+              AND event.tipo_entidade <> 'PDOR'
+              AND event.fonte <> 'PDOR'
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     public RealPdorInputLoader(JdbcTemplate jdbcTemplate) {
@@ -1014,10 +1076,15 @@ public class RealPdorInputLoader implements PdorInputLoader {
         addEvidence(
                 evidence,
                 """
-                SELECT id, ocorrido_em AS observed_at
-                FROM cortex_evento_operacional
-                WHERE obra_id = ? AND ocorrido_em < (? + INTERVAL '1 day')
-                ORDER BY ocorrido_em DESC, commit_seq DESC
+                SELECT event.id, event.ocorrido_em AS observed_at
+                FROM cortex_evento_operacional event
+                WHERE event.obra_id = ?
+                  AND event.ocorrido_em < (? + INTERVAL '1 day')
+                """
+                        + SEM_EVENTO_DO_PROPRIO_PDOR
+                        + SOMENTE_EVENTO_DE_RDO_VIVO
+                        + """
+                ORDER BY event.ocorrido_em DESC, event.commit_seq DESC
                 LIMIT 50
                 """,
                 "EVENTO_OPERACIONAL", "cortex_evento_operacional", "HISTORICO_ONTOLOGICO",

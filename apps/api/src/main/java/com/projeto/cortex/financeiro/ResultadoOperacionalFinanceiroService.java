@@ -82,10 +82,17 @@ public class ResultadoOperacionalFinanceiroService {
         }
     }
 
+    /*
+     * `eligible` atravessa o RDO antes de somar qualquer coisa: produção e
+     * receita de RDO apagado não são produção nem receita da obra. Ver
+     * CanonicalRevenueEvidenceSql.LIVE_RDO_JOIN — a marca do apagamento fica no
+     * documento e não desce para a linha de execução.
+     */
     private static final String CANONICAL_CTE = """
             WITH eligible AS (
                 SELECT execution.*
                 FROM execucao_servico_rdo execution
+                %s
                 WHERE execution.obra_id = ?
                   AND %s
                   AND (? IS NULL OR execution.data_execucao >= ?)
@@ -98,6 +105,7 @@ public class ResultadoOperacionalFinanceiroService {
                 WHERE %s
             )
             """.formatted(
+            CanonicalRevenueEvidenceSql.LIVE_RDO_JOIN,
             CanonicalRevenueEvidenceSql.ELIGIBLE_EXECUTION_PREDICATE,
             CanonicalRevenueEvidenceSql.CANONICAL_EVENT_JOIN,
             CanonicalRevenueEvidenceSql.ACCEPTED_EVIDENCE_PREDICATE
