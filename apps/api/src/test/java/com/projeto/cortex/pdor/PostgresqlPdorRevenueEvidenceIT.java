@@ -297,11 +297,22 @@ class PostgresqlPdorRevenueEvidenceIT {
         assertThat(vivo.sourceValues().contractValue())
                 .isEqualByComparingTo("12500.00");
 
-        // É o que ServicePriceCatalogService.excluirServico grava.
-        jdbc.update(
-                "UPDATE catalogo_servico SET status = 'EXCLUIDO' WHERE id = ?",
-                fixture.serviceId()
-        );
+        // É o que ServicePriceCatalogService.excluirServico grava — inclusive
+        // quem e quando: o banco recusa EXCLUIDO sem os dois, de propósito.
+        String atorDaExclusao = id();
+        jdbc.update("""
+                INSERT INTO colaborador (
+                    id, banco_origem, tabela_origem, pk_origem, nome, papel_acesso
+                ) VALUES (?, 'pdor-it', 'colaborador', ?, 'PDOR excluidor', 'ALFA')
+                """, atorDaExclusao, atorDaExclusao);
+        jdbc.update("""
+                UPDATE catalogo_servico
+                SET status = 'EXCLUIDO',
+                    excluido_em = CURRENT_TIMESTAMP(6),
+                    excluido_por = ?,
+                    commit_revision = cortex_next_service_catalog_revision()
+                WHERE id = ?
+                """, atorDaExclusao, fixture.serviceId());
 
         PdorInputBundle excluido = new RealPdorInputLoader(jdbc)
                 .load(obra, REFERENCE_DATE);
@@ -312,10 +323,14 @@ class PostgresqlPdorRevenueEvidenceIT {
                 .doesNotContain("SERVICE_PRICE_VERSION");
 
         // Restaurado, o teto volta — a exclusão é estado, não perda.
-        jdbc.update(
-                "UPDATE catalogo_servico SET status = 'ACTIVE' WHERE id = ?",
-                fixture.serviceId()
-        );
+        jdbc.update("""
+                UPDATE catalogo_servico
+                SET status = 'ACTIVE',
+                    excluido_em = NULL,
+                    excluido_por = NULL,
+                    commit_revision = cortex_next_service_catalog_revision()
+                WHERE id = ?
+                """, fixture.serviceId());
         assertThat(new RealPdorInputLoader(jdbc)
                 .load(obra, REFERENCE_DATE)
                 .sourceValues()
@@ -325,19 +340,13 @@ class PostgresqlPdorRevenueEvidenceIT {
         // Cancelar a versão de preço a partir da referência encerra a
         // vigência efetiva na véspera: o teto cai pelo mesmo caminho que o
         // catálogo usa em produção, a service_price_version_cancellation.
-        String canceladorId = id();
-        jdbc.update("""
-                INSERT INTO colaborador (
-                    id, banco_origem, tabela_origem, pk_origem, nome, papel_acesso
-                ) VALUES (?, 'pdor-it', 'colaborador', ?, 'PDOR cancelador', 'ALFA')
-                """, canceladorId, canceladorId);
         jdbc.update("""
                 INSERT INTO service_price_version_cancellation (
                     id, price_version_id, obra_id, vigencia_cancelamento,
                     motivo, criado_por
                 ) VALUES (?, ?, ?, ?, 'Preço cancelado no teste.', ?)
                 """, id(), fixture.priceId(), fixture.obraId(),
-                REFERENCE_DATE, canceladorId);
+                REFERENCE_DATE, atorDaExclusao);
 
         PdorInputBundle cancelado = new RealPdorInputLoader(jdbc)
                 .load(obra, REFERENCE_DATE);
