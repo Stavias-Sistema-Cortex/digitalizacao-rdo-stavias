@@ -273,6 +273,82 @@ class PostgresqlRevenueTraceIT {
         assertThat(response.pdor()).isNull();
     }
 
+    /*
+     * Apagar o RDO tira do dinheiro o que ele mediu.
+     *
+     * Apagar um RDO é marcar `rdo.cancelado_em` — é o que o botão da operação
+     * faz e o que o `CANCELAR_RDO` da fila offline aplica no servidor. A marca
+     * fica no documento e não desce para a linha de execução, que segue com
+     * `cancelada = FALSE` porque ninguém cancelou a linha, cancelou-se o dia
+     * inteiro. O PDOR já atravessava o RDO antes de somar; estas duas leituras,
+     * não. Resultado: a projeção esquecia o RDO apagado e o realizado, na tela
+     * ao lado, continuava cobrando por ele — a mesma obra respondendo duas
+     * coisas diferentes sobre a mesma receita.
+     */
+    @Test
+    void oRdoApagadoSaiDoRastreioEDoResultadoOperacional() {
+        Fixture fixture = fixture("RDO-APAGADO", "125.0000");
+        String executionId = acceptedExecution(fixture, "2.000", "250.00", 401L);
+        publishOntologyChain(fixture, executionId);
+        RastreioReceitaService rastreio = new RastreioReceitaService(jdbc);
+        ResultadoOperacionalFinanceiroService operacional =
+                new ResultadoOperacionalFinanceiroService(
+                        jdbc, mock(PrevisaoFinanceiraService.class)
+                );
+
+        assertThat(rastreio.buscar(
+                Set.of(fixture.obraId()), null, EXECUTION_DATE, EXECUTION_DATE
+        ).totalRevenue()).isEqualByComparingTo("250.00");
+        assertThat(operacional.buscar(
+                fixture.obraId(), EXECUTION_DATE, EXECUTION_DATE
+        ).receitaOperacional()).isEqualByComparingTo("250.00");
+        assertThat(rastreio.evidencia(
+                Set.of(fixture.obraId()), executionId
+        ).row().executionId()).isEqualTo(executionId);
+
+        jdbc.update("""
+                UPDATE rdo
+                SET status = 'CANCELADA', cancelado_em = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                """, fixture.rdoId());
+
+        RastreioReceitaResponse trace = rastreio.buscar(
+                Set.of(fixture.obraId()), null, EXECUTION_DATE, EXECUTION_DATE
+        );
+        assertThat(trace.rows()).isEmpty();
+        assertThat(trace.evidenceCount()).isZero();
+        assertThat(trace.totalRevenue()).isEqualByComparingTo("0");
+
+        ResultadoOperacionalFinanceiroResponse resultado = operacional.buscar(
+                fixture.obraId(), EXECUTION_DATE, EXECUTION_DATE
+        );
+        assertThat(resultado.coverageCode()).isEqualTo("NO_ACCEPTED_EVIDENCE");
+        assertThat(resultado.evidenceCount()).isZero();
+        assertThat(resultado.producaoRealizada()).isNull();
+        assertThat(resultado.receitaOperacional()).isNull();
+        assertThat(resultado.servicos()).isEmpty();
+
+        // A gaveta da evidência sai pela mesma consulta, e some junto.
+        assertThatThrownBy(() -> rastreio.evidencia(
+                Set.of(fixture.obraId()), executionId
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("REVENUE_EVIDENCE_NOT_FOUND_OR_FORBIDDEN");
+
+        // Apagar é estado, não perda: restaurado, o dinheiro volta inteiro.
+        jdbc.update("""
+                UPDATE rdo
+                SET status = 'ENVIADO', cancelado_em = NULL
+                WHERE id = ?
+                """, fixture.rdoId());
+
+        assertThat(rastreio.buscar(
+                Set.of(fixture.obraId()), null, EXECUTION_DATE, EXECUTION_DATE
+        ).totalRevenue()).isEqualByComparingTo("250.00");
+        assertThat(operacional.buscar(
+                fixture.obraId(), EXECUTION_DATE, EXECUTION_DATE
+        ).receitaOperacional()).isEqualByComparingTo("250.00");
+    }
+
     @Test
     void evidenceDrawerFailsClosedWithoutPersistedOntologyRelations() {
         Fixture allowed = fixture("DETAIL-NO-RELATIONS", "10.0000");

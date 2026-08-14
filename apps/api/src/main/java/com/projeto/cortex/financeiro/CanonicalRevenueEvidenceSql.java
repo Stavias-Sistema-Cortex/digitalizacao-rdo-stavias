@@ -2,6 +2,33 @@ package com.projeto.cortex.financeiro;
 
 final class CanonicalRevenueEvidenceSql {
 
+    /**
+     * A receita atravessa o RDO, sempre.
+     *
+     * <p>Apagar um RDO é marcar {@code rdo.cancelado_em} — é o que o botão da
+     * operação faz, e é o que o {@code CANCELAR_RDO} da fila offline aplica no
+     * servidor. A marca fica no documento e não desce para as linhas de
+     * execução: elas continuam com {@code cancelada = FALSE}, porque ninguém
+     * cancelou a linha, cancelou-se o dia inteiro. Quem lê a execução sem
+     * atravessar o RDO, portanto, continua somando a produção e a receita de um
+     * documento que já saiu da obra.
+     *
+     * <p>Era o caso do rastreio de receita e do resultado operacional: o PDOR
+     * já atravessava, essas duas leituras não, e as três respondiam a mesma
+     * pergunta com números diferentes — a projeção esquecia o RDO apagado e o
+     * realizado, ao lado, seguia cobrando por ele.
+     *
+     * <p>A obra entra na junção junto com o identificador porque
+     * {@code execucao_servico_rdo} guarda as duas colunas: sem isso, uma linha
+     * com {@code obra_id} divergente do RDO passaria pela junção.
+     */
+    static final String LIVE_RDO_JOIN = """
+            JOIN rdo
+              ON rdo.id = execution.rdo_id
+             AND rdo.obra_id = execution.obra_id
+             AND rdo.cancelado_em IS NULL
+            """;
+
     static final String ELIGIBLE_EXECUTION_PREDICATE = """
             execution.cancelada = FALSE
             AND execution.status_validacao = 'VALIDADA'

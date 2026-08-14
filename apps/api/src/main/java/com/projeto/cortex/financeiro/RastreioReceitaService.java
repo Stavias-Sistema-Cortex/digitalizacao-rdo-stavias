@@ -186,7 +186,17 @@ public class RastreioReceitaService {
                        execution.accepted_at
                 FROM execucao_servico_rdo execution
                 JOIN obra worksite ON worksite.id = execution.obra_id
-                JOIN rdo ON rdo.id = execution.rdo_id
+                """);
+        /*
+         * A junção com o RDO já existia — era dela que saía `numero_rdo` — mas
+         * aceitava qualquer RDO, apagado inclusive. Ver
+         * CanonicalRevenueEvidenceSql.LIVE_RDO_JOIN: o rastreio é a lista das
+         * evidências que sustentam a receita da obra hoje, e a de um documento
+         * apagado não sustenta mais nada. Vale para a lista e para o detalhe,
+         * que passam pela mesma consulta.
+         */
+        sql.append(CanonicalRevenueEvidenceSql.LIVE_RDO_JOIN)
+                .append("""
                 JOIN catalogo_servico service ON service.id = execution.service_id
                 JOIN service_price_version price
                   ON price.id = execution.price_version_id
