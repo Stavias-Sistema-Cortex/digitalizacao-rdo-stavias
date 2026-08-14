@@ -11,6 +11,7 @@ import {
   FUSO_BRASILIA,
   instanteDoServidor,
 } from "../../../lib/tempo/fusoBrasilia";
+import { dataOperacionalHoje } from "./dataOperacionalHoje";
 
 interface TrechoReceitaSectionProps {
   obraId: string;
@@ -21,14 +22,6 @@ interface TrechoReceitaSectionProps {
   periodo: Periodo;
   /** Dia atual, injetável para teste. Formato ISO `AAAA-MM-DD`. */
   hoje?: string;
-}
-
-/** Data local do aparelho: o dia de visualização de quem está em campo. */
-function dataLocalIso(): string {
-  const agora = new Date();
-  const mes = String(agora.getMonth() + 1).padStart(2, "0");
-  const dia = String(agora.getDate()).padStart(2, "0");
-  return `${agora.getFullYear()}-${mes}-${dia}`;
 }
 
 /** Uma atividade agregada: mesmo serviço, mesma unidade, mesma moeda. */
@@ -157,7 +150,7 @@ export function TrechoReceitaSection({
 
   // O período efetivo da receita segue o recorte do trecho; um extremo solto
   // fecha no próprio dia, e nenhum recorte significa o dia atual.
-  const diaAtual = hoje ?? dataLocalIso();
+  const diaAtual = hoje ?? dataOperacionalHoje();
   const de = periodo.de ?? periodo.ate ?? diaAtual;
   const ate = periodo.ate ?? periodo.de ?? diaAtual;
   const padraoHoje = !periodo.de && !periodo.ate;

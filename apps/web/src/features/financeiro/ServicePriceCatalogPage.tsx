@@ -9,6 +9,7 @@ import {
 
 import { LOCAL_MUTATION_QUEUED_EVENT } from "../../lib/sync/localMutationCoordinator";
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
+import { dataHojeEmBrasilia } from "../../lib/tempo/fusoBrasilia";
 import type { FinancialPermission } from "./financeiro.types";
 import { fetchCompleteServiceCatalog } from "./servicePriceApi";
 import {
@@ -99,10 +100,6 @@ function formatMoney(value: string, currency: string): string {
 
 function readText(form: FormData, key: string): string {
   return String(form.get(key) ?? "").trim();
-}
-
-function hojeIso(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 interface NovoServicoState {
@@ -287,7 +284,10 @@ export function ServicePriceCatalogPage({
   );
 
   function abrirNovoServico() {
-    setNovoServico({ ...NOVO_SERVICO_VAZIO, validFrom: hojeIso() });
+    setNovoServico({
+      ...NOVO_SERVICO_VAZIO,
+      validFrom: dataHojeEmBrasilia(),
+    });
     setCodigoEditadoAMao(false);
     setComPrecoInicial(false);
     setEditor({ type: "service" });

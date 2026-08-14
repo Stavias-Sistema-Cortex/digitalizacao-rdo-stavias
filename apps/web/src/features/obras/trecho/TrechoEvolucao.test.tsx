@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { TrechoEvolucao } from "./TrechoEvolucao";
+import { TrechoEvolucao } from "./TrechoEvolucao.tsx";
 import { LARGURA_DO_DIA_PX } from "./trechoEvolucao";
 import type { DiaExecutado } from "./trechoGeometry";
 

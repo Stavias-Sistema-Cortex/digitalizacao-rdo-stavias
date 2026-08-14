@@ -15,6 +15,7 @@ import {
 import { captureOnlineSyncSession } from "../../lib/sync/syncSession";
 import {
   gravarPreferenciaDaConversa,
+  listLocalConversations,
   listLocalMessages,
   queueMessage,
   storeServerConversations,
@@ -85,6 +86,63 @@ describe("mensagens IndexedDB repository", () => {
     // A mensagem nunca foi apagada — estava atrás da cortina.
     expect((await listLocalMessages(conversaId)).map((item) => item.id))
       .toEqual([antiga.id]);
+  });
+
+  it("compara a cortina por instante quando a precisão ISO varia", async () => {
+    const conversaId = "00000000-0000-4000-8000-000000000032";
+    const message = (
+      id: string,
+      criadaNoClienteEm: string,
+    ) => ({
+      id,
+      conversaId,
+      autorId: ownerId,
+      autorNome: "Operador de campo",
+      corpo: id,
+      status: "ATIVA" as const,
+      clientMutationId: `mutation-${id}`,
+      criadaNoClienteEm,
+      criadaEm: criadaNoClienteEm,
+      editadaEm: null,
+      deletadaEm: null,
+      versao: 1,
+      anexos: [],
+    });
+    await storeServerMessages([
+      message("exact-second", "2026-08-14T12:00:00Z"),
+      message("fractional-second", "2026-08-14T12:00:00.500Z"),
+    ]);
+    await gravarPreferenciaDaConversa(conversaId, {
+      limpoAte: "2026-08-14T12:00:00Z",
+    });
+
+    expect((await listLocalMessages(conversaId)).map((item) => item.id))
+      .toEqual(["fractional-second"]);
+  });
+
+  it("ordena conversas pela época quando a precisão ISO varia", async () => {
+    const conversation = (
+      id: string,
+      atualizadaEm: string,
+    ) => ({
+      id,
+      tipo: "OBRA" as const,
+      titulo: id,
+      obraId: "00000000-0000-4000-8000-000000000001",
+      equipeId: null,
+      status: "ATIVA",
+      criadaEm: atualizadaEm,
+      atualizadaEm,
+      versao: 1,
+      participantes: [],
+    });
+    await storeServerConversations([
+      conversation("exact-second", "2026-08-14T12:00:00Z"),
+      conversation("fractional-second", "2026-08-14T12:00:00.500Z"),
+    ]);
+
+    expect((await listLocalConversations()).map((item) => item.id))
+      .toEqual(["fractional-second", "exact-second"]);
   });
 
   it("persists the attachment Blob and dependency graph for a later reload", async () => {

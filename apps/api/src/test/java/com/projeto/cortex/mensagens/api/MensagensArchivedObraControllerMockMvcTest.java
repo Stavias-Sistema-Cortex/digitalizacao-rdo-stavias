@@ -1,10 +1,13 @@
 package com.projeto.cortex.mensagens.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -14,8 +17,11 @@ import com.projeto.cortex.mensagens.domain.MensagemService;
 import com.projeto.cortex.mensagens.domain.PreferenciaDeConversaService;
 import com.projeto.cortex.mensagens.domain.MessagingDirectoryService;
 import com.projeto.cortex.mensagens.domain.MessagingAuditContext;
+import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -90,6 +96,53 @@ class MensagensArchivedObraControllerMockMvcTest {
                                 }
                                 """))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void messageCreationNormalizesOffsetTimestampToUtc() throws Exception {
+        mockMvc.perform(post(
+                        "/api/mensagens/conversas/{conversationId}/mensagens",
+                        CONVERSATION
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "id": "40000000-0000-0000-0000-000000000001",
+                                  "corpo": "Mensagem operacional",
+                                  "clientMutationId": "client-message-1",
+                                  "criadaNoClienteEm": "2026-08-14T09:03:00-03:00",
+                                  "anexos": []
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        ArgumentCaptor<MessageCreateRequest> request =
+                ArgumentCaptor.forClass(MessageCreateRequest.class);
+        verify(messages).send(
+                eq(CONVERSATION),
+                request.capture(),
+                any(MessagingAuditContext.class)
+        );
+        assertThat(request.getValue().criadaNoClienteEm())
+                .isEqualTo(LocalDateTime.parse("2026-08-14T12:03:00"));
+    }
+
+    @Test
+    void historyCursorNormalizesOffsetTimestampToUtc() throws Exception {
+        when(messages.history(eq(CONVERSATION), any(), eq(50)))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get(
+                        "/api/mensagens/conversas/{conversationId}/mensagens",
+                        CONVERSATION
+                ).param("before", "2026-08-14T09:03:00-03:00"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<LocalDateTime> before =
+                ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(messages).history(eq(CONVERSATION), before.capture(), eq(50));
+        assertThat(before.getValue())
+                .isEqualTo(LocalDateTime.parse("2026-08-14T12:03:00"));
     }
 
     private ResponseStatusException archived() {

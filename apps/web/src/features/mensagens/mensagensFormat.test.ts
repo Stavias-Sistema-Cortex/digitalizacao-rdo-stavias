@@ -53,6 +53,15 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime(brasiliaIso(2026, 7, 20, 13, 0), agora)).toBe("ontem 13:00");
   });
 
+  it("resolve ontem pelo calendário de Brasília durante o DST do aparelho", () => {
+    expect(
+      formatRelativeTime(
+        "2026-03-08T02:00:00Z",
+        new Date("2026-03-09T02:00:00Z"),
+      ),
+    ).toBe("ontem 23:00");
+  });
+
   it("usa data curta a partir de dois dias", () => {
     expect(formatRelativeTime(brasiliaIso(2026, 7, 12, 14, 32), agora)).toBe("12/07 14:32");
   });

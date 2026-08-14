@@ -18,7 +18,7 @@ import {
   formatScaledInteger,
   sumExactDecimals,
 } from "./revenueDecimal";
-import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
+import { formatarEmBrasilia } from "../../lib/tempo/fusoBrasilia";
 
 interface FinanceRevenueTracePageProps {
   obraId: string;
@@ -39,6 +39,19 @@ function quantity(value: DecimalValue): string {
 function coverageLabel(value: string): string {
   if (value === "ACCEPTED_EXACT") return "ACEITA EXATA";
   return value.replaceAll("_", " ");
+}
+
+function formatCivilDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== value
+  ) {
+    return value;
+  }
+  return `${match[3]}/${match[2]}/${match[1]}`;
 }
 
 export function FinanceRevenueTracePage({
@@ -179,11 +192,10 @@ export function FinanceRevenueTracePage({
           </strong>
           <span>
             Atualizado em{" "}
-            {new Intl.DateTimeFormat("pt-BR", {
+            {formatarEmBrasilia(snapshot.fetchedAt, {
               dateStyle: "short",
               timeStyle: "short",
-              timeZone: FUSO_BRASILIA,
-            }).format(new Date(snapshot.fetchedAt))}
+            }) ?? snapshot.fetchedAt}
           </span>
           <span>
             Cobertura completa · aceita exata ·{" "}
@@ -205,7 +217,7 @@ export function FinanceRevenueTracePage({
             <tbody>
               {rows.map((row) => (
                 <tr key={row.revenueEvidenceId}>
-                  <td data-label="Data / RDO"><time dateTime={row.executionDate}>{new Intl.DateTimeFormat("pt-BR").format(new Date(`${row.executionDate}T12:00:00Z`))}</time><strong>{row.rdoNumber}</strong></td>
+                  <td data-label="Data / RDO"><time dateTime={row.executionDate}>{formatCivilDate(row.executionDate)}</time><strong>{row.rdoNumber}</strong></td>
                   <td data-label="Serviço"><strong>{row.serviceName}</strong><code>{row.serviceCode}</code></td>
                   <td data-label="Memória do preço"><span>{quantity(row.quantity)} × {currency(row.unitPrice, 4)}</span><small>{row.unit} · versão {row.priceVersion}</small></td>
                   <td data-label="Receita" className="is-number"><strong>{currency(row.revenue)}</strong></td>

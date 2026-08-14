@@ -42,8 +42,8 @@ import { ObraAccessibleDialog } from "./ObraAccessibleDialog";
 import { RateioMaoDeObraPanel } from "./rateio/RateioMaoDeObraPanel";
 import { ObraTrechoSection } from "./trecho/ObraTrechoSection";
 import {
-  FUSO_BRASILIA,
-  instanteDoServidor,
+  compararCarimbosEmBrasilia,
+  formatarCarimboEmBrasilia,
 } from "../../lib/tempo/fusoBrasilia";
 import "./gestao/gestaoObras.css";
 
@@ -73,21 +73,26 @@ const TRACE_KEYS = [
   "observacoes",
 ];
 
-function formatDateTime(value: string | null | undefined): string {
+function formatObraDateTime(value: string | null | undefined): string {
   if (!value) {
     return "";
   }
 
-  const date = instanteDoServidor(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
+  return formatarCarimboEmBrasilia(value, {
     dateStyle: "short",
     timeStyle: "short",
-    timeZone: FUSO_BRASILIA,
-  }).format(date);
+  }) ?? value;
+}
+
+function formatTimelineDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  return formatarCarimboEmBrasilia(value, {
+    dateStyle: "short",
+    timeStyle: "short",
+  }) ?? value;
 }
 
 function formatCurrency(value: number | null): string {
@@ -298,7 +303,10 @@ export function ObrasPage() {
           override.versaoEntidade ?? -1;
         if (
           cachedVersion > optimisticVersion ||
-          obra.updatedAt >= override.updatedAt
+          compararCarimbosEmBrasilia(
+            obra.updatedAt,
+            override.updatedAt,
+          ) >= 0
         ) {
           return obra;
         }
@@ -983,7 +991,7 @@ export function ObrasPage() {
                   <div>
                     <dt>Atualizado em</dt>
                     <dd>
-                      {formatDateTime(focusedObra.updatedAt) ||
+                      {formatObraDateTime(focusedObra.updatedAt) ||
                         "-"}
                     </dd>
                   </div>
@@ -1185,7 +1193,7 @@ export function ObrasPage() {
                             <div>
                               <strong>{event.type}</strong>
                               <span>
-                                {formatDateTime(
+                                {formatTimelineDateTime(
                                   event.occurredAt,
                                 ) || "-"}
                               </span>

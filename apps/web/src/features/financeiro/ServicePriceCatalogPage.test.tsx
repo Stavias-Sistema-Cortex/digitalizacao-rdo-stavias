@@ -57,6 +57,7 @@ describe("ServicePriceCatalogPage", () => {
   // Sem desmontar entre os casos, cada render deixa a página anterior no DOM e
   // as buscas por papel passam a encontrar o mesmo botão várias vezes.
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
   });
 
@@ -147,6 +148,26 @@ describe("ServicePriceCatalogPage", () => {
       OBRA_ID,
       { code: "PAV.BASE", name: "Base graduada", description: "" },
     ));
+  });
+
+  it("sugere a vigência no dia de Brasília quando UTC já virou", async () => {
+    render(
+      <ServicePriceCatalogPage
+        obraId={OBRA_ID}
+        permissions={["FINANCEIRO_VISUALIZAR", "FINANCEIRO_ADMINISTRAR"]}
+      />,
+    );
+
+    await screen.findByText("Pavimentação CBUQ");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2031-01-01T01:00:00Z"));
+
+    fireEvent.click(screen.getByRole("button", { name: /novo serviço/i }));
+    fireEvent.click(screen.getByLabelText(/informar o custo agora/i));
+
+    expect(screen.getByLabelText("Início da vigência")).toHaveValue(
+      "2030-12-31",
+    );
   });
 
   it("propõe o código a partir do nome e reconhece o serviço que já existe", async () => {

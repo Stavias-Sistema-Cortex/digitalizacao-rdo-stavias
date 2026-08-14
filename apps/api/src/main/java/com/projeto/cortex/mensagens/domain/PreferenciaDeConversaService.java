@@ -2,6 +2,7 @@ package com.projeto.cortex.mensagens.domain;
 
 import com.projeto.cortex.auth.CurrentUserService;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -51,7 +52,11 @@ public class PreferenciaDeConversaService {
     @Transactional
     public void arquivar(String conversationId) {
         ConversationScope escopo = accessPolicy.requireAccess(conversationId);
-        gravar(escopo.id(), "arquivado_em", LocalDateTime.now());
+        gravar(
+                escopo.id(),
+                "arquivado_em",
+                LocalDateTime.now(ZoneOffset.UTC)
+        );
     }
 
     /** Devolve a conversa à minha lista. */
@@ -71,7 +76,11 @@ public class PreferenciaDeConversaService {
     @Transactional
     public void limpar(String conversationId) {
         ConversationScope escopo = accessPolicy.requireAccess(conversationId);
-        gravar(escopo.id(), "limpo_ate", LocalDateTime.now());
+        gravar(
+                escopo.id(),
+                "limpo_ate",
+                LocalDateTime.now(ZoneOffset.UTC)
+        );
     }
 
     /** Reabre o histórico inteiro para mim. */

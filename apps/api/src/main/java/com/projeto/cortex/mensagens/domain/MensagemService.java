@@ -13,6 +13,7 @@ import com.projeto.cortex.storage.StoredObjectRepository;
 import com.projeto.cortex.storage.StoredObjectService;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -85,6 +86,7 @@ public class MensagemService {
         LocalDateTime clientCreatedAt = request.criadaNoClienteEm() == null
                 ? LocalDateTime.now(ZoneOffset.UTC)
                 : request.criadaNoClienteEm();
+        LocalDateTime serverCreatedAt = LocalDateTime.now(ZoneOffset.UTC);
         List<AttachmentReferenceRequest> attachmentReferences =
                 normalizeAttachments(request.anexos());
         if (body == null && attachmentReferences.isEmpty()) {
@@ -125,15 +127,16 @@ public class MensagemService {
                 """
                 INSERT INTO mensagem (
                     id, conversa_id, autor_id, corpo, client_mutation_id,
-                    criado_cliente_em
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    criado_cliente_em, criado_em
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 messageId,
                 scope.id(),
                 actorId,
                 body,
                 clientMutationId,
-                clientCreatedAt
+                clientCreatedAt,
+                serverCreatedAt
         );
         eventService.recordSuccess(
                 "MENSAGEM",
@@ -146,7 +149,8 @@ public class MensagemService {
                         "autorId", actorId,
                         "corpo", body == null ? "" : body,
                         "clientMutationId", clientMutationId,
-                        "criadaNoClienteEm", clientCreatedAt.toString(),
+                        "criadaNoClienteEm",
+                        clientCreatedAt.toInstant(ZoneOffset.UTC).toString(),
                         "anexoIds", attachmentReferences.stream()
                                 .map(AttachmentReferenceRequest::objetoId)
                                 .toList()
@@ -330,15 +334,17 @@ public class MensagemService {
             );
         }
         requireWritable(scope);
+        LocalDateTime editedAt = LocalDateTime.now(ZoneOffset.UTC);
         jdbcTemplate.update(
                 """
                 UPDATE mensagem
                 SET corpo = ?, status = 'EDITADA',
-                    editado_em = CURRENT_TIMESTAMP(6), editado_por = ?,
+                    editado_em = ?, editado_por = ?,
                     versao_linha = versao_linha + 1
                 WHERE id = ?
                 """,
                 body,
+                editedAt,
                 actorId,
                 existing.id()
         );
@@ -368,14 +374,16 @@ public class MensagemService {
         requireActor(audit, actorId);
         requireAuthorOrAlfa(existing, actorId);
         if (!"EXCLUIDA".equals(existing.status())) {
+            LocalDateTime deletedAt = LocalDateTime.now(ZoneOffset.UTC);
             jdbcTemplate.update(
                     """
                     UPDATE mensagem
                     SET corpo = NULL, status = 'EXCLUIDA',
-                        deletado_em = CURRENT_TIMESTAMP(6), deletado_por = ?,
+                        deletado_em = ?, deletado_por = ?,
                         versao_linha = versao_linha + 1
                     WHERE id = ?
                     """,
+                    deletedAt,
                     actorId,
                     existing.id()
             );
@@ -533,10 +541,10 @@ public class MensagemService {
                 rs.getString("corpo"),
                 rs.getString("status"),
                 rs.getString("client_mutation_id"),
-                rs.getTimestamp("criado_cliente_em").toLocalDateTime(),
-                rs.getTimestamp("criado_em").toLocalDateTime(),
-                timestamp(rs, "editado_em"),
-                timestamp(rs, "deletado_em"),
+                timestampUtc(rs, "criado_cliente_em"),
+                timestampUtc(rs, "criado_em"),
+                timestampUtc(rs, "editado_em"),
+                timestampUtc(rs, "deletado_em"),
                 rs.getLong("versao_linha"),
                 loadAttachments(id)
         );
@@ -760,11 +768,12 @@ public class MensagemService {
         );
     }
 
-    private LocalDateTime timestamp(ResultSet rs, String column)
+    private Instant timestampUtc(ResultSet rs, String column)
             throws SQLException {
-        return rs.getTimestamp(column) == null
+        LocalDateTime timestamp = rs.getObject(column, LocalDateTime.class);
+        return timestamp == null
                 ? null
-                : rs.getTimestamp(column).toLocalDateTime();
+                : timestamp.toInstant(ZoneOffset.UTC);
     }
 
     private int normalizeLimit(int value) {

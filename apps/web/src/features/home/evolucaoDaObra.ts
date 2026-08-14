@@ -3,6 +3,7 @@ import {
   type ChartPeriod,
   type MonthlyPoint,
 } from "./progressSeries";
+import { dataHojeEmBrasilia } from "../../lib/tempo/fusoBrasilia";
 
 /**
  * Janela geoespacial derivada do gráfico de avanço da Home.
@@ -25,8 +26,8 @@ const MESES_POR_PERIODO: Readonly<Record<ChartPeriod, number | null>> = {
   ALL: null,
 };
 
-function mesUtc(data: Date): string {
-  return data.toISOString().slice(0, 7);
+function mesBrasilia(data: Date): string {
+  return dataHojeEmBrasilia(data).slice(0, 7);
 }
 
 /**
@@ -48,5 +49,5 @@ export function janelaDoGrafico(
   // Sem histórico de previsão o gráfico está vazio e não há âncora; a mesma
   // conta do gráfico (granularidade de mês, N-1 para trás) aplicada ao mês
   // corrente é o que ele mostraria se o primeiro ponto chegasse hoje.
-  return { inicio: `${shiftMonth(mesUtc(hoje), -(meses - 1))}-01` };
+  return { inicio: `${shiftMonth(mesBrasilia(hoje), -(meses - 1))}-01` };
 }

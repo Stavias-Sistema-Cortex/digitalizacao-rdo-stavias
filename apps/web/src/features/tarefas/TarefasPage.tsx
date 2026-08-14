@@ -39,6 +39,7 @@ import type {
   TarefaPrioridade,
   TarefaRecord,
 } from "../../lib/db/db.types";
+import { formatarEmBrasilia } from "../../lib/tempo/fusoBrasilia";
 import {
   hidratarColaboradoresAcademy,
   listarColaboradoresConhecidos,
@@ -87,18 +88,10 @@ function equipeKey(value: string): string {
 }
 
 function formatDate(iso: string | null): string {
-  if (!iso) {
-    return "";
-  }
-
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return iso;
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
+  if (!iso) return "";
+  return formatarEmBrasilia(iso, {
     dateStyle: "short",
-  }).format(date);
+  }) ?? iso;
 }
 
 function formatMonthYear(month: string): string {

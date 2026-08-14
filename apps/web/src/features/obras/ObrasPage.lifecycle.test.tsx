@@ -243,6 +243,17 @@ afterEach(() => {
 });
 
 describe("ObrasPage lifecycle Alfa", () => {
+  it.each([
+    ["canonical instant", "2026-07-22T01:30:00.000Z", "21/07/2026, 22:30"],
+    ["legacy civil clock", "2026-07-22T01:30:00", "22/07/2026, 01:30"],
+  ])("shows focused worksite %s", (_case, updatedAt, expected) => {
+    state.obras = [obra({ updatedAt })];
+
+    render(<ObrasPage />);
+
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
   it("não monta ações administrativas nem Lixeira para Beta", () => {
     state.alfa = false;
     render(<ObrasPage />);
@@ -314,6 +325,67 @@ describe("ObrasPage lifecycle Alfa", () => {
     expect(screen.queryByText("Pendente")).not.toBeInTheDocument();
     expect(screen.getAllByText("Duplicação confirmada").length)
       .toBeGreaterThan(0);
+  });
+
+  it("mantém o override civil posterior ao instante convertido para Brasília", async () => {
+    queues.update.mockImplementationOnce(
+      async (existing: ObraLocalRecord, input: { nome: string }) => ({
+        ...existing,
+        nome: input.nome,
+        syncStatus: "PENDING_SYNC",
+        updatedAt: "2026-07-28T12:00:00",
+      }),
+    );
+    const user = userEvent.setup();
+    const rendered = render(<ObrasPage />);
+
+    await user.click(screen.getByRole("button", { name: "Editar" }));
+    const dialog = screen.getByRole("dialog", { name: "Editar obra" });
+    const nome = within(dialog).getByRole("textbox", { name: "Nome" });
+    await user.clear(nome);
+    await user.type(nome, "Override civil");
+    await user.click(within(dialog).getByRole("button", {
+      name: "Salvar alterações",
+    }));
+
+    state.obras = [obra({
+      nome: "Cache das 11h em Brasília",
+      updatedAt: "2026-07-28T14:00:00Z",
+    })];
+    rendered.rerender(<ObrasPage />);
+
+    expect(screen.getAllByText("Override civil").length)
+      .toBeGreaterThan(0);
+    expect(screen.queryByText("Cache das 11h em Brasília"))
+      .not.toBeInTheDocument();
+    expect(screen.getByText("Pendente")).toBeInTheDocument();
+  });
+
+  it("prioriza a versão autoritativa maior mesmo com timestamp anterior", async () => {
+    const user = userEvent.setup();
+    const rendered = render(<ObrasPage />);
+
+    await user.click(screen.getByRole("button", { name: "Editar" }));
+    const dialog = screen.getByRole("dialog", { name: "Editar obra" });
+    const nome = within(dialog).getByRole("textbox", { name: "Nome" });
+    await user.clear(nome);
+    await user.type(nome, "Override mais novo");
+    await user.click(within(dialog).getByRole("button", {
+      name: "Salvar alterações",
+    }));
+
+    state.obras = [obra({
+      nome: "Versão autoritativa",
+      versaoEntidade: 5,
+      updatedAt: "2026-07-28T12:30:00Z",
+    })];
+    rendered.rerender(<ObrasPage />);
+
+    expect(screen.getAllByText("Versão autoritativa").length)
+      .toBeGreaterThan(0);
+    expect(screen.queryByText("Override mais novo"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Pendente")).not.toBeInTheDocument();
   });
 
   it("arquiva após confirmação restaurável e restaura com o status preservado", async () => {

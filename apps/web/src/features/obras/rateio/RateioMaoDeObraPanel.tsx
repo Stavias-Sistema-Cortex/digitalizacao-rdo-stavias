@@ -22,6 +22,7 @@ import {
 } from "./exportarRateio";
 import { encarregadosDoRateio, filtrarRateio } from "./filtrosDoRateio";
 import { mensagemDeRateioVazio } from "./mensagemDeRateioVazio";
+import { mesCorrente } from "./mesCorrente";
 import { buscarApontamentosDoServidor } from "./rateioApi";
 import {
   apurarRateio,
@@ -63,11 +64,6 @@ interface RateioMaoDeObraPanelProps {
   obras: readonly ObraLocalRecord[];
   /** Mês inicial (`AAAA-MM`); serve para o teste fixar o calendário. */
   mesInicial?: string;
-}
-
-function mesCorrente(): string {
-  const agora = new Date();
-  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function deslocarMes(mes: string, passos: number): string {

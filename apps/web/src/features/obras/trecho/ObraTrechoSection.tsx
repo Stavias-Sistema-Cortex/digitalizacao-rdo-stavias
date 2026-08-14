@@ -8,7 +8,7 @@ import type { EnderecoDaObra } from "../map/enquadramentoAproximado";
 import { carregarTrechoDaObra, type LeituraTrecho } from "./obraTrechoApi";
 import { TrechoEsquematico } from "./TrechoEsquematico";
 import { TrechoReceitaSection } from "./TrechoReceitaSection";
-import { TrechoEvolucao } from "./TrechoEvolucao";
+import { TrechoEvolucao } from "./TrechoEvolucao.tsx";
 import { TrechoPeriodoFiltro } from "./TrechoPeriodoFiltro";
 import { TrechoResumo } from "./TrechoResumo";
 import { recortarProjecao, type Periodo } from "./trechoGeometry";

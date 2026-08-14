@@ -34,6 +34,7 @@ import {
 } from "./lastAccessedObra";
 import { filterOperationalObras } from "./homeFilters";
 import { syncSessionFingerprint } from "../../lib/sync/syncSession";
+import { compararCarimbosEmBrasilia } from "../../lib/tempo/fusoBrasilia";
 
 function currentSessionFingerprint(): string | null {
   const session = getSession();
@@ -184,8 +185,9 @@ export function useHomeData(
         return;
       }
 
+      // Obra mistura instantes novos com relógios civis do cache histórico.
       cached.sort((a, b) =>
-        a.updatedAt < b.updatedAt ? 1 : -1,
+        compararCarimbosEmBrasilia(b.updatedAt, a.updatedAt),
       );
       const local = canIncludeArchived
         ? cached

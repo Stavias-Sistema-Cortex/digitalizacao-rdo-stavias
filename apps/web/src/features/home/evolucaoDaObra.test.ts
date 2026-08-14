@@ -44,6 +44,11 @@ describe("janelaDoGrafico", () => {
     expect(janelaDoGrafico([], "12M", HOJE).inicio).toBe("2025-09-01");
   });
 
+  it("usa o mês de Brasília quando UTC já virou", () => {
+    const utcJaVirou = new Date("2031-01-01T01:00:00Z");
+    expect(janelaDoGrafico([], "3M", utcJaVirou).inicio).toBe("2030-10-01");
+  });
+
   it("não limita o passado quando o gráfico mostra tudo", () => {
     expect(janelaDoGrafico([ponto("2026-01")], "ALL", HOJE).inicio)
       .toBeNull();

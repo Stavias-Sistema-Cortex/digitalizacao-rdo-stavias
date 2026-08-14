@@ -1,6 +1,6 @@
 package com.projeto.cortex.mensagens.api;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 public record MessageResponse(
@@ -11,10 +11,10 @@ public record MessageResponse(
         String corpo,
         String status,
         String clientMutationId,
-        LocalDateTime criadaNoClienteEm,
-        LocalDateTime criadaEm,
-        LocalDateTime editadaEm,
-        LocalDateTime deletadaEm,
+        Instant criadaNoClienteEm,
+        Instant criadaEm,
+        Instant editadaEm,
+        Instant deletadaEm,
         long versao,
         List<AttachmentResponse> anexos
 ) {

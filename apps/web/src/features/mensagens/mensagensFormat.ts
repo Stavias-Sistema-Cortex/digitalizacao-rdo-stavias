@@ -1,4 +1,5 @@
 import {
+  dataHojeEmBrasilia,
   FUSO_BRASILIA,
   instanteDoServidor,
 } from "../../lib/tempo/fusoBrasilia";
@@ -16,13 +17,6 @@ const clockFormat = new Intl.DateTimeFormat("pt-BR", {
 const dayMonthFormat = new Intl.DateTimeFormat("pt-BR", {
   day: "2-digit",
   month: "2-digit",
-  timeZone: FUSO_BRASILIA,
-});
-
-const dayKeyFormat = new Intl.DateTimeFormat("pt-BR", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
   timeZone: FUSO_BRASILIA,
 });
 
@@ -101,7 +95,9 @@ export function messageFrom(cause: unknown): string {
 }
 
 function isPreviousDay(date: Date, now: Date): boolean {
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  return dayKeyFormat.format(date) === dayKeyFormat.format(yesterday);
+  const [year, month, day] = dataHojeEmBrasilia(now).split("-").map(Number);
+  const previousDay = new Date(
+    Date.UTC(year, month - 1, day - 1),
+  ).toISOString().slice(0, 10);
+  return dataHojeEmBrasilia(date) === previousDay;
 }

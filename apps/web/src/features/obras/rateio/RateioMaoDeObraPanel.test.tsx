@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ObraLocalRecord } from "../../../lib/db/db.types";
 
 import { RateioMaoDeObraPanel } from "./RateioMaoDeObraPanel";
+import { mesCorrente } from "./mesCorrente";
 
 const mocks = vi.hoisted(() => ({
   lerLocal: vi.fn(),
@@ -96,6 +97,10 @@ afterEach(() => {
 });
 
 describe("a tela do rateio", () => {
+  it("abre no mês corrente de Brasília", () => {
+    expect(mesCorrente(new Date("2031-01-01T01:00:00Z"))).toBe("2030-12");
+  });
+
   it("monta a matriz com uma linha por pessoa e o percentual por obra", async () => {
     mocks.lerLocal.mockResolvedValue(
       leitura([

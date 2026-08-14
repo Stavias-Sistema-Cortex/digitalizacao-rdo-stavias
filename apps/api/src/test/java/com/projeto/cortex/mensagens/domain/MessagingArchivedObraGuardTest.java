@@ -23,6 +23,7 @@ import com.projeto.cortex.mensagens.api.ParticipantResponse;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.storage.StoredObjectRepository;
 import com.projeto.cortex.storage.StoredObjectService;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -443,8 +444,8 @@ class MessagingArchivedObraGuardTest {
                 "Mensagem operacional",
                 "CRIADA",
                 "client-message-1",
-                LocalDateTime.of(2026, 7, 28, 12, 0),
-                LocalDateTime.of(2026, 7, 28, 12, 0),
+                Instant.parse("2026-07-28T12:00:00Z"),
+                Instant.parse("2026-07-28T12:00:00Z"),
                 null,
                 null,
                 0L,

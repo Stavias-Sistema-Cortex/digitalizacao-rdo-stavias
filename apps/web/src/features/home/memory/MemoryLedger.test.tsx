@@ -72,10 +72,6 @@ describe("Memory ledger accessibility and honest states", () => {
 
   it("renders literal durable status and exact event/commit evidence", () => {
     const occurredAt = "2026-07-27T14:18:00.000Z";
-    const expectedLocalDateTime = new Intl.DateTimeFormat("pt-BR", {
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(new Date(occurredAt));
     const html = renderToStaticMarkup(
       <MemoryLedgerView
         ledger={model({
@@ -129,7 +125,7 @@ describe("Memory ledger accessibility and honest states", () => {
     expect(html).toContain("event-1");
     expect(html).toContain("Responsável");
     expect(html).toContain("João Operador");
-    expect(html).toContain(expectedLocalDateTime);
+    expect(html).toContain("27/07/2026, 11:18");
   });
 
   it("renders compact graph checkpoint, target and lag in the coverage strip", () => {

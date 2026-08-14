@@ -11,6 +11,7 @@ import {
 } from "../obras/map/mapGeometry";
 import { carregarMapaObra, type LeituraMapaObra } from "../obras/map/obraMapApi";
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
+import { formatarEmBrasilia } from "../../lib/tempo/fusoBrasilia";
 import type { JanelaDeEvolucao } from "./evolucaoDaObra";
 
 interface ObraEvolucaoMapaProps {
@@ -35,12 +36,12 @@ function marcacoesDeTrabalho(
 
 function formatarInstante(valor: string | null): string | null {
   if (!valor) return null;
-  const data = new Date(valor);
-  if (Number.isNaN(data.getTime())) return null;
-  return `${data.toLocaleDateString("pt-BR")} às ${data.toLocaleTimeString(
-    "pt-BR",
-    { hour: "2-digit", minute: "2-digit" },
-  )}`;
+  const data = formatarEmBrasilia(valor, { dateStyle: "short" });
+  const hora = formatarEmBrasilia(valor, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return data && hora ? `${data} às ${hora}` : null;
 }
 
 /**

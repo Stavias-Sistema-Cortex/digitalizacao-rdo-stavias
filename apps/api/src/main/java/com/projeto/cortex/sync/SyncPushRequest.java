@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.projeto.cortex.common.UtcLocalDateTimeDeserializer;
 
 public record SyncPushRequest(
         String dispositivoId,
@@ -17,6 +19,7 @@ public record SyncPushRequest(
             String operacao,
             Long baseVersao,
             JsonNode payload,
+            @JsonDeserialize(using = UtcLocalDateTimeDeserializer.class)
             LocalDateTime criadaNoClienteEm,
             String correlacaoId,
             Integer schemaVersion,

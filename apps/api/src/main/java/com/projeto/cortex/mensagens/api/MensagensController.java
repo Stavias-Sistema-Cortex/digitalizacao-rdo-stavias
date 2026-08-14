@@ -1,6 +1,7 @@
 package com.projeto.cortex.mensagens.api;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.common.UtcLocalDateTimes;
 import com.projeto.cortex.mensagens.domain.MessagingDirectoryService;
 import com.projeto.cortex.mensagens.domain.ConversaService;
 import com.projeto.cortex.mensagens.domain.MensagemService;
@@ -12,9 +13,9 @@ import com.projeto.cortex.storage.StoredObjectRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.regex.Pattern;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -177,12 +178,28 @@ public class MensagensController {
     @GetMapping("/api/mensagens/conversas/{conversationId}/mensagens")
     public List<MessageResponse> messageHistory(
             @PathVariable String conversationId,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime before,
+            @RequestParam(required = false) String before,
             @RequestParam(defaultValue = "50") int limit
     ) {
-        return mensagemService.history(conversationId, before, limit);
+        return mensagemService.history(
+                conversationId,
+                parseBefore(before),
+                limit
+        );
+    }
+
+    private LocalDateTime parseBefore(String before) {
+        if (before == null || before.isBlank()) {
+            return null;
+        }
+        try {
+            return UtcLocalDateTimes.parse(before);
+        } catch (DateTimeParseException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "before deve ser uma data e hora ISO-8601 válida."
+            );
+        }
     }
 
     /**

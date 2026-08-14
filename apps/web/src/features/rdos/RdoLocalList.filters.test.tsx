@@ -9,6 +9,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RdoLocalList } from "./RdoLocalList";
+import { dataEstaNoPeriodo } from "./periodoDoRdo";
 
 const mocks = vi.hoisted(() => ({
   listWorksites: vi.fn().mockResolvedValue([]),
@@ -47,6 +48,12 @@ afterEach(() => {
 });
 
 describe("RdoLocalList filter layout contract", () => {
+  it("considera hoje pelo calendário de Brasília", () => {
+    const utcJaVirou = new Date("2031-01-01T01:00:00Z");
+    expect(dataEstaNoPeriodo("2030-12-31", "HOJE", utcJaVirou)).toBe(true);
+    expect(dataEstaNoPeriodo("2031-01-01", "HOJE", utcJaVirou)).toBe(false);
+  });
+
   it("renders the six accessible filters inside the responsive filter grid", () => {
     render(
       <RdoLocalList

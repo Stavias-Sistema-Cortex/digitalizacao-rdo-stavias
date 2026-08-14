@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  compararCarimbosEmBrasilia,
+  compararInstantesDoServidor,
+  dataHojeEmBrasilia,
   FUSO_BRASILIA,
+  formatarCarimboEmBrasilia,
   formatarEmBrasilia,
   instanteDoServidor,
 } from "./fusoBrasilia";
@@ -47,19 +51,45 @@ describe("instanteDoServidor", () => {
     ).toBe("2026-08-14T12:03:00.000Z");
   });
 
-  /*
-   * Data pura não tem hora nem fuso, e carimbar UTC nela seria inventar um
-   * instante. Fica de fora da expressão de propósito — o próprio ECMAScript já
-   * lê "2026-08-14" como o dia em UTC.
-   */
-  it("preserva a data pura", () => {
-    expect(instanteDoServidor("2026-08-14").toISOString()).toBe(
-      "2026-08-14T00:00:00.000Z",
+  it("não transforma data pura em instante", () => {
+    expect(Number.isNaN(instanteDoServidor("2026-08-14").getTime())).toBe(
+      true,
     );
   });
 
   it("devolve data inválida para texto que não é data", () => {
     expect(Number.isNaN(instanteDoServidor("não é data").getTime())).toBe(true);
+  });
+});
+
+describe("compararCarimbosEmBrasilia", () => {
+  it("compara legado civil com o relógio de um instante em Brasília", () => {
+    expect(
+      compararCarimbosEmBrasilia(
+        "2026-08-14T12:00:00",
+        "2026-08-14T14:00:00Z",
+      ),
+    ).toBeGreaterThan(0);
+  });
+
+  it("preserva microssegundos ao converter um instante para Brasília", () => {
+    expect(
+      compararCarimbosEmBrasilia(
+        "2026-08-14T12:00:00.123",
+        "2026-08-14T15:00:00.123456Z",
+      ),
+    ).toBeLessThan(0);
+  });
+});
+
+describe("compararInstantesDoServidor", () => {
+  it("preserva microssegundos que Date não representa", () => {
+    expect(
+      compararInstantesDoServidor(
+        "2026-08-14T12:00:00.123Z",
+        "2026-08-14T12:00:00.123456Z",
+      ),
+    ).toBeLessThan(0);
   });
 });
 
@@ -73,7 +103,47 @@ describe("formatarEmBrasilia", () => {
     expect(formatarEmBrasilia("não é data", relogio)).toBeNull();
   });
 
+  it("recusa data pura para não deslocar o dia anterior", () => {
+    expect(
+      formatarEmBrasilia("2026-08-14", { dateStyle: "short" }),
+    ).toBeNull();
+  });
+
   it("fixa o fuso do Córtex", () => {
     expect(FUSO_BRASILIA).toBe("America/Sao_Paulo");
+  });
+});
+
+describe("formatarCarimboEmBrasilia", () => {
+  it("converte um instante explícito para o relógio de Brasília", () => {
+    expect(
+      formatarCarimboEmBrasilia("2026-07-27T12:31:00Z", relogio),
+    ).toBe("09:31");
+  });
+
+  it("preserva o relógio civil legado que chegou sem offset", () => {
+    expect(
+      formatarCarimboEmBrasilia("2026-07-27T12:31:00", relogio),
+    ).toBe("12:31");
+  });
+
+  it("não inventa hora para data pura", () => {
+    expect(
+      formatarCarimboEmBrasilia("2026-07-27", { dateStyle: "short" }),
+    ).toBeNull();
+  });
+});
+
+describe("dataHojeEmBrasilia", () => {
+  it("continua no dia de Brasília depois da virada em UTC", () => {
+    expect(dataHojeEmBrasilia(new Date("2026-08-15T00:30:00Z"))).toBe(
+      "2026-08-14",
+    );
+  });
+
+  it("vira o dia quando chega a meia-noite de Brasília", () => {
+    expect(dataHojeEmBrasilia(new Date("2026-08-15T03:00:00Z"))).toBe(
+      "2026-08-15",
+    );
   });
 });

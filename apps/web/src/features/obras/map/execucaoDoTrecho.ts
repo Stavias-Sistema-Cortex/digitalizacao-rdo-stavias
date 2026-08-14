@@ -2,6 +2,7 @@ import type {
   OperationalFeature,
   OperationalFeatureCollection,
 } from "./mapGeometry";
+import { dataHojeEmBrasilia } from "../../../lib/tempo/fusoBrasilia";
 
 /**
  * Fase de execução de cada segmento do trecho.
@@ -63,8 +64,8 @@ export const FASES_EM_ORDEM: readonly FaseDeExecucao[] = Object.freeze([
   "ENCERRADA",
 ]);
 
-export function hojeIso(): string {
-  return new Date().toISOString().slice(0, 10);
+export function hojeIso(agora: Date = new Date()): string {
+  return dataHojeEmBrasilia(agora);
 }
 
 /**

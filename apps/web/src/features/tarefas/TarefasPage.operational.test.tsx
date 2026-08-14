@@ -157,4 +157,36 @@ describe("TarefasPage operational worksite selector", () => {
       "obra-arquivada",
     );
   });
+
+  it("shows task instants on the Brasília calendar day", async () => {
+    mocks.listObrasLocais.mockResolvedValue([
+      obra("obra-ativa", { nome: "Obra ativa" }),
+    ]);
+    mocks.listTarefasByObra.mockResolvedValue([{
+      id: "tarefa-1",
+      obraId: "obra-ativa",
+      equipe: "Campo",
+      titulo: "Conferir drenagem",
+      observacoes: "",
+      criadaPor: "João",
+      criadaPorColaboradorId: null,
+      responsavelEquipe: "",
+      responsavelColaboradorId: null,
+      prioridade: 2,
+      concluida: true,
+      concluidaEm: "2026-07-22T01:30:00.000Z",
+      versaoEntidade: 1,
+      syncStatus: "SYNCED",
+      deletadaEm: null,
+      createdAt: "2026-07-22T01:30:00.000Z",
+      updatedAt: "2026-07-22T01:30:00.000Z",
+    }]);
+
+    render(<TarefasPage />);
+
+    expect(await screen.findByText("Conferir drenagem")).toBeVisible();
+    expect(screen.getByText(/Criada por João em/)).toHaveTextContent(
+      "Criada por João em 21/07/2026 · Concluída em 21/07/2026",
+    );
+  });
 });

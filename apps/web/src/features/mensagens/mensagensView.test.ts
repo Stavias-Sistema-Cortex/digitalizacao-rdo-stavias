@@ -64,6 +64,19 @@ describe("mensagensView", () => {
     expect(runs).toEqual([true, false, true]);
   });
 
+  it("calcula a pausa entre o histórico sem Z e a mensagem local com Z", () => {
+    const entries = buildMessageTimeline([
+      message("m1", "c1", "a", "Do servidor", "2026-08-14T12:00:00"),
+      message("m2", "c1", "a", "Ainda local", "2026-08-14T12:20:00.000Z"),
+    ]);
+
+    const runs = entries
+      .filter((entry) => entry.kind === "message")
+      .map((entry) => (entry.kind === "message" ? entry.startsRun : false));
+
+    expect(runs).toEqual([true, true]);
+  });
+
   it("usa somente a última mensagem real como prévia da conversa", () => {
     const previews = buildConversationPreviews([
       message("m1", "c1", "a", "Anterior", "2026-07-14T12:00:00.000Z"),
@@ -77,6 +90,15 @@ describe("mensagensView", () => {
       authorName: "Bruno",
     });
     expect(previews.c2.text).toBe("Documento anexado");
+  });
+
+  it("ordena segundo exato e fração pelo instante, não pelo texto ISO", () => {
+    const previews = buildConversationPreviews([
+      message("m2", "c1", "b", "Meio segundo depois", "2026-08-14T12:00:00.500Z"),
+      message("m1", "c1", "a", "Segundo exato", "2026-08-14T12:00:00Z"),
+    ], new Set());
+
+    expect(previews.c1.messageId).toBe("m2");
   });
 
   it("guarda o autor da prévia para identificar mensagens próprias", () => {

@@ -37,17 +37,15 @@ describe("extensão entre dois km", () => {
 });
 
 describe("data sugerida do RDO", () => {
-  /*
-   * Local e não UTC: às 21h em Pirassununga o dia UTC já virou, e o apontador
-   * receberia amanhã como sugestão de hoje.
-   */
-  it("usa o dia do fuso do aparelho, não o de UTC", () => {
-    const noiteNoBrasil = new Date(2026, 7, 5, 21, 30);
-    expect(dataDeHojeLocal(noiteNoBrasil)).toBe("2026-08-05");
+  it("usa o dia de Brasília mesmo quando o aparelho está em outro fuso", () => {
+    const utcJaVirou = new Date("2031-01-01T01:00:00Z");
+    expect(dataDeHojeLocal(utcJaVirou)).toBe("2030-12-31");
   });
 
   it("preenche mês e dia com dois dígitos", () => {
-    expect(dataDeHojeLocal(new Date(2026, 0, 9))).toBe("2026-01-09");
+    expect(dataDeHojeLocal(new Date("2026-01-09T15:00:00Z"))).toBe(
+      "2026-01-09",
+    );
   });
 });
 

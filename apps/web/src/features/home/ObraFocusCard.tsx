@@ -6,6 +6,10 @@ import type {
   OperationalEventRecord,
   PrevisaoSnapshotRecord,
 } from "../../lib/db/db.types";
+import {
+  formatarCarimboEmBrasilia,
+  instanteDoServidor,
+} from "../../lib/tempo/fusoBrasilia";
 import { janelaDoGrafico } from "./evolucaoDaObra";
 import { ObraEvolucaoMapa } from "./ObraEvolucaoMapa";
 import { ProgressChart } from "./ProgressChart";
@@ -25,19 +29,11 @@ interface ObraFocusCardProps {
 }
 
 function formatUpdatedAt(iso: string | null): string {
-  if (!iso) {
-    return "";
-  }
-
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
+  if (!iso) return "";
+  return formatarCarimboEmBrasilia(iso, {
     dateStyle: "short",
     timeStyle: "short",
-  }).format(date);
+  }) ?? "";
 }
 
 function countOcorrencias30d(
@@ -48,7 +44,7 @@ function countOcorrencias30d(
   return events.filter(
     (event) =>
       event.type === "OCORRENCIA_REGISTRADA" &&
-      new Date(event.occurredAt).getTime() >= cutoff,
+      instanteDoServidor(event.occurredAt).getTime() >= cutoff,
   ).length;
 }
 

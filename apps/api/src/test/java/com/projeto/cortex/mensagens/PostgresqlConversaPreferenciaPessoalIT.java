@@ -14,6 +14,7 @@ import com.projeto.cortex.mensagens.domain.MessagingOperationalEventService;
 import com.projeto.cortex.mensagens.domain.PreferenciaDeConversaService;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -301,8 +302,8 @@ class PostgresqlConversaPreferenciaPessoalIT {
                 autorId,
                 corpo,
                 UUID.randomUUID().toString(),
-                LocalDateTime.now(),
-                LocalDateTime.now()
+                LocalDateTime.now(ZoneOffset.UTC),
+                LocalDateTime.now(ZoneOffset.UTC)
         );
         return id;
     }

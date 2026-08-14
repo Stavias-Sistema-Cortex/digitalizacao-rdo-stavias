@@ -1,4 +1,5 @@
 import type { ObraLocalRecord } from "../../../lib/db/db.types";
+import { formatarEmBrasilia } from "../../../lib/tempo/fusoBrasilia";
 import { operationalEventLabel } from "../eventLabels";
 import type { MemoryFilters } from "./memoryApi";
 import {
@@ -612,11 +613,8 @@ function eventTitle(eventType: string): string {
 }
 
 function formatDateTime(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat("pt-BR", {
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(date);
+  return formatarEmBrasilia(value, {
+    dateStyle: "short",
+    timeStyle: "short",
+  }) ?? value;
 }

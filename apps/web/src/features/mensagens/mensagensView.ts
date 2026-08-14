@@ -4,6 +4,7 @@ import type {
   MensagemLocalRecord,
 } from "../../lib/db/db.types";
 import {
+  compararInstantesDoServidor,
   FUSO_BRASILIA,
   instanteDoServidor,
 } from "../../lib/tempo/fusoBrasilia";
@@ -33,7 +34,7 @@ export function buildMessageTimeline<T extends MensagemLocalRecord>(
   let previousAt = Number.NaN;
   for (const message of messages) {
     const date = localDateKey(message.criadaNoClienteEm);
-    const at = new Date(message.criadaNoClienteEm).getTime();
+    const at = instanteDoServidor(message.criadaNoClienteEm).getTime();
     if (date !== previousDate) {
       result.push({
         kind: "date",
@@ -66,7 +67,10 @@ export function buildConversationPreviews(
 ): Record<string, ConversationPreview> {
   const previews: Record<string, ConversationPreview> = {};
   for (const message of [...messages].sort((left, right) =>
-    left.criadaNoClienteEm.localeCompare(right.criadaNoClienteEm),
+    compararInstantesDoServidor(
+      left.criadaNoClienteEm,
+      right.criadaNoClienteEm,
+    ),
   )) {
     previews[message.conversaId] = {
       messageId: message.id,

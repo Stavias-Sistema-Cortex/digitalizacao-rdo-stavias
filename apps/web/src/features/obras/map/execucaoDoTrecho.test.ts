@@ -4,6 +4,7 @@ import {
   anotarFasesDeExecucao,
   faseDaVigencia,
   fasesPresentes,
+  hojeIso,
   servicoDaFeature,
 } from "./execucaoDoTrecho";
 import type {
@@ -32,6 +33,10 @@ function colecao(
 }
 
 describe("fases de execução do trecho", () => {
+  it("usa o dia de Brasília quando UTC já virou", () => {
+    expect(hojeIso(new Date("2031-01-01T01:00:00Z"))).toBe("2030-12-31");
+  });
+
   it("classifica pela idade do registro, na régua do dia", () => {
     expect(faseDaVigencia("2026-08-03T10:00:00", null, HOJE)).toBe("HOJE");
     expect(faseDaVigencia("2026-08-01", null, HOJE)).toBe("RECENTE");

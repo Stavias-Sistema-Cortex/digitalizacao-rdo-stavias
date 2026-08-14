@@ -112,6 +112,29 @@ function cachedWorksite() {
 }
 
 describe("useHomeData remote hydration truth", () => {
+  it("ordena o cache misto pelo relógio civil de Brasília", async () => {
+    mocks.listObrasLocais.mockResolvedValueOnce([
+      {
+        ...cachedWorksite(),
+        id: "instant-11h-brasilia",
+        updatedAt: "2026-08-14T14:00:00Z",
+      },
+      {
+        ...cachedWorksite(),
+        id: "legacy-civil-noon",
+        updatedAt: "2026-08-14T12:00:00",
+      },
+    ]);
+
+    const { result } = renderHook(() => useHomeData());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.obras.map((obra) => obra.id)).toEqual([
+      "legacy-civil-noon",
+      "instant-11h-brasilia",
+    ]);
+  });
+
   it("keeps cached data local when the remote hydration fails", async () => {
     mocks.hydrateObrasRelacionadas.mockRejectedValueOnce(
       new Error("API indisponível"),

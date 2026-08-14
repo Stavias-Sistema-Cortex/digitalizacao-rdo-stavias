@@ -12,6 +12,8 @@ vi.mock("../../financeiro/revenueTraceCacheRepository", () => ({
   loadRevenueTraceSnapshot,
 }));
 
+import { dataOperacionalHoje } from "./dataOperacionalHoje";
+
 const { TrechoReceitaSection } = await import("./TrechoReceitaSection");
 
 interface RowOverrides {
@@ -91,6 +93,12 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("TrechoReceitaSection", () => {
+  it("resolve o dia corrente no fuso de Brasília", () => {
+    expect(dataOperacionalHoje(new Date("2031-01-01T01:00:00Z"))).toBe(
+      "2030-12-31",
+    );
+  });
+
   it("consulta o dia atual quando o trecho está sem recorte", async () => {
     render(
       <TrechoReceitaSection

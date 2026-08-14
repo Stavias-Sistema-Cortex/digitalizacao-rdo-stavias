@@ -3,6 +3,8 @@ package com.projeto.cortex.mensagens.sync;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.projeto.cortex.common.UtcLocalDateTimeDeserializer;
 import com.projeto.cortex.mensagens.api.MessageCreateRequest;
 import com.projeto.cortex.mensagens.api.AttachmentReferenceRequest;
 import com.projeto.cortex.mensagens.api.MessageEditRequest;
@@ -146,6 +148,7 @@ public class MessageSyncOperationHandler implements SyncOperationHandler {
     private record CreateMessagePayload(
             String conversaId,
             String corpo,
+            @JsonDeserialize(using = UtcLocalDateTimeDeserializer.class)
             LocalDateTime criadaNoClienteEm,
             List<AttachmentReferenceRequest> anexos
     ) {

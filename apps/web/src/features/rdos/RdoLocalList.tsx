@@ -44,6 +44,7 @@ import {
   preflightRdoImportFile,
 } from "../../lib/files/rdoImportResourcePolicy";
 import { extensaoDoRdoM, extremosDoTrecho, trechosDoRdo } from "./trechosDoRdo";
+import { dataEstaNoPeriodo, type PeriodFilter } from "./periodoDoRdo";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -77,7 +78,6 @@ interface RdoLocalListProps {
   createButtonRef?: Ref<HTMLButtonElement>;
 }
 
-type PeriodFilter = "TODOS" | "HOJE" | "7_DIAS" | "30_DIAS";
 type RdoExportFormat = "XLSX" | "PDF";
 type RdoExportNotice = {
   message: string;
@@ -349,30 +349,7 @@ function recordSearchText(record: LocalRdoRecord): string {
 }
 
 function isInPeriod(record: LocalRdoRecord, period: PeriodFilter): boolean {
-  if (period === "TODOS") {
-    return true;
-  }
-
-  const date = new Date(`${record.dataRdo}T00:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return false;
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.floor(
-    (today.getTime() - date.getTime()) / 86_400_000,
-  );
-
-  if (period === "HOJE") {
-    return diffDays === 0;
-  }
-
-  if (period === "7_DIAS") {
-    return diffDays >= 0 && diffDays <= 7;
-  }
-
-  return diffDays >= 0 && diffDays <= 30;
+  return dataEstaNoPeriodo(record.dataRdo, period);
 }
 
 function hasOccurrence(

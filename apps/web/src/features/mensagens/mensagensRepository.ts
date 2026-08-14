@@ -26,6 +26,7 @@ import {
   assertSyncSession,
   type SyncSessionGuard,
 } from "../../lib/sync/syncSession";
+import { compararInstantesDoServidor } from "../../lib/tempo/fusoBrasilia";
 
 export const MESSAGES_CHANGED_EVENT =
   "cortex-messages-changed";
@@ -183,8 +184,13 @@ export async function listLocalConversations(): Promise<
   ConversaLocalRecord[]
 > {
   const database = await getCortexDb();
+  // `atualizadaEm` sem offset é cache do contrato UTC legado, não hora local.
   return (await database.getAll("mensagem_conversas")).sort(
-    (left, right) => right.atualizadaEm.localeCompare(left.atualizadaEm),
+    (left, right) =>
+      compararInstantesDoServidor(
+        right.atualizadaEm,
+        left.atualizadaEm,
+      ),
   );
 }
 
@@ -280,10 +286,16 @@ export async function listLocalMessages(
     .filter(
       (message) =>
         !preferencia.limpoAte ||
-        message.criadaNoClienteEm > preferencia.limpoAte,
+        compararInstantesDoServidor(
+          message.criadaNoClienteEm,
+          preferencia.limpoAte,
+        ) > 0,
     )
     .sort((left, right) =>
-      left.criadaNoClienteEm.localeCompare(right.criadaNoClienteEm),
+      compararInstantesDoServidor(
+        left.criadaNoClienteEm,
+        right.criadaNoClienteEm,
+      ),
     )
     .map((message) => ({
       ...message,
@@ -307,7 +319,10 @@ export async function searchLocalMessages(
   const allAttachments = await database.getAll("mensagem_anexos");
   return messages
     .sort((left, right) =>
-      right.criadaNoClienteEm.localeCompare(left.criadaNoClienteEm),
+      compararInstantesDoServidor(
+        right.criadaNoClienteEm,
+        left.criadaNoClienteEm,
+      ),
     )
     .map((message) => ({
       ...message,
@@ -618,4 +633,3 @@ export function emitMessagesChanged(): void {
     window.dispatchEvent(new Event(MESSAGES_CHANGED_EVENT));
   }
 }
-
