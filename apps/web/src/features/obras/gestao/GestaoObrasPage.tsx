@@ -5,7 +5,6 @@ import { OperationalWorkspace } from "../../../components/workspace/OperationalW
 
 import {
   alterarPapelColaborador,
-  filtrarObrasOperacionais,
   listarColaboradores,
   listarObrasAdmin,
   listarVinculos,
@@ -17,6 +16,15 @@ import {
 } from "./gestaoObrasApi";
 import { NovaObraForm } from "./NovaObraForm";
 import "./gestaoObras.css";
+
+/**
+ * A lista vazia, uma só.
+ *
+ * <p>Um `[]` novo a cada limpeza é uma referência nova, e o React não tem como
+ * saber que nada mudou. Com a mesma referência ele desiste do render, que é o
+ * que se quer quando a limpeza é repetida.
+ */
+const SEM_VINCULOS: VinculoApi[] = [];
 
 function mensagemErro(erro: unknown): string {
   return erro instanceof Error
@@ -69,13 +77,16 @@ export function GestaoObrasPage() {
   // disparam recargas ligando o indicador e incrementando a chave de recarga.
   useEffect(() => {
     let cancelado = false;
+    // `listarObrasAdmin` já devolve só as operacionais — filtrar de novo aqui
+    // era percorrer a lista duas vezes para chegar ao mesmo lugar, e deixava
+    // a regra de "obra arquivada não entra no seletor" escrita em dois pontos
+    // que podiam divergir.
     listarObrasAdmin(obraQueryAtiva)
       .then((dados) => {
         if (!cancelado) {
-          const operacionais = filtrarObrasOperacionais(dados);
-          setObras(operacionais);
+          setObras(dados);
           setObraSelecionadaId((selecionada) =>
-            operacionais.some((obra) => obra.id === selecionada)
+            dados.some((obra) => obra.id === selecionada)
               ? selecionada
               : null
           );
@@ -98,11 +109,27 @@ export function GestaoObrasPage() {
   }, [obraQueryAtiva, obrasReloadKey]);
 
   useEffect(() => {
+    let cancelado = false;
     if (!obraSelecionadaId) {
-      return;
+      /*
+       * A obra saiu da lista — uma busca a filtrou, uma recarga não a trouxe,
+       * alguém a arquivou. Antes o efeito só desistia, e desistir deixava três
+       * coisas para trás: os vínculos da obra anterior em memória, o erro dela
+       * e o indicador de carregamento ligado para sempre, porque o `finally`
+       * que o desliga nunca chegava a rodar.
+       */
+      queueMicrotask(() => {
+        if (!cancelado) {
+          setVinculos(SEM_VINCULOS);
+          setVinculosErro(null);
+          setCarregandoVinculos(false);
+        }
+      });
+      return () => {
+        cancelado = true;
+      };
     }
     const obraId = obraSelecionadaId;
-    let cancelado = false;
     listarVinculos(obraId)
       .then((dados) => {
         if (!cancelado) {
@@ -112,6 +139,14 @@ export function GestaoObrasPage() {
       })
       .catch((erro: unknown) => {
         if (!cancelado) {
+          /*
+           * Falhou a leitura desta obra: a lista tem de ficar vazia, e não
+           * com o que sobrou da obra anterior. Sob o título da obra nova
+           * apareciam os vínculos da antiga, cada um com o botão "Revogar"
+           * funcionando — quem clicasse revogaria um vínculo de uma obra que
+           * nem estava mais na tela.
+           */
+          setVinculos(SEM_VINCULOS);
           setVinculosErro(mensagemErro(erro));
         }
       })
@@ -128,6 +163,10 @@ export function GestaoObrasPage() {
   function selecionarObra(id: string) {
     setObraSelecionadaId(id);
     setCarregandoVinculos(true);
+    // Os vínculos da obra anterior saem antes que os desta cheguem: entre o
+    // clique e a resposta, a coluna mostrava a lista errada sob o título certo.
+    setVinculos(SEM_VINCULOS);
+    setVinculosErro(null);
     setVinculosReloadKey((chave) => chave + 1);
   }
 
@@ -206,6 +245,25 @@ export function GestaoObrasPage() {
     if (!obraSelecionadaId || !colabSelecionado) {
       return;
     }
+    /*
+     * Vincular duas vezes é a mesma pessoa duas vezes na lista.
+     *
+     * <p>O servidor recusa o segundo vínculo — `vincularComId` devolve 409
+     * quando já existe um ATIVO com outro identificador —, mas a recusa só
+     * chega no push seguinte do sync. Até lá a linha otimista ficava na tela
+     * como PENDENTE, ao lado da que já estava lá, e a revalidação que a
+     * derrubaria acontece longe de quem clicou. Barrar aqui é aplicar a mesma
+     * regra do servidor no instante em que ela é violada.
+     */
+    const jaVinculado = vinculos.some(
+      (vinculo) =>
+        vinculo.colaboradorId === colabSelecionado &&
+        (vinculo.status === "ATIVO" || vinculo.status === "PENDENTE"),
+    );
+    if (jaVinculado) {
+      setAviso("Este colaborador já está vinculado a esta obra.");
+      return;
+    }
     setSalvandoVinculo(true);
     setAviso(null);
     try {
@@ -257,7 +315,12 @@ export function GestaoObrasPage() {
       title="Gestão de obras"
       status={{
         code: carregandoObras ? "SYNCING" : obrasErro ? "REJECTED" : "SYNCED",
-        label: carregandoObras ? "Carregando obras" : `${obras.length} obras no escopo global`,
+        // "1 obras no escopo global" era o que a tela dizia com uma obra só, e
+        // é o número mais comum de ver numa carteira pequena.
+        label: carregandoObras
+          ? "Carregando obras"
+          : `${obras.length} ${obras.length === 1 ? "obra" : "obras"}`
+            + " no escopo global",
       }}
     >
 
