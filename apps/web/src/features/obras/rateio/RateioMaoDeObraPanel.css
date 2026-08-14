@@ -459,6 +459,19 @@
   border-top: 1px solid var(--color-border-strong);
 }
 
+/*
+ * A linha que abre o bloco no lugar do título.
+ *
+ * Quando a frente é a própria pessoa, o título sumiu — era o nome dela
+ * repetido. O bloco perderia a borda que o separa do anterior junto com ele,
+ * e um mês com quatro frentes viraria uma lista corrida. A borda passa para a
+ * linha, que é a mesma linha do título de antes.
+ */
+.rateio-matriz tbody tr.is-abre-frente > th,
+.rateio-matriz tbody tr.is-abre-frente > td {
+  border-top: 1px solid var(--color-border-strong);
+}
+
 .rateio-col-obra {
   min-width: 6.5rem;
   padding-left: 0.75rem !important;

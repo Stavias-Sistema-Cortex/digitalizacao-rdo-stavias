@@ -484,3 +484,87 @@ describe("a grafia do nome", () => {
     expect(normalizarNome("JOÃO DA PONTE")).toBe("JOAO DA PONTE");
   });
 });
+
+/*
+ * A frente quase nunca tem nome próprio: o campo do RDO vem vazio e o rateio
+ * a nomeia pela pessoa que responde por ela. Quando essa pessoa também está
+ * apontada — e ela quase sempre está —, o nome dela saía duas vezes na tela,
+ * como título do bloco e como linha logo abaixo. A marca é o que permite à
+ * linha abrir o bloco sozinha.
+ */
+describe("a pessoa que dá nome à própria frente", () => {
+  it("é marcada quando o nome da frente é o dela", () => {
+    const rateio = apurarRateio([
+      apontamento({
+        data: "2026-07-01",
+        obraId: "obra-norte",
+        colaboradorId: "col-1",
+        nome: "HENRIQUE DE SOUZA RUFINO",
+        encarregado: "HENRIQUE DE SOUZA RUFINO",
+      }),
+    ]);
+
+    expect(rateio.colaboradores[0].respondePelaFrente).toBe(true);
+  });
+
+  it("é marcada mesmo com a frente escrita em outra grafia", () => {
+    const rateio = apurarRateio([
+      apontamento({
+        data: "2026-07-01",
+        obraId: "obra-norte",
+        colaboradorId: "col-1",
+        nome: "José  Antônio",
+        encarregado: "JOSE ANTONIO",
+      }),
+    ]);
+
+    expect(rateio.colaboradores[0].respondePelaFrente).toBe(true);
+  });
+
+  it("não marca quem apenas pertence a uma frente de nome próprio", () => {
+    const rateio = apurarRateio([
+      apontamento({
+        data: "2026-07-01",
+        obraId: "obra-norte",
+        colaboradorId: "col-1",
+        nome: "PESSOA UM",
+        encarregado: "FRENTE A",
+      }),
+      apontamento({
+        data: "2026-07-01",
+        obraId: "obra-norte",
+        colaboradorId: "col-2",
+        nome: "PESSOA DOIS",
+        encarregado: "",
+      }),
+    ]);
+
+    expect(
+      rateio.colaboradores.map((pessoa) => pessoa.respondePelaFrente),
+    ).toEqual([false, false]);
+  });
+
+  it("encabeça o próprio bloco, à frente da ordem alfabética", () => {
+    const rateio = apurarRateio([
+      apontamento({
+        data: "2026-07-01",
+        obraId: "obra-norte",
+        colaboradorId: "col-1",
+        nome: "ANA PAULA",
+        encarregado: "ZULMIRA ROCHA",
+      }),
+      apontamento({
+        data: "2026-07-01",
+        obraId: "obra-norte",
+        colaboradorId: "col-2",
+        nome: "ZULMIRA ROCHA",
+        encarregado: "ZULMIRA ROCHA",
+      }),
+    ]);
+
+    expect(rateio.colaboradores.map((pessoa) => pessoa.nome)).toEqual([
+      "ZULMIRA ROCHA",
+      "ANA PAULA",
+    ]);
+  });
+});

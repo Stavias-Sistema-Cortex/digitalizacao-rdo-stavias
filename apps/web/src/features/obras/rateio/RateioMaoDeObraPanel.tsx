@@ -565,21 +565,42 @@ function MatrizDoRateio({
               indice === 0 ||
               colaboradores[indice - 1].encarregado !==
                 colaborador.encarregado;
+            /*
+              O título só aparece quando tem o que dizer.
+              A frente raramente tem nome próprio: o campo do RDO vem vazio e o
+              rateio a nomeia pela pessoa que responde por ela. Quando essa
+              pessoa também está apontada — e ela quase sempre está —, o título
+              era o nome dela repetido logo acima da própria linha, duas vezes
+              seguidas, sem nada explicando a repetição. A ordenação põe essa
+              pessoa à frente do bloco justamente para que a linha dela possa
+              abri-lo sozinha.
+            */
+            const abreSemTitulo = abreFrente && colaborador.respondePelaFrente;
             const colunas = 3 + dias.length + obraIds.length;
+            const funcaoNaTela = colaborador.respondePelaFrente
+              ? [colaborador.funcao, "responde pela frente"]
+                  .filter(Boolean)
+                  .join(" · ")
+              : colaborador.funcao;
             return (
               <Fragment key={colaborador.chave}>
-                {abreFrente ? (
+                {abreFrente && !abreSemTitulo ? (
                   <tr className="rateio-frente">
                     <th scope="rowgroup" colSpan={colunas}>
                       {colaborador.encarregado || "Sem frente declarada"}
                     </th>
                   </tr>
                 ) : null}
-                <tr>
+                <tr className={abreSemTitulo ? "is-abre-frente" : undefined}>
                   <th scope="row" className="rateio-col-nome">
                     {colaborador.nome}
                   </th>
-                  <td className="rateio-col-funcao">{colaborador.funcao}</td>
+                  <td
+                    className="rateio-col-funcao"
+                    title={funcaoNaTela || undefined}
+                  >
+                    {funcaoNaTela}
+                  </td>
                   {/*
                     A divisão da pessoa em miniatura, ao lado do nome: com
                     trinta e um dias no meio, as colunas de percentual caem
