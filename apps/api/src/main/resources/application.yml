@@ -10,6 +10,28 @@ spring:
     ansi:
       enabled: ALWAYS
 
+  # A recusa precisa chegar dita, não codificada.
+  #
+  # A exportação do RDO recusa com 422 e escreve o motivo em português —
+  # "Há mão de obra sem cargo ou nome", "o template comporta 12 serviços, mas o
+  # RDO possui 15", "vínculo de equipamento não reconhecido: X". Sem esta
+  # configuração valia o padrão do Spring Boot, `server.error.include-message:
+  # never`, que apaga o campo antes de a resposta sair: o corpo ia com
+  # `{"status":422,"error":"Unprocessable Entity"}` e nada mais.
+  #
+  # A tela lê `message`, depois `detail`, depois `error`, e caía no último. Quem
+  # tentava exportar recebia "Unprocessable Entity" — uma frase que não é
+  # português, não diz o que corrigir e não distingue um RDO de outro. O motivo
+  # existia o tempo todo, do outro lado do processo.
+  #
+  # `problemdetails` é preferido a `include-message: always` porque é o mais
+  # estreito dos dois: promove a `detail` a razão que alguém escreveu de
+  # propósito no ResponseStatusException, e não a mensagem de qualquer exceção
+  # inesperada que vire 500 — essas continuam genéricas, como devem.
+  mvc:
+    problemdetails:
+      enabled: true
+
   # O app valida o anexo contra cortex.storage.max-size-bytes, mas quem corta
   # primeiro é o contêiner: sem esta configuração valia o padrão do Spring, de
   # 1 MB por arquivo. Uma foto de obra passa disso com folga, então o envio
