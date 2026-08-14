@@ -56,8 +56,15 @@ class Cortex3ResourceLimitTest {
     private static final int RDO_SERVICE_LIMIT = 21;
     private static final int RDO_MATERIAL_LIMIT = 30;
     private static final int RDO_ATTACHMENT_LIMIT = 5;
+    private static final int XLSX_RDO_OBSERVATION_LINES = 6;
+    private static final int XLSX_RDO_OBSERVATION_LINE_WIDTH = 100;
+    /*
+     * A caixa de observações comporta seis linhas desenhadas de cem caracteres,
+     * e a quebra é por palavra: o rótulo "RDO: " fecha a primeira linha no
+     * espaço que ele mesmo traz, e sobram cinco para o texto do apontador.
+     */
     private static final int XLSX_RDO_OBSERVATION_VALUE_LIMIT =
-            100 - "RDO: ".length();
+            (XLSX_RDO_OBSERVATION_LINES - 1) * XLSX_RDO_OBSERVATION_LINE_WIDTH;
     private static final long ATTACHMENT_BYTES_LIMIT = 25L * 1024L * 1024L;
     private static final int PDOR_HISTORY_PAGE_LIMIT = 100;
 
