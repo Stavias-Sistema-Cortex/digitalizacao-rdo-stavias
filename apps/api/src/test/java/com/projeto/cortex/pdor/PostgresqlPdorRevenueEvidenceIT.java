@@ -275,6 +275,99 @@ class PostgresqlPdorRevenueEvidenceIT {
     }
 
     /*
+     * A ontologia guarda tudo; a evidência do cálculo, não.
+     *
+     * `cortex_evento_operacional` é registro histórico e não tem chave
+     * estrangeira para `rdo`: apagado o RDO, tudo o que ele causou continua
+     * lá, e tem de continuar — é assim que se responde amanhã por que o
+     * relatório do dia 12 sumiu. Só que a leitura do PDOR varria a obra
+     * inteira e trazia esses eventos como evidência do número de hoje. A tela
+     * então dizia "o cálculo leu os registros vivos da obra: … 50 eventos
+     * operacionais", contando como vivo o rastro de um RDO já apagado.
+     *
+     * E o pior deles era o próprio PDOR: cada execução grava o seu evento, a
+     * execução seguinte o encontrava e o citava. A projeção se apoiava na
+     * projeção anterior, e a versão dos dados mudava a cada execução mesmo com
+     * a obra parada — nenhum recálculo era idempotente.
+     */
+    @Test
+    void aEvidenciaOntologicaSoTrazEventoDeRdoVivoENuncaOProprioPdor() {
+        Obra obra = Obra.criar(
+                "PDOR-ONTOLOGIA-VIVA", null, null, "Obra PDOR ontologia",
+                null, null, null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+        String doRdo = evento(
+                fixture, 951L, "RDO", fixture.rdoId(), fixture.rdoId(),
+                "RDO_CRIADO", "RDO_API"
+        );
+        String daObra = evento(
+                fixture, 952L, "SERVICE_PRICE_VERSION", fixture.priceId(), null,
+                "SERVICE_PRICE_VERSION_PUBLICADA", "CORTEX_FINANCEIRO"
+        );
+        String doPdor = evento(
+                fixture, 953L, "PDOR", id(), null, "PDOR_CALCULADO", "PDOR"
+        );
+
+        List<String> vivos = eventosLidos(
+                new RealPdorInputLoader(jdbc).load(obra, REFERENCE_DATE)
+        );
+
+        assertThat(vivos).contains(doRdo, daObra).doesNotContain(doPdor);
+
+        jdbc.update("""
+                UPDATE rdo
+                SET status = 'CANCELADA', cancelado_em = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                """, fixture.rdoId());
+
+        List<String> apagado = eventosLidos(
+                new RealPdorInputLoader(jdbc).load(obra, REFERENCE_DATE)
+        );
+
+        // O evento do RDO apagado sai; o da obra, que não depende de RDO
+        // nenhum, fica; o do próprio PDOR nunca esteve lá.
+        assertThat(apagado).contains(daObra).doesNotContain(doRdo, doPdor);
+    }
+
+    private static List<String> eventosLidos(PdorInputBundle input) {
+        return input.evidenceReferences().stream()
+                .filter(reference ->
+                        "EVENTO_OPERACIONAL".equals(reference.entityType()))
+                .map(PdorEvidenceReference::entityId)
+                .toList();
+    }
+
+    /**
+     * Um evento da obra na data de referência. A hora é explícita porque a
+     * evidência corta em {@code referência + 1 dia}: {@code now()} num
+     * contêiner que roda depois dessa data cairia fora da janela e o teste
+     * passaria sem provar nada.
+     */
+    private static String evento(
+            Fixture fixture,
+            long commitSequence,
+            String tipoEntidade,
+            String entidadeId,
+            String rdoId,
+            String tipoEvento,
+            String fonte
+    ) {
+        String eventId = id();
+        jdbc.update("""
+                INSERT INTO cortex_evento_operacional (
+                    id, commit_seq, tipo_entidade, entidade_id, obra_id, rdo_id,
+                    tipo_evento, fonte, origem, sync_status, schema_version,
+                    payload_json, ocorrido_em
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ONLINE', 'SYNCED', 1,
+                          '{}'::jsonb, ?)
+                """, eventId, commitSequence, tipoEntidade, entidadeId,
+                fixture.obraId(), rdoId, tipoEvento, fonte,
+                REFERENCE_DATE.atTime(8, 0));
+        return eventId;
+    }
+
+    /*
      * O teto do contrato só se sustenta em cadastro vivo.
      *
      * O valor contratual soma quantidade_contratada × valor_unitario das
