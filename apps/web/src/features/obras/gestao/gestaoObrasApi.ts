@@ -176,22 +176,17 @@ export async function listarVinculos(
   );
 }
 
-export async function vincularColaborador(
-  obraId: string,
-  colaboradorId: string,
-  papelNaObra?: string,
-): Promise<VinculoApi> {
-  return readJson<VinculoApi>(
-    await apiFetch(`/obras/${encodeURIComponent(obraId)}/vinculos`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        colaboradorId,
-        papelNaObra: papelNaObra?.trim() || null,
-      }),
-    }),
-  );
-}
+/*
+ * Vincular e revogar direto por HTTP saíram daqui.
+ *
+ * <p>Eram os dois primeiros caminhos, escritos antes de o vínculo passar a
+ * exigir revalidação Alfa. Hoje quem grava é a fila — `queueVinculoColaborador`
+ * e `queueRevogarVinculo`, logo abaixo —, que enfileira a mutação canônica e
+ * deixa o sync entregá-la. As duas funções antigas não eram chamadas por
+ * ninguém, nem por teste, e ficavam como um segundo caminho para o mesmo
+ * gesto: o tipo de sobra que um dia alguém chama sem perceber que ela pula a
+ * revalidação inteira.
+ */
 
 async function governanceMutationIdentity(): Promise<{
   userId: string;
@@ -349,16 +344,4 @@ export async function queueRevogarVinculo(
     write: () => [],
   });
   return pending;
-}
-
-export async function revogarVinculo(
-  obraId: string,
-  colaboradorId: string,
-): Promise<VinculoApi> {
-  return readJson<VinculoApi>(
-    await apiFetch(
-      `/obras/${encodeURIComponent(obraId)}/vinculos/${encodeURIComponent(colaboradorId)}`,
-      { method: "DELETE" },
-    ),
-  );
 }
