@@ -136,4 +136,38 @@ describe("RDO export projection", () => {
     });
     expect(projection.observations).toContain("Continuidade da equipe");
   });
+
+  // O apontador escreve a observação de uma vez, sem apertar Enter. A caixa do
+  // RDO quebra o texto sozinha — seis linhas de cerca de cem caracteres — mas a
+  // conferência media a linha digitada, e recusava o parágrafo corrido que cabe
+  // em duas delas. Como a projeção serve ao XLSX e ao PDF, a recusa tirava os
+  // dois arquivos de uma vez.
+  it("accepts a flowing paragraph that the observation box still wraps", () => {
+    const paragraph =
+      "Frente liberada pela fiscalizacao apos a chuva da madrugada; equipe "
+      + "deslocada para o km 10+400 e o servico foi retomado sem "
+      + "intercorrencias ate o fim do turno.";
+    expect(paragraph.length).toBeGreaterThan(100);
+    const base = snapshot();
+
+    const projection = buildRdoExportProjection({
+      ...base,
+      rdo: { ...base.rdo, observacoes: paragraph },
+    });
+
+    expect(projection.observations).toContain(paragraph);
+  });
+
+  it("still refuses whole when the wrapped observations outgrow the box", () => {
+    const base = snapshot();
+    const overflowing = Array.from(
+      { length: 4 },
+      () => "P".repeat(99) + " " + "Q".repeat(99),
+    ).join("\n");
+
+    expect(() => buildRdoExportProjection({
+      ...base,
+      rdo: { ...base.rdo, observacoes: overflowing },
+    })).toThrow(/observações gerais.*não permanece legível/);
+  });
 });

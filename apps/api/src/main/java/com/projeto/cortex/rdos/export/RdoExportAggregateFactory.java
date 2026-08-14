@@ -23,6 +23,8 @@ public class RdoExportAggregateFactory {
     private static final int MAX_MATERIAL_ROWS = 30;
     private static final int MAX_GEOMETRY_ROWS = 36;
     private static final int MAX_CELL_TEXT_LENGTH = 32_767;
+    private static final int OBSERVATION_LINES = 6;
+    private static final int OBSERVATION_LINE_WIDTH = 100;
     private static final Pattern UUID_TEXT = Pattern.compile(
             "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
             Pattern.CASE_INSENSITIVE
@@ -275,25 +277,61 @@ public class RdoExportAggregateFactory {
         }
     }
 
+    /**
+     * Mede as observações como a folha as desenha: com quebra automática.
+     *
+     * <p>A área de observações é a célula mesclada {@code B63:AD68} — seis
+     * linhas de cerca de cem caracteres — e ela vai para o arquivo com
+     * {@code wrapText}, igual à caixa do PDF, que também quebra o texto pela
+     * largura disponível. Nenhuma das duas exige que o apontador aperte Enter
+     * a cada cem caracteres.
+     *
+     * <p>A conferência antiga media a linha <em>digitada</em>, e não a
+     * desenhada: um parágrafo corrido de cento e poucos caracteres — o que se
+     * escreve sem pensar — era recusado com 422 mesmo ocupando duas das seis
+     * linhas. E como esta validação é comum aos dois renderizadores, a recusa
+     * tirava do RDO o XLSX <em>e</em> o PDF de uma vez.
+     *
+     * <p>Agora quebra-se primeiro e conta-se depois. O que passa é o que cabe;
+     * o que sobra continua recusado por inteiro, sem cortar nada.
+     */
     private void printableObservations(String observations) {
         if (observations == null || observations.isBlank()) {
             return;
         }
-        List<String> lines = observations.lines().toList();
-        if (lines.size() > 6) {
-            throw printOverflow(
-                    "observações gerais",
-                    "limite de 6 linhas"
-            );
-        }
-        for (String line : lines) {
-            int length = line.codePointCount(0, line.length());
-            if (length > 100) {
+        int used = 0;
+        for (String line : observations.lines().toList()) {
+            used += wrappedLineCount(line);
+            if (used > OBSERVATION_LINES) {
                 throw printOverflow(
                         "observações gerais",
-                        "limite de 100 caracteres por linha"
+                        "limite de " + OBSERVATION_LINES + " linhas de "
+                                + OBSERVATION_LINE_WIDTH + " caracteres"
                 );
             }
+        }
+    }
+
+    /**
+     * Quantas linhas desenhadas uma linha digitada ocupa, quebrando por palavra
+     * e recorrendo ao corte seco só quando a palavra sozinha não cabe — a mesma
+     * regra do {@code wrapObservation} do renderizador do PDF.
+     */
+    private int wrappedLineCount(String line) {
+        String remaining = line;
+        int count = 0;
+        while (true) {
+            count++;
+            int length = remaining.codePointCount(0, remaining.length());
+            if (length <= OBSERVATION_LINE_WIDTH) {
+                return count;
+            }
+            int end = remaining.offsetByCodePoints(0, OBSERVATION_LINE_WIDTH);
+            int lastSpace = remaining.lastIndexOf(' ', end);
+            if (lastSpace > 0) {
+                end = lastSpace;
+            }
+            remaining = remaining.substring(end).stripLeading();
         }
     }
 

@@ -298,9 +298,34 @@ function assertPrintable(label: string, value: string, limit: number): void {
   if (/\r|\n/.test(value) || [...sanitizeRdoCellText(value)].length > limit) error("RDO_EXPORT_PRINT_OVERFLOW", `O conteúdo de ${label} não permanece legível no RDO (limite de ${limit} caracteres em uma linha); nenhum conteúdo foi truncado.`);
 }
 
+// Quantas linhas desenhadas uma linha digitada ocupa: quebra por palavra, e
+// corta seco só quando a palavra sozinha não cabe — a mesma regra que o
+// renderizador do PDF aplica em wrapObservation.
+function wrappedLineCount(line: string, width: number): number {
+  let remaining = [...line];
+  let count = 0;
+  for (;;) {
+    count += 1;
+    if (remaining.length <= width) return count;
+    let end = width;
+    const lastSpace = remaining.lastIndexOf(" ", end);
+    if (lastSpace > 0) end = lastSpace;
+    remaining = remaining.slice(end);
+    while (remaining[0] === " ") remaining = remaining.slice(1);
+  }
+}
+
+// A caixa de observações é a célula mesclada B63:AD68 — seis linhas de cerca de
+// cem caracteres — e sai com quebra automática, igual à área do PDF. Nenhuma
+// das duas pede que o apontador aperte Enter a cada cem caracteres, então medir
+// a linha digitada em vez da desenhada recusava o parágrafo corrido que cabe.
 function assertObservationPrintable(value: string): void {
-  const lines = value ? value.split(/\r?\n/) : [];
-  if (lines.length > 6 || lines.some((line) => [...line].length > 100)) error("RDO_EXPORT_PRINT_OVERFLOW", "O conteúdo de observações gerais não permanece legível no RDO (limite de 6 linhas e 100 caracteres por linha); nenhum conteúdo foi truncado.");
+  if (!value) return;
+  let used = 0;
+  for (const line of value.split(/\r?\n/)) {
+    used += wrappedLineCount(line, 100);
+    if (used > 6) error("RDO_EXPORT_PRINT_OVERFLOW", "O conteúdo de observações gerais não permanece legível no RDO (limite de 6 linhas de 100 caracteres); nenhum conteúdo foi truncado.");
+  }
 }
 
 function validateSnapshot(snapshot: RdoWorkbookSnapshot): void {
