@@ -184,6 +184,28 @@
   letter-spacing: 0.07em;
 }
 
+/* Início e fim juntos numa pastilha só, quando o trecho é curto demais para
+   caberem duas. A régua rola na horizontal, então a pastilha cresce à vontade:
+   o que ela não pode é apertar o número. */
+.trecho-marco--limite-par {
+  gap: 10px;
+  z-index: 3;
+}
+
+.trecho-marco--limite-par > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* O ponto separa os dois extremos sem virar mais uma borda na pastilha. */
+.trecho-marco--limite-par > span + span::before {
+  content: "·";
+  margin-right: 4px;
+  color: color-mix(in srgb, var(--color-ink) 38%, transparent);
+}
+
 .trecho-marco--borda-inicial {
   transform: translateX(0);
 }

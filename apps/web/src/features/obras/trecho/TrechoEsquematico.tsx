@@ -8,6 +8,7 @@ import {
   formatarNumeroKm,
   formatarPeriodo,
   ladosDoCanteiro,
+  limitesSeAtropelam,
   marcosDeLimite,
   marcosKm,
   pistasDoTrecho,
@@ -147,20 +148,48 @@ function Regua({
 }) {
   const marcos = useMemo(() => marcosKm(escala), [escala]);
 
+  /*
+   * Trecho curto junta as duas pastilhas no meio da régua, uma por cima da
+   * outra, e a de baixo perde o número. Juntas elas viram uma só, com os dois
+   * extremos dentro — o que a pessoa precisa ler continua inteiro, e a pastilha
+   * fica no ponto médio, entre as duas guias que já marcam os quilômetros
+   * exatos sobre o asfalto.
+   */
+  const juntos = limitesSeAtropelam(limites);
+  const meio = juntos
+    ? (limites[0].posicao + limites[1].posicao) / 2
+    : 0;
+
   return (
     <div className="trecho-regua" aria-hidden="true">
-      {limites.map((marco) => (
+      {juntos ? (
         <span
-          key={`limite-${marco.limite}`}
-          className={`trecho-marco trecho-marco--limite${bordaDaRegua(
-            marco.posicao,
+          className={`trecho-marco trecho-marco--limite trecho-marco--limite-par${bordaDaRegua(
+            meio,
           )}`}
-          style={{ left: `${marco.posicao}%` }}
+          style={{ left: `${meio}%` }}
         >
-          <small>{marco.limite === "INICIO" ? "início" : "fim"}</small>
-          km {formatarNumeroKm(marco.km)}
+          {limites.map((marco) => (
+            <span key={`limite-${marco.limite}`}>
+              <small>{marco.limite === "INICIO" ? "início" : "fim"}</small>
+              km {formatarNumeroKm(marco.km)}
+            </span>
+          ))}
         </span>
-      ))}
+      ) : (
+        limites.map((marco) => (
+          <span
+            key={`limite-${marco.limite}`}
+            className={`trecho-marco trecho-marco--limite${bordaDaRegua(
+              marco.posicao,
+            )}`}
+            style={{ left: `${marco.posicao}%` }}
+          >
+            <small>{marco.limite === "INICIO" ? "início" : "fim"}</small>
+            km {formatarNumeroKm(marco.km)}
+          </span>
+        ))
+      )}
       {marcos.map((marco) => (
         <span
           key={marco.km}

@@ -196,6 +196,69 @@ describe("TrechoEsquematico", () => {
 
     expect(screen.getByText("Cache local de 02/03/2026")).toBeInTheDocument();
   });
+
+  /*
+   * A régua abre um quilômetro de folga de cada lado do trecho. Num trecho de
+   * cinquenta metros isso empurra início e fim para o meio, a dois e meio por
+   * cento um do outro: as duas pastilhas caem praticamente no mesmo ponto e a
+   * segunda apaga o número da primeira. Não é tela estreita — acontece igual
+   * num monitor largo, porque quem aperta é a escala, não o espaço.
+   */
+  it("não perde o quilômetro quando início e fim quase se encostam", () => {
+    const { container } = render(
+      <TrechoEsquematico
+        projecao={projecao({
+          kmMin: 149.95,
+          kmMax: 150,
+          segmentos: [segmento({ kmInicial: 150, kmFinal: 149.95 })],
+        })}
+      />,
+    );
+
+    const par = container.querySelector(".trecho-marco--limite-par");
+    expect(par).not.toBeNull();
+    expect(par?.textContent).toContain("km 150");
+    expect(par?.textContent).toContain("km 149,95");
+    expect(par?.textContent).toContain("início");
+    expect(par?.textContent).toContain("fim");
+  });
+
+  /** Um número comprido não pode ser cortado nem quebrado em duas linhas. */
+  it("mantém inteiro um quilômetro com milhar e decimais", () => {
+    const { container } = render(
+      <TrechoEsquematico
+        projecao={projecao({
+          kmMin: 1234.567,
+          kmMax: 1234.9,
+          segmentos: [segmento({ kmInicial: 1234.567, kmFinal: 1234.9 })],
+        })}
+      />,
+    );
+
+    const regua = container.querySelector(".trecho-regua");
+    expect(regua?.textContent).toContain("km 1.234,567");
+    expect(regua?.textContent).toContain("km 1.234,9");
+  });
+
+  /*
+   * Trecho longo mantém as duas pastilhas separadas, cada uma sobre o seu
+   * extremo: juntá-las sempre custaria a leitura do caso comum para resolver o
+   * caso raro.
+   */
+  it("mantém as pastilhas separadas quando há régua para as duas", () => {
+    const { container } = render(
+      <TrechoEsquematico
+        projecao={projecao({
+          kmMin: 100,
+          kmMax: 180,
+          segmentos: [segmento({ kmInicial: 180, kmFinal: 100 })],
+        })}
+      />,
+    );
+
+    expect(container.querySelector(".trecho-marco--limite-par")).toBeNull();
+    expect(container.querySelectorAll(".trecho-marco--limite")).toHaveLength(2);
+  });
 });
 
 describe("TrechoResumo", () => {

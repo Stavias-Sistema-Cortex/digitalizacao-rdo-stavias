@@ -36,6 +36,7 @@ import {
   searchMessagesApi,
 } from "./mensagensApi";
 import {
+  conversaAindaNaoExisteNoServidor,
   refreshConversationHistory,
   refreshConversationList,
 } from "./mensagensHydration";
@@ -176,9 +177,28 @@ export function MensagensPage() {
       try {
         await loadMessages(selectedId);
         if (selectedId && navigator.onLine && hasOnlineSession()) {
-          await refreshConversationHistory(selectedId);
-          await loadMessages(selectedId);
+          /*
+           * A conversa aberta agora pode ser mais nova que o servidor: quem a
+           * criou neste aparelho a vê na lista, abre e escreve, tudo local, e a
+           * fila leva a criação quando puder. Pedir o histórico dela antes
+           * disso devolve 404 — que é a resposta certa para uma pergunta que
+           * ainda não faz sentido, e não uma falha a acusar.
+           *
+           * Era isso que acendia "Not Found", em inglês e em vermelho, sobre
+           * uma tela em que tudo funcionava: a conversa estava lá, a pessoa
+           * conseguia mandar mensagem, e a tarja dizia que algo tinha quebrado.
+           * Sem histórico remoto não há o que baixar, e o que já está no
+           * aparelho continua na tela.
+           */
+          try {
+            await refreshConversationHistory(selectedId);
+            await loadMessages(selectedId);
+          } catch (cause: unknown) {
+            if (!conversaAindaNaoExisteNoServidor(cause)) throw cause;
+          }
         }
+        // Carregou: o que quer que estivesse aceso já não descreve esta tela.
+        if (!cancelled) setError("");
       } catch (cause: unknown) {
         if (!cancelled) {
           setError(messageFrom(cause));

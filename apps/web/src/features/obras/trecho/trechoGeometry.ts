@@ -337,6 +337,41 @@ export function marcosDeLimite(
   return marcadores;
 }
 
+/**
+ * A menor distância, em porcentagem da régua, que separa duas pastilhas de
+ * limite sem que uma cubra a outra.
+ *
+ * <p>A pastilha é larga: tem o rótulo em versalete, o "km" e o número, e no
+ * pior caso — uma quilometragem com milhar e três decimais, como km 1.234,567 —
+ * passa dos 130 px. A régua, no seu mínimo, tem pouco mais de 300 px de leito.
+ * Duas pastilhas só convivem lado a lado se os seus centros estiverem a meia
+ * régua de distância.
+ */
+const SEPARACAO_MINIMA_DOS_LIMITES = 50;
+
+/**
+ * As duas pastilhas de limite se atropelam nesta escala?
+ *
+ * <p>Um trecho curto empurra início e fim para o meio da régua, encostados: a
+ * folga de um quilômetro em cada ponta faz um trecho de cinquenta metros ocupar
+ * dois e meio por cento do vão. As duas pastilhas caem praticamente no mesmo
+ * ponto, e a segunda — desenhada depois — apaga a primeira. Não é tela
+ * estreita: é trecho curto, e acontece igual num monitor grande.
+ *
+ * <p>Quem pergunta isto desenha uma pastilha só, com os dois valores dentro.
+ */
+export function limitesSeAtropelam(
+  limites: readonly MarcoKm[],
+): boolean {
+  if (limites.length < 2) {
+    return false;
+  }
+  return (
+    Math.abs(limites[0].posicao - limites[1].posicao) <
+      SEPARACAO_MINIMA_DOS_LIMITES
+  );
+}
+
 export function blocoDoSegmento(
   segmento: SegmentoTrecho,
   escala: EscalaKm,
