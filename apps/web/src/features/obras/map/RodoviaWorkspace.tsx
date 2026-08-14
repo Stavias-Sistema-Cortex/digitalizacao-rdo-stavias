@@ -88,6 +88,7 @@ import {
   type EnquadramentoAproximado,
 } from "./enquadramentoAproximado";
 import "./RodoviaWorkspace.css";
+import { FUSO_BRASILIA } from "../../../lib/tempo/fusoBrasilia";
 
 interface RodoviaWorkspaceProps {
   obra: WorksiteMapPoint;
@@ -153,10 +154,13 @@ function formatarInstante(valor: string | null): string {
   if (Number.isNaN(data.getTime())) {
     return "ainda não sincronizado";
   }
-  return `${data.toLocaleDateString("pt-BR")} às ${data.toLocaleTimeString(
-    "pt-BR",
-    { hour: "2-digit", minute: "2-digit" },
-  )}`;
+  return `${data.toLocaleDateString("pt-BR", {
+    timeZone: FUSO_BRASILIA,
+  })} às ${data.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: FUSO_BRASILIA,
+  })}`;
 }
 
 /**

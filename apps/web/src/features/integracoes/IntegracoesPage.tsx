@@ -21,6 +21,7 @@ import type {
   IntegracaoRequestOutcome,
 } from "./integracoesApi";
 import type { IntegracaoStatus } from "./integracoes.types";
+import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
 import "./IntegracoesPage.css";
 
 interface IntegracoesPageProps {
@@ -43,6 +44,7 @@ function formatDateTime(
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "medium",
+    timeZone: FUSO_BRASILIA,
   }).format(date);
 }
 

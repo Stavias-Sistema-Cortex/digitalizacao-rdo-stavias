@@ -8,6 +8,7 @@ import {
   loadPdorRevenueSnapshot,
   type PdorRevenueSnapshot,
 } from "./pdorRevenueCacheRepository";
+import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
 
 interface FinancePdorSectionProps {
   obraId: string;
@@ -204,7 +205,7 @@ export function FinancePdorSection({
             {new Intl.DateTimeFormat("pt-BR", {
               dateStyle: "short",
               timeStyle: "short",
-              timeZone: "America/Sao_Paulo",
+              timeZone: FUSO_BRASILIA,
             }).format(new Date(snapshot.fetchedAt))}
           </span>
           <span>

@@ -18,6 +18,7 @@ import {
   formatScaledInteger,
   sumExactDecimals,
 } from "./revenueDecimal";
+import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
 
 interface FinanceRevenueTracePageProps {
   obraId: string;
@@ -181,7 +182,7 @@ export function FinanceRevenueTracePage({
             {new Intl.DateTimeFormat("pt-BR", {
               dateStyle: "short",
               timeStyle: "short",
-              timeZone: "America/Sao_Paulo",
+              timeZone: FUSO_BRASILIA,
             }).format(new Date(snapshot.fetchedAt))}
           </span>
           <span>

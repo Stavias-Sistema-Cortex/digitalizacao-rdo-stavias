@@ -10,6 +10,7 @@ import {
   type PasskeyRegistrationResult,
 } from "./passkeyApi";
 
+import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
 import "./DeviceSecurityPage.css";
 
 type RegistrationState =
@@ -205,5 +206,6 @@ function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: FUSO_BRASILIA,
   }).format(date);
 }

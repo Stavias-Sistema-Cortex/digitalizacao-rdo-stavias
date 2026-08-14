@@ -13,6 +13,7 @@ import { TrechoPeriodoFiltro } from "./TrechoPeriodoFiltro";
 import { TrechoResumo } from "./TrechoResumo";
 import { recortarProjecao, type Periodo } from "./trechoGeometry";
 import "./TrechoEsquematico.css";
+import { FUSO_BRASILIA } from "../../../lib/tempo/fusoBrasilia";
 
 interface ObraTrechoSectionProps {
   obra: WorksiteMapPoint;
@@ -47,11 +48,12 @@ function procedencia(leitura: LeituraTrecho): string | null {
   if (Number.isNaN(data.getTime())) {
     return "Dados do dispositivo, sem rede";
   }
-  return `Dados do dispositivo, de ${data.toLocaleDateString(
-    "pt-BR",
-  )} às ${data.toLocaleTimeString("pt-BR", {
+  return `Dados do dispositivo, de ${data.toLocaleDateString("pt-BR", {
+    timeZone: FUSO_BRASILIA,
+  })} às ${data.toLocaleTimeString("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: FUSO_BRASILIA,
   })}`;
 }
 

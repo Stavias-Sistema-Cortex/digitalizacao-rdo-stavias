@@ -22,6 +22,7 @@ import {
   contarTrabalhoQueSeriaPerdido,
   type TrabalhoNaoEnviado,
 } from "../lib/sync/recomecoDoZero";
+import { FUSO_BRASILIA } from "../lib/tempo/fusoBrasilia";
 import "./SyncStatusBanner.css";
 
 interface StatusContent {
@@ -234,6 +235,7 @@ function formatLastSync(
     {
       dateStyle: "short",
       timeStyle: "medium",
+      timeZone: FUSO_BRASILIA,
     },
   ).format(date);
 }

@@ -1,3 +1,5 @@
+import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
+
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
@@ -5,17 +7,20 @@ const DAY_MS = 24 * HOUR_MS;
 const clockFormat = new Intl.DateTimeFormat("pt-BR", {
   hour: "2-digit",
   minute: "2-digit",
+  timeZone: FUSO_BRASILIA,
 });
 
 const dayMonthFormat = new Intl.DateTimeFormat("pt-BR", {
   day: "2-digit",
   month: "2-digit",
+  timeZone: FUSO_BRASILIA,
 });
 
 const dayKeyFormat = new Intl.DateTimeFormat("pt-BR", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
+  timeZone: FUSO_BRASILIA,
 });
 
 /**

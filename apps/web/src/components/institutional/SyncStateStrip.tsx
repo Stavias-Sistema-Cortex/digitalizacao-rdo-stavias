@@ -4,6 +4,7 @@ import {
   InstitutionalStatus,
   type InstitutionalStatusState,
 } from "./InstitutionalStatus";
+import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
 import "./institutional.css";
 
 export interface SyncStateStripProps {
@@ -54,6 +55,7 @@ function formatLastSync(
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: FUSO_BRASILIA,
   }).format(date);
 }
 

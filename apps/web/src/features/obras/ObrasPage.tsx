@@ -41,6 +41,7 @@ import {
 import { ObraAccessibleDialog } from "./ObraAccessibleDialog";
 import { RateioMaoDeObraPanel } from "./rateio/RateioMaoDeObraPanel";
 import { ObraTrechoSection } from "./trecho/ObraTrechoSection";
+import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
 import "./gestao/gestaoObras.css";
 
 type ObrasView = "ATIVAS" | "DESATIVADAS" | "RATEIO" | "LIXEIRA";
@@ -82,6 +83,7 @@ function formatDateTime(value: string | null | undefined): string {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: FUSO_BRASILIA,
   }).format(date);
 }
 

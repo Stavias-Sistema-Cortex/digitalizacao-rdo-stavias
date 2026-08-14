@@ -12,6 +12,7 @@ import {
 } from "../mensagensView";
 import { ConversationAvatar, PersonAvatar } from "./Avatar";
 import { IconClose } from "./icons";
+import { FUSO_BRASILIA } from "../../../lib/tempo/fusoBrasilia";
 
 export interface ConversationsPaneProps {
   loadState: "loading" | "ready" | "failed";
@@ -190,5 +191,6 @@ function formatMessageTime(value: string) {
     : new Intl.DateTimeFormat("pt-BR", {
         dateStyle: "short",
         timeStyle: "short",
+        timeZone: FUSO_BRASILIA,
       }).format(date);
 }

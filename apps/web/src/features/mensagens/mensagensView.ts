@@ -3,6 +3,7 @@ import type {
   ConversaTipo,
   MensagemLocalRecord,
 } from "../../lib/db/db.types";
+import { FUSO_BRASILIA } from "../../lib/tempo/fusoBrasilia";
 
 export interface ConversationPreview {
   messageId: string;
@@ -137,6 +138,7 @@ function localDateKey(value: string): string {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    timeZone: FUSO_BRASILIA,
   }).formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((item) => item.type === type)?.value ?? "";
@@ -151,5 +153,6 @@ function formatDateLabel(value: string): string {
         weekday: "long",
         day: "2-digit",
         month: "long",
+        timeZone: FUSO_BRASILIA,
       }).format(date);
 }

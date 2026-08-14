@@ -7,6 +7,7 @@ import {
   type RevenueTraceSnapshot,
 } from "../../financeiro/revenueTraceCacheRepository";
 import { formatarData, type Periodo } from "./trechoGeometry";
+import { FUSO_BRASILIA } from "../../../lib/tempo/fusoBrasilia";
 
 interface TrechoReceitaSectionProps {
   obraId: string;
@@ -337,6 +338,7 @@ export function TrechoReceitaSection({
               Dados do dispositivo, confirmados pelo servidor em{" "}
               {new Date(leitura.snapshot.fetchedAt).toLocaleDateString(
                 "pt-BR",
+                { timeZone: FUSO_BRASILIA },
               )}
               .
             </small>
