@@ -17,6 +17,7 @@
 import { listLocalRdos } from "../../../lib/db/rdoRepository";
 import type { LocalRdoRecord } from "../../../lib/db/db.types";
 
+import { normalizarNome } from "./rateioDeMaoDeObra";
 import type { ApontamentoDeMaoDeObra } from "./rateioDeMaoDeObra";
 
 export interface LeituraDeApontamentos {
@@ -181,20 +182,16 @@ const PAPEIS_QUE_ASSINAM: readonly {
  * passarem um pelo outro — a mesma pessoa entrava duas vezes no mesmo dia, uma
  * pela equipe e outra pela assinatura, e o dia dela virava dois.
  *
- * <p>O nome é comparado sem acento e sem caixa, que é como o mesmo nome chega
- * escrito de dois jeitos pela planilha e pela digitação em campo.
+ * <p>O nome é comparado pela mesma regra que a apuração usa: sem acento, sem
+ * caixa e com um espaço só entre as palavras. Escrever a normalização de novo
+ * aqui já custou — esta cópia não juntava os espaços, então "JOSE  SILVA" na
+ * equipe não reconhecia "JOSE SILVA" na assinatura e os dois saíam do mesmo
+ * RDO como duas pessoas.
  */
 function chavesDaPessoa(colaboradorId: string, nome: string): string[] {
   const chaves: string[] = [];
   if (colaboradorId) chaves.push(`id:${colaboradorId}`);
-  if (nome) {
-    chaves.push(
-      `nome:${nome
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toUpperCase()}`,
-    );
-  }
+  if (nome) chaves.push(`nome:${normalizarNome(nome)}`);
   return chaves;
 }
 

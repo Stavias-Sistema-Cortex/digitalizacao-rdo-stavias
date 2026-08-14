@@ -131,10 +131,60 @@ export function normalizarNome(nome: string): string {
     .toUpperCase();
 }
 
-function chaveDaPessoa(apontamento: ApontamentoDeMaoDeObra): string {
-  const cadastro = apontamento.colaboradorId?.trim();
-  if (cadastro) return `id:${cadastro}`;
-  return `nome:${normalizarNome(apontamento.nome)}`;
+/**
+ * O cadastro de cada nome, quando o nome aponta para uma pessoa só.
+ *
+ * <p>Existe porque a mesma pessoa chega ao rateio por duas portas de identidade
+ * diferentes. Quem é apontado na equipe costuma vir com cadastro; quem assina o
+ * documento — o que preencheu, o que apontou — vem só com o nome digitado, e
+ * <b>quem preencheu nunca traz cadastro</b>: não há campo para ele no RDO. Um
+ * mesmo encarregado que preencheu o RDO da segunda e foi apontado na equipe na
+ * terça virava duas linhas na matriz, cada uma com o mês inteiro para si.
+ *
+ * <p>Dentro de um RDO só isso já era tratado — quem assina não entra se a
+ * equipe já o trouxe. O que faltava era atravessar RDOs, e só quem vê o período
+ * inteiro consegue: é aqui.
+ *
+ * <p>Nome repetido em dois cadastros não resolve nada e fica de fora. Escolher
+ * um dos dois lançaria os dias de um homônimo na conta do outro, o que é pior
+ * do que a linha a mais que já existe hoje — e a linha a mais é o que ele
+ * continua tendo.
+ */
+function cadastrosPorNome(
+  apontamentos: readonly ApontamentoDeMaoDeObra[],
+): Map<string, string> {
+  const cadastros = new Map<string, string>();
+  const homonimos = new Set<string>();
+
+  for (const apontamento of apontamentos) {
+    const cadastro = apontamento.colaboradorId?.trim();
+    if (!cadastro) continue;
+    const nome = normalizarNome(texto(apontamento.nome));
+    if (!nome) continue;
+    const jaVisto = cadastros.get(nome);
+    if (jaVisto === undefined) {
+      cadastros.set(nome, cadastro);
+    } else if (jaVisto !== cadastro) {
+      homonimos.add(nome);
+    }
+  }
+
+  for (const nome of homonimos) {
+    cadastros.delete(nome);
+  }
+  return cadastros;
+}
+
+/** Identidade estável: o cadastro quando existe ou é alcançável, o nome quando não. */
+function identidadeDaPessoa(
+  apontamento: ApontamentoDeMaoDeObra,
+  cadastros: ReadonlyMap<string, string>,
+): { chave: string; colaboradorId: string | null } {
+  const nome = normalizarNome(texto(apontamento.nome));
+  const cadastro = apontamento.colaboradorId?.trim() || cadastros.get(nome);
+  return cadastro
+    ? { chave: `id:${cadastro}`, colaboradorId: cadastro }
+    : { chave: `nome:${nome}`, colaboradorId: null };
 }
 
 /**
@@ -213,6 +263,7 @@ export function apurarRateio(
   apontamentos: readonly ApontamentoDeMaoDeObra[],
 ): RateioDoPeriodo {
   const pessoas = new Map<string, AcumuladorDePessoa>();
+  const cadastros = cadastrosPorNome(apontamentos);
 
   for (const apontamento of apontamentos) {
     const obraId = texto(apontamento.obraId);
@@ -223,12 +274,12 @@ export function apurarRateio(
     // linha "sem nome" só encheria a tela de gente que não existe.
     if (!apontamento.colaboradorId?.trim() && !nome) continue;
 
-    const chave = chaveDaPessoa(apontamento);
+    const { chave, colaboradorId } = identidadeDaPessoa(apontamento, cadastros);
     let pessoa = pessoas.get(chave);
     if (!pessoa) {
       pessoa = {
         chave,
-        colaboradorId: apontamento.colaboradorId?.trim() || null,
+        colaboradorId,
         nome: new Votacao(),
         funcao: new Votacao(),
         encarregado: new Votacao(),

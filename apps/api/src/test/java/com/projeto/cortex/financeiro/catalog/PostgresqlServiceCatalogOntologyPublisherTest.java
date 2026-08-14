@@ -52,6 +52,70 @@ class PostgresqlServiceCatalogOntologyPublisherTest {
         );
     }
 
+    /**
+     * A obra tem de viajar no evento, e não é detalhe de formato: o gatilho do
+     * PDOR só reage a observação vinculada a uma obra. Um evento de exclusão
+     * sem obra seria publicado e ignorado, deixando o teto de contrato antigo
+     * na tela do mesmo jeito.
+     */
+    @Test
+    void publishesServiceExclusionBoundToTheWorksiteSoThePdorRecalculates() {
+        CortexOperationalMemoryService memory = mock(CortexOperationalMemoryService.class);
+        PostgresqlServiceCatalogOntologyPublisher publisher =
+                new PostgresqlServiceCatalogOntologyPublisher(memory);
+        ServiceCatalogEntry excluido = new ServiceCatalogEntry(
+                "service-1", "PAV.CBUQ", "Pavimentação CBUQ", null,
+                "EXCLUIDO", Instant.parse("2026-07-22T12:00:00Z"),
+                Instant.parse("2026-08-14T12:00:00Z"), "actor-1"
+        );
+
+        publisher.serviceExclusionChanged(
+                excluido, "obra-1", true, "actor-1", "mutation-1"
+        );
+
+        verify(memory).registrarEventoAuditado(
+                eq(PostgresqlServiceCatalogOntologyPublisher.eventId(
+                        "SERVICE_EXCLUDED", "actor-1", "mutation-1"
+                )),
+                eq("SERVICE"), eq("service-1"), eq("SERVICE_EXCLUDED"),
+                eq("CORTEX_FINANCEIRO"), eq("obra-1"), isNull(),
+                eq("actor-1"), anyList(), eq("ONLINE"), eq("SYNCED"),
+                any(), any(), eq(1),
+                org.mockito.ArgumentMatchers.argThat(state ->
+                        "obra-1".equals(state.get("worksiteId"))
+                                && "EXCLUIDO".equals(state.get("status"))
+                ),
+                eq("actor-1"), isNull(), eq("mutation-1"),
+                isNull(), anyMap(), anyMap(),
+                eq("SUCESSO"), isNull()
+        );
+    }
+
+    @Test
+    void publishesServiceRestorationUnderItsOwnEventType() {
+        CortexOperationalMemoryService memory = mock(CortexOperationalMemoryService.class);
+        PostgresqlServiceCatalogOntologyPublisher publisher =
+                new PostgresqlServiceCatalogOntologyPublisher(memory);
+        ServiceCatalogEntry ativo = new ServiceCatalogEntry(
+                "service-1", "PAV.CBUQ", "Pavimentação CBUQ", null,
+                "ACTIVE", Instant.parse("2026-07-22T12:00:00Z")
+        );
+
+        publisher.serviceExclusionChanged(
+                ativo, "obra-1", false, "actor-1", "mutation-2"
+        );
+
+        verify(memory).registrarEventoAuditado(
+                any(), eq("SERVICE"), eq("service-1"), eq("SERVICE_RESTORED"),
+                eq("CORTEX_FINANCEIRO"), eq("obra-1"), isNull(),
+                eq("actor-1"), anyList(), eq("ONLINE"), eq("SYNCED"),
+                any(), any(), eq(1), anyMap(),
+                eq("actor-1"), isNull(), eq("mutation-2"),
+                isNull(), anyMap(), anyMap(),
+                eq("SUCESSO"), isNull()
+        );
+    }
+
     @Test
     void publishesSupersessionStatesAndReplacementToPredecessorRelation() {
         CortexOperationalMemoryService memory = mock(CortexOperationalMemoryService.class);

@@ -341,6 +341,38 @@ describe("apontamentos lidos dos RDOs do aparelho", () => {
    * gestor procurava pelo nome de quem assinou o dia e não achava nada.
    */
   describe("quem assina o RDO conta como presente", () => {
+    /*
+     * A grafia do nome muda entre a planilha e a digitação em campo, e o
+     * espaço duplo é a diferença mais comum. A comparação daqui não juntava os
+     * espaços — a da apuração juntava —, então a mesma pessoa saía deste RDO
+     * duas vezes: uma pela equipe, outra pela assinatura.
+     */
+    it("reconhece na assinatura quem a equipe escreveu com espaço sobrando", () => {
+      const leitura = extrairApontamentos(
+        [
+          rdo({
+            payload: {
+              preenchidoPor: "José Silva",
+              maoObra: [
+                {
+                  colaboradorId: "col-jose",
+                  nomeColaborador: "JOSE  SILVA",
+                  cargo: "PEDREIRO",
+                },
+              ],
+            },
+          }),
+        ],
+        JULHO,
+      );
+
+      expect(leitura.apontamentos).toHaveLength(1);
+      expect(leitura.apontamentos[0]).toMatchObject({
+        colaboradorId: "col-jose",
+        funcao: "PEDREIRO",
+      });
+    });
+
     it("conta quem preencheu, mesmo sem ninguém apontado na mão de obra", () => {
       const leitura = extrairApontamentos(
         [rdo({ payload: { preenchidoPor: "PESSOA QUE ASSINA", maoObra: [] } })],

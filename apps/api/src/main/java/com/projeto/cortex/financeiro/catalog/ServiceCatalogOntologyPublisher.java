@@ -20,6 +20,25 @@ public interface ServiceCatalogOntologyPublisher {
             String clientMutationId
     );
 
+    /**
+     * O serviço saiu do catálogo — ou voltou para ele.
+     *
+     * <p>Publicar isto não é registro por registro: o valor contratual da obra
+     * conta apenas serviço vigente, e é a observação na ontologia que acorda o
+     * PDOR para recalcular. Enquanto a exclusão era só um {@code UPDATE} de
+     * status, ela mudava o banco e não avisava ninguém: nenhum snapshot novo
+     * era publicado, e o teto do contrato calculado com o serviço ainda vivo
+     * seguia na tela do Financeiro sem nada explicando por quê. Restaurar tinha
+     * o mesmo buraco no sentido contrário.
+     */
+    void serviceExclusionChanged(
+            ServiceCatalogEntry service,
+            String obraId,
+            boolean excluded,
+            String actorId,
+            String clientMutationId
+    );
+
     void priceVersionPublished(
             ServicePriceVersion price,
             ServiceCatalogEntry service,

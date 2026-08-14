@@ -73,6 +73,31 @@ public class PostgresqlServiceCatalogOntologyPublisher
     }
 
     @Override
+    public void serviceExclusionChanged(
+            ServiceCatalogEntry service,
+            String obraId,
+            boolean excluded,
+            String actorId,
+            String clientMutationId
+    ) {
+        memory.registrarObjeto(
+                "SERVICE", service.id(), service.code(), service.name(),
+                service.status(), SOURCE, "catalogo_servico", Map.of()
+        );
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("serviceId", service.id());
+        state.put("serviceCode", service.code());
+        state.put("serviceName", service.name());
+        state.put("worksiteId", obraId);
+        state.put("status", service.status());
+        publish(
+                excluded ? "SERVICE_EXCLUDED" : "SERVICE_RESTORED",
+                "SERVICE", service.id(), obraId, actorId,
+                clientMutationId, List.of(), state
+        );
+    }
+
+    @Override
     public void priceVersionPublished(
             ServicePriceVersion price,
             ServiceCatalogEntry service,

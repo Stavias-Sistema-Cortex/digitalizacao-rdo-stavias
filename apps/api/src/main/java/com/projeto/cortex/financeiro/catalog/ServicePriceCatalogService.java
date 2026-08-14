@@ -275,8 +275,9 @@ public class ServicePriceCatalogService {
         }
         operabilityGuard.requireWritable(worksite);
 
+        ServiceCatalogEntry transicionado;
         try {
-            return repository.updateServiceExclusion(
+            transicionado = repository.updateServiceExclusion(
                     new ServicePriceCatalogRepository.ServiceExclusionRecord(
                             service, actor, mutationId, hash, excluir, clock.instant()
                     )
@@ -290,6 +291,21 @@ public class ServicePriceCatalogService {
                     })
                     .orElseThrow(() -> race);
         }
+        /*
+         * Publicar é parte de excluir, não um extra.
+         *
+         * <p>Era o único gesto do catálogo que mudava o banco sem contar à
+         * ontologia — criar, corrigir e versionar preço sempre contaram. Só que
+         * o valor contratual da obra soma apenas serviço vigente, e quem manda
+         * o PDOR recalcular é a observação publicada aqui. Sem ela, o serviço
+         * saía do catálogo e o teto do contrato calculado com ele dentro
+         * continuava sendo o snapshot atual da obra — o número morto que o
+         * Financeiro seguia mostrando.
+         */
+        ontology.serviceExclusionChanged(
+                transicionado, worksite, excluir, actor, mutationId
+        );
+        return transicionado;
     }
 
     @Transactional

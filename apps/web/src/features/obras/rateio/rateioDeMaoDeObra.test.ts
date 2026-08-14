@@ -376,6 +376,108 @@ describe("o calendário do período", () => {
   });
 });
 
+/*
+ * A mesma pessoa chega ao rateio por duas portas de identidade, e elas não se
+ * encontravam.
+ *
+ * <p>Quem é apontado na equipe costuma vir com cadastro; quem assina o
+ * documento vem só com o nome digitado, e quem o preencheu nunca traz cadastro
+ * — não existe campo para ele no RDO. Como a chave da linha saía apenas do que
+ * cada apontamento carregava, o encarregado que preencheu o RDO na segunda e
+ * foi apontado na equipe na terça virava duas linhas na matriz, cada uma com
+ * 100% do próprio mês, inflando a contagem de pessoas e de frentes.
+ */
+describe("a mesma pessoa por duas portas de identidade", () => {
+  it("junta quem assinou sem cadastro a quem foi apontado com cadastro", () => {
+    const rateio = apurarRateio([
+      apontamento({
+        data: "2026-07-01",
+        obraId: "obra-norte",
+        colaboradorId: null,
+        nome: "Rafael Jacobe",
+        funcao: "Preencheu o RDO",
+      }),
+      apontamento({
+        data: "2026-07-02",
+        obraId: "obra-norte",
+        colaboradorId: "col-rafael",
+        nome: "RAFAEL JACOBE",
+        funcao: "PEDREIRO",
+      }),
+    ]);
+
+    expect(rateio.colaboradores).toHaveLength(1);
+    const [pessoa] = rateio.colaboradores;
+    expect(pessoa.colaboradorId).toBe("col-rafael");
+    expect(pessoa.diasApontados).toBe(2);
+    expect(rateio.totaisPorObra.get("obra-norte")?.pessoas).toBe(1);
+  });
+
+  /*
+   * O cadastro é procurado num passe sobre todo o período, e não enquanto as
+   * linhas chegam: senão a junção dependeria de a linha com cadastro vir
+   * primeiro, e a ordem dos apontamentos é a do RDO, não a da identidade.
+   */
+  it("alcança o cadastro mesmo quando a assinatura vem antes dele", () => {
+    const rateio = apurarRateio([
+      apontamento({
+        data: "2026-07-01",
+        obraId: "obra-norte",
+        colaboradorId: null,
+        nome: "ANA RIBEIRO",
+        funcao: "Apontador do RDO",
+      }),
+      apontamento({
+        data: "2026-07-02",
+        obraId: "obra-sul",
+        colaboradorId: "col-ana",
+        nome: "ANA RIBEIRO",
+        funcao: "ENCARREGADA",
+      }),
+    ]);
+
+    expect(rateio.colaboradores).toHaveLength(1);
+    const [pessoa] = rateio.colaboradores;
+    expect(pessoa.colaboradorId).toBe("col-ana");
+    expect(pessoa.fracaoPorObra.get("obra-norte")).toBe(0.5);
+    expect(pessoa.fracaoPorObra.get("obra-sul")).toBe(0.5);
+  });
+
+  /*
+   * Dois cadastros com o mesmo nome não dizem qual deles assinou, e escolher
+   * um lançaria os dias de um homônimo na conta do outro. A assinatura fica
+   * onde já estava: na própria linha, pelo nome.
+   */
+  it("não escolhe entre dois cadastros que têm o mesmo nome", () => {
+    const rateio = apurarRateio([
+      apontamento({
+        data: "2026-07-01",
+        obraId: "obra-norte",
+        colaboradorId: "col-1",
+        nome: "JOSE SILVA",
+      }),
+      apontamento({
+        data: "2026-07-01",
+        obraId: "obra-norte",
+        colaboradorId: "col-2",
+        nome: "JOSE SILVA",
+      }),
+      apontamento({
+        data: "2026-07-02",
+        obraId: "obra-norte",
+        colaboradorId: null,
+        nome: "JOSE SILVA",
+        funcao: "Preencheu o RDO",
+      }),
+    ]);
+
+    expect(rateio.colaboradores).toHaveLength(3);
+    expect(
+      rateio.colaboradores.filter((pessoa) => pessoa.colaboradorId === null),
+    ).toHaveLength(1);
+  });
+});
+
 describe("a grafia do nome", () => {
   it("compara sem acento, sem caixa e sem espaço sobrando", () => {
     expect(normalizarNome(" José  Antônio ")).toBe("JOSE ANTONIO");

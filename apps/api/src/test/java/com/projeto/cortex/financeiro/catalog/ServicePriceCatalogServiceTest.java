@@ -3,6 +3,7 @@ package com.projeto.cortex.financeiro.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doThrow;
@@ -592,6 +593,72 @@ class ServicePriceCatalogServiceTest {
                 validFrom,
                 validTo,
                 "CONTRATO_MEDIDO"
+        );
+    }
+
+    /**
+     * Excluir um serviço muda o valor contratual da obra, e o PDOR só sabe
+     * disso pela ontologia.
+     *
+     * <p>Era o único gesto do catálogo que gravava e não publicava: o serviço
+     * saía do banco vigente, nenhuma observação era registrada, o recálculo do
+     * PDOR nunca era disparado, e o teto de contrato calculado com o serviço
+     * ainda dentro seguia sendo o snapshot atual da obra.
+     */
+    @Test
+    void announcesServiceExclusionAndRestorationToTheOntology() {
+        ServiceCatalogEntry ativo = serviceEntry();
+        ServiceCatalogEntry excluido = new ServiceCatalogEntry(
+                SERVICE,
+                ativo.code(),
+                ativo.name(),
+                ativo.description(),
+                "EXCLUIDO",
+                NOW,
+                NOW,
+                ACTOR
+        );
+        when(repository.findMutation(any(), any())).thenReturn(Optional.empty());
+        when(repository.findService(SERVICE))
+                .thenReturn(Optional.of(ativo), Optional.of(excluido));
+        when(repository.updateServiceExclusion(any()))
+                .thenReturn(excluido, ativo);
+
+        assertThat(service.excluirServico(
+                OBRA, ACTOR, SERVICE, new ExcludeServiceCommand("mutation-x", null)
+        )).isEqualTo(excluido);
+        verify(ontology).serviceExclusionChanged(
+                excluido, OBRA, true, ACTOR, "mutation-x"
+        );
+
+        assertThat(service.restaurarServico(
+                OBRA, ACTOR, SERVICE, new ExcludeServiceCommand("mutation-y", null)
+        )).isEqualTo(ativo);
+        verify(ontology).serviceExclusionChanged(
+                ativo, OBRA, false, ACTOR, "mutation-y"
+        );
+    }
+
+    /**
+     * Excluir duas vezes é excluir uma: o segundo pedido devolve o estado que
+     * já está lá sem gravar nada, e por isso não pode acordar o PDOR de novo.
+     */
+    @Test
+    void staysSilentWhenTheServiceIsAlreadyWhereTheRequestWantsIt() {
+        ServiceCatalogEntry excluido = new ServiceCatalogEntry(
+                SERVICE, "PAVIMENTACAO.CBUQ", "Pavimentação CBUQ",
+                "Execução de camada asfáltica", "EXCLUIDO", NOW, NOW, ACTOR
+        );
+        when(repository.findMutation(any(), any())).thenReturn(Optional.empty());
+        when(repository.findService(SERVICE)).thenReturn(Optional.of(excluido));
+
+        assertThat(service.excluirServico(
+                OBRA, ACTOR, SERVICE, new ExcludeServiceCommand("mutation-z", null)
+        )).isEqualTo(excluido);
+
+        verify(repository, never()).updateServiceExclusion(any());
+        verify(ontology, never()).serviceExclusionChanged(
+                any(), any(), anyBoolean(), any(), any()
         );
     }
 
