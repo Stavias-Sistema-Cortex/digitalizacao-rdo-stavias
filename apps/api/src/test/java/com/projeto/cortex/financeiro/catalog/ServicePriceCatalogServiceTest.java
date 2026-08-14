@@ -33,6 +33,7 @@ class ServicePriceCatalogServiceTest {
 
     private ServicePriceCatalogRepository repository;
     private ServiceCatalogOntologyPublisher ontology;
+    private ServiceCatalogProjectionInvalidator projectionInvalidator;
     private ObraOperabilityGuard operabilityGuard;
     private ServicePriceCatalogService service;
 
@@ -45,12 +46,14 @@ class ServicePriceCatalogServiceTest {
             return Answers.RETURNS_DEFAULTS.answer(invocation);
         });
         ontology = mock(ServiceCatalogOntologyPublisher.class);
+        projectionInvalidator = mock(ServiceCatalogProjectionInvalidator.class);
         operabilityGuard = mock(ObraOperabilityGuard.class);
         service = new ServicePriceCatalogService(
                 repository,
                 ontology,
                 operabilityGuard,
-                Clock.fixed(NOW, ZoneOffset.UTC)
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                projectionInvalidator
         );
     }
 
@@ -162,6 +165,7 @@ class ServicePriceCatalogServiceTest {
         verify(ontology).priceVersionPublished(
                 created, serviceEntry(), ACTOR, "mutation-price-1"
         );
+        verify(projectionInvalidator).invalidateWorksite(OBRA);
 
         CreateServicePriceCommand negative = priceCommand(
                 "mutation-price-negative", "-0.0001",
@@ -324,6 +328,32 @@ class ServicePriceCatalogServiceTest {
                 ACTOR,
                 "mutation-price-2"
         );
+        verify(projectionInvalidator).invalidateWorksite(OBRA);
+    }
+
+    @Test
+    void correctingPriceInvalidatesTheProjectionOfItsWorksite() {
+        ServicePriceVersion previous = priceVersion();
+        ServicePriceVersion corrected = priceVersion(new BigDecimal("50.0000"));
+        UpdateServicePriceCommand command = new UpdateServicePriceCommand(
+                "mutation-price-correction",
+                "M2",
+                new BigDecimal("50.0000"),
+                new BigDecimal("800.000"),
+                LocalDate.of(2026, 1, 1),
+                null,
+                "CONTRATO_MEDIDO"
+        );
+        when(repository.findMutation(ACTOR, "mutation-price-correction"))
+                .thenReturn(Optional.empty());
+        when(repository.findPrice(OBRA, PRICE)).thenReturn(Optional.of(previous));
+        when(repository.findService(SERVICE)).thenReturn(Optional.of(serviceEntry()));
+        when(repository.updatePrice(any())).thenReturn(corrected);
+
+        assertThat(service.atualizarPreco(OBRA, ACTOR, PRICE, command))
+                .isEqualTo(corrected);
+
+        verify(projectionInvalidator).invalidateWorksite(OBRA);
     }
 
     @Test
@@ -452,6 +482,7 @@ class ServicePriceCatalogServiceTest {
         verify(ontology).priceVersionCancelled(
                 cancelled, serviceEntry(), ACTOR, "mutation-cancel-1"
         );
+        verify(projectionInvalidator).invalidateWorksite(OBRA);
     }
 
     @Test
@@ -630,6 +661,7 @@ class ServicePriceCatalogServiceTest {
         verify(ontology).serviceExclusionChanged(
                 excluido, OBRA, true, ACTOR, "mutation-x"
         );
+        verify(projectionInvalidator).invalidateService(SERVICE);
 
         assertThat(service.restaurarServico(
                 OBRA, ACTOR, SERVICE, new ExcludeServiceCommand("mutation-y", null)
@@ -637,6 +669,8 @@ class ServicePriceCatalogServiceTest {
         verify(ontology).serviceExclusionChanged(
                 ativo, OBRA, false, ACTOR, "mutation-y"
         );
+        verify(projectionInvalidator, org.mockito.Mockito.times(2))
+                .invalidateService(SERVICE);
     }
 
     /**
@@ -657,6 +691,7 @@ class ServicePriceCatalogServiceTest {
         )).isEqualTo(excluido);
 
         verify(repository, never()).updateServiceExclusion(any());
+        verify(projectionInvalidator, never()).invalidateService(any());
         verify(ontology, never()).serviceExclusionChanged(
                 any(), any(), anyBoolean(), any(), any()
         );

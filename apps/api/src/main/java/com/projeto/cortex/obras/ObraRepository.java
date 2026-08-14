@@ -34,6 +34,18 @@ public interface ObraRepository extends JpaRepository<Obra, String> {
     )
     Optional<String> findWritableIdForShare(@Param("id") String id);
 
+    @Query(
+            value = """
+                    SELECT o.id
+                    FROM obra o
+                    WHERE o.id = :id
+                      AND o.arquivado_em IS NULL
+                    FOR UPDATE
+                    """,
+            nativeQuery = true
+    )
+    Optional<String> findWritableIdForUpdate(@Param("id") String id);
+
     /**
      * Existência com o mesmo bloqueio compartilhado de
      * {@link #findWritableIdForShare(String)}, sem o filtro de arquivamento.

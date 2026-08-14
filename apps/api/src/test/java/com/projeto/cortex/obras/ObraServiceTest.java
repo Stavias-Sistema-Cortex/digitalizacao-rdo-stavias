@@ -2,6 +2,7 @@ package com.projeto.cortex.obras;
 
 import com.projeto.cortex.financeiro.unit.FinancialUnitService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.pdor.PdorProjectionInvalidator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -257,6 +258,37 @@ class ObraServiceTest {
         assertEquals(1L, payload.getValue().get("versaoLinha"));
         assertNull(payload.getValue().get("arquivadoEm"));
         assertFalse(payload.getValue().containsKey("valorContratual"));
+    }
+
+    @Test
+    void arquivarERestaurarInvalidamAProjecaoAtualNaMesmaMutacao() {
+        ObraRepository repository = mock(ObraRepository.class);
+        CortexOperationalMemoryService memory =
+                mock(CortexOperationalMemoryService.class);
+        FinancialUnitService financialUnits = mock(FinancialUnitService.class);
+        PdorProjectionInvalidator projectionInvalidator =
+                mock(PdorProjectionInvalidator.class);
+        Obra obra = novaObra("ATIVA");
+        when(repository.findByIdForUpdate(obra.getId()))
+                .thenReturn(Optional.of(obra));
+        when(repository.saveAndFlush(any(Obra.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        ObraService service = new ObraService(
+                repository,
+                memory,
+                financialUnits,
+                projectionInvalidator
+        );
+
+        service.arquivarObra(
+                obra.getId(), new ObraVersionRequest(1L), "alfa-1"
+        );
+        service.restaurarObra(
+                obra.getId(), new ObraVersionRequest(2L), "alfa-1"
+        );
+
+        verify(projectionInvalidator, times(2))
+                .invalidateCurrent(obra.getId());
     }
 
     @Test

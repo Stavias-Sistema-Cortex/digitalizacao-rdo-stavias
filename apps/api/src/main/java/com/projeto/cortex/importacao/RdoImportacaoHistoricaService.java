@@ -312,7 +312,6 @@ public class RdoImportacaoHistoricaService {
                 marcarLinhaImportada(linha.id(), rdoId, "IMPORTADA");
                 previsaoFinanceiraService.recalcularAposMudancaRdo(
                         linha.obraId(),
-                        linha.dataRdo(),
                         null
                 );
             }

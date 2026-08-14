@@ -150,7 +150,7 @@ public class RdoDeletionService {
          * como ela está agora.
          */
         previsaoFinanceiraService.recalcularAposMudancaRdo(
-                alvo.obraId(), null, null
+                alvo.obraId(), null
         );
 
         return new RdoDeletionResponse(id, alvo.obraId(), alvo.numeroRdo(), anexos);

@@ -59,6 +59,13 @@ export interface PrevisaoHistoricoApi {
   custoRealizado: number | string | null;
   custoPrevistoFinal: number | string | null;
   receitaPrevistaFinal: number | string | null;
+  versaoModelo?: string | null;
+  versaoPremissas?: string | null;
+  algorithmVersion?: string | null;
+  evidenceIds?: unknown;
+  coverageCode?: string | null;
+  stale?: boolean;
+  current?: boolean;
 }
 
 /**

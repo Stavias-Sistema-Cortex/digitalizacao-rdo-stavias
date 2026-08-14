@@ -8,6 +8,8 @@ import {
 import type {
   FinancePdorRevenueCacheRecord,
 } from "../../lib/db/db.types";
+import { listOutboxMutations } from "../../lib/db/outboxRepository";
+import { listLocalRdosByObra } from "../../lib/db/rdoRepository";
 import {
   getSession,
   requireDataScope,
@@ -16,6 +18,11 @@ import {
   buscarPdorAtual,
   type ObraPdor,
 } from "../obras/obrasApi";
+import {
+  findPdorRevenueLocalInvalidation,
+  isSupportedPdorRevenueContract,
+  pdorRevenueInvalidationMessage,
+} from "./pdorRevenuePolicy";
 
 export const PDOR_REVENUE_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -204,6 +211,11 @@ function assertConfirmedPdor(
       "O servidor não confirmou um snapshot PDOR atual.",
     );
   }
+  if (!isSupportedPdorRevenueContract(value)) {
+    throw new Error(
+      "O snapshot PDOR usa versões de modelo ou algoritmo incompatíveis.",
+    );
+  }
   if (
     typeof value.dataReferencia !== "string" ||
     !validIsoDate(value.dataReferencia) ||
@@ -227,6 +239,14 @@ function assertConfirmedPdor(
      * afirma ter.
      */
     return;
+  }
+  if (
+    coverageCode === "NO_ACCEPTED_EVIDENCE" ||
+    evidenceIds.length === 0
+  ) {
+    throw new Error(
+      "O servidor marcou como concluída uma previsão PDOR sem evidência de receita aceita.",
+    );
   }
   if (
     !Number.isSafeInteger(value.evidenceHighWaterMark) ||
@@ -266,6 +286,35 @@ function assertConfirmedPdor(
       "Os valores da projeção de receita PDOR são inválidos.",
     );
   }
+}
+
+async function assertNoLocalPdorRevenueInvalidation(
+  pdor: ObraPdor,
+  expectedWorksiteId: string,
+  confirmedAt: string,
+): Promise<void> {
+  if (pdor.statusExecucao !== "SUCCESS") return;
+  if (!pdor.dataReferencia) {
+    throw new Error(
+      "A proveniência de receita do snapshot PDOR está incompleta.",
+    );
+  }
+  const [rdos, mutations] = await Promise.all([
+    listLocalRdosByObra(expectedWorksiteId),
+    listOutboxMutations(),
+  ]);
+  const reason = findPdorRevenueLocalInvalidation({
+    obraId: expectedWorksiteId,
+    dataReferencia: pdor.dataReferencia,
+    statusExecucao: pdor.statusExecucao,
+    confirmedAt,
+    explicitRdoIds: pdor.evidencias
+      .filter((evidence) =>
+        evidence.entityType.trim().toUpperCase() === "RDO"
+      )
+      .map((evidence) => evidence.entityId),
+  }, rdos, mutations);
+  if (reason) throw new Error(pdorRevenueInvalidationMessage(reason));
 }
 
 function provenance(
@@ -337,11 +386,16 @@ async function cacheConfirmedResponse(
   pdor: ObraPdor | null,
   now: number,
 ): Promise<PdorRevenueSnapshot> {
+  const fetchedAt = new Date(now).toISOString();
   if (pdor !== null) {
     assertConfirmedPdor(pdor, identity.request.obraId);
+    await assertNoLocalPdorRevenueInvalidation(
+      pdor,
+      identity.request.obraId,
+      fetchedAt,
+    );
   }
   assertIdentityCurrent(identity);
-  const fetchedAt = new Date(now).toISOString();
   const sessionExpiry = Date.parse(identity.sessionExpiresAt);
   const expiresAt = new Date(
     Math.min(now + PDOR_REVENUE_CACHE_MAX_AGE_MS, sessionExpiry),
@@ -417,6 +471,14 @@ async function readConfirmedCache(
     } catch {
       return { status: "MISS" };
     }
+  }
+  if (pdor !== null) {
+    await assertNoLocalPdorRevenueInvalidation(
+      pdor,
+      identity.request.obraId,
+      cached.fetchedAt,
+    );
+    assertIdentityCurrent(identity);
   }
   const confirmedProvenance = provenance(identity, pdor);
   if (!sameProvenance(cached.provenance, confirmedProvenance)) {

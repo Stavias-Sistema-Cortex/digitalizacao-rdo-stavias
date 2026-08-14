@@ -2,7 +2,10 @@ package com.projeto.cortex.pdor;
 
 import com.projeto.cortex.obras.ObraOperabilityGuard;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -12,6 +15,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PdorSnapshotPublicationServiceTest {
@@ -33,10 +38,11 @@ class PdorSnapshotPublicationServiceTest {
         order.verify(guard).requireWritable("obra-1");
         order.verify(repository).replaceCurrent(snapshot);
         order.verify(ontologyPublication).run();
-        assertThat(PdorSnapshotPublicationService.class
+        Transactional transaction = PdorSnapshotPublicationService.class
                 .getMethod("publish", PdorSnapshot.class, Runnable.class)
-                .isAnnotationPresent(Transactional.class))
-                .isTrue();
+                .getAnnotation(Transactional.class);
+        assertThat(transaction).isNotNull();
+        assertThat(transaction.propagation()).isEqualTo(Propagation.REQUIRED);
     }
 
     @Test
@@ -73,7 +79,50 @@ class PdorSnapshotPublicationServiceTest {
         assertThat(PdorSnapshotPublicationService.class
                 .getMethod("recordFailure", String.class, Runnable.class)
                 .isAnnotationPresent(Transactional.class))
-                .isTrue();
+                .isFalse();
+    }
+
+    @Test
+    void defersFailureAuditUntilTheCalculationTransactionHasRolledBack() {
+        PdorSnapshotRepository repository = mock(PdorSnapshotRepository.class);
+        ObraOperabilityGuard guard = mock(ObraOperabilityGuard.class);
+        Runnable failurePersistence = mock(Runnable.class);
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            new PdorSnapshotPublicationService(repository, guard)
+                    .recordFailure("obra-1", failurePersistence);
+
+            verify(guard, never()).requireWritable("obra-1");
+            verify(failurePersistence, never()).run();
+            assertThat(TransactionSynchronizationManager.getSynchronizations())
+                    .hasSize(1);
+
+            TransactionSynchronizationManager.getSynchronizations().getFirst()
+                    .afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+
+            verify(failurePersistence).run();
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void doesNotRecordFailureWhenTheSurroundingTransactionCommits() {
+        PdorSnapshotRepository repository = mock(PdorSnapshotRepository.class);
+        ObraOperabilityGuard guard = mock(ObraOperabilityGuard.class);
+        Runnable failurePersistence = mock(Runnable.class);
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            new PdorSnapshotPublicationService(repository, guard)
+                    .recordFailure("obra-1", failurePersistence);
+
+            TransactionSynchronizationManager.getSynchronizations().getFirst()
+                    .afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+
+            verify(failurePersistence, never()).run();
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test

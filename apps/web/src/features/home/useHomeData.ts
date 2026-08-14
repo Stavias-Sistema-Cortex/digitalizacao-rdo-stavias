@@ -16,6 +16,7 @@ import {
   listOperationalEventsForObra,
 } from "../../lib/db/operationalEventRepository";
 import { listLocalRdos } from "../../lib/db/rdoRepository";
+import { listOutboxMutations } from "../../lib/db/outboxRepository";
 import type {
   LocalRdoRecord,
   ObraLocalRecord,
@@ -35,6 +36,10 @@ import {
 import { filterOperationalObras } from "./homeFilters";
 import { syncSessionFingerprint } from "../../lib/sync/syncSession";
 import { compararCarimbosEmBrasilia } from "../../lib/tempo/fusoBrasilia";
+import {
+  findPdorRevenueLocalInvalidation,
+  isSupportedPdorRevenueContract,
+} from "../financeiro/pdorRevenuePolicy";
 
 function currentSessionFingerprint(): string | null {
   const session = getSession();
@@ -261,17 +266,26 @@ export function useHomeData(
       obraId: string,
     ): Promise<boolean> {
       try {
-        const [obraSnapshots, obraEvents, rdos] = await Promise.all([
+        const [obraSnapshots, obraEvents, rdos, mutations] = await Promise.all([
           listSnapshotsByObra(obraId),
           listOperationalEventsForObra(obraId),
           listLocalRdos(),
+          listOutboxMutations(),
         ]);
 
         if (detailContextChanged()) {
           return false;
         }
 
-        setSnapshots(obraSnapshots);
+        setSnapshots(obraSnapshots.filter((snapshot) =>
+          isSupportedPdorRevenueContract(snapshot) &&
+          findPdorRevenueLocalInvalidation({
+            obraId: snapshot.obraId,
+            dataReferencia: snapshot.dataReferencia,
+            statusExecucao: snapshot.statusExecucao,
+            confirmedAt: snapshot.updatedAt,
+          }, rdos, mutations) === null
+        ));
 
         obraEvents.sort((a, b) =>
           a.occurredAt < b.occurredAt ? 1 : -1,

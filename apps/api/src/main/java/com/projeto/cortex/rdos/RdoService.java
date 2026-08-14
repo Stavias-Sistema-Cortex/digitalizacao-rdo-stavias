@@ -257,7 +257,6 @@ public class RdoService {
 
         previsaoFinanceiraService.recalcularAposMudancaRdo(
                 obraId,
-                request.dataRdo(),
                 null
         );
 

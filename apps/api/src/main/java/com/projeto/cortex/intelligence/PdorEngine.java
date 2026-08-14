@@ -30,7 +30,7 @@ import java.util.SplittableRandom;
  */
 public final class PdorEngine {
 
-    public static final String MODEL_VERSION = "PDOR-0.5.0";
+    public static final String MODEL_VERSION = "PDOR-0.5.1";
     public static final String ASSUMPTIONS_VERSION = "PDOR-ASSUMPTIONS-0.5.0";
 
     private static final double CONTRACT_95_PCT = 0.95;
@@ -169,13 +169,17 @@ public final class PdorEngine {
     private RevenueMetrics calculateEvm(PdorContext context, ProjectPhase phase) {
         BigDecimal budget = context.contractValue();
         BigDecimal measuredRevenue = context.measuredRevenue();
+        boolean hasRealRevenue = measuredRevenue.signum() > 0
+            || context.validatedRevenue().signum() > 0;
 
         BigDecimal plannedValue = budget.multiply(BigDecimal.valueOf(context.plannedProgress()));
         BigDecimal earnedValue = budget.multiply(BigDecimal.valueOf(context.physicalProgress()));
 
         // RCI (índice de captura de receita) = receita medida / valor ganho pela
         // produção física. RCI < 1 indica medição atrasada frente ao executado.
-        double rci = safeDivide(measuredRevenue.doubleValue(), earnedValue.doubleValue(), 1.0);
+        double rci = hasRealRevenue
+            ? safeDivide(measuredRevenue.doubleValue(), earnedValue.doubleValue(), 1.0)
+            : 0.0;
         double spi = safeDivide(earnedValue.doubleValue(), plannedValue.doubleValue(), 1.0);
 
         BigDecimal revenueVariance = measuredRevenue.subtract(earnedValue);
@@ -183,9 +187,10 @@ public final class PdorEngine {
 
         // Projeção direta: se o ritmo de captura persistir, a receita final
         // tende a contrato × RCI.
-        BigDecimal racRci = rci > 0.0
-            ? budget.multiply(BigDecimal.valueOf(rci)).setScale(8, RoundingMode.HALF_UP)
-            : budget;
+        BigDecimal racRci = hasRealRevenue
+            ? budget.multiply(BigDecimal.valueOf(rci))
+                .setScale(8, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO;
 
         double rciSpi = rci * spi;
         BigDecimal racRciSpi = measuredRevenue.add(
@@ -204,9 +209,11 @@ public final class PdorEngine {
                 - downtimeRate(context) * 0.20
         );
 
-        BigDecimal racBottomUp = measuredRevenue.add(
-            remainingBaseline.multiply(BigDecimal.valueOf(bottomUpMultiplier))
-        );
+        BigDecimal racBottomUp = hasRealRevenue
+            ? measuredRevenue.add(
+                remainingBaseline.multiply(BigDecimal.valueOf(bottomUpMultiplier))
+            )
+            : BigDecimal.ZERO;
 
         RacWeights weights = weightsFor(phase);
         BigDecimal weightedRac = weightedAverage(

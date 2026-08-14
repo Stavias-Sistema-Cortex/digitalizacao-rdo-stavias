@@ -142,6 +142,40 @@ class PdorEngineTest {
     }
 
     @Test
+    void zeroRealRevenueMustNotProjectAnyShareOfTheContractCeiling() {
+        PdorEngine.PdorContext context = new PdorEngine.PdorContext(
+            "CW-NO-REVENUE-EVIDENCE",
+            LocalDate.of(2026, 8, 14),
+            new BigDecimal("124000000.00"),
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            1.00,
+            0.01,
+            0.00,
+            0.0,
+            100.0,
+            0.0,
+            0.0,
+            0,
+            0,
+            0,
+            0.95,
+            1,
+            0.95,
+            10_000
+        );
+
+        PdorEngine.PdorResult result = engine.calculate(context);
+
+        assertEquals(0, result.evm().racRci().compareTo(BigDecimal.ZERO));
+        assertEquals(0, result.evm().racRciSpi().compareTo(BigDecimal.ZERO));
+        assertEquals(0, result.evm().racBottomUp().compareTo(BigDecimal.ZERO));
+        assertEquals(0, result.evm().weightedRac().compareTo(BigDecimal.ZERO));
+        assertEquals(0, result.revenueP50().compareTo(BigDecimal.ZERO));
+        assertEquals(0, result.revenueP95().compareTo(BigDecimal.ZERO));
+    }
+
+    @Test
     void shouldUsePhaseSensitiveRacWeights() {
         PdorEngine.PdorResult initial = engine.calculate(copyWithProgress(healthyContext(), 0.10));
         PdorEngine.PdorResult advanced = engine.calculate(copyWithProgress(healthyContext(), 0.80));

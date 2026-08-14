@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   listLocalRdos: vi.fn(),
   listObrasLocais: vi.fn(),
   listOperationalEventsForObra: vi.fn(),
+  listOutboxMutations: vi.fn(),
   listSnapshotsByObra: vi.fn(),
 }));
 
@@ -62,6 +63,10 @@ vi.mock("../../lib/db/rdoRepository", () => ({
   listLocalRdos: mocks.listLocalRdos,
 }));
 
+vi.mock("../../lib/db/outboxRepository", () => ({
+  listOutboxMutations: mocks.listOutboxMutations,
+}));
+
 vi.mock("./lastAccessedObra", () => ({
   colaboradorStorageKey: () => "anonymous",
   getLastAccessedObraId: () => null,
@@ -79,6 +84,7 @@ beforeEach(() => {
   mocks.listLocalRdos.mockResolvedValue([]);
   mocks.listObrasLocais.mockResolvedValue([]);
   mocks.listOperationalEventsForObra.mockResolvedValue([]);
+  mocks.listOutboxMutations.mockResolvedValue([]);
   mocks.listSnapshotsByObra.mockResolvedValue([]);
 });
 
@@ -111,7 +117,114 @@ function cachedWorksite() {
   };
 }
 
+function confirmedRevenueSnapshot() {
+  return {
+    id: "snapshot-current",
+    obraId: "obra-1",
+    dataReferencia: "2026-07-28",
+    statusExecucao: "SUCCESS",
+    producaoPlanejada: 10,
+    producaoRealizada: 8,
+    producaoApontada: 9,
+    custoRealizado: null,
+    custoPrevistoFinal: null,
+    receitaPrevistaFinal: 1200,
+    versaoModelo: "PDOR-0.5.1",
+    versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
+    algorithmVersion: "PDOR-REVENUE-2",
+    evidenceIds: ["evidence-1"],
+    coverageCode: "COMPLETE_ACCEPTED_EXACT",
+    stale: false,
+    current: true,
+    updatedAt: "2026-07-28T13:00:00.000Z",
+  };
+}
+
 describe("useHomeData remote hydration truth", () => {
+  it("não monta cache IndexedDB v1 ainda marcado como current", async () => {
+    mocks.listObrasLocais.mockResolvedValue([cachedWorksite()]);
+    mocks.listSnapshotsByObra.mockResolvedValue([{
+      ...confirmedRevenueSnapshot(),
+      algorithmVersion: "PDOR-REVENUE-1",
+    }]);
+
+    const { result } = renderHook(() => useHomeData());
+
+    await waitFor(() =>
+      expect(mocks.listSnapshotsByObra).toHaveBeenCalledTimes(2)
+    );
+    expect(result.current.snapshots).toEqual([]);
+  });
+
+  it("não entrega à série SUCCESS anterior a cancelamento local pendente", async () => {
+    mocks.listObrasLocais.mockResolvedValue([cachedWorksite()]);
+    mocks.listSnapshotsByObra.mockResolvedValue([
+      confirmedRevenueSnapshot(),
+    ]);
+    mocks.listLocalRdos.mockResolvedValue([{
+      id: "rdo-antigo-fora-do-top-50",
+      obraId: "obra-1",
+      dataRdo: "2026-01-05",
+      canceladoEm: "2026-07-28T13:00:01.000Z",
+    }]);
+    mocks.listOutboxMutations.mockResolvedValue([{
+      entidadeTipo: "RDO",
+      entidadeId: "rdo-antigo-fora-do-top-50",
+      operacao: "CANCELAR_RDO",
+      payload: { obraId: "obra-1" },
+      status: "PENDING",
+    }]);
+
+    const { result } = renderHook(() => useHomeData());
+
+    await waitFor(() =>
+      expect(mocks.listOutboxMutations).toHaveBeenCalled()
+    );
+    expect(result.current.snapshots).toEqual([]);
+  });
+
+  it("não entrega à série SUCCESS com alteração de preço ainda local", async () => {
+    mocks.listObrasLocais.mockResolvedValue([cachedWorksite()]);
+    mocks.listSnapshotsByObra.mockResolvedValue([
+      confirmedRevenueSnapshot(),
+    ]);
+    mocks.listOutboxMutations.mockResolvedValue([{
+      entidadeTipo: "SERVICE_PRICE_VERSION",
+      entidadeId: "price-local",
+      operacao: "ATUALIZAR_PRECO_SERVICO",
+      payload: { obraId: "obra-1" },
+      status: "CONFLICT",
+    }]);
+
+    const { result } = renderHook(() => useHomeData());
+
+    await waitFor(() =>
+      expect(mocks.listOutboxMutations).toHaveBeenCalled()
+    );
+    expect(result.current.snapshots).toEqual([]);
+  });
+
+  it("aplica alteração global de catálogo mesmo se iniciada por outra obra", async () => {
+    mocks.listObrasLocais.mockResolvedValue([cachedWorksite()]);
+    mocks.listSnapshotsByObra.mockResolvedValue([
+      confirmedRevenueSnapshot(),
+    ]);
+    mocks.listOutboxMutations.mockResolvedValue([{
+      entidadeTipo: "SERVICE",
+      entidadeId: "service-global",
+      operacao: "ATUALIZAR_SERVICO_CATALOGO",
+      payload: { obraId: "obra-outra" },
+      status: "PENDING",
+    }]);
+
+    const { result } = renderHook(() => useHomeData());
+
+    await waitFor(() =>
+      expect(mocks.listOutboxMutations).toHaveBeenCalled()
+    );
+    expect(result.current.snapshots).toEqual([]);
+  });
+
   it("ordena o cache misto pelo relógio civil de Brasília", async () => {
     mocks.listObrasLocais.mockResolvedValueOnce([
       {

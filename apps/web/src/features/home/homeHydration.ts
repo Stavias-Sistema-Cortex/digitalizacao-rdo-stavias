@@ -6,7 +6,7 @@ import {
   mergeObrasLocais,
 } from "../../lib/db/obraLocalRepository";
 import {
-  putPrevisaoSnapshots,
+  replacePrevisaoSnapshotsForObra,
 } from "../../lib/db/previsaoSnapshotRepository";
 import {
   assertSyncSession,
@@ -25,6 +25,7 @@ import {
   type ObraRelacionadaApi,
   type PrevisaoHistoricoApi,
 } from "./homeApi";
+import { isSupportedPdorRevenueContract } from "../financeiro/pdorRevenuePolicy";
 
 function textOrNull(value: string | null): string | null {
   return value && value.trim() ? value.trim() : null;
@@ -59,8 +60,33 @@ export function snapshotRecordFromApi(
 ): PrevisaoSnapshotRecord | null {
   const dataReferencia = textOrNull(api.dataReferencia);
   const obraId = textOrNull(api.obra?.id ?? null);
+  const statusExecucao = textOrNull(api.statusExecucao);
+  const coverageCode = textOrNull(api.coverageCode ?? null);
+  const evidenceIds = Array.isArray(api.evidenceIds)
+    ? [...new Set(api.evidenceIds.flatMap((value) =>
+      typeof value === "string" && value.trim() ? [value.trim()] : []
+    ))]
+    : [];
 
-  if (!api.id || !obraId || !dataReferencia) {
+  if (
+    !api.id ||
+    !obraId ||
+    !dataReferencia ||
+    !statusExecucao ||
+    api.current !== true ||
+    api.stale !== false ||
+    !isSupportedPdorRevenueContract(api) ||
+    (
+      statusExecucao === "SUCCESS" &&
+      (
+        evidenceIds.length === 0 ||
+        (
+          coverageCode !== "COMPLETE_ACCEPTED_EXACT" &&
+          coverageCode !== "PARTIAL_ACCEPTED_EXACT"
+        )
+      )
+    )
+  ) {
     return null;
   }
 
@@ -68,8 +94,7 @@ export function snapshotRecordFromApi(
     id: api.id,
     obraId,
     dataReferencia,
-    statusExecucao:
-      textOrNull(api.statusExecucao) ?? "CALCULADO",
+    statusExecucao,
     producaoPlanejada: toNumberOrNull(api.producaoPlanejada),
     producaoRealizada: toNumberOrNull(api.producaoRealizada),
     producaoApontada: toNumberOrNull(api.producaoApontada),
@@ -81,6 +106,13 @@ export function snapshotRecordFromApi(
     receitaPrevistaFinal: toNumberOrNull(
       api.receitaPrevistaFinal,
     ),
+    versaoModelo: api.versaoModelo ?? null,
+    versaoPremissas: api.versaoPremissas ?? null,
+    algorithmVersion: api.algorithmVersion ?? null,
+    evidenceIds,
+    coverageCode,
+    stale: false,
+    current: true,
     updatedAt: nowIso,
   };
 }
@@ -150,7 +182,7 @@ export async function hydrateHistoricoObra(
     );
 
   assertSyncSession(guard);
-  await putPrevisaoSnapshots(records, guard);
+  await replacePrevisaoSnapshotsForObra(obraId, records, guard);
 
   assertSyncSession(guard);
   return records.length;

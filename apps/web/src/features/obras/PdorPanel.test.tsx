@@ -140,8 +140,8 @@ describe("PdorPanel", () => {
  * simulação devolve percentis zerados. Os dois números são o que o modelo
  * produziu — o que não pode é apresentá-los lado a lado sem dizer isso.
  */
-describe("ressalva da receita prevista sem distribuição", () => {
-  it("avisa quando o número é teto de contrato, não previsão", () => {
+describe("bloqueio da receita prevista sem distribuição", () => {
+  it("não promove teto de contrato sem evidência aceita a previsão", () => {
     const html = renderToStaticMarkup(
       <PdorPanel
         pdor={{
@@ -151,15 +151,16 @@ describe("ressalva da receita prevista sem distribuição", () => {
           p50: 0,
           p80: 0,
           p95: 0,
+          coverageCode: "NO_ACCEPTED_EVIDENCE",
+          evidenceIds: [],
         }}
         loading={false}
         error={null}
       />,
     );
 
-    expect(html).toContain("teto do contrato");
-    // E a faixa some: "Faixa R$ 0 a R$ 0" embaixo de noventa e três milhões
-    // não informa nada — é a contradição escrita por extenso.
+    expect(html).toContain("Dados insuficientes");
+    expect(html).not.toContain("93.147.130");
     expect(html).not.toContain("Faixa");
   });
 
@@ -168,7 +169,7 @@ describe("ressalva da receita prevista sem distribuição", () => {
       <PdorPanel pdor={pdorDeExemplo()} loading={false} error={null} />,
     );
 
-    expect(html).not.toContain("teto do contrato");
+    expect(html).not.toContain("Dados insuficientes");
     expect(html).toContain("Faixa");
   });
 });

@@ -1,4 +1,5 @@
 import type { PrevisaoSnapshotRecord } from "../../lib/db/db.types";
+import { isSupportedPdorRevenueContract } from "../financeiro/pdorRevenuePolicy";
 
 export type ChartPeriod = "3M" | "6M" | "12M" | "ALL";
 
@@ -43,7 +44,14 @@ export function buildMonthlySeries(
   >();
 
   for (const snapshot of snapshots) {
-    if (snapshot.statusExecucao !== "CALCULADO") {
+    if (
+      snapshot.current !== true ||
+      snapshot.stale !== false ||
+      !isSupportedPdorRevenueContract(snapshot) ||
+      snapshot.evidenceIds?.length === 0 ||
+      snapshot.coverageCode === "NO_ACCEPTED_EVIDENCE" ||
+      snapshot.statusExecucao !== "SUCCESS"
+    ) {
       continue;
     }
 

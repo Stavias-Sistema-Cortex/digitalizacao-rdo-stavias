@@ -13,11 +13,15 @@ import com.projeto.cortex.obras.Obra;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -37,6 +41,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.verify;
@@ -90,6 +95,10 @@ class PdorApplicationServiceTest {
                 .thenReturn(List.of(obra));
         when(obraRepository.findByIdentificador(obra.getId()))
                 .thenReturn(List.of(obra));
+        when(obraRepository.findWritableIdForUpdate(obra.getId()))
+                .thenReturn(Optional.of(obra.getId()));
+        when(obraRepository.findExistingIdForShare(obra.getId()))
+                .thenReturn(Optional.of(obra.getId()));
     }
 
     @Test
@@ -130,6 +139,51 @@ class PdorApplicationServiceTest {
         assertThat(response.tipoIniciador()).isEqualTo("PROCESS");
         assertThat(response.iniciadoPor()).isEqualTo("PROCESSO_PDOR");
         assertThat(snapshotRepository.size()).isEqualTo(1);
+    }
+
+    @Test
+    void calculationLocksWorksiteBeforeLoadingInputsInsideTransaction()
+            throws Exception {
+        PdorInputLoader orderedLoader = mock(PdorInputLoader.class);
+        when(orderedLoader.load(obra, null))
+                .thenReturn(validBundle(obra, "350000.00"));
+        PdorApplicationService orderedService = new PdorApplicationService(
+                obraRepository,
+                orderedLoader,
+                snapshotRepository,
+                objectMapper,
+                memoryService,
+                operabilityGuard
+        );
+
+        orderedService.calcular(
+                "CW38386", null, PdorTriggerType.MANUAL, null
+        );
+
+        InOrder order = inOrder(obraRepository, orderedLoader);
+        order.verify(obraRepository).findWritableIdForUpdate(obra.getId());
+        order.verify(orderedLoader).load(obra, null);
+        Transactional transaction = PdorApplicationService.class.getMethod(
+                "calcular",
+                String.class,
+                LocalDate.class,
+                PdorTriggerType.class,
+                String.class
+        ).getAnnotation(Transactional.class);
+        assertThat(transaction).isNotNull();
+        assertThat(transaction.isolation()).isEqualTo(Isolation.READ_COMMITTED);
+        assertThat(transaction.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
+    }
+
+    @Test
+    void sourceMutationLocksTheWorksiteBeforeHidingItsCurrentProjection() {
+        service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+
+        service.invalidateCurrent(obra.getId());
+
+        verify(obraRepository).findExistingIdForShare(obra.getId());
+        assertThat(snapshotRepository.findCurrentByObraId(obra.getId()))
+                .isEmpty();
     }
 
     @Test
@@ -352,21 +406,23 @@ class PdorApplicationServiceTest {
     }
 
     @Test
-    void archivedWorksiteKeepsExactSnapshotReplayAvailable() {
+    void archivedWorksiteRejectsExactSnapshotReplay() {
         PdorResultadoResponse first =
                 service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
         obra.arquivar();
         when(obraRepository.findByIdentificador("CW38386"))
                 .thenReturn(List.of(obra));
-        doThrow(archivedWorksite()).when(operabilityGuard)
-                .requireWritable(obra.getId());
 
-        PdorResultadoResponse replay =
-                service.calcular("CW38386", null, PdorTriggerType.API, "evento-1");
-
-        assertThat(replay.id()).isEqualTo(first.id());
-        assertThat(replay.snapshotExistente()).isTrue();
+        assertThatThrownBy(() ->
+                service.calcular("CW38386", null, PdorTriggerType.API, "evento-1")
+        )
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404 NOT_FOUND")
+                .hasMessageContaining("Obra não encontrada ou arquivada");
         assertThat(snapshotRepository.size()).isEqualTo(1);
+        assertThat(snapshotRepository.findCurrentByObraId(obra.getId()))
+                .map(PdorSnapshot::id)
+                .contains(first.id());
     }
 
     @Test
@@ -598,14 +654,17 @@ class PdorApplicationServiceTest {
     }
 
     @Test
-    void shouldRecoverExistingSnapshotWhenUniqueConstraintWinsRace() {
+    void shouldFailClosedWhenAnUnexpectedUniqueViolationEscapesSerialization() {
         snapshotRepository.duplicateNextInsert = true;
 
-        PdorResultadoResponse response =
-                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        assertThatThrownBy(() -> service.calcular(
+                "CW38386", null, PdorTriggerType.MANUAL, null
+        ))
+                .isInstanceOf(PdorCalculationException.class)
+                .hasMessage("PDOR_CALCULATION_FAILED");
 
-        assertThat(response.statusExecucao()).isEqualTo("SUCCESS");
-        assertThat(response.snapshotExistente()).isTrue();
+        assertThat(snapshotRepository.findCurrentByObraId(obra.getId()))
+                .isEmpty();
         assertThat(snapshotRepository.size()).isEqualTo(1);
     }
 
@@ -688,17 +747,125 @@ class PdorApplicationServiceTest {
     }
 
     @Test
-    void archivedWorksiteKeepsCurrentAndHistoryReadable() {
+    void archivedWorksiteRejectsCurrentButKeepsHistoryReadable() {
         PdorResultadoResponse current =
                 service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
         obra.arquivar();
         when(obraRepository.findByIdentificador("CW38386"))
                 .thenReturn(List.of(obra));
 
-        assertThat(service.buscarAtual("CW38386").id()).isEqualTo(current.id());
+        assertThatThrownBy(() -> service.buscarAtual("CW38386"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404 NOT_FOUND")
+                .hasMessageContaining("Obra não encontrada ou arquivada");
         assertThat(service.buscarHistorico("CW38386", 0, 10).items())
                 .extracting(PdorResultadoResponse::id)
                 .containsExactly(current.id());
+    }
+
+    @Test
+    void successV1CurrentIsNotServedAsCurrentButRemainsInHistory() {
+        service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        PdorSnapshot generated = snapshotRepository
+                .findCurrentByObraId(obra.getId())
+                .orElseThrow();
+        snapshotRepository.replaceForTest(withAlgorithmVersion(
+                generated, "PDOR-REVENUE-1", false, true
+        ));
+
+        assertThat(service.buscarAtualSeExistente("CW38386")).isNull();
+        assertThat(service.buscarHistorico("CW38386", 0, 10).items())
+                .extracting(PdorResultadoResponse::algorithmVersion)
+                .containsExactly("PDOR-REVENUE-1");
+    }
+
+    @Test
+    void successV1LatestFallbackIsNotServedAsCurrent() {
+        service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        PdorSnapshot generated = snapshotRepository
+                .findCurrentByObraId(obra.getId())
+                .orElseThrow();
+        snapshotRepository.replaceForTest(withAlgorithmVersion(
+                generated, "PDOR-REVENUE-1", false, false
+        ));
+
+        assertThat(service.buscarAtualSeExistente("CW38386")).isNull();
+        assertThat(snapshotRepository.findLatestByObraId(obra.getId()))
+                .map(PdorSnapshot::algorithmVersion)
+                .contains("PDOR-REVENUE-1");
+    }
+
+    @Test
+    void staleSuccessLatestFallbackIsNotServedAsCurrent() {
+        service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        PdorSnapshot generated = snapshotRepository
+                .findCurrentByObraId(obra.getId())
+                .orElseThrow();
+        snapshotRepository.replaceForTest(withAlgorithmVersion(
+                generated,
+                PdorApplicationService.REVENUE_ALGORITHM_VERSION,
+                true,
+                false
+        ));
+
+        assertThat(service.buscarAtualSeExistente("CW38386")).isNull();
+    }
+
+    @Test
+    void compatibleNonCurrentLatestIsNotServedAsCurrent() {
+        service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        PdorSnapshot generated = snapshotRepository
+                .findCurrentByObraId(obra.getId())
+                .orElseThrow();
+        snapshotRepository.replaceForTest(withAlgorithmVersion(
+                generated,
+                PdorApplicationService.REVENUE_ALGORITHM_VERSION,
+                false,
+                false
+        ));
+
+        assertThat(service.buscarAtualSeExistente("CW38386")).isNull();
+    }
+
+    @Test
+    void successFromPreviousModelIsNotServedAsCurrent() {
+        PdorSnapshot legacy = mock(PdorSnapshot.class);
+        when(legacy.obraId()).thenReturn(obra.getId());
+        when(legacy.current()).thenReturn(true);
+        when(legacy.executionStatus()).thenReturn(PdorExecutionStatus.SUCCESS);
+        when(legacy.modelVersion()).thenReturn("PDOR-0.5.0");
+        when(legacy.algorithmVersion()).thenReturn("PDOR-REVENUE-2");
+        snapshotRepository.addForTest(legacy);
+
+        assertThat(service.buscarAtualSeExistente("CW38386")).isNull();
+    }
+
+    @Test
+    void noAcceptedEvidenceCoverageCannotProduceSuccessWithEmptyMissingList() {
+        PdorInputBundle valid = validBundle(obra, "350000.00");
+        inputLoader.bundle = withRevenueEvidence(
+                valid, List.of("evidence-1"), "NO_ACCEPTED_EVIDENCE"
+        );
+
+        PdorResultadoResponse response = service.calcular(
+                "CW38386", null, PdorTriggerType.MANUAL, null
+        );
+
+        assertThat(response.statusExecucao()).isEqualTo("INSUFFICIENT_DATA");
+    }
+
+    @Test
+    void emptyRevenueEvidenceIdsCannotProduceSuccessWithAcceptedCoverage() {
+        PdorInputBundle valid = validBundle(obra, "350000.00");
+        inputLoader.bundle = withRevenueEvidence(
+                valid, List.of(), "COMPLETE_ACCEPTED_EXACT"
+        );
+
+        PdorResultadoResponse response = service.calcular(
+                "CW38386", null, PdorTriggerType.MANUAL, null
+        );
+
+        assertThat(response.statusExecucao()).isEqualTo("INSUFFICIENT_DATA");
     }
 
     @Test
@@ -846,7 +1013,51 @@ class PdorApplicationServiceTest {
                         true,
                         2_000
                 ),
-                PdorEngine.HistoricalSeries.EMPTY
+                PdorEngine.HistoricalSeries.EMPTY,
+                List.of(),
+                List.of("evidence-1"),
+                1L,
+                "COMPLETE_ACCEPTED_EXACT"
+        );
+    }
+
+    private static PdorInputBundle withRevenueEvidence(
+            PdorInputBundle bundle,
+            List<String> evidenceIds,
+            String coverageCode
+    ) {
+        return new PdorInputBundle(
+                bundle.obraId(),
+                bundle.codigoObra(),
+                bundle.referenceDate(),
+                bundle.inputs(),
+                bundle.origins(),
+                bundle.warnings(),
+                bundle.missingRequiredFields(),
+                bundle.sourceValues(),
+                bundle.historicalSeries(),
+                bundle.evidenceReferences(),
+                evidenceIds,
+                bundle.evidenceHighWaterMark(),
+                coverageCode
+        );
+    }
+
+    private static PdorSnapshot withAlgorithmVersion(
+            PdorSnapshot snapshot,
+            String algorithmVersion,
+            boolean stale,
+            boolean current
+    ) {
+        return snapshot.withRevenueMetadata(
+                algorithmVersion,
+                snapshot.evidenceIds(),
+                snapshot.evidenceHighWaterMark(),
+                snapshot.coverageCode(),
+                snapshot.assumptions(),
+                snapshot.executedAtUtc(),
+                stale,
+                current
         );
     }
 
@@ -1085,6 +1296,24 @@ class PdorApplicationServiceTest {
         }
 
         @Override
+        public void markCurrentStale(String obraId) {
+            snapshots.replaceAll(existing -> existing.obraId().equals(obraId)
+                    && existing.current()
+                    ? existing.withRevenueMetadata(
+                            existing.algorithmVersion(),
+                            existing.evidenceIds(),
+                            existing.evidenceHighWaterMark(),
+                            existing.coverageCode(),
+                            existing.assumptions(),
+                            existing.executedAtUtc(),
+                            true,
+                            false
+                    )
+                    : existing);
+            rebuildIndex();
+        }
+
+        @Override
         public Optional<PdorSnapshot> findByIdempotencyKey(String idempotencyKey) {
             return Optional.ofNullable(byIdempotencyKey.get(idempotencyKey));
         }
@@ -1125,6 +1354,17 @@ class PdorApplicationServiceTest {
             return snapshots.stream()
                     .filter(snapshot -> snapshot.id().equals(id))
                     .findFirst();
+        }
+
+        private void replaceForTest(PdorSnapshot replacement) {
+            snapshots.replaceAll(snapshot -> snapshot.id().equals(replacement.id())
+                    ? replacement
+                    : snapshot);
+            rebuildIndex();
+        }
+
+        private void addForTest(PdorSnapshot snapshot) {
+            snapshots.add(snapshot);
         }
 
         private void store(PdorSnapshot snapshot) {

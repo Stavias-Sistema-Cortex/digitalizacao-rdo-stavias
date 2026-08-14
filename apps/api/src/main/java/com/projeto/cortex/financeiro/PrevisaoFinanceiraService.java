@@ -5,6 +5,8 @@ import com.projeto.cortex.pdor.PdorHistoricoResponse;
 import com.projeto.cortex.pdor.PdorResultadoResponse;
 import com.projeto.cortex.pdor.PdorTriggerType;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDate;
 
@@ -55,15 +57,46 @@ public class PrevisaoFinanceiraService {
         return pdor.buscarHistorico(obraIdentifier, page, size);
     }
 
+    /**
+     * Recalcula a projeção atual relendo a data de referência da obra.
+     * Cálculos manuais ou históricos usam {@link #calcular} com data explícita.
+     */
     public void recalcularAposMudancaRdo(
             String obraId,
-            LocalDate referenceDate,
+            String originEventId
+    ) {
+        /*
+         * Tirar o número antigo é parte da mutação canônica do RDO. Se a
+         * mutação voltar atrás, a invalidação também volta; se confirmar, não
+         * existe janela em que uma receita de RDO cancelado continue visível.
+         */
+        pdor.invalidateCurrent(obraId);
+
+        Runnable recalculation = () -> recalcularComSeguranca(
+                obraId, originEventId
+        );
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            recalculation.run();
+                        }
+                    }
+            );
+            return;
+        }
+        recalculation.run();
+    }
+
+    private void recalcularComSeguranca(
+            String obraId,
             String originEventId
     ) {
         try {
             pdor.calcular(
                     obraId,
-                    referenceDate,
+                    null,
                     PdorTriggerType.EVENT,
                     originEventId
             );
@@ -71,8 +104,8 @@ public class PrevisaoFinanceiraService {
             /*
              * O RDO aceito é o registro operacional canônico e não pode ser
              * desfeito por uma projeção derivada. Falhas de cálculo PDOR são
-             * registradas com correlação em transação independente antes de
-             * chegarem a esta fronteira; detalhes internos não são propagados.
+             * registradas com correlação depois do rollback da transação de
+             * cálculo; detalhes internos não são propagados.
              */
         }
     }

@@ -47,14 +47,30 @@ public class ServicePriceCatalogService {
     private final ServiceCatalogOntologyPublisher ontology;
     private final ObraOperabilityGuard operabilityGuard;
     private final Clock clock;
+    private final ServiceCatalogProjectionInvalidator projectionInvalidator;
 
     @Autowired
     public ServicePriceCatalogService(
             ServicePriceCatalogRepository repository,
             ServiceCatalogOntologyPublisher ontology,
+            ObraOperabilityGuard operabilityGuard,
+            ServiceCatalogProjectionInvalidator projectionInvalidator
+    ) {
+        this(
+                repository, ontology, operabilityGuard, Clock.systemUTC(),
+                projectionInvalidator
+        );
+    }
+
+    public ServicePriceCatalogService(
+            ServicePriceCatalogRepository repository,
+            ServiceCatalogOntologyPublisher ontology,
             ObraOperabilityGuard operabilityGuard
     ) {
-        this(repository, ontology, operabilityGuard, Clock.systemUTC());
+        this(
+                repository, ontology, operabilityGuard, Clock.systemUTC(),
+                ServiceCatalogProjectionInvalidator.NOOP
+        );
     }
 
     ServicePriceCatalogService(
@@ -63,10 +79,24 @@ public class ServicePriceCatalogService {
             ObraOperabilityGuard operabilityGuard,
             Clock clock
     ) {
+        this(
+                repository, ontology, operabilityGuard, clock,
+                ServiceCatalogProjectionInvalidator.NOOP
+        );
+    }
+
+    ServicePriceCatalogService(
+            ServicePriceCatalogRepository repository,
+            ServiceCatalogOntologyPublisher ontology,
+            ObraOperabilityGuard operabilityGuard,
+            Clock clock,
+            ServiceCatalogProjectionInvalidator projectionInvalidator
+    ) {
         this.repository = repository;
         this.ontology = ontology;
         this.operabilityGuard = operabilityGuard;
         this.clock = clock;
+        this.projectionInvalidator = projectionInvalidator;
     }
 
     @Transactional
@@ -291,6 +321,7 @@ public class ServicePriceCatalogService {
                     })
                     .orElseThrow(() -> race);
         }
+        projectionInvalidator.invalidateService(service);
         /*
          * Publicar é parte de excluir, não um extra.
          *
@@ -351,6 +382,7 @@ public class ServicePriceCatalogService {
         } catch (DataIntegrityViolationException race) {
             throw conflict("SERVICE_PRICE_WRITE_CONFLICT");
         }
+        projectionInvalidator.invalidateWorksite(worksite);
         ontology.priceVersionPublished(
                 created, service, actor, normalized.clientMutationId()
         );
@@ -424,6 +456,7 @@ public class ServicePriceCatalogService {
         } catch (DataIntegrityViolationException race) {
             throw conflict("SERVICE_PRICE_WRITE_CONFLICT");
         }
+        projectionInvalidator.invalidateWorksite(worksite);
         ontology.priceVersionCorrected(
                 corrigido, catalogService, actor, normalized.clientMutationId()
         );
@@ -479,6 +512,7 @@ public class ServicePriceCatalogService {
         } catch (DataIntegrityViolationException race) {
             throw conflict("SERVICE_PRICE_WRITE_CONFLICT");
         }
+        projectionInvalidator.invalidateWorksite(worksite);
         ontology.priceVersionSuperseded(
                 previous,
                 replacement,
@@ -518,6 +552,7 @@ public class ServicePriceCatalogService {
                     normalized.clientMutationId(), hash, normalized.effectiveAt(),
                     normalized.reason(), clock.instant()
             ));
+            projectionInvalidator.invalidateWorksite(worksite);
             ontology.priceVersionCancelled(
                     cancelled,
                     catalogService,

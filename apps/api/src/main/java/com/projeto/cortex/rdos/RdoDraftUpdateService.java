@@ -322,7 +322,6 @@ public class RdoDraftUpdateService {
 
         previsaoFinanceiraService.recalcularAposMudancaRdo(
                 request.obraId(),
-                request.dataRdo(),
                 null
         );
 

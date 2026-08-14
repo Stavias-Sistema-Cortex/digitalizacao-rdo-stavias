@@ -220,7 +220,7 @@ class PostgresqlRdoTriggeredPdorFailureIT {
         PdorApplicationService pdor = mock(PdorApplicationService.class);
         when(pdor.calcular(
                 fixture.obraId(),
-                REFERENCE_DATE,
+                null,
                 PdorTriggerType.EVENT,
                 null
         )).thenAnswer(invocation -> {
@@ -247,7 +247,6 @@ class PostgresqlRdoTriggeredPdorFailureIT {
             insertRdo(acceptedRdoId, fixture.obraId());
             forecast.recalcularAposMudancaRdo(
                     fixture.obraId(),
-                    REFERENCE_DATE,
                     null
             );
         })).doesNotThrowAnyException();

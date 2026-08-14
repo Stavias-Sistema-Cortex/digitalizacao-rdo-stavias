@@ -915,5 +915,14 @@ export interface PrevisaoSnapshotRecord {
   custoRealizado: number | null;
   custoPrevistoFinal: number | null;
   receitaPrevistaFinal: number | null;
+  /** Ausentes em caches anteriores ao contrato PDOR de receita v2. */
+  versaoModelo?: string | null;
+  versaoPremissas?: string | null;
+  algorithmVersion?: string | null;
+  /** Ausentes apenas em caches legados anteriores ao contrato de proveniência. */
+  evidenceIds?: string[];
+  coverageCode?: string | null;
+  stale?: boolean;
+  current?: boolean;
   updatedAt: string;
 }

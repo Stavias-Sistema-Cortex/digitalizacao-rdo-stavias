@@ -2472,27 +2472,6 @@ textarea:focus {
 }
 
 /*
- * A ressalva fica junto do número, e não enterrada numa lista embaixo.
- *
- * A receita prevista pode sair alta ao lado de uma faixa zerada: sem nenhuma
- * medição, o índice de captura é zero e a projeção direta cai no valor
- * contratual inteiro, enquanto a simulação não tem de onde tirar percentis.
- * Os dois números são o que o modelo produziu, e apresentá-los lado a lado sem
- * dizer isso faz o painel se contradizer na cara de quem lê.
- */
-/*
- * A ressalva explica o número; não disputa com ele. Saía em negrito escuro,
- * do mesmo peso do valor e ocupando mais linhas que ele.
- */
-.obras-pdor-grid dd.obras-pdor-ressalva {
-  margin: 6px 0 0;
-  color: #8a6d1e;
-  font-size: 0.66rem;
-  font-weight: 400;
-  line-height: 1.45;
-}
-
-/*
  * Uma porta só para a justificativa inteira.
  *
  * Fatores de risco, dados ausentes, limitações, alertas, recomendações e

@@ -116,6 +116,17 @@ function semDistribuicao(pdor: ObraPdor): boolean {
   );
 }
 
+function previsaoSemBaseCanonica(pdor: ObraPdor): boolean {
+  return (
+    pdor.statusExecucao === "SUCCESS" &&
+    (
+      pdor.coverageCode === "NO_ACCEPTED_EVIDENCE" ||
+      pdor.evidenceIds.length === 0 ||
+      semDistribuicao(pdor)
+    )
+  );
+}
+
 function ExplanationList({
   title,
   items,
@@ -274,6 +285,17 @@ export function PdorPanel({ pdor, loading, error }: PdorPanelProps) {
           Nenhum cálculo PDOR registrado ainda. O próximo RDO sincronizado
           dispara o cálculo automaticamente.
         </p>
+      ) : previsaoSemBaseCanonica(pdor) ? (
+        <>
+          <div className="obras-pdor-insufficient">
+            <strong>Dados insuficientes</strong>
+            <p>
+              A previsão foi descartada porque não possui receita aceita e
+              uma distribuição financeira coerente.
+            </p>
+          </div>
+          <DetalheDoCalculo pdor={pdor} />
+        </>
       ) : pdor.statusExecucao !== "SUCCESS" ? (
         <>
           <div className="obras-pdor-insufficient">
@@ -295,24 +317,10 @@ export function PdorPanel({ pdor, loading, error }: PdorPanelProps) {
             <div className="obras-pdor-main">
               <dt>Receita prevista final</dt>
               <dd>{formatCurrency(pdor.receitaPrevistaFinal ?? pdor.p50)}</dd>
-              {/*
-                Ou a faixa, ou a ressalva — nunca as duas.
-                "Faixa R$ 0 a R$ 0" embaixo de noventa e três milhões não é
-                informação, é a contradição escrita por extenso. Quando a
-                simulação não produziu percentis, o lugar dessa linha é da frase
-                que explica por quê.
-              */}
-              {semDistribuicao(pdor) ? (
-                <dd className="obras-pdor-ressalva">
-                  Sem receita medida, este é o teto do contrato — não uma
-                  previsão.
-                </dd>
-              ) : (
-                <dd className="obras-pdor-range">
-                  Faixa {formatCurrency(pdor.p10)} a {formatCurrency(pdor.p95)} ·
-                  P50 {formatCurrency(pdor.p50)}
-                </dd>
-              )}
+              <dd className="obras-pdor-range">
+                Faixa {formatCurrency(pdor.p10)} a {formatCurrency(pdor.p95)} ·
+                P50 {formatCurrency(pdor.p50)}
+              </dd>
             </div>
             <div>
               <dt>Risco de ficar abaixo do contrato</dt>

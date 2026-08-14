@@ -10,9 +10,11 @@ import com.projeto.cortex.obras.Obra;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,10 +40,10 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 @Service
-public class PdorApplicationService {
+public class PdorApplicationService implements PdorProjectionInvalidator {
 
     private static final String FONTE = "PDOR";
-    static final String REVENUE_ALGORITHM_VERSION = "PDOR-REVENUE-1";
+    static final String REVENUE_ALGORITHM_VERSION = "PDOR-REVENUE-2";
     private static final Logger LOGGER =
             LoggerFactory.getLogger(PdorApplicationService.class);
 
@@ -161,13 +163,18 @@ public class PdorApplicationService {
         this.explainabilityBuilder = new PdorExplainabilityBuilder(this.objectMapper);
     }
 
+    @Transactional(
+            propagation = Propagation.REQUIRES_NEW,
+            isolation = Isolation.READ_COMMITTED
+    )
     public PdorResultadoResponse calcular(
             String obraIdentifier,
             LocalDate referenceDate,
             PdorTriggerType triggerType,
             String originEventId
     ) {
-        Obra obra = localizarObra(obraIdentifier);
+        Obra obra = localizarObraNaoArquivada(obraIdentifier);
+        requireObraWritableForUpdate(obra.getId());
         PdorInputBundle inputs = inputLoader.load(obra, referenceDate);
 
         PdorSnapshot current = snapshotRepository
@@ -231,9 +238,9 @@ public class PdorApplicationService {
     }
 
     public PdorResultadoResponse buscarAtualSeExistente(String obraIdentifier) {
-        Obra obra = localizarObra(obraIdentifier);
+        Obra obra = localizarObraNaoArquivada(obraIdentifier);
         return snapshotRepository.findCurrentByObraId(obra.getId())
-                .or(() -> snapshotRepository.findLatestByObraId(obra.getId()))
+                .filter(this::compativelComoAtual)
                 .map(snapshot -> toResponse(snapshot, obra, true))
                 .orElse(null);
     }
@@ -301,7 +308,7 @@ public class PdorApplicationService {
         PdorSnapshot baseSnapshot;
 
         try {
-            if (!inputs.canCalculate()) {
+            if (!podeCalcularComEvidenciaCanonica(inputs)) {
                 baseSnapshot = buildInsufficientDataSnapshot(
                         inputs,
                         triggerType,
@@ -341,10 +348,6 @@ public class PdorApplicationService {
                     () -> registrarNoGrafo(snapshot, obra)
             );
             return toResponse(snapshot, obra, false);
-        } catch (DuplicateKeyException exception) {
-            return snapshotRepository.findByIdempotencyKey(idempotencyKey)
-                    .map(existing -> toResponse(existing, obra, true))
-                    .orElseThrow(() -> exception);
         } catch (RuntimeException exception) {
             /*
              * Falhar ao publicar é falhar o cálculo, e tem de sair pela mesma
@@ -556,8 +559,8 @@ public class PdorApplicationService {
             String idempotencyKey
     ) {
         String error =
-                "Dados insuficientes para calcular o PDOR. Campos ausentes: "
-                        + String.join(", ", inputs.missingRequiredFields())
+                "Dados insuficientes para calcular o PDOR. Pendências: "
+                        + String.join(", ", pendenciasDeCalculo(inputs))
                         + ".";
 
         List<String> warnings = new ArrayList<>(inputs.warnings());
@@ -778,6 +781,26 @@ public class PdorApplicationService {
         return new PdorCalculationException(correlationId, exception);
     }
 
+    /**
+     * Oculta o resultado derivado no mesmo commit que alterou sua fonte.
+     * O recálculo pode ser best-effort; a retirada do número antigo não é.
+     */
+    @Override
+    @Transactional
+    public void invalidateCurrent(String obraId) {
+        if (obraId == null || obraId.isBlank()) {
+            throw new IllegalArgumentException("obraId é obrigatório.");
+        }
+        String normalizedId = obraId.trim();
+        if (obraRepository.findExistingIdForShare(normalizedId).isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Obra não encontrada neste servidor."
+            );
+        }
+        snapshotRepository.markCurrentStale(normalizedId);
+    }
+
     private Obra localizarObra(String identifier) {
         if (identifier == null || identifier.isBlank()) {
             throw new ResponseStatusException(
@@ -805,6 +828,63 @@ public class PdorApplicationService {
         }
 
         return obras.getFirst();
+    }
+
+    private Obra localizarObraNaoArquivada(String identifier) {
+        Obra obra = localizarObra(identifier);
+        if (obra.getArquivadoEm() != null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Obra não encontrada ou arquivada."
+            );
+        }
+        return obra;
+    }
+
+    private void requireObraWritableForUpdate(String obraId) {
+        if (obraRepository.findWritableIdForUpdate(obraId).isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Obra não encontrada ou arquivada."
+            );
+        }
+    }
+
+    private boolean compativelComoAtual(PdorSnapshot snapshot) {
+        if (snapshot.stale()) {
+            return false;
+        }
+        if (snapshot.executionStatus() != PdorExecutionStatus.SUCCESS) {
+            return true;
+        }
+        return PdorEngine.MODEL_VERSION.equals(snapshot.modelVersion())
+                && REVENUE_ALGORITHM_VERSION.equals(snapshot.algorithmVersion())
+                && PdorEngine.ASSUMPTIONS_VERSION
+                        .equals(snapshot.assumptionsVersion());
+    }
+
+    private boolean podeCalcularComEvidenciaCanonica(PdorInputBundle inputs) {
+        return inputs.canCalculate()
+                && coberturaDeReceitaAceita(inputs.revenueCoverageCode())
+                && !inputs.revenueEvidenceIds().isEmpty();
+    }
+
+    private boolean coberturaDeReceitaAceita(String coverageCode) {
+        return "COMPLETE_ACCEPTED_EXACT".equals(coverageCode)
+                || "PARTIAL_ACCEPTED_EXACT".equals(coverageCode);
+    }
+
+    private List<String> pendenciasDeCalculo(PdorInputBundle inputs) {
+        List<String> pendencias = new ArrayList<>(
+                inputs.missingRequiredFields()
+        );
+        if (!coberturaDeReceitaAceita(inputs.revenueCoverageCode())) {
+            pendencias.add("cobertura de receita aceita");
+        }
+        if (inputs.revenueEvidenceIds().isEmpty()) {
+            pendencias.add("identificadores de evidência de receita");
+        }
+        return pendencias;
     }
 
     private PdorResultadoResponse toResponse(

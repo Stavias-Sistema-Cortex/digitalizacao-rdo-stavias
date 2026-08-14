@@ -14,6 +14,7 @@ import { listObrasLocais, mergeObrasLocais } from "./obraLocalRepository";
 import {
   listSnapshotsByObra,
   putPrevisaoSnapshots,
+  replacePrevisaoSnapshotsForObra,
 } from "./previsaoSnapshotRepository";
 import { captureOnlineSyncSession } from "../sync/syncSession";
 
@@ -56,6 +57,10 @@ function snapshot(indice: number): PrevisaoSnapshotRecord {
     custoRealizado: null,
     custoPrevistoFinal: null,
     receitaPrevistaFinal: 1000,
+    evidenceIds: ["evidence-1"],
+    coverageCode: "COMPLETE_ACCEPTED_EXACT",
+    stale: false,
+    current: true,
     updatedAt: NOW,
   };
 }
@@ -154,6 +159,29 @@ describe("hidratação grava em lote, não registro a registro", () => {
     }
 
     expect(await listSnapshotsByObra(OBRA_ID)).toHaveLength(100);
+  });
+
+  it("substitui o histórico velho pelo único snapshot atual, mesmo insuficiente", async () => {
+    await putPrevisaoSnapshots([
+      snapshot(1),
+      snapshot(2),
+    ]);
+    const atual = {
+      ...snapshot(3),
+      id: "snap-current-insufficient",
+      statusExecucao: "INSUFFICIENT_DATA",
+      receitaPrevistaFinal: null,
+      evidenceIds: [],
+      coverageCode: "NO_ACCEPTED_EVIDENCE",
+    };
+
+    await replacePrevisaoSnapshotsForObra(
+      OBRA_ID,
+      [atual],
+      captureOnlineSyncSession(),
+    );
+
+    expect(await listSnapshotsByObra(OBRA_ID)).toEqual([atual]);
   });
 
   /*

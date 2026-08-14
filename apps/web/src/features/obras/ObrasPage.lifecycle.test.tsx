@@ -16,6 +16,7 @@ import type {
   ObraLocalRecord,
   OperationalEventRecord,
 } from "../../lib/db/db.types";
+import type { ObraPdor } from "./obrasApi";
 
 const state = vi.hoisted(() => ({
   alfa: true,
@@ -153,6 +154,60 @@ function obra(
   };
 }
 
+function pdor(values: Partial<ObraPdor> = {}): ObraPdor {
+  return {
+    id: "snapshot-1",
+    obraId: "obra-1",
+    dataReferencia: "2026-07-28",
+    janelaTemporal: {
+      inicioProgramacao: "2026-01-01",
+      fimProgramacao: "2026-12-31",
+      dataReferencia: "2026-07-28",
+      janelaEquipamentosDias: 30,
+      serieHistoricaSemanal: true,
+    },
+    dataExecucao: "2026-07-28T12:00:00",
+    versaoModelo: "PDOR-REVENUE-1",
+    versaoPremissas: "PDOR-ASSUMPTIONS-1",
+    versaoDados: "commit:812",
+    statusExecucao: "SUCCESS",
+    statusExecucaoLabel: "Concluído",
+    calibracao: "NOT_CALIBRATED",
+    calibracaoLabel: "Não calibrado",
+    risco: "HIGH",
+    riscoLabel: "Alto",
+    faseLabel: "Produção",
+    receitaPrevistaFinal: 93_147_130,
+    p10: 0,
+    p50: 0,
+    p80: 0,
+    p95: 0,
+    probabilidadeAbaixoContrato: 1,
+    confianca: 0.4,
+    drivers: [],
+    warnings: [],
+    featuresUtilizadas: [],
+    dadosAusentes: [],
+    limitacoes: [],
+    alertas: [],
+    recomendacoes: [],
+    comparacaoAnterior: null,
+    evidencias: [],
+    iniciadoPor: "usuario-1",
+    tipoIniciador: "USER",
+    algorithmVersion: "PDOR-REVENUE-1",
+    evidenceIds: [],
+    evidenceHighWaterMark: 812,
+    coverageCode: "NO_ACCEPTED_EVIDENCE",
+    assumptions: { iterations: 10_000 },
+    executedAtUtc: "2026-07-28T12:00:00Z",
+    stale: false,
+    current: true,
+    erroExecucao: null,
+    ...values,
+  };
+}
+
 function operationalEvent(
   obraId: string,
   values: Partial<OperationalEventRecord> = {},
@@ -243,6 +298,51 @@ afterEach(() => {
 });
 
 describe("ObrasPage lifecycle Alfa", () => {
+  it("descarta SUCCESS sem evidência aceita na tela de Obras", async () => {
+    api.buscarPdorAtual.mockResolvedValue(pdor());
+
+    render(<ObrasPage />);
+
+    const painel = await screen.findByRole("region", {
+      name: "Previsão de receita PDOR",
+    });
+    expect(painel).toHaveTextContent("Dados insuficientes");
+    expect(painel).not.toHaveTextContent("93.147.130");
+    expect(painel).not.toHaveTextContent("Faixa");
+  });
+
+  it("expõe dados insuficientes com rótulos humanos na tela de Obras", async () => {
+    api.buscarPdorAtual.mockResolvedValue(pdor({
+      statusExecucao: "INSUFFICIENT_DATA",
+      statusExecucaoLabel: "Dados insuficientes",
+      receitaPrevistaFinal: null,
+      p10: null,
+      p50: null,
+      p80: null,
+      p95: null,
+      probabilidadeAbaixoContrato: null,
+      confianca: null,
+      erroExecucao:
+        "Dados insuficientes. Campos ausentes: contractValue.",
+      dadosAusentes: [{
+        code: "CONTRACT_VALUE_ABSENT",
+        label: "Valor contratual da obra",
+        detail: null,
+        field: "contractValue",
+        availability: "ABSENT",
+      }],
+    }));
+
+    render(<ObrasPage />);
+
+    const painel = await screen.findByRole("region", {
+      name: "Previsão de receita PDOR",
+    });
+    expect(painel).toHaveTextContent("Falta preencher");
+    expect(painel).toHaveTextContent("Valor contratual da obra");
+    expect(painel).not.toHaveTextContent("contractValue");
+  });
+
   it.each([
     ["canonical instant", "2026-07-22T01:30:00.000Z", "21/07/2026, 22:30"],
     ["legacy civil clock", "2026-07-22T01:30:00", "22/07/2026, 01:30"],

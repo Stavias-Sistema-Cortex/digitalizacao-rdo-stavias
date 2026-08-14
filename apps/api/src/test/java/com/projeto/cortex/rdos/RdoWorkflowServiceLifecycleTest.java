@@ -58,6 +58,27 @@ class RdoWorkflowServiceLifecycleTest {
     }
 
     @Test
+    void sendRecomputesTheCurrentProjectionWithoutPinningTheRdoDate() {
+        when(jdbc.queryForObject(
+                contains("SELECT status"),
+                eq(String.class),
+                eq("rdo-1")
+        )).thenReturn("RASCUNHO");
+        when(jdbc.queryForObject(
+                contains("SELECT obra_id"),
+                eq(String.class),
+                eq("rdo-1")
+        )).thenReturn("obra-1");
+        when(jdbc.update(contains("status = 'ENVIADO'"), eq("rdo-1")))
+                .thenReturn(1);
+        RdoResponse response = respostaCanonica("ENVIADO");
+
+        assertThat(service.enviar("rdo-1")).isSameAs(response);
+
+        verify(previsao).recalcularAposMudancaRdo("obra-1", null);
+    }
+
+    @Test
     void cancelMarksInsteadOfDeletingAndRecomputesRevenue() {
         canceladoEm(false);
         when(jdbc.queryForObject(
@@ -76,7 +97,7 @@ class RdoWorkflowServiceLifecycleTest {
                 "rdo-1", "obra-1", null, "RDO-014"
         );
         verify(previsao).recalcularAposMudancaRdo(
-                "obra-1", LocalDate.of(2026, 8, 1), null
+                "obra-1", null
         );
         // Nenhum DELETE: mão de obra, equipamento e medição continuam onde
         // estão, e é por isso que a recuperação é possível.
@@ -119,7 +140,7 @@ class RdoWorkflowServiceLifecycleTest {
                 "rdo-1", "obra-1", null, "RDO-014", "ENVIADO"
         );
         verify(previsao).recalcularAposMudancaRdo(
-                "obra-1", LocalDate.of(2026, 8, 1), null
+                "obra-1", null
         );
     }
 

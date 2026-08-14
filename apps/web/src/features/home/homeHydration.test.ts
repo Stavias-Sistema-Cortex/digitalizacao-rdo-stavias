@@ -38,19 +38,50 @@ describe("obraRecordFromApi", () => {
 });
 
 describe("snapshotRecordFromApi", () => {
+  it("descarta histórico sem status em vez de inventar cálculo concluído", () => {
+    const record = snapshotRecordFromApi(
+      {
+        id: "snap-sem-status",
+        obra: { id: "obra-1" },
+        dataReferencia: "2026-06-30",
+        statusExecucao: null,
+        producaoPlanejada: 500,
+        producaoRealizada: 240,
+        producaoApontada: 410,
+        custoRealizado: null,
+        custoPrevistoFinal: null,
+        receitaPrevistaFinal: 120,
+        evidenceIds: ["evidence-1"],
+        coverageCode: "COMPLETE_ACCEPTED_EXACT",
+        stale: false,
+        current: true,
+      },
+      NOW,
+    );
+
+    expect(record).toBeNull();
+  });
+
   it("mapeia histórico e descarta itens sem dataReferencia", () => {
     const ok = snapshotRecordFromApi(
       {
         id: "snap-1",
         obra: { id: "obra-1" },
         dataReferencia: "2026-06-30",
-        statusExecucao: "CALCULADO",
+        statusExecucao: "SUCCESS",
         producaoPlanejada: 500,
         producaoRealizada: 240,
         producaoApontada: 410,
         custoRealizado: 40,
         custoPrevistoFinal: 90,
         receitaPrevistaFinal: 120,
+        versaoModelo: "PDOR-0.5.1",
+        versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
+        algorithmVersion: "PDOR-REVENUE-2",
+        evidenceIds: ["evidence-1"],
+        coverageCode: "COMPLETE_ACCEPTED_EXACT",
+        stale: false,
+        current: true,
       },
       NOW,
     );
@@ -66,6 +97,10 @@ describe("snapshotRecordFromApi", () => {
         custoRealizado: null,
         custoPrevistoFinal: null,
         receitaPrevistaFinal: null,
+        evidenceIds: [],
+        coverageCode: "NO_ACCEPTED_EVIDENCE",
+        stale: false,
+        current: true,
       },
       NOW,
     );
@@ -77,7 +112,102 @@ describe("snapshotRecordFromApi", () => {
       custoRealizado: null,
       custoPrevistoFinal: null,
       receitaPrevistaFinal: 120,
+      evidenceIds: ["evidence-1"],
+      coverageCode: "COMPLETE_ACCEPTED_EXACT",
+      stale: false,
+      current: true,
     });
     expect(missing).toBeNull();
+  });
+
+  it("descarta SUCCESS sem evidência aceita e snapshots que já não são atuais", () => {
+    const base = {
+      id: "snap-1",
+      obra: { id: "obra-1" },
+      dataReferencia: "2026-06-30",
+      statusExecucao: "SUCCESS",
+      producaoPlanejada: 500,
+      producaoRealizada: 240,
+      producaoApontada: 410,
+      custoRealizado: null,
+      custoPrevistoFinal: null,
+      receitaPrevistaFinal: 120,
+      versaoModelo: "PDOR-0.5.1",
+      versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
+      algorithmVersion: "PDOR-REVENUE-2",
+      stale: false,
+      current: true,
+    };
+
+    expect(snapshotRecordFromApi({
+      ...base,
+      evidenceIds: [],
+      coverageCode: "NO_ACCEPTED_EVIDENCE",
+    }, NOW)).toBeNull();
+    expect(snapshotRecordFromApi({
+      ...base,
+      evidenceIds: ["evidence-1"],
+      coverageCode: "COMPLETE_ACCEPTED_EXACT",
+      stale: true,
+      current: false,
+    }, NOW)).toBeNull();
+  });
+
+  it.each([
+    ["algoritmo v1", { algorithmVersion: "PDOR-REVENUE-1" }],
+    ["modelo anterior", { versaoModelo: "PDOR-0.5.0" }],
+    ["premissas anteriores", { versaoPremissas: "PDOR-ASSUMPTIONS-0.4.0" }],
+  ])("descarta histórico SUCCESS incompatível: %s", (_label, legacy) => {
+    expect(snapshotRecordFromApi({
+      id: "snap-legado",
+      obra: { id: "obra-1" },
+      dataReferencia: "2026-06-30",
+      statusExecucao: "SUCCESS",
+      producaoPlanejada: 500,
+      producaoRealizada: 240,
+      producaoApontada: 410,
+      custoRealizado: null,
+      custoPrevistoFinal: null,
+      receitaPrevistaFinal: 120,
+      versaoModelo: "PDOR-0.5.1",
+      versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
+      algorithmVersion: "PDOR-REVENUE-2",
+      evidenceIds: ["evidence-1"],
+      coverageCode: "COMPLETE_ACCEPTED_EXACT",
+      stale: false,
+      current: true,
+      ...legacy,
+    }, NOW)).toBeNull();
+  });
+
+  it("preserva o snapshot atual de dados insuficientes para suprimir o SUCCESS anterior", () => {
+    const record = snapshotRecordFromApi({
+      id: "snap-current-insufficient",
+      obra: { id: "obra-1" },
+      dataReferencia: "2026-06-30",
+      statusExecucao: "INSUFFICIENT_DATA",
+      producaoPlanejada: null,
+      producaoRealizada: null,
+      producaoApontada: null,
+      custoRealizado: null,
+      custoPrevistoFinal: null,
+      receitaPrevistaFinal: null,
+      versaoModelo: "PDOR-0.5.1",
+      versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
+      algorithmVersion: "PDOR-REVENUE-2",
+      evidenceIds: [],
+      coverageCode: "NO_ACCEPTED_EVIDENCE",
+      stale: false,
+      current: true,
+    }, NOW);
+
+    expect(record).toMatchObject({
+      id: "snap-current-insufficient",
+      statusExecucao: "INSUFFICIENT_DATA",
+      evidenceIds: [],
+      coverageCode: "NO_ACCEPTED_EVIDENCE",
+      stale: false,
+      current: true,
+    });
   });
 });

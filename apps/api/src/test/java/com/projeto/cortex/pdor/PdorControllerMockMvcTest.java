@@ -114,6 +114,8 @@ class PdorControllerMockMvcTest {
 
         when(obraRepository.findByIdentificador("CW38386"))
                 .thenReturn(List.of(obra));
+        when(obraRepository.findWritableIdForUpdate(obra.getId()))
+                .thenReturn(Optional.of(obra.getId()));
         when(initiatorResolver.resolve())
                 .thenReturn(new PdorExecutionInitiator("usuario-teste", "USER"));
     }
@@ -332,7 +334,7 @@ class PdorControllerMockMvcTest {
                 "snapshot-atual",
                 LocalDateTime.of(2026, 6, 22, 11, 0)
         );
-        when(snapshotRepository.findLatestByObraId(eq(obra.getId())))
+        when(snapshotRepository.findCurrentByObraId(eq(obra.getId())))
                 .thenReturn(Optional.of(snapshot));
 
         mockMvc.perform(get("/api/obras/{obraId}/pdor/atual", "CW38386"))
@@ -446,7 +448,7 @@ class PdorControllerMockMvcTest {
             String id,
             LocalDateTime executedAt
     ) {
-        return new PdorSnapshot(
+        PdorSnapshot snapshot = new PdorSnapshot(
                 id,
                 obra.getId(),
                 "CW38386",
@@ -485,6 +487,16 @@ class PdorControllerMockMvcTest {
                 objectMapper.createArrayNode(),
                 "Dados insuficientes para calcular o PDOR.",
                 executedAt
+        );
+        return snapshot.withRevenueMetadata(
+                snapshot.algorithmVersion(),
+                snapshot.evidenceIds(),
+                snapshot.evidenceHighWaterMark(),
+                snapshot.coverageCode(),
+                snapshot.assumptions(),
+                snapshot.executedAtUtc(),
+                false,
+                true
         );
     }
 

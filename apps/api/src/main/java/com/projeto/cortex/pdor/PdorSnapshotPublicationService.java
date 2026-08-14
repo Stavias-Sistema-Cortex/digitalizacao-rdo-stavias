@@ -3,6 +3,8 @@ package com.projeto.cortex.pdor;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Persiste o snapshot e publica sua projeção ontológica na mesma transação.
@@ -39,13 +41,31 @@ public class PdorSnapshotPublicationService {
         ontologyPublication.run();
     }
 
-    @Transactional
     public void recordFailure(
             String obraId,
             Runnable failurePersistence
     ) {
-        operabilityGuard.requireWritable(obraId);
-        failurePersistence.run();
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            operabilityGuard.requireWritable(obraId);
+            failurePersistence.run();
+            return;
+        }
+        /*
+         * A publicação pode ter falhado depois de tocar o snapshot atual.
+         * Abrir o audit REQUIRES_NEW antes do rollback faria a nova conexão
+         * esperar pelos locks que esta própria thread ainda segura. O audit
+         * começa somente quando a transação de cálculo já devolveu os locks.
+         */
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        if (status == STATUS_ROLLED_BACK) {
+                            failurePersistence.run();
+                        }
+                    }
+                }
+        );
     }
 
     /**

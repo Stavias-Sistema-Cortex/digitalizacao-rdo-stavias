@@ -85,7 +85,6 @@ public class RdoWorkflowService {
 
         previsaoFinanceiraService.recalcularAposMudancaRdo(
                 response.obraId(),
-                response.dataRdo(),
                 null
         );
 
@@ -143,7 +142,6 @@ public class RdoWorkflowService {
 
         previsaoFinanceiraService.recalcularAposMudancaRdo(
                 response.obraId(),
-                response.dataRdo(),
                 null
         );
 
@@ -198,7 +196,6 @@ public class RdoWorkflowService {
 
         previsaoFinanceiraService.recalcularAposMudancaRdo(
                 response.obraId(),
-                response.dataRdo(),
                 null
         );
 

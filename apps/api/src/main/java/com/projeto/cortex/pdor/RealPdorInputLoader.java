@@ -4,7 +4,6 @@ import com.projeto.cortex.intelligence.PdorEngine;
 import com.projeto.cortex.obras.Obra;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -99,7 +98,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
     }
 
     @Override
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Transactional(readOnly = true)
     public PdorInputBundle load(Obra obra, LocalDate requestedReferenceDate) {
         ProgramacaoStats programacao = buscarProgramacaoStats(obra.getId());
         RdoStats rdo = buscarRdoStats(obra.getId(), requestedReferenceDate);
@@ -124,9 +123,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 obra.getId(), referenceDate, contractAuthority
         );
         ServiceQuantityStats serviceQuantity = buscarServiceQuantityStats(
-                obra.getId(),
-                referenceDate,
-                finance.acceptedQuantity(),
+                finance,
                 contractAuthority
         );
         ProducaoApontada apontada = buscarProducaoApontada(
@@ -138,12 +135,22 @@ public class RealPdorInputLoader implements PdorInputLoader {
         WeatherStats weather = buscarWeatherStats(obra.getId(), referenceDate);
 
         QuantityChoice quantity =
-                escolherQuantidade(programacao, rdo, serviceQuantity, apontada);
+                escolherQuantidade(programacao, rdo, serviceQuantity);
 
         Map<String, Object> inputs = new LinkedHashMap<>();
         Map<String, PdorInputOrigin> origins = new LinkedHashMap<>();
         List<String> warnings = new ArrayList<>();
         List<String> missing = new ArrayList<>();
+
+        if (
+                serviceQuantity != null
+                        && positive(serviceQuantity.actualExecuted())
+                        && !hasHomogeneousServiceUnits(serviceQuantity)
+        ) {
+            warnings.add(
+                    "Há unidades de medida incompatíveis no contrato ou nas execuções aceitas; o PDOR não agrega grandezas físicas diferentes e aguarda uma base homogênea."
+            );
+        }
 
         PdorDataAvailability contractAvailability =
                 finance.hasContractData()
@@ -174,20 +181,6 @@ public class RealPdorInputLoader implements PdorInputLoader {
             );
         }
 
-        /*
-         * Zero medido é um fato, não uma lacuna.
-         *
-         * Uma obra que apontou produção e ainda não teve nenhuma evidência
-         * aceita mediu, até aqui, exatamente R$ 0,00 — e é no começo, antes da
-         * primeira medição, que a projeção mais serve. Tratar essa ausência
-         * como dado faltante travava o PDOR justamente aí, e o que aparecia na
-         * tela era vazio, sem dizer o que faltava.
-         *
-         * A régua da receita não muda: continua sendo só evidência
-         * ACCEPTED_EXACT, validada contra o evento canônico. O que muda é a
-         * leitura da ausência — ela vira zero declarado, com origem DERIVED e
-         * o aviso preservado, em vez de derrubar o cálculo inteiro.
-         */
         put(
                 inputs,
                 origins,
@@ -196,19 +189,19 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 "Receita medida acumulada",
                 finance.hasRevenueData()
                         ? PdorDataAvailability.DIRECT
-                        : PdorDataAvailability.DERIVED,
+                        : PdorDataAvailability.ABSENT,
                 finance.hasRevenueData()
                         ? finance.measuredRevenue()
-                        : BigDecimal.ZERO,
+                        : null,
                 "execucao_servico_rdo.revenue_amount + cortex_evento_operacional.commit_seq",
                 finance.hasRevenueData()
                         ? "Soma exata de evidências ACCEPTED_EXACT validadas contra o evento ontológico canônico."
-                        : "Nenhuma evidência de receita aceita até a referência; a receita medida acumulada é zero.",
+                        : "Nenhuma evidência canônica ACCEPTED_EXACT de receita foi aceita até a referência.",
                 true
         );
         if (!finance.hasRevenueData()) {
             warnings.add(
-                    "Nenhuma receita foi medida até a data de referência; a projeção se apoia na produção física, não em receita observada."
+                    "Nenhuma receita canônica foi aceita até a data de referência; a produção apontada permanece apenas como rastreabilidade e não sustenta projeção financeira."
             );
         }
 
@@ -220,14 +213,14 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 "Receita validada acumulada",
                 finance.hasRevenueData()
                         ? PdorDataAvailability.DIRECT
-                        : PdorDataAvailability.DERIVED,
+                        : PdorDataAvailability.ABSENT,
                 finance.hasRevenueData()
                         ? finance.validatedRevenue()
-                        : BigDecimal.ZERO,
+                        : null,
                 "execucao_servico_rdo.revenue_amount + cortex_evento_operacional.commit_seq",
                 finance.hasRevenueData()
                         ? "Receita aceita em execuções VALIDADA, sem rejeição, retrabalho ou cancelamento."
-                        : "Nenhuma receita aceita e validada até a referência; o acumulado é zero.",
+                        : "Nenhuma evidência canônica ACCEPTED_EXACT de receita foi aceita e validada até a referência.",
                 true
         );
         if (!finance.hasRevenueData() && finance.eligibleRows() > 0) {
@@ -306,14 +299,6 @@ public class RealPdorInputLoader implements PdorInputLoader {
                             ? "Quantidade física derivada do fallback histórico item_contratual e de execuções aceitas; sem curva temporal, o total contratado foi usado como planejado até a referência."
                             : "Quantidade física derivada das versões vigentes do catálogo e de execuções aceitas; sem curva temporal, o total contratado foi usado como planejado até a referência."
             );
-            if (
-                    serviceQuantity.contractUnitCount() > 1
-                            || serviceQuantity.executionUnitCount() > 1
-            ) {
-                warnings.add(
-                        "Há múltiplas unidades de medida no contrato/execuções; o PDOR agregou quantidades apenas para manter rastreabilidade, não como unidade física homogênea."
-                );
-            }
         }
 
         put(
@@ -788,10 +773,10 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         finance.hasContractData() ? finance.contractValue() : null,
                         finance.hasRevenueData()
                                 ? finance.measuredRevenue()
-                                : BigDecimal.ZERO,
+                                : null,
                         finance.hasRevenueData()
                                 ? finance.validatedRevenue()
-                                : BigDecimal.ZERO,
+                                : null,
                         toDouble(totalPlanned),
                         toDouble(plannedUntilReference),
                         toDouble(actualExecuted),
@@ -1014,6 +999,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 FROM execucao_servico_rdo execution
                 JOIN rdo
                   ON rdo.id = execution.rdo_id
+                 AND rdo.obra_id = execution.obra_id
                  AND rdo.cancelado_em IS NULL
                 WHERE execution.obra_id = ?
                   AND execution.cancelada = FALSE
@@ -1462,6 +1448,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 """
                 SELECT COUNT(*) AS authority_count,
                        COUNT(DISTINCT price.unidade) AS contract_unit_count,
+                       MIN(price.unidade) AS contract_unit,
                        SUM(price.quantidade_contratada) AS total_planned,
                        SUM(
                            price.quantidade_contratada
@@ -1483,6 +1470,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 (rs, rowNumber) -> new ContractAuthority(
                         rs.getInt("authority_count"),
                         rs.getInt("contract_unit_count"),
+                        rs.getString("contract_unit"),
                         rs.getBigDecimal("total_planned"),
                         rs.getBigDecimal("contract_value"),
                         "service_price_version.quantidade_contratada"
@@ -1501,6 +1489,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 """
                 SELECT COUNT(*) AS authority_count,
                        COUNT(DISTINCT unidade_medida) AS contract_unit_count,
+                       MIN(unidade_medida) AS contract_unit,
                        SUM(quantidade_contratada) AS total_planned,
                        SUM(valor_total) AS contract_value
                 FROM item_contratual
@@ -1512,6 +1501,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 (rs, rowNumber) -> new ContractAuthority(
                         rs.getInt("authority_count"),
                         rs.getInt("contract_unit_count"),
+                        rs.getString("contract_unit"),
                         rs.getBigDecimal("total_planned"),
                         rs.getBigDecimal("contract_value"),
                         "item_contratual.valor_total"
@@ -1541,6 +1531,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 FROM execucao_servico_rdo execution
                 JOIN rdo
                   ON rdo.id = execution.rdo_id
+                 AND rdo.obra_id = execution.obra_id
                  AND rdo.cancelado_em IS NULL
                 WHERE execution.obra_id = ?
                   AND execution.data_execucao <= ?
@@ -1566,10 +1557,12 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 SELECT execution.revenue_evidence_id,
                        execution.revenue_amount,
                        execution.quantidade_executada,
+                       execution.unidade_medida,
                        event.commit_seq
                 FROM execucao_servico_rdo execution
                 JOIN rdo
                   ON rdo.id = execution.rdo_id
+                 AND rdo.obra_id = execution.obra_id
                  AND rdo.cancelado_em IS NULL
                 JOIN cortex_evento_operacional event
                   ON event.id = execution.revenue_event_id
@@ -1647,6 +1640,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                        accepted.revenue_evidence_id,
                        accepted.revenue_amount,
                        accepted.quantidade_executada,
+                       accepted.unidade_medida,
                        accepted.commit_seq
                 FROM evidence_snapshot snapshot
                 LEFT JOIN accepted_evidence accepted ON TRUE
@@ -1663,6 +1657,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                                     evidenceId,
                                     rs.getBigDecimal("revenue_amount"),
                                     rs.getBigDecimal("quantidade_executada"),
+                                    rs.getString("unidade_medida"),
                                     rs.getLong("commit_seq")
                             ));
                         }
@@ -1690,6 +1685,12 @@ public class RealPdorInputLoader implements PdorInputLoader {
         BigDecimal acceptedQuantity = acceptedRows.stream()
                 .map(AcceptedRevenueRow::acceptedQuantity)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<String> acceptedUnits = acceptedRows.stream()
+                .map(AcceptedRevenueRow::unit)
+                .filter(unit -> unit != null && !unit.isBlank())
+                .distinct()
+                .sorted()
+                .toList();
         List<String> evidenceIds = acceptedRows.stream()
                 .map(AcceptedRevenueRow::evidenceId)
                 .distinct()
@@ -1713,6 +1714,8 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 acceptedRevenue,
                 acceptedRevenue,
                 acceptedQuantity,
+                acceptedUnits.size(),
+                acceptedUnits.size() == 1 ? acceptedUnits.getFirst() : null,
                 evidenceIds,
                 resolvedHighWaterMark,
                 coverageCode
@@ -1720,36 +1723,18 @@ public class RealPdorInputLoader implements PdorInputLoader {
     }
 
     private ServiceQuantityStats buscarServiceQuantityStats(
-            String obraId,
-            LocalDate referenceDate,
-            BigDecimal acceptedQuantity,
+            FinanceStats finance,
             ContractAuthority contractAuthority
     ) {
-        return jdbcTemplate.queryForObject(
-                """
-                SELECT
-                    COUNT(*) AS execution_count,
-                    COUNT(DISTINCT execution.unidade_medida) AS execution_unit_count
-                FROM execucao_servico_rdo execution
-                JOIN rdo
-                  ON rdo.id = execution.rdo_id
-                 AND rdo.cancelado_em IS NULL
-                WHERE execution.obra_id = ?
-                  AND execution.data_execucao <= ?
-                  AND execution.cancelada = FALSE
-                """,
-                (rs, rowNumber) -> new ServiceQuantityStats(
-                        contractAuthority.authorityCount(),
-                        contractAuthority.contractUnitCount(),
-                        contractAuthority.totalPlanned(),
-                        rs.getInt("execution_count"),
-                        rs.getInt("execution_unit_count"),
-                        valueOrZero(acceptedQuantity),
-                        contractAuthority.plannedSource(),
-                        contractAuthority.legacyFallback()
-                ),
-                obraId,
-                referenceDate
+        return new ServiceQuantityStats(
+                contractAuthority.contractUnitCount(),
+                contractAuthority.contractUnit(),
+                contractAuthority.totalPlanned(),
+                finance.acceptedUnitCount(),
+                finance.acceptedUnit(),
+                valueOrZero(finance.acceptedQuantity()),
+                contractAuthority.plannedSource(),
+                contractAuthority.legacyFallback()
         );
     }
 
@@ -1779,6 +1764,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 FROM execucao_servico_rdo execution
                 JOIN rdo
                   ON rdo.id = execution.rdo_id
+                 AND rdo.obra_id = execution.obra_id
                  AND rdo.cancelado_em IS NULL
                 WHERE execution.obra_id = ?
                   AND execution.data_execucao <= ?
@@ -1799,13 +1785,13 @@ public class RealPdorInputLoader implements PdorInputLoader {
     private QuantityChoice escolherQuantidade(
             ProgramacaoStats programacao,
             RdoStats rdo,
-            ServiceQuantityStats serviceQuantity,
-            ProducaoApontada apontada
+            ServiceQuantityStats serviceQuantity
     ) {
         if (
                 serviceQuantity != null
                         && positive(serviceQuantity.totalPlanned())
                         && positive(serviceQuantity.actualExecuted())
+                        && hasHomogeneousServiceUnits(serviceQuantity)
         ) {
             return new QuantityChoice(
                     serviceQuantity.legacyFallback()
@@ -1817,31 +1803,6 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     serviceQuantity.totalPlanned(),
                     serviceQuantity.totalPlanned(),
                     serviceQuantity.actualExecuted()
-            );
-        }
-
-        /*
-         * Há contrato e há produção apontada, mas nenhuma medição fechou
-         * ainda. A produção física é o que o RDO afirma ter executado — vale
-         * como avanço mesmo sem preço, e é ela que sustenta a projeção até a
-         * primeira evidência de receita ser aceita.
-         */
-        if (
-                serviceQuantity != null
-                        && positive(serviceQuantity.totalPlanned())
-                        && apontada != null
-                        && positive(apontada.quantidade())
-        ) {
-            return new QuantityChoice(
-                    serviceQuantity.legacyFallback()
-                            ? "ITEM_CONTRATUAL_LEGACY"
-                            : "SERVICE_CATALOG_CONTRACT",
-                    serviceQuantity.plannedSource(),
-                    "execucao_servico_rdo.quantidade_executada"
-                            + " (apontada)",
-                    serviceQuantity.totalPlanned(),
-                    serviceQuantity.totalPlanned(),
-                    apontada.quantidade()
             );
         }
 
@@ -1879,6 +1840,18 @@ public class RealPdorInputLoader implements PdorInputLoader {
         }
 
         return null;
+    }
+
+    private boolean hasHomogeneousServiceUnits(
+            ServiceQuantityStats serviceQuantity
+    ) {
+        return serviceQuantity.contractUnitCount() == 1
+                && serviceQuantity.acceptedUnitCount() == 1
+                && serviceQuantity.contractUnit() != null
+                && serviceQuantity.acceptedUnit() != null
+                && serviceQuantity.contractUnit().equalsIgnoreCase(
+                        serviceQuantity.acceptedUnit()
+                );
     }
 
     private Productivity calcularProdutividade(
@@ -2084,6 +2057,8 @@ public class RealPdorInputLoader implements PdorInputLoader {
             BigDecimal measuredRevenue,
             BigDecimal validatedRevenue,
             BigDecimal acceptedQuantity,
+            int acceptedUnitCount,
+            String acceptedUnit,
             List<String> evidenceIds,
             long evidenceHighWaterMark,
             String coverageCode
@@ -2102,6 +2077,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
     private record ContractAuthority(
             int authorityCount,
             int contractUnitCount,
+            String contractUnit,
             BigDecimal totalPlanned,
             BigDecimal contractValue,
             String contractSource,
@@ -2117,7 +2093,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
 
         private static ContractAuthority emptyHistoricalFallback() {
             return new ContractAuthority(
-                    0, 0, null, null,
+                    0, 0, null, null, null,
                     "item_contratual.valor_total (fallback histórico)",
                     "Nenhuma base contratual vigente foi encontrada.",
                     true
@@ -2129,6 +2105,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
             String evidenceId,
             BigDecimal revenue,
             BigDecimal acceptedQuantity,
+            String unit,
             long commitSequence
     ) {
     }
@@ -2140,11 +2117,11 @@ public class RealPdorInputLoader implements PdorInputLoader {
     }
 
     private record ServiceQuantityStats(
-            int itemCount,
             int contractUnitCount,
+            String contractUnit,
             BigDecimal totalPlanned,
-            int executionCount,
-            int executionUnitCount,
+            int acceptedUnitCount,
+            String acceptedUnit,
             BigDecimal actualExecuted,
             String plannedSource,
             boolean legacyFallback

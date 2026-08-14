@@ -98,3 +98,57 @@ export async function putPrevisaoSnapshots(
   }
   await guardedTransaction.complete();
 }
+
+/**
+ * Troca atomicamente a projeção local de uma obra pelo recorte atual aceito.
+ * A remessa pode ser vazia: isso é a confirmação de que nenhum snapshot
+ * vigente deve sobreviver no aparelho.
+ */
+export async function replacePrevisaoSnapshotsForObra(
+  obraId: string,
+  records: readonly PrevisaoSnapshotRecord[],
+  guard?: SyncSessionGuard,
+): Promise<void> {
+  if (records.some((record) => record.obraId !== obraId)) {
+    throw new Error("O snapshot não pertence à obra hidratada.");
+  }
+  if (guard) assertSyncSession(guard);
+  const database = await getCortexDb();
+  if (guard) assertSyncSession(guard);
+
+  const transaction = database.transaction(
+    "previsao_snapshots",
+    "readwrite",
+  );
+  const guarded = guard
+    ? guardSyncTransaction(transaction, guard)
+    : null;
+  const store = guarded
+    ? guarded.transaction.objectStore("previsao_snapshots")
+    : transaction.objectStore("previsao_snapshots");
+
+  try {
+    const previousKeys = await store.index("by-obra-id").getAllKeys(obraId);
+    for (const key of previousKeys) {
+      if (guard) assertSyncSession(guard);
+      await store.delete(key);
+    }
+    for (const record of records) {
+      if (guard) assertSyncSession(guard);
+      await store.put(record);
+    }
+  } catch (error: unknown) {
+    if (guarded) {
+      await guarded.complete();
+    } else {
+      await transaction.done.catch(() => undefined);
+    }
+    throw error;
+  }
+
+  if (guarded) {
+    await guarded.complete();
+  } else {
+    await transaction.done;
+  }
+}

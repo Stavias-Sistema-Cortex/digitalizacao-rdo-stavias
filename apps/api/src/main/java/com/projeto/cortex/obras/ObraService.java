@@ -2,6 +2,8 @@ package com.projeto.cortex.obras;
 
 import com.projeto.cortex.financeiro.unit.FinancialUnitService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.pdor.PdorProjectionInvalidator;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -18,15 +20,32 @@ public class ObraService {
     private final ObraRepository obraRepository;
     private final CortexOperationalMemoryService memoryService;
     private final FinancialUnitService financialUnitService;
+    private final PdorProjectionInvalidator projectionInvalidator;
 
     public ObraService(
             ObraRepository obraRepository,
             CortexOperationalMemoryService memoryService,
             FinancialUnitService financialUnitService
     ) {
+        this(
+                obraRepository,
+                memoryService,
+                financialUnitService,
+                PdorProjectionInvalidator.NOOP
+        );
+    }
+
+    @Autowired
+    public ObraService(
+            ObraRepository obraRepository,
+            CortexOperationalMemoryService memoryService,
+            FinancialUnitService financialUnitService,
+            PdorProjectionInvalidator projectionInvalidator
+    ) {
         this.obraRepository = obraRepository;
         this.memoryService = memoryService;
         this.financialUnitService = financialUnitService;
+        this.projectionInvalidator = projectionInvalidator;
     }
 
     public List<ObraResponse> listarObras(String query) {
@@ -210,6 +229,7 @@ public class ObraService {
         );
         Map<String, Object> estadoAnterior = ObraSyncEvento.payload(obra);
         executarTransicao(obra::arquivar);
+        projectionInvalidator.invalidateCurrent(obra.getId());
         return persistirMutacao(
                 obra,
                 ator,
@@ -232,6 +252,7 @@ public class ObraService {
         );
         Map<String, Object> estadoAnterior = ObraSyncEvento.payload(obra);
         executarTransicao(obra::restaurar);
+        projectionInvalidator.invalidateCurrent(obra.getId());
         return persistirMutacao(
                 obra,
                 ator,

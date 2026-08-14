@@ -161,7 +161,7 @@ class RdoDeletionServiceTest {
         service.apagar("rdo-1");
 
         verify(previsaoFinanceiraService)
-                .recalcularAposMudancaRdo("obra-1", null, null);
+                .recalcularAposMudancaRdo("obra-1", null);
     }
 
     /*
@@ -177,7 +177,7 @@ class RdoDeletionServiceTest {
                 .isInstanceOf(ResponseStatusException.class);
 
         verify(previsaoFinanceiraService, never())
-                .recalcularAposMudancaRdo(anyString(), any(), any());
+                .recalcularAposMudancaRdo(anyString(), any());
     }
 
     /* Enviado é registro entregue; desfazer entrega é decisão de quem responde. */

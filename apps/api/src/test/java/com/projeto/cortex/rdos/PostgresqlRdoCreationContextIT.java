@@ -952,6 +952,31 @@ class PostgresqlRdoCreationContextIT {
     }
 
     @Test
+    void criarRdoRecalculaAProjecaoAtualSemFixarADataDoNovoRdo()
+            throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "RECALCULO-ATUAL");
+        String owner = inserirColaborador("Apontador", null, null);
+        vincular(owner, obraId, "APONTADOR", "ATIVO");
+        PrevisaoFinanceiraService previsao =
+                mock(PrevisaoFinanceiraService.class);
+        RdoService service = service(
+                owner,
+                mock(RdoMemoryPublisher.class),
+                jdbc,
+                previsao
+        );
+
+        RdoCreateRequest request = request(
+                id(), obraId, id(), 1L, null, owner, id(), null
+        );
+
+        transactions.execute(status -> service.criarRascunho(request));
+
+        verify(previsao).recalcularAposMudancaRdo(obraId, null);
+    }
+
+    @Test
     void criaConcorrentementeComNumerosAutoritativosSequenciaisEIdsDeEquipeEstaveis()
             throws Exception {
         String obraId = id();
@@ -2055,6 +2080,20 @@ class PostgresqlRdoCreationContextIT {
             RdoMemoryPublisher memoryPublisher,
             JdbcTemplate serviceJdbc
     ) {
+        return service(
+                ownerId,
+                memoryPublisher,
+                serviceJdbc,
+                mock(PrevisaoFinanceiraService.class)
+        );
+    }
+
+    private RdoService service(
+            String ownerId,
+            RdoMemoryPublisher memoryPublisher,
+            JdbcTemplate serviceJdbc,
+            PrevisaoFinanceiraService previsaoFinanceiraService
+    ) {
         RdoOperationalDetailService details = mock(RdoOperationalDetailService.class);
         when(details.substituirDetalhes(
                 any(), any(), any(), any(), any(), any(), any()
@@ -2074,7 +2113,7 @@ class PostgresqlRdoCreationContextIT {
                 details,
                 attachments,
                 mock(RdoOperationalEventService.class),
-                mock(PrevisaoFinanceiraService.class),
+                previsaoFinanceiraService,
                 new RdoQueryService(
                         serviceJdbc,
                         details,

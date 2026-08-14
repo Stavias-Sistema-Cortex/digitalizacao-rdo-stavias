@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   buscarObrasArquivadas: vi.fn(),
   buscarObrasRelacionadas: vi.fn(),
   mergeObraLocal: vi.fn(),
-  putPrevisaoSnapshot: vi.fn(),
+  replacePrevisaoSnapshotsForObra: vi.fn(),
 }));
 
 vi.mock("./homeApi", () => ({
@@ -29,7 +29,8 @@ vi.mock("../../lib/db/obraLocalRepository", () => ({
 }));
 
 vi.mock("../../lib/db/previsaoSnapshotRepository", () => ({
-  putPrevisaoSnapshot: mocks.putPrevisaoSnapshot,
+  replacePrevisaoSnapshotsForObra:
+    mocks.replacePrevisaoSnapshotsForObra,
 }));
 
 vi.mock("../../lib/sync/syncSession", () => ({
@@ -133,6 +134,6 @@ describe("worksite hydration session boundary", () => {
     await expect(hydrateHistoricoObra("obra-1")).rejects.toThrow(
       "A sessão mudou durante a sincronização.",
     );
-    expect(mocks.putPrevisaoSnapshot).not.toHaveBeenCalled();
+    expect(mocks.replacePrevisaoSnapshotsForObra).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 package com.projeto.cortex.pdor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.financeiro.catalog.ServiceCatalogProjectionInvalidator;
 import com.projeto.cortex.obras.Obra;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
@@ -8,6 +9,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -34,6 +39,7 @@ class PostgresqlPdorRevenueEvidenceIT {
                     .withDatabaseName("cortex_pdor_revenue_it");
 
     private static JdbcTemplate jdbc;
+    private static ServiceCatalogProjectionInvalidator projectionInvalidator;
 
     @BeforeAll
     static void migrate() {
@@ -45,9 +51,19 @@ class PostgresqlPdorRevenueEvidenceIT {
                 .locations("classpath:db/migration-postgresql")
                 .load()
                 .migrate();
-        jdbc = new JdbcTemplate(new DriverManagerDataSource(
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword()
+        );
+        jdbc = new JdbcTemplate(dataSource);
+        PdorServiceCatalogProjectionInvalidator target =
+                new PdorServiceCatalogProjectionInvalidator(jdbc);
+        ProxyFactory proxyFactory = new ProxyFactory(target);
+        proxyFactory.addAdvice(new TransactionInterceptor(
+                new DataSourceTransactionManager(dataSource),
+                new AnnotationTransactionAttributeSource()
         ));
+        projectionInvalidator =
+                (ServiceCatalogProjectionInvalidator) proxyFactory.getProxy();
     }
 
     @Test
@@ -172,17 +188,168 @@ class PostgresqlPdorRevenueEvidenceIT {
                 .hasMessageContaining("PDOR_CALCULATION_FAILURE_IMMUTABLE");
     }
 
+    @Test
+    void serviceTransitionInvalidatesEveryWorksiteUsingThatGlobalService() {
+        Obra primeira = Obra.criar(
+                "PDOR-CATALOGO-A", null, null, "Obra catálogo A", null, null,
+                null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture compartilhada = fixture(primeira);
+
+        Obra segunda = Obra.criar(
+                "PDOR-CATALOGO-B", null, null, "Obra catálogo B", null, null,
+                null, null, null, "ATIVA", "TEST", null, null
+        );
+        String segundoPreco = id();
+        jdbc.update(
+                "INSERT INTO obra (id, codigo_contrato, nome) VALUES (?, ?, ?)",
+                segunda.getId(), segunda.getCodigoContrato(), segunda.getNome()
+        );
+        String actorId = jdbc.queryForObject(
+                "SELECT criado_por FROM catalogo_servico WHERE id = ?",
+                String.class,
+                compartilhada.serviceId()
+        );
+        jdbc.update("""
+                INSERT INTO service_price_version (
+                    id, obra_id, service_id, unidade, moeda, versao,
+                    valor_unitario, quantidade_contratada,
+                    vigencia_inicio, fonte, criado_por
+                ) VALUES (?, ?, ?, 'M2', 'BRL', 1, 80.0000, 50.000,
+                          ?, 'PDOR_IT', ?)
+                """, segundoPreco, segunda.getId(), compartilhada.serviceId(),
+                REFERENCE_DATE.minusDays(10), actorId);
+
+        Obra terceira = Obra.criar(
+                "PDOR-CATALOGO-C", null, null, "Obra catálogo C", null, null,
+                null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture naoRelacionada = fixture(terceira);
+
+        ObjectMapper mapper = new ObjectMapper();
+        PdorSnapshotRepository repository = new PdorSnapshotRepository(jdbc, mapper);
+        PdorSnapshot atualA = snapshot(
+                mapper, primeira.getId(), id(), 0L,
+                "COMPLETE_ACCEPTED_EXACT", 31
+        );
+        PdorSnapshot atualB = snapshot(
+                mapper, segunda.getId(), id(), 0L,
+                "COMPLETE_ACCEPTED_EXACT", 32
+        );
+        PdorSnapshot atualC = snapshot(
+                mapper, terceira.getId(), id(), 0L,
+                "COMPLETE_ACCEPTED_EXACT", 33
+        );
+        repository.replaceCurrent(atualA);
+        repository.replaceCurrent(atualB);
+        repository.replaceCurrent(atualC);
+        long versaoA = jdbc.queryForObject(
+                "SELECT versao_linha FROM obra WHERE id = ?",
+                Long.class,
+                primeira.getId()
+        );
+        long versaoB = jdbc.queryForObject(
+                "SELECT versao_linha FROM obra WHERE id = ?",
+                Long.class,
+                segunda.getId()
+        );
+        long versaoC = jdbc.queryForObject(
+                "SELECT versao_linha FROM obra WHERE id = ?",
+                Long.class,
+                terceira.getId()
+        );
+
+        projectionInvalidator.invalidateService(compartilhada.serviceId());
+
+        assertThat(repository.findCurrentByObraId(primeira.getId())).isEmpty();
+        assertThat(repository.findCurrentByObraId(segunda.getId())).isEmpty();
+        assertThat(repository.findCurrentByObraId(terceira.getId()))
+                .get()
+                .extracting(PdorSnapshot::id)
+                .isEqualTo(atualC.id());
+        assertThat(repository.findByIdempotencyKey(atualA.idempotencyKey()))
+                .get()
+                .satisfies(snapshot -> {
+                    assertThat(snapshot.current()).isFalse();
+                    assertThat(snapshot.stale()).isTrue();
+                });
+        assertThat(repository.findByIdempotencyKey(atualB.idempotencyKey()))
+                .get()
+                .satisfies(snapshot -> {
+                    assertThat(snapshot.current()).isFalse();
+                    assertThat(snapshot.stale()).isTrue();
+                });
+        assertThat(naoRelacionada.serviceId())
+                .isNotEqualTo(compartilhada.serviceId());
+        assertThat(jdbc.queryForObject(
+                "SELECT versao_linha FROM obra WHERE id = ?",
+                Long.class,
+                primeira.getId()
+        )).isEqualTo(versaoA);
+        assertThat(jdbc.queryForObject(
+                "SELECT versao_linha FROM obra WHERE id = ?",
+                Long.class,
+                segunda.getId()
+        )).isEqualTo(versaoB);
+        assertThat(jdbc.queryForObject(
+                "SELECT versao_linha FROM obra WHERE id = ?",
+                Long.class,
+                terceira.getId()
+        )).isEqualTo(versaoC);
+    }
+
+    @Test
+    void priceTransitionInvalidatesOnlyItsWorksiteWithoutEditingWorksiteVersion() {
+        Obra alvo = Obra.criar(
+                "PDOR-PRECO-ALVO", null, null, "Obra preço alvo", null, null,
+                null, null, null, "ATIVA", "TEST", null, null
+        );
+        fixture(alvo);
+        Obra outra = Obra.criar(
+                "PDOR-PRECO-OUTRA", null, null, "Obra preço outra", null, null,
+                null, null, null, "ATIVA", "TEST", null, null
+        );
+        fixture(outra);
+        ObjectMapper mapper = new ObjectMapper();
+        PdorSnapshotRepository repository = new PdorSnapshotRepository(jdbc, mapper);
+        PdorSnapshot atualAlvo = snapshot(
+                mapper, alvo.getId(), id(), 0L,
+                "COMPLETE_ACCEPTED_EXACT", 34
+        );
+        PdorSnapshot atualOutra = snapshot(
+                mapper, outra.getId(), id(), 0L,
+                "COMPLETE_ACCEPTED_EXACT", 35
+        );
+        repository.replaceCurrent(atualAlvo);
+        repository.replaceCurrent(atualOutra);
+        Long versaoAlvo = jdbc.queryForObject(
+                "SELECT versao_linha FROM obra WHERE id = ?",
+                Long.class,
+                alvo.getId()
+        );
+
+        projectionInvalidator.invalidateWorksite(alvo.getId());
+
+        assertThat(repository.findCurrentByObraId(alvo.getId())).isEmpty();
+        assertThat(repository.findCurrentByObraId(outra.getId()))
+                .get()
+                .extracting(PdorSnapshot::id)
+                .isEqualTo(atualOutra.id());
+        assertThat(jdbc.queryForObject(
+                "SELECT versao_linha FROM obra WHERE id = ?",
+                Long.class,
+                alvo.getId()
+        )).isEqualTo(versaoAlvo);
+    }
+
     /*
-     * O caso do primeiro RDO: contrato cadastrado, produção apontada e
-     * nenhuma medição fechada ainda.
-     *
-     * Antes, receita medida ausente era lacuna obrigatória e o PDOR devolvia
-     * vazio — justamente no começo da obra, quando a projeção mais serve. A
-     * régua da receita não mudou; o que mudou é que zero medido passou a ser
-     * lido como fato, e a produção apontada sustenta o avanço físico.
+     * Produção apontada sem evidência ACCEPTED_EXACT continua visível para
+     * auditoria, mas não é receita nem produção financeira realizada. O PDOR
+     * só pode projetar depois que ao menos uma evidência canônica de um RDO
+     * vivo da própria obra tiver sido aceita.
      */
     @Test
-    void projetaComProducaoApontadaQuandoNenhumaReceitaFoiMedidaAinda() {
+    void naoProjetaComProducaoApontadaSemReceitaCanonicaAceita() {
         Obra obra = Obra.criar(
                 "PDOR-APONTADA", null, null, "Obra PDOR apontada", null, null,
                 null, null, null, "ATIVA", "TEST", null, null
@@ -194,22 +361,169 @@ class PostgresqlPdorRevenueEvidenceIT {
         PdorInputBundle input = new RealPdorInputLoader(jdbc)
                 .load(obra, REFERENCE_DATE);
 
-        assertThat(input.missingRequiredFields()).isEmpty();
-        assertThat(input.canCalculate()).isTrue();
-        assertThat(input.sourceValues().measuredRevenue())
-                .isEqualByComparingTo("0");
-        assertThat(input.sourceValues().validatedRevenue())
-                .isEqualByComparingTo("0");
+        assertThat(input.canCalculate()).isFalse();
+        assertThat(input.missingRequiredFields())
+                .contains(
+                        "measuredRevenue",
+                        "validatedRevenue",
+                        "actualExecutedQuantity"
+                );
+        assertThat(input.inputs().get("measuredRevenue")).isNull();
+        assertThat(input.inputs().get("validatedRevenue")).isNull();
+        assertThat(input.inputs().get("actualExecutedQuantity")).isNull();
         assertThat(input.revenueCoverageCode())
                 .isEqualTo("NO_ACCEPTED_EVIDENCE");
-        assertThat(input.sourceValues().actualExecutedQuantity())
-                .isEqualTo(42.0d);
         assertThat((BigDecimal) input.inputs().get("reportedExecutedQuantity"))
                 .isEqualByComparingTo("42.000");
-        assertThat(input.origins().get("actualExecutedQuantity").source())
-                .contains("apontada");
         assertThat(input.origins().get("measuredRevenue").availability())
-                .isEqualTo(PdorDataAvailability.DERIVED);
+                .isEqualTo(PdorDataAvailability.ABSENT);
+        assertThat(input.origins().get("reportedExecutedQuantity").availability())
+                .isEqualTo(PdorDataAvailability.DIRECT);
+    }
+
+    @Test
+    void ignoraEvidenciaAceitaQuandoORdoPertenceAOutraObra() {
+        Obra obra = Obra.criar(
+                "PDOR-OBRA-ALVO", null, null, "Obra PDOR alvo", null, null,
+                null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+        Obra outraObra = Obra.criar(
+                "PDOR-OUTRA-OBRA", null, null, "Outra obra PDOR", null, null,
+                null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixtureOutraObra = fixture(outraObra);
+        acceptedExecution(
+                fixture,
+                fixtureOutraObra.rdoId(),
+                "2.000",
+                "250.00",
+                1901L
+        );
+        jdbc.update("""
+                UPDATE cortex_evento_commit_sequence
+                SET ultima_commit_seq = 1901
+                WHERE id = 1
+                """);
+
+        PdorInputBundle input = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+
+        assertThat(input.canCalculate()).isFalse();
+        assertThat(input.revenueEvidenceIds()).isEmpty();
+        assertThat(input.revenueCoverageCode())
+                .isEqualTo("NO_ACCEPTED_EVIDENCE");
+        assertThat(input.inputs().get("reportedExecutedQuantity")).isNull();
+    }
+
+    @Test
+    void naoAgregaUnidadesContratuaisIncompativeisComoAvancoFisico() {
+        Obra obra = Obra.criar(
+                "PDOR-UNIDADES", null, null, "Obra PDOR unidades", null, null,
+                null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+        Accepted accepted = acceptedExecution(fixture, "2.000", "250.00", 1951L);
+        jdbc.update("""
+                UPDATE cortex_evento_commit_sequence
+                SET ultima_commit_seq = 1951
+                WHERE id = 1
+                """);
+
+        String actorId = jdbc.queryForObject(
+                "SELECT criado_por FROM catalogo_servico WHERE id = ?",
+                String.class,
+                fixture.serviceId()
+        );
+        String serviceM3 = id();
+        jdbc.update("""
+                INSERT INTO catalogo_servico (
+                    id, codigo, nome, status, obra_autorizadora_id, criado_por
+                ) VALUES (?, ?, 'PDOR service M3', 'ACTIVE', ?, ?)
+                """, serviceM3, "PDOR.M3." + obra.getCodigoContrato(),
+                obra.getId(), actorId);
+        jdbc.update("""
+                INSERT INTO service_price_version (
+                    id, obra_id, service_id, unidade, moeda, versao,
+                    valor_unitario, quantidade_contratada,
+                    vigencia_inicio, fonte, criado_por
+                ) VALUES (?, ?, ?, 'M3', 'BRL', 1, 300.0000, 50.000,
+                          ?, 'PDOR_IT', ?)
+                """, id(), obra.getId(), serviceM3,
+                REFERENCE_DATE.minusDays(10), actorId);
+
+        PdorInputBundle input = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+
+        assertThat(input.canCalculate()).isFalse();
+        assertThat(input.revenueEvidenceIds())
+                .containsExactly(accepted.evidenceId());
+        assertThat(input.missingRequiredFields())
+                .contains(
+                        "totalPlannedQuantity",
+                        "plannedExecutedQuantity",
+                        "actualExecutedQuantity"
+                );
+        assertThat(input.warnings())
+                .anyMatch(warning -> warning.contains(
+                        "unidades de medida incompatíveis"
+                ));
+    }
+
+    @Test
+    void naoComparaExecucaoHistoricaComContratoAtualDeOutraUnidade() {
+        Obra obra = Obra.criar(
+                "PDOR-UNIDADE-TROCADA", null, null,
+                "Obra PDOR unidade trocada", null, null, null, null, null,
+                "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+        Accepted accepted = acceptedExecution(fixture, "2.000", "250.00", 1961L);
+        jdbc.update("""
+                UPDATE cortex_evento_commit_sequence
+                SET ultima_commit_seq = 1961
+                WHERE id = 1
+                """);
+        String actorId = jdbc.queryForObject(
+                "SELECT criado_por FROM catalogo_servico WHERE id = ?",
+                String.class,
+                fixture.serviceId()
+        );
+        jdbc.update("""
+                UPDATE catalogo_servico
+                SET status = 'EXCLUIDO', excluido_em = now(), excluido_por = ?
+                WHERE id = ?
+                """, actorId, fixture.serviceId());
+
+        String atualM3 = id();
+        jdbc.update("""
+                INSERT INTO catalogo_servico (
+                    id, codigo, nome, status, obra_autorizadora_id, criado_por
+                ) VALUES (?, ?, 'PDOR atual M3', 'ACTIVE', ?, ?)
+                """, atualM3, "PDOR.ATUAL.M3." + obra.getCodigoContrato(),
+                obra.getId(), actorId);
+        jdbc.update("""
+                INSERT INTO service_price_version (
+                    id, obra_id, service_id, unidade, moeda, versao,
+                    valor_unitario, quantidade_contratada,
+                    vigencia_inicio, fonte, criado_por
+                ) VALUES (?, ?, ?, 'M3', 'BRL', 1, 300.0000, 50.000,
+                          ?, 'PDOR_IT', ?)
+                """, id(), obra.getId(), atualM3,
+                REFERENCE_DATE.minusDays(10), actorId);
+
+        PdorInputBundle input = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+
+        assertThat(input.canCalculate()).isFalse();
+        assertThat(input.revenueEvidenceIds())
+                .containsExactly(accepted.evidenceId());
+        assertThat(input.missingRequiredFields())
+                .contains("actualExecutedQuantity");
+        assertThat(input.warnings())
+                .anyMatch(warning -> warning.contains(
+                        "unidades de medida incompatíveis"
+                ));
     }
 
     /*
@@ -532,6 +846,18 @@ class PostgresqlPdorRevenueEvidenceIT {
             String revenue,
             long commitSequence
     ) {
+        return acceptedExecution(
+                fixture, fixture.rdoId(), quantity, revenue, commitSequence
+        );
+    }
+
+    private static Accepted acceptedExecution(
+            Fixture fixture,
+            String rdoId,
+            String quantity,
+            String revenue,
+            long commitSequence
+    ) {
         String executionId = id();
         String evidenceId = id();
         String eventId = id();
@@ -575,9 +901,9 @@ class PostgresqlPdorRevenueEvidenceIT {
                           ),
                           now())
                 """, eventId, commitSequence, executionId, fixture.obraId(),
-                fixture.rdoId(), fixture.rdoId(), fixture.obraId(),
+                rdoId, rdoId, fixture.obraId(),
                 fixture.serviceId(), fixture.priceId(), evidenceId, evidenceId,
-                fixture.rdoId(), fixture.obraId(), fixture.serviceId(),
+                rdoId, fixture.obraId(), fixture.serviceId(),
                 fixture.priceId(), evidenceId, quantity, revenue);
         jdbc.update("""
                 INSERT INTO execucao_servico_rdo (
@@ -593,7 +919,7 @@ class PostgresqlPdorRevenueEvidenceIT {
                           'VALIDADA', 'RECEITA_MEDIDA', FALSE, FALSE, 'PDOR_IT',
                           ?, 125.0000, 'BRL', ?, 'ACCEPTED_EXACT', ?, ?, now(),
                           999999.99, 888888.88)
-                """, executionId, fixture.rdoId(), fixture.obraId(),
+                """, executionId, rdoId, fixture.obraId(),
                 fixture.serviceId(), fixture.priceId(),
                 new BigDecimal(quantity), REFERENCE_DATE, key(executionId),
                 new BigDecimal(revenue), evidenceId, eventId);

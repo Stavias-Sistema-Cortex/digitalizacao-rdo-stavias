@@ -16,13 +16,20 @@ function snapshot(
     id: crypto.randomUUID(),
     obraId: "obra-1",
     dataReferencia: "2026-06-15",
-    statusExecucao: "CALCULADO",
+    statusExecucao: "SUCCESS",
     producaoPlanejada: 500,
     producaoRealizada: 240,
     producaoApontada: 400,
     custoRealizado: 40,
     custoPrevistoFinal: 90,
     receitaPrevistaFinal: 120,
+    versaoModelo: "PDOR-0.5.1",
+    versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
+    algorithmVersion: "PDOR-REVENUE-2",
+    evidenceIds: ["evidence-1"],
+    coverageCode: "COMPLETE_ACCEPTED_EXACT",
+    stale: false,
+    current: true,
     updatedAt: "2026-07-06T12:00:00.000Z",
     ...partial,
   };
@@ -39,6 +46,61 @@ describe("ratioPct", () => {
 });
 
 describe("buildMonthlySeries", () => {
+  it("inclui o status SUCCESS emitido pelo histórico PDOR real", () => {
+    const points = buildMonthlySeries(
+      [snapshot({
+        statusExecucao: "SUCCESS",
+        receitaPrevistaFinal: 750,
+      })],
+      1000,
+    );
+
+    expect(points).toHaveLength(1);
+    expect(points[0].pdorPct).toBe(75);
+  });
+
+  it.each([
+    ["PDOR-REVENUE-1", "PDOR-0.5.1", "PDOR-ASSUMPTIONS-0.5.0"],
+    ["PDOR-REVENUE-2", "PDOR-0.5.0", "PDOR-ASSUMPTIONS-0.5.0"],
+    ["PDOR-REVENUE-2", "PDOR-0.5.1", "PDOR-ASSUMPTIONS-0.4.0"],
+  ])("não plota cache legado %s / %s / %s ainda marcado como current", (
+    algorithmVersion,
+    versaoModelo,
+    versaoPremissas,
+  ) => {
+    const points = buildMonthlySeries([
+      snapshot({ algorithmVersion, versaoModelo, versaoPremissas }),
+    ], 1000);
+
+    expect(points).toEqual([]);
+  });
+
+  it("um atual insuficiente suprime o SUCCESS antigo baseado no RDO cancelado", () => {
+    const points = buildMonthlySeries(
+      [
+        snapshot({
+          id: "snapshot-antigo",
+          statusExecucao: "SUCCESS",
+          receitaPrevistaFinal: 750,
+          stale: true,
+          current: false,
+        }),
+        snapshot({
+          id: "snapshot-atual",
+          statusExecucao: "INSUFFICIENT_DATA",
+          receitaPrevistaFinal: null,
+          evidenceIds: [],
+          coverageCode: "NO_ACCEPTED_EVIDENCE",
+          stale: false,
+          current: true,
+        }),
+      ],
+      1000,
+    );
+
+    expect(points).toEqual([]);
+  });
+
   it("usa o último snapshot de cada mês, ignora não calculados e ordena", () => {
     const points = buildMonthlySeries(
       [
