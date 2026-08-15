@@ -16,14 +16,14 @@ if [[ "$api_bases" != "$expected_api_bases" ]]; then
   exit 1
 fi
 
-web_bases="$(awk '$1 == "FROM" { print $2 }' "$web_dockerfile")"
-expected_web_bases="$(
+web_from_directives="$(awk '$1 == "FROM" { print }' "$web_dockerfile")"
+expected_web_from_directives="$(
   printf '%s\n' \
-    'node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2' \
-    'nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10'
+    'FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS build' \
+    'FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10'
 )"
-if [[ "$web_bases" != "$expected_web_bases" ]]; then
-  echo "Web Dockerfile bases do not match the reviewed immutable digests." >&2
+if [[ "$web_from_directives" != "$expected_web_from_directives" ]]; then
+  echo "Web Dockerfile base directives do not match the reviewed immutable contract." >&2
   exit 1
 fi
 
