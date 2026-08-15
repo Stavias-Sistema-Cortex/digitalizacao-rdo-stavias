@@ -66,6 +66,7 @@ import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -372,6 +373,8 @@ class PostgresqlCortex3FlowIT {
         ObraRepository worksites = mock(ObraRepository.class);
         when(worksites.findByIdentificador(worksite.getId()))
                 .thenReturn(List.of(worksite));
+        when(worksites.findWritableIdForUpdate(worksite.getId()))
+                .thenReturn(Optional.of(worksite.getId()));
         PdorSnapshotRepository snapshots = new PdorSnapshotRepository(
                 jdbc,
                 mapper
@@ -402,7 +405,7 @@ class PostgresqlCortex3FlowIT {
         );
 
         assertThat(pdor.statusExecucao()).isEqualTo("SUCCESS");
-        assertThat(pdor.algorithmVersion()).isEqualTo("PDOR-REVENUE-1");
+        assertThat(pdor.algorithmVersion()).isEqualTo("PDOR-REVENUE-2");
         assertThat(pdor.evidenceIds())
                 .containsExactly(revenueEvidenceId)
                 .isSorted();
