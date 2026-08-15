@@ -45,6 +45,7 @@ describe("Financeiro revenue-only visual policy", () => {
         ".finance-scope-bar,",
         ".finance-revenue-period,",
         ".finance-revenue-trace,",
+        ".finance-revenue-pending,",
         ".finance-service-catalog,",
         ".finance-pdor-section",
       ].join("\n"),

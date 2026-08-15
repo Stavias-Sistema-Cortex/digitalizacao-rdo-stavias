@@ -101,6 +101,7 @@ public class RdoService {
             return queryService.buscarPorId(replay.id());
         }
 
+        RdoFinancialExecutionMutationGuard.assertCreateCanProceed(request);
         operabilityGuard.requireWritable(obraId);
         ObraDados obra = buscarObra(obraId);
         ProgramacaoDados programacao = buscarProgramacaoOpcional(request.programacaoId(), obraId);

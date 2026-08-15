@@ -19,6 +19,7 @@ import type {
   FinanceFilters,
 } from "./financeiro.types";
 import { FinanceRevenueTracePage } from "./FinanceRevenueTracePage";
+import { FinanceRevenuePendingValidationPanel } from "./FinanceRevenuePendingValidationPanel";
 import { ServicePriceCatalogPage } from "./ServicePriceCatalogPage";
 import { FinanceSectionIndex } from "./FinanceSectionIndex";
 import {
@@ -312,6 +313,9 @@ export function FinanceiroPage() {
   const permissions = currentAccess?.capabilities?.permissoes ?? [];
   const canViewSelectedWorksite = !filters.obraId ||
     permissions.includes("FINANCEIRO_VISUALIZAR");
+  const canApproveSelectedWorksite = permissions.includes(
+    "FINANCEIRO_APROVAR",
+  );
   const selectedWorksitePending = Boolean(
     filters.obraId && (
       !worksitesLoaded ||
@@ -349,6 +353,14 @@ export function FinanceiroPage() {
               na receita.
             </p>
           </section>
+          {filters.obraId ? (
+            <FinanceRevenuePendingValidationPanel
+              obraId={filters.obraId}
+              canApprove={canApproveSelectedWorksite}
+              onDecisionApplied={() =>
+                setAccessVersion((version) => version + 1)}
+            />
+          ) : null}
           <FinanceRevenueTracePage
             key={`revenue-${accessVersion}`}
             obraId={filters.obraId}

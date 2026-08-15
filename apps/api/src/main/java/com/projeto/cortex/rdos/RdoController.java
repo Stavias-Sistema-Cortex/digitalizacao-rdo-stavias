@@ -1,6 +1,9 @@
 package com.projeto.cortex.rdos;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionAudit;
+import com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionRequest;
+import com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -9,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,6 +29,7 @@ public class RdoController {
     private final RdoWorkflowService workflowService;
     private final RdoDeletionService deletionService;
     private final CurrentUserService currentUserService;
+    private final RdoExecutionDecisionService executionDecisionService;
 
     public RdoController(
             RdoService service,
@@ -32,7 +37,8 @@ public class RdoController {
             RdoDraftUpdateService draftUpdateService,
             RdoWorkflowService workflowService,
             RdoDeletionService deletionService,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            RdoExecutionDecisionService executionDecisionService
     ) {
         this.service = service;
         this.queryService = queryService;
@@ -40,6 +46,7 @@ public class RdoController {
         this.workflowService = workflowService;
         this.deletionService = deletionService;
         this.currentUserService = currentUserService;
+        this.executionDecisionService = executionDecisionService;
     }
 
     @PostMapping("/api/rdos")
@@ -88,6 +95,28 @@ public class RdoController {
         return workflowService.enviar(id);
     }
 
+    @PostMapping("/api/rdos/{id}/execucoes/{executionId}/decisoes")
+    public RdoResponse decidirExecucaoServico(
+            @PathVariable String id,
+            @PathVariable String executionId,
+            @RequestBody RdoExecutionDecisionRequest request,
+            @RequestHeader(value = "X-Correlation-Id", required = false)
+            String correlationId
+    ) {
+        currentUserService.requireRdoAccess(id);
+        return executionDecisionService.decidir(
+                id,
+                executionId,
+                request,
+                new RdoExecutionDecisionAudit(
+                        currentUserService.requireUserId(),
+                        null,
+                        normalizarCorrelacao(correlationId),
+                        "ONLINE"
+                )
+        );
+    }
+
     /**
      * Apagar existe para que ninguém precise abrir o console do banco.
      *
@@ -102,6 +131,12 @@ public class RdoController {
     @DeleteMapping("/api/rdos/{id}")
     public RdoDeletionResponse apagar(@PathVariable String id) {
         return deletionService.apagar(id);
+    }
+
+    private String normalizarCorrelacao(String correlationId) {
+        return correlationId == null || correlationId.isBlank()
+                ? null
+                : correlationId.strip();
     }
 
 }

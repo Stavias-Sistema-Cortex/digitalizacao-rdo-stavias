@@ -77,7 +77,7 @@ describe("snapshotRecordFromApi", () => {
         receitaPrevistaFinal: 120,
         versaoModelo: "PDOR-0.5.1",
         versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
-        algorithmVersion: "PDOR-REVENUE-2",
+        algorithmVersion: "PDOR-REVENUE-3",
         evidenceIds: ["evidence-1"],
         coverageCode: "COMPLETE_ACCEPTED_EXACT",
         stale: false,
@@ -134,7 +134,7 @@ describe("snapshotRecordFromApi", () => {
       receitaPrevistaFinal: 120,
       versaoModelo: "PDOR-0.5.1",
       versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
-      algorithmVersion: "PDOR-REVENUE-2",
+      algorithmVersion: "PDOR-REVENUE-3",
       stale: false,
       current: true,
     };
@@ -155,6 +155,7 @@ describe("snapshotRecordFromApi", () => {
 
   it.each([
     ["algoritmo v1", { algorithmVersion: "PDOR-REVENUE-1" }],
+    ["algoritmo v2", { algorithmVersion: "PDOR-REVENUE-2" }],
     ["modelo anterior", { versaoModelo: "PDOR-0.5.0" }],
     ["premissas anteriores", { versaoPremissas: "PDOR-ASSUMPTIONS-0.4.0" }],
   ])("descarta histórico SUCCESS incompatível: %s", (_label, legacy) => {
@@ -171,7 +172,7 @@ describe("snapshotRecordFromApi", () => {
       receitaPrevistaFinal: 120,
       versaoModelo: "PDOR-0.5.1",
       versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
-      algorithmVersion: "PDOR-REVENUE-2",
+      algorithmVersion: "PDOR-REVENUE-3",
       evidenceIds: ["evidence-1"],
       coverageCode: "COMPLETE_ACCEPTED_EXACT",
       stale: false,
@@ -194,7 +195,7 @@ describe("snapshotRecordFromApi", () => {
       receitaPrevistaFinal: null,
       versaoModelo: "PDOR-0.5.1",
       versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
-      algorithmVersion: "PDOR-REVENUE-2",
+      algorithmVersion: "PDOR-REVENUE-3",
       evidenceIds: [],
       coverageCode: "NO_ACCEPTED_EVIDENCE",
       stale: false,

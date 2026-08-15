@@ -14,4 +14,12 @@ describe("rdoLocalSaveMessage", () => {
       "RDO salvo apenas neste dispositivo. Pendente de sincronização.",
     );
   });
+
+  it("explica que o serviço digitado precisa de uma seleção de catálogo", () => {
+    expect(
+      rdoLocalSaveMessage("RDO_SERVICE_CATALOG_SELECTION_REQUIRED"),
+    ).toBe(
+      "RDO salvo neste dispositivo. Selecione o serviço no catálogo antes de sincronizar esta linha.",
+    );
+  });
 });

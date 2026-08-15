@@ -150,6 +150,217 @@ public class RastreioReceitaService {
         );
     }
 
+    /**
+     * Lista somente produção que pode chegar à aprovação financeira. Uma linha
+     * nesta fila ainda não é receita: o preço atual é apresentado apenas como
+     * elegibilidade da decisão e nunca como valor realizado ou projetado.
+     */
+    public RastreioReceitaPendenciasResponse pendentes(
+            Set<String> allowedObraIds,
+            String obraId
+    ) {
+        List<String> scope = normalizedScope(allowedObraIds);
+        if (obraId != null && !obraId.isBlank()) {
+            String selectedWorksite = uuid(
+                    obraId, "REVENUE_TRACE_WORKSITE_INVALID"
+            );
+            if (!scope.contains(selectedWorksite)) {
+                throw error(
+                        HttpStatus.FORBIDDEN,
+                        "REVENUE_TRACE_WORKSITE_FORBIDDEN"
+                );
+            }
+            scope = List.of(selectedWorksite);
+        }
+        if (scope.isEmpty()) {
+            return new RastreioReceitaPendenciasResponse(List.of());
+        }
+        return new RastreioReceitaPendenciasResponse(queryPendingRows(scope));
+    }
+
+    private List<RastreioReceitaPendenciasResponse.PendingRevenueExecutionRow>
+            queryPendingRows(List<String> scope) {
+        String placeholders = String.join(
+                ",", scope.stream().map(ignored -> "?").toList()
+        );
+        String sql = """
+                SELECT execution.obra_id AS worksite_id,
+                       worksite.nome AS worksite_name,
+                       execution.rdo_id,
+                       rdo.numero_rdo,
+                       execution.id AS execution_id,
+                       execution.service_id,
+                       service.codigo AS service_code,
+                       COALESCE(service.nome, execution.servico_nome)
+                           AS service_name,
+                       execution.data_execucao,
+                       execution.quantidade_executada,
+                       execution.unidade_medida,
+                       execution.unit_price_snapshot
+                           AS evidence_unit_price_snapshot,
+                       execution.currency AS evidence_currency,
+                       COALESCE(rdo_state.versao_entidade, 0)
+                           AS rdo_entity_version,
+                       CASE
+                           WHEN execution.status_validacao = 'REGISTRADA'
+                               THEN 'REGISTERED'
+                           ELSE 'LEGACY_UNVERIFIED'
+                       END AS approval_state,
+                       CASE
+                           WHEN execution.status_validacao = 'REGISTRADA'
+                               THEN 'NONE'
+                           WHEN execution.revenue_coverage_code = 'ACCEPTED_EXACT'
+                            AND execution.revenue_evidence_id IS NOT NULL
+                            AND execution.revenue_event_id IS NOT NULL
+                            AND execution.accepted_at IS NOT NULL
+                            AND legacy_price.id IS NOT NULL
+                            AND cortex_revenue_event_matches_v58(execution)
+                               THEN 'VERIFIABLE'
+                           ELSE 'INVALID'
+                       END AS legacy_evidence_state,
+                       CASE
+                           WHEN execution.service_id IS NULL
+                               OR service.id IS NULL
+                               OR service.status <> 'ACTIVE'
+                               OR execution.unidade_medida IS NULL
+                               OR btrim(execution.unidade_medida) = ''
+                               OR price_candidates.candidate_count <> 1
+                           THEN 'UNAVAILABLE'
+                           ELSE 'EXACT_ACTIVE'
+                       END AS price_state,
+                       CASE
+                           WHEN execution.service_id IS NULL
+                               THEN 'SERVICE_UNMAPPED'
+                           WHEN service.id IS NULL
+                               THEN 'SERVICE_NOT_FOUND'
+                           WHEN service.status <> 'ACTIVE'
+                               THEN 'SERVICE_INACTIVE'
+                           WHEN execution.unidade_medida IS NULL
+                                OR btrim(execution.unidade_medida) = ''
+                               THEN 'UNIT_MISSING'
+                           WHEN price_candidates.candidate_count = 0
+                               THEN 'EXACT_PRICE_NOT_FOUND'
+                           WHEN price_candidates.candidate_count > 1
+                               THEN 'EXACT_PRICE_AMBIGUOUS'
+                           ELSE 'EXACT_ACTIVE_PRICE'
+                       END AS price_reason,
+                       CASE
+                           WHEN execution.service_id IS NOT NULL
+                            AND service.id IS NOT NULL
+                            AND service.status = 'ACTIVE'
+                            AND execution.unidade_medida IS NOT NULL
+                            AND btrim(execution.unidade_medida) <> ''
+                            AND price_candidates.candidate_count = 1
+                           THEN price_candidates.unit_price
+                       END AS current_unit_price,
+                       CASE
+                           WHEN execution.service_id IS NOT NULL
+                            AND service.id IS NOT NULL
+                            AND service.status = 'ACTIVE'
+                            AND execution.unidade_medida IS NOT NULL
+                            AND btrim(execution.unidade_medida) <> ''
+                            AND price_candidates.candidate_count = 1
+                           THEN price_candidates.currency
+                       END AS currency
+                FROM execucao_servico_rdo execution
+                JOIN obra worksite
+                  ON worksite.id = execution.obra_id
+                 AND worksite.arquivado_em IS NULL
+                JOIN rdo
+                  ON rdo.id = execution.rdo_id
+                 AND rdo.obra_id = execution.obra_id
+                 AND rdo.status = 'ENVIADO'
+                 AND rdo.cancelado_em IS NULL
+                LEFT JOIN catalogo_servico service
+                  ON service.id = execution.service_id
+                LEFT JOIN cortex_estado_entidade rdo_state
+                  ON rdo_state.tipo_entidade = 'RDO'
+                 AND rdo_state.entidade_id = rdo.id
+                LEFT JOIN service_price_version legacy_price
+                  ON legacy_price.id = execution.price_version_id
+                 AND legacy_price.obra_id = execution.obra_id
+                 AND legacy_price.service_id = execution.service_id
+                 AND legacy_price.unidade = execution.unidade_medida
+                 AND legacy_price.moeda = execution.currency
+                 AND legacy_price.valor_unitario = execution.unit_price_snapshot
+                 AND legacy_price.vigencia_inicio <= execution.data_execucao
+                 AND (
+                     cortex_price_effective_valid_to(legacy_price.id) IS NULL
+                     OR cortex_price_effective_valid_to(legacy_price.id)
+                         >= execution.data_execucao
+                 )
+                LEFT JOIN rdo_execucao_decisao decision
+                  ON decision.execution_id = execution.id
+                LEFT JOIN LATERAL (
+                    SELECT count(*) AS candidate_count,
+                           min(price.valor_unitario) AS unit_price,
+                           min(price.moeda) AS currency
+                    FROM service_price_version price
+                    WHERE price.obra_id = execution.obra_id
+                      AND price.service_id = execution.service_id
+                      AND price.unidade = upper(btrim(execution.unidade_medida))
+                      AND price.moeda = 'BRL'
+                      AND price.vigencia_inicio <= execution.data_execucao
+                      AND (
+                          cortex_price_effective_valid_to(price.id) IS NULL
+                          OR cortex_price_effective_valid_to(price.id)
+                              >= execution.data_execucao
+                      )
+                ) price_candidates ON TRUE
+                WHERE execution.obra_id IN (
+                """ + placeholders + """
+                )
+                  AND execution.cancelada = FALSE
+                  AND execution.retrabalho = FALSE
+                  AND execution.producao_rejeitada = FALSE
+                  AND execution.quantidade_executada > 0
+                  AND decision.execution_id IS NULL
+                  AND (
+                      (
+                          execution.status_validacao = 'REGISTRADA'
+                          AND execution.revenue_evidence_id IS NULL
+                      )
+                      OR (
+                          execution.status_validacao = 'VALIDADA'
+                      )
+                  )
+                ORDER BY execution.data_execucao DESC,
+                         rdo.numero_rdo DESC NULLS LAST,
+                         execution.id DESC
+                """;
+        return jdbc.query(
+                sql,
+                (rs, rowNumber) -> new RastreioReceitaPendenciasResponse
+                        .PendingRevenueExecutionRow(
+                                rs.getString("worksite_id"),
+                                rs.getString("worksite_name"),
+                                rs.getString("rdo_id"),
+                                rs.getString("numero_rdo"),
+                                rs.getString("execution_id"),
+                                rs.getString("service_id"),
+                                rs.getString("service_code"),
+                                rs.getString("service_name"),
+                                rs.getDate("data_execucao").toLocalDate(),
+                                rs.getBigDecimal("quantidade_executada"),
+                                rs.getString("unidade_medida"),
+                                rs.getLong("rdo_entity_version"),
+                                rs.getString("approval_state"),
+                                rs.getString("legacy_evidence_state"),
+                                rs.getString("price_state"),
+                                rs.getString("price_reason"),
+                                rs.getBigDecimal("current_unit_price"),
+                                rs.getString("currency"),
+                                "VERIFIABLE".equals(
+                                        rs.getString("legacy_evidence_state")
+                                ) ? rs.getBigDecimal("evidence_unit_price_snapshot") : null,
+                                "VERIFIABLE".equals(
+                                        rs.getString("legacy_evidence_state")
+                                ) ? rs.getString("evidence_currency") : null
+                        ),
+                scope.toArray()
+        );
+    }
+
     private List<RastreioReceitaResponse.RevenueEvidenceRow> queryRows(
             List<String> scope,
             LocalDate from,
@@ -185,7 +396,6 @@ public class RastreioReceitaService {
                        event.commit_seq,
                        execution.accepted_at
                 FROM execucao_servico_rdo execution
-                JOIN obra worksite ON worksite.id = execution.obra_id
                 """);
         /*
          * A junção com o RDO já existia — era dela que saía `numero_rdo` — mas
@@ -196,6 +406,7 @@ public class RastreioReceitaService {
          * que passam pela mesma consulta.
          */
         sql.append(CanonicalRevenueEvidenceSql.LIVE_RDO_JOIN)
+                .append(CanonicalRevenueEvidenceSql.VALIDATED_FINANCIAL_DECISION_JOIN)
                 .append("""
                 JOIN catalogo_servico service ON service.id = execution.service_id
                 JOIN service_price_version price

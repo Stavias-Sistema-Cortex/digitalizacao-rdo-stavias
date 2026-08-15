@@ -4,6 +4,7 @@ import type { RdoContextServiceCatalog } from "./rdoLookupApi";
 import {
   isRdoPriceCatalogSelectable,
   searchRdoServiceTypes,
+  unidadeUnicaDasOpcoesDePreco,
 } from "./rdoServiceTypes";
 
 const catalog: RdoContextServiceCatalog[] = [{
@@ -43,5 +44,32 @@ describe("catálogo real de serviços do RDO", () => {
       complete,
       { ...complete, status: "PARTIAL", complete: false },
     )).toBe(false);
+  });
+
+  it("preserva a unidade quando há mais de um preço vigente para a mesma unidade", () => {
+    expect(unidadeUnicaDasOpcoesDePreco([
+      {
+        ...catalog[0].priceChoices[0],
+        id: "price-7",
+        version: 7,
+      },
+      {
+        ...catalog[0].priceChoices[0],
+        id: "price-8",
+        version: 8,
+      },
+    ])).toBe("M2");
+  });
+
+  it("não inventa uma unidade quando não há preço ou há unidades concorrentes", () => {
+    expect(unidadeUnicaDasOpcoesDePreco([])).toBeNull();
+    expect(unidadeUnicaDasOpcoesDePreco([
+      catalog[0].priceChoices[0],
+      {
+        ...catalog[0].priceChoices[0],
+        id: "price-m3",
+        unit: "M3",
+      },
+    ])).toBeNull();
   });
 });

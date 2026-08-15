@@ -3,6 +3,7 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 const mocks = vi.hoisted(() => ({
   alfa: false,
   hydrateHistoricoObra: vi.fn(),
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../auth/authSession", () => ({
+  AUTH_SESSION_CHANGED_EVENT: "cortex-auth-session-changed",
   getSession: () => mocks.alfa
     ? {
         colaboradorId: "00000000-0000-4000-8000-000000000001",
@@ -131,7 +133,7 @@ function confirmedRevenueSnapshot() {
     receitaPrevistaFinal: 1200,
     versaoModelo: "PDOR-0.5.1",
     versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
-    algorithmVersion: "PDOR-REVENUE-2",
+    algorithmVersion: "PDOR-REVENUE-3",
     evidenceIds: ["evidence-1"],
     coverageCode: "COMPLETE_ACCEPTED_EXACT",
     stale: false,
@@ -141,11 +143,40 @@ function confirmedRevenueSnapshot() {
 }
 
 describe("useHomeData remote hydration truth", () => {
-  it("não monta cache IndexedDB v1 ainda marcado como current", async () => {
+  it("relê a obra e seus dados locais após o sync concluir", async () => {
+    mocks.listObrasLocais
+      .mockResolvedValueOnce([cachedWorksite()])
+      .mockResolvedValueOnce([{
+        ...cachedWorksite(),
+        nome: "Obra atualizada depois do sync",
+      }]);
+
+    const { result } = renderHook(() => useHomeData());
+
+    await waitFor(() => {
+      expect(result.current.obras[0]?.nome).toBe("Obra do escopo anterior");
+    });
+
+    window.dispatchEvent(new Event(SYNC_COMPLETED_EVENT));
+
+    await waitFor(() => {
+      expect(result.current.obras[0]?.nome).toBe(
+        "Obra atualizada depois do sync",
+      );
+    });
+  });
+
+  it.each([
+    ["v1", "PDOR-REVENUE-1"],
+    ["v2", "PDOR-REVENUE-2"],
+  ])("não monta cache IndexedDB %s ainda marcado como current", async (
+    _version,
+    algorithmVersion,
+  ) => {
     mocks.listObrasLocais.mockResolvedValue([cachedWorksite()]);
     mocks.listSnapshotsByObra.mockResolvedValue([{
       ...confirmedRevenueSnapshot(),
-      algorithmVersion: "PDOR-REVENUE-1",
+      algorithmVersion,
     }]);
 
     const { result } = renderHook(() => useHomeData());

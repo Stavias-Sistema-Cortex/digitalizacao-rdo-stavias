@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { AUTH_SESSION_CHANGED_EVENT } from "../auth/authSession";
+import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 import { FinanceRevenueTracePage } from "./FinanceRevenueTracePage";
 import type { RevenueTraceRow } from "./servicePriceApi";
 
@@ -44,6 +46,30 @@ const ROW: RevenueTraceRow = {
   eventCommitSequence: 812,
   acceptedAt: "2026-07-22T15:00:00Z",
 };
+
+function cachedSnapshot(totalRevenue: string) {
+  return {
+    response: {
+      from: "2026-07-22",
+      to: "2026-07-22",
+      totalRevenue,
+      evidenceCount: 0,
+      rows: [],
+      nextCursor: null,
+      coverage: "COMPLETE",
+      highWaterMark: 812,
+    },
+    mode: "OFFLINE_CACHE" as const,
+    fetchedAt: "2026-07-23T15:00:00.000Z",
+    source: "SERVER_CONFIRMED" as const,
+    coverage: {
+      status: "COMPLETE_ACCEPTED_EXACT" as const,
+      from: "2026-07-22",
+      to: "2026-07-22",
+      evidenceCount: 0,
+    },
+  };
+}
 
 describe("FinanceRevenueTracePage", () => {
   it("mostra quantidade vezes o preço congelado e soma apenas evidências visíveis", () => {
@@ -102,5 +128,32 @@ describe("FinanceRevenueTracePage", () => {
     expect(await screen.findByText(/Atualizado em/)).toHaveTextContent(
       "Atualizado em 23/07/2026, 12:00",
     );
+  });
+
+  it("recarrega a receita visível após sync, conectividade e troca de sessão", async () => {
+    loadRevenueTraceSnapshot
+      .mockResolvedValueOnce(cachedSnapshot("100.00"))
+      .mockResolvedValueOnce(cachedSnapshot("200.00"))
+      .mockResolvedValueOnce(cachedSnapshot("300.00"))
+      .mockResolvedValueOnce(cachedSnapshot("400.00"))
+      .mockResolvedValueOnce(cachedSnapshot("500.00"));
+
+    render(<FinanceRevenueTracePage obraId="obra-1" />);
+
+    expect(await screen.findByText("R$ 100,00")).toBeVisible();
+
+    for (const [eventName, expectedTotal] of [
+      [SYNC_COMPLETED_EVENT, "R$ 200,00"],
+      ["online", "R$ 300,00"],
+      ["offline", "R$ 400,00"],
+      [AUTH_SESSION_CHANGED_EVENT, "R$ 500,00"],
+    ] as const) {
+      window.dispatchEvent(new Event(eventName));
+      expect(await screen.findByText(expectedTotal)).toBeVisible();
+    }
+
+    await waitFor(() => {
+      expect(loadRevenueTraceSnapshot).toHaveBeenCalledTimes(5);
+    });
   });
 });

@@ -108,4 +108,24 @@ class RastreioReceitaControllerAuthorizationTest {
                 Set.of(OBRA_ID), OBRA_ID, null, null, null, null
         );
     }
+
+    @Test
+    void pendingQueueChecksExplicitWorksiteBeforeAnyQuery() {
+        RastreioReceitaService service = mock(RastreioReceitaService.class);
+        FinancialAccessService access = mock(FinancialAccessService.class);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        when(currentUser.requireUserId()).thenReturn(USER_ID);
+        doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN))
+                .when(access).requirePermission(
+                        OBRA_ID, FinancialPermission.FINANCEIRO_VISUALIZAR
+                );
+        RastreioReceitaController controller = new RastreioReceitaController(
+                service, access, currentUser
+        );
+
+        assertThatThrownBy(() -> controller.pendentes(OBRA_ID))
+                .isInstanceOf(ResponseStatusException.class);
+
+        verifyNoInteractions(service);
+    }
 }

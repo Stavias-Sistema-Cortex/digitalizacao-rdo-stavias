@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
+import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
+import { AUTH_SESSION_CHANGED_EVENT } from "../auth/authSession";
 import { fetchRevenueCapabilities } from "../financeiro/financeRevenueAccessApi";
 import { fetchRevenueTrace } from "../financeiro/servicePriceApi";
 
@@ -15,14 +17,19 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
   >("loading");
   const [error, setError] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
+  const requestSequence = useRef(0);
 
   useEffect(() => {
-    let cancelled = false;
+    const requestId = requestSequence.current + 1;
+    requestSequence.current = requestId;
+    let active = true;
 
     async function load() {
       if (!navigator.onLine) {
-        setEvidenceCount(0);
-        setState("offline");
+        if (active && requestId === requestSequence.current) {
+          setEvidenceCount(0);
+          setState("offline");
+        }
         return;
       }
 
@@ -30,20 +37,21 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
       setError("");
       try {
         const capabilities = await fetchRevenueCapabilities(obraId);
+        if (!active || requestId !== requestSequence.current) return;
         if (!capabilities.permissoes.includes("FINANCEIRO_VISUALIZAR")) {
-          if (!cancelled) {
+          if (active && requestId === requestSequence.current) {
             setEvidenceCount(0);
             setState("denied");
           }
           return;
         }
         const trace = await fetchRevenueTrace(obraId);
-        if (!cancelled) {
+        if (active && requestId === requestSequence.current) {
           setEvidenceCount(trace.evidenceCount);
           setState("ready");
         }
       } catch (reason: unknown) {
-        if (!cancelled) {
+        if (active && requestId === requestSequence.current) {
           setEvidenceCount(0);
           setError(reason instanceof Error
             ? reason.message
@@ -55,9 +63,32 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
 
     void load();
     return () => {
-      cancelled = true;
+      active = false;
     };
   }, [obraId, reloadTick]);
+
+  useEffect(() => {
+    const requestRefresh = () => {
+      setReloadTick((tick) => tick + 1);
+    };
+    const resetForSession = () => {
+      requestSequence.current += 1;
+      setEvidenceCount(0);
+      setError("");
+      setState("loading");
+      requestRefresh();
+    };
+    window.addEventListener(SYNC_COMPLETED_EVENT, requestRefresh);
+    window.addEventListener("online", requestRefresh);
+    window.addEventListener("offline", requestRefresh);
+    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
+    return () => {
+      window.removeEventListener(SYNC_COMPLETED_EVENT, requestRefresh);
+      window.removeEventListener("online", requestRefresh);
+      window.removeEventListener("offline", requestRefresh);
+      window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
+    };
+  }, []);
 
   const traceLink = (
     <Link to={`/financeiro?obra=${encodeURIComponent(obraId)}&secao=receita`}>

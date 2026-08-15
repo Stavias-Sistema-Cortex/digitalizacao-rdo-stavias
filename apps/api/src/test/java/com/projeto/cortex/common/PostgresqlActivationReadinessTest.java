@@ -14,7 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class PostgresqlActivationReadinessTest {
 
     @Test
-    void reportsPendingWhenV82AndDatabaseAreAvailableWithoutAnActiveAlfa() {
+    void reportsPendingWhenV85AndDatabaseAreAvailableWithoutAnActiveAlfa() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForObject(anyString(), eq(Integer.class))).thenAnswer(
                 invocation -> 1
@@ -29,14 +29,14 @@ class PostgresqlActivationReadinessTest {
         verify(jdbc).queryForObject(
                 org.mockito.ArgumentMatchers.argThat(
                         sql -> sql.contains("FROM public.flyway_schema_history")
-                                && sql.contains("version = '82'")
+                                && sql.contains("version = '85'")
                 ),
                 eq(Integer.class)
         );
     }
 
     @Test
-    void rejectsMissingOrMalformedV82WithoutCheckingForAnAlfa() {
+    void rejectsMissingOrMalformedV85WithoutCheckingForAnActiveAlfa() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForObject(anyString(), eq(Integer.class))).thenAnswer(
                 invocation -> "SELECT 1".equals(invocation.getArgument(0))
@@ -47,6 +47,6 @@ class PostgresqlActivationReadinessTest {
 
         assertThatThrownBy(readiness::verifyRuntimeReadiness)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V82");
+                .hasMessageContaining("V85");
     }
 }

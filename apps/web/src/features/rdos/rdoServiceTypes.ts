@@ -1,6 +1,7 @@
 import type {
   RdoContextCoverageSection,
   RdoContextServiceCatalog,
+  RdoContextServicePriceChoice,
 } from "./rdoLookupApi";
 
 export interface RdoServiceType {
@@ -23,6 +24,30 @@ function normalizeSearchText(value: string): string {
 
 export function formatRdoServiceType(serviceType: RdoServiceType): string {
   return `${serviceType.code} - ${serviceType.name}`;
+}
+
+/**
+ * A unidade é uma propriedade da opção de preço vigente, não um palpite do
+ * formulário. Mais de uma versão pode continuar legítima quando todas usam a
+ * mesma unidade; nesse caso a versão fica em aberto para o servidor resolver
+ * pela vigência. Zero opções, uma unidade vazia ou unidades diferentes não
+ * descrevem uma quantidade que possamos afirmar localmente.
+ */
+export function unidadeUnicaDasOpcoesDePreco(
+  priceChoices: readonly Pick<RdoContextServicePriceChoice, "unit">[],
+): string | null {
+  if (priceChoices.length === 0) return null;
+
+  const unidades = new Set<string>();
+  for (const priceChoice of priceChoices) {
+    const unidade = priceChoice.unit.trim();
+    if (!unidade) return null;
+    unidades.add(unidade);
+  }
+
+  return unidades.size === 1
+    ? [...unidades][0]
+    : null;
 }
 
 export function searchRdoServiceTypes(

@@ -102,11 +102,13 @@ public class ResultadoOperacionalFinanceiroService {
                 SELECT execution.*
                 FROM eligible execution
                 %s
+                %s
                 WHERE %s
             )
             """.formatted(
             CanonicalRevenueEvidenceSql.LIVE_RDO_JOIN,
             CanonicalRevenueEvidenceSql.ELIGIBLE_EXECUTION_PREDICATE,
+            CanonicalRevenueEvidenceSql.VALIDATED_FINANCIAL_DECISION_JOIN,
             CanonicalRevenueEvidenceSql.CANONICAL_EVENT_JOIN,
             CanonicalRevenueEvidenceSql.ACCEPTED_EVIDENCE_PREDICATE
     );

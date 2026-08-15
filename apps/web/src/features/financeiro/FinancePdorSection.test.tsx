@@ -58,7 +58,7 @@ const SNAPSHOT: PdorRevenueSnapshot = {
     evidenceHighWaterMark: 812,
     coverageCode: "COMPLETE_ACCEPTED_EXACT",
     evidenceCount: 1,
-    algorithmVersion: "PDOR-REVENUE-1",
+    algorithmVersion: "PDOR-REVENUE-3",
     executedAtUtc: "2026-07-22T14:59:58Z",
   },
 };

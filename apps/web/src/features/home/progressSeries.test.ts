@@ -25,7 +25,7 @@ function snapshot(
     receitaPrevistaFinal: 120,
     versaoModelo: "PDOR-0.5.1",
     versaoPremissas: "PDOR-ASSUMPTIONS-0.5.0",
-    algorithmVersion: "PDOR-REVENUE-2",
+    algorithmVersion: "PDOR-REVENUE-3",
     evidenceIds: ["evidence-1"],
     coverageCode: "COMPLETE_ACCEPTED_EXACT",
     stale: false,
@@ -61,8 +61,9 @@ describe("buildMonthlySeries", () => {
 
   it.each([
     ["PDOR-REVENUE-1", "PDOR-0.5.1", "PDOR-ASSUMPTIONS-0.5.0"],
-    ["PDOR-REVENUE-2", "PDOR-0.5.0", "PDOR-ASSUMPTIONS-0.5.0"],
-    ["PDOR-REVENUE-2", "PDOR-0.5.1", "PDOR-ASSUMPTIONS-0.4.0"],
+    ["PDOR-REVENUE-2", "PDOR-0.5.1", "PDOR-ASSUMPTIONS-0.5.0"],
+    ["PDOR-REVENUE-3", "PDOR-0.5.0", "PDOR-ASSUMPTIONS-0.5.0"],
+    ["PDOR-REVENUE-3", "PDOR-0.5.1", "PDOR-ASSUMPTIONS-0.4.0"],
   ])("não plota cache legado %s / %s / %s ainda marcado como current", (
     algorithmVersion,
     versaoModelo,

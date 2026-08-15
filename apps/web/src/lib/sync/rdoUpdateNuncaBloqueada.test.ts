@@ -15,6 +15,7 @@ import {
   clearSession,
   setSession,
 } from "../../features/auth/authSession";
+import { createEmptyServicoExecutado } from "../../features/rdos/createEmptyRdo";
 import { closeCortexDb, getCortexDb } from "../db/cortexDb";
 import type {
   LocalRdoRecord,
@@ -268,5 +269,74 @@ describe("edição de rascunho sem recibo de contexto", () => {
         10,
       ).map((item) => item.clientMutationId),
     ).toEqual([resultado.mutation.clientMutationId]);
+  });
+
+  it("retém a edição com serviço nomeado sem identidade de catálogo", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdoEditado());
+
+    const { saveExistingRdoDraftAtomically, rdoDraftFromLocalRecord } =
+      await import("../db/localRdoService");
+    const draft = rdoDraftFromLocalRecord(rdoEditado());
+    draft.servicosExecutados = [{
+      ...createEmptyServicoExecutado(),
+      localId: "servico-sem-catalogo",
+      servicoNome: "Fresagem",
+      serviceId: "",
+    }];
+
+    const resultado = await saveExistingRdoDraftAtomically(draft);
+
+    expect(resultado.mutation).toMatchObject({
+      blockedReason: "RDO_SERVICE_CATALOG_SELECTION_REQUIRED",
+      payload: {
+        servicosExecutados: [{
+          id: "servico-sem-catalogo",
+          servicoNome: "Fresagem",
+          serviceId: null,
+        }],
+      },
+    });
+    expect(
+      selectReadyOutboxMutations(
+        await (await getCortexDb()).getAll("outbox_mutations"),
+        10,
+      ),
+    ).toEqual([]);
+  });
+
+  it("retém a edição cujo serviço catalogado ainda não tem unidade", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdoEditado());
+
+    const { saveExistingRdoDraftAtomically, rdoDraftFromLocalRecord } =
+      await import("../db/localRdoService");
+    const draft = rdoDraftFromLocalRecord(rdoEditado());
+    draft.servicosExecutados = [{
+      ...createEmptyServicoExecutado(),
+      localId: "servico-sem-unidade",
+      servicoNome: "Fresagem",
+      serviceId: "service-catalog-fresagem",
+      unidade: "",
+    }];
+
+    const resultado = await saveExistingRdoDraftAtomically(draft);
+
+    expect(resultado.mutation).toMatchObject({
+      blockedReason: "RDO_SERVICE_CATALOG_SELECTION_REQUIRED",
+      payload: {
+        servicosExecutados: [{
+          id: "servico-sem-unidade",
+          serviceId: "service-catalog-fresagem",
+          unidade: null,
+        }],
+      },
+    });
+    expect(
+      selectReadyOutboxMutations(
+        await (await getCortexDb()).getAll("outbox_mutations"),
+        10,
+      ),
+    ).toEqual([]);
   });
 });

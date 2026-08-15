@@ -132,7 +132,8 @@ class Cortex3ResourceLimitTest {
                 mock(RdoDraftUpdateService.class),
                 mock(RdoWorkflowService.class),
                 mock(RdoDeletionService.class),
-                mock(CurrentUserService.class)
+                mock(CurrentUserService.class),
+                mock(com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService.class)
         )).build();
 
         assertRdoLimit(mockMvc, service, "maoObra", RDO_WORKFORCE_LIMIT);

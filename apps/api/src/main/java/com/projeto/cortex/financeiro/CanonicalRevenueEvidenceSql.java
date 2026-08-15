@@ -1,6 +1,11 @@
 package com.projeto.cortex.financeiro;
 
-final class CanonicalRevenueEvidenceSql {
+/**
+ * Predicados SQL compartilhados pela receita atual e pelo PDOR. Mantê-los
+ * juntos evita que uma leitura passe a considerar uma evidência que a outra
+ * já recusou.
+ */
+public final class CanonicalRevenueEvidenceSql {
 
     /**
      * A receita atravessa o RDO, sempre.
@@ -22,27 +27,49 @@ final class CanonicalRevenueEvidenceSql {
      * {@code execucao_servico_rdo} guarda as duas colunas: sem isso, uma linha
      * com {@code obra_id} divergente do RDO passaria pela junção.
      */
-    static final String LIVE_RDO_JOIN = """
+    /**
+     * O fato financeiro atual existe apenas dentro de uma obra e um RDO ainda
+     * operacionais. Isso fica na fonte compartilhada porque Receita, Resultado
+     * Operacional e PDOR precisam responder à mesma pergunta.
+     */
+    public static final String LIVE_RDO_JOIN = """
+            JOIN obra worksite
+              ON worksite.id = execution.obra_id
+             AND worksite.arquivado_em IS NULL
             JOIN rdo
               ON rdo.id = execution.rdo_id
              AND rdo.obra_id = execution.obra_id
+             AND rdo.status = 'ENVIADO'
              AND rdo.cancelado_em IS NULL
             """;
 
-    static final String ELIGIBLE_EXECUTION_PREDICATE = """
+    public static final String ELIGIBLE_EXECUTION_PREDICATE = """
             execution.cancelada = FALSE
             AND execution.status_validacao = 'VALIDADA'
             AND execution.producao_rejeitada = FALSE
             AND execution.retrabalho = FALSE
             """;
 
-    static final String ACCEPTED_EVIDENCE_PREDICATE = """
+    public static final String ACCEPTED_EVIDENCE_PREDICATE = """
             execution.revenue_coverage_code = 'ACCEPTED_EXACT'
             AND execution.revenue_evidence_id IS NOT NULL
             AND execution.revenue_event_id IS NOT NULL
             """;
 
-    static final String CANONICAL_EVENT_JOIN = """
+    /**
+     * A evidência só vira dinheiro depois da decisão financeira explicitamente
+     * registrada. Eventos legados continuam preservados para auditoria, mas
+     * ficam fora da projeção até uma pessoa autorizada os revalidar.
+     */
+    public static final String VALIDATED_FINANCIAL_DECISION_JOIN = """
+            JOIN rdo_execucao_decisao decision
+              ON decision.execution_id = execution.id
+             AND decision.rdo_id = execution.rdo_id
+             AND decision.obra_id = execution.obra_id
+             AND decision.decisao = 'VALIDAR'
+            """;
+
+    public static final String CANONICAL_EVENT_JOIN = """
             JOIN cortex_evento_operacional event
               ON event.id = execution.revenue_event_id
              AND event.tipo_entidade = 'RDO_EXECUTION'

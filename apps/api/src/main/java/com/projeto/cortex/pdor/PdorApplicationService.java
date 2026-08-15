@@ -43,7 +43,7 @@ import java.util.UUID;
 public class PdorApplicationService implements PdorProjectionInvalidator {
 
     private static final String FONTE = "PDOR";
-    static final String REVENUE_ALGORITHM_VERSION = "PDOR-REVENUE-2";
+    static final String REVENUE_ALGORITHM_VERSION = "PDOR-REVENUE-3";
     private static final Logger LOGGER =
             LoggerFactory.getLogger(PdorApplicationService.class);
 

@@ -32,6 +32,7 @@
 .finance-scope-bar,
 .finance-revenue-period,
 .finance-revenue-trace,
+.finance-revenue-pending,
 .finance-service-catalog,
 .finance-pdor-section {
   margin: 0;
@@ -370,6 +371,187 @@
   font-size: 0.62rem;
   font-weight: 600;
   padding: 2px 6px;
+}
+
+/* --------------------------------------------------- validação de receita */
+
+.finance-revenue-pending {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  background: var(--color-surface);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.finance-revenue-pending > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.finance-revenue-pending > header > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.finance-revenue-pending > header > div:first-child > span,
+.finance-revenue-pending__price > span {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.finance-revenue-pending h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.finance-revenue-pending > header p,
+.finance-revenue-pending__read-only,
+.finance-revenue-pending__notice,
+.finance-revenue-pending__empty {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--color-muted);
+}
+
+.finance-revenue-pending__count {
+  display: grid;
+  gap: 1px;
+  min-width: 70px;
+  text-align: right;
+}
+
+.finance-revenue-pending__count strong {
+  font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-revenue-pending__count span {
+  font-size: 0.62rem;
+  color: var(--color-muted);
+}
+
+.finance-revenue-pending__read-only,
+.finance-revenue-pending__notice,
+.finance-revenue-pending__empty {
+  border-left: 3px solid var(--color-brand-yellow);
+  background: var(--color-canvas);
+  border-radius: var(--radius-control);
+  padding: 8px 10px;
+}
+
+.finance-revenue-pending__list {
+  display: grid;
+  gap: 8px;
+}
+
+.finance-revenue-pending__row {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(160px, 1fr) minmax(160px, auto) auto;
+  align-items: center;
+  gap: 10px 16px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+}
+
+.finance-revenue-pending__identity,
+.finance-revenue-pending__service,
+.finance-revenue-pending__price {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.finance-revenue-pending__identity time,
+.finance-revenue-pending__service code,
+.finance-revenue-pending__service small,
+.finance-revenue-pending__price small {
+  font-size: 0.68rem;
+  color: var(--color-muted);
+}
+
+.finance-revenue-pending__identity strong,
+.finance-revenue-pending__service strong,
+.finance-revenue-pending__price strong {
+  font-size: 0.78rem;
+  color: var(--color-ink);
+}
+
+.finance-revenue-pending__price strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-revenue-pending__actions,
+.finance-revenue-pending__rejection > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.finance-revenue-pending__actions button,
+.finance-revenue-pending__rejection button {
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-ink);
+  color: var(--color-surface);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.finance-revenue-pending__actions button.is-secondary,
+.finance-revenue-pending__rejection button.is-secondary {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.finance-revenue-pending__actions button:disabled,
+.finance-revenue-pending__rejection button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.finance-revenue-pending__rejection {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-canvas);
+  padding: 10px;
+}
+
+.finance-revenue-pending__rejection label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.finance-revenue-pending__rejection textarea {
+  min-height: 64px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 7px 10px;
+  resize: vertical;
 }
 
 /* ----------------------------------------------------------------- drawer */
@@ -1031,4 +1213,18 @@
   color: var(--color-muted, #66706b);
   font-size: 0.76rem;
   font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .finance-revenue-pending__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .finance-revenue-pending__actions {
+    grid-column: 1 / -1;
+  }
+
+  .finance-revenue-pending__count {
+    text-align: left;
+  }
 }

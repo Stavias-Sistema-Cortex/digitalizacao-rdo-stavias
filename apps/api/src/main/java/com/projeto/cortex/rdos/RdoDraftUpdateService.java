@@ -94,10 +94,27 @@ public class RdoDraftUpdateService {
             RdoCreateRequest request,
             Long expectedEntityVersion
     ) {
+        // A decisão financeira toma esta mesma trava antes de reler a
+        // execução. Pegá-la antes de qualquer leitura deste PUT garante que
+        // a validação de imutabilidade e a atualização do cabeçalho enxergam
+        // o mesmo estado: uma aprovação concorrente não pode ser seguida por
+        // uma edição que reabra o RDO.
+        jdbcTemplate.query(
+                "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                rs -> {
+                    // PostgreSQL returns void; reaching the row means the lock is held.
+                },
+                "rdo-revenue:" + rdoId
+        );
         RdoChangeAuditService.RdoAuditSnapshot estadoAnterior =
                 auditService.carregar(rdoId);
 
         validarRdoEditavel(estadoAnterior);
+        RdoFinancialExecutionMutationGuard.assertUpdateCanProceed(
+                jdbcTemplate,
+                rdoId,
+                request
+        );
 
         if (request.obraId() == null || request.obraId().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "obraId é obrigatório.");

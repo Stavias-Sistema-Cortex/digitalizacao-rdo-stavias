@@ -42,7 +42,8 @@ class RdoSyncOperationHandlerPrintableLimitsTest {
             draftUpdateService,
             mock(RdoWorkflowService.class),
             rdoQueryService,
-            mock(CurrentUserService.class)
+            mock(CurrentUserService.class),
+            mock(com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService.class)
     );
 
     @Test
@@ -82,7 +83,8 @@ class RdoSyncOperationHandlerPrintableLimitsTest {
 
         verify(draftUpdateService, never()).atualizarRascunho(
                 any(String.class),
-                any(RdoCreateRequest.class)
+                any(RdoCreateRequest.class),
+                any(Long.class)
         );
     }
 
@@ -96,7 +98,8 @@ class RdoSyncOperationHandlerPrintableLimitsTest {
         when(rdoQueryService.buscarPorId(RDO_ID)).thenReturn(persisted);
         when(draftUpdateService.atualizarRascunho(
                 any(String.class),
-                any(RdoCreateRequest.class)
+                any(RdoCreateRequest.class),
+                any(Long.class)
         )).thenReturn(persisted);
 
         ObjectNode payload = payloadWithRows("maoObra", 0);
@@ -113,7 +116,8 @@ class RdoSyncOperationHandlerPrintableLimitsTest {
                 ArgumentCaptor.forClass(RdoCreateRequest.class);
         verify(draftUpdateService).atualizarRascunho(
                 org.mockito.ArgumentMatchers.eq(RDO_ID),
-                request.capture()
+                request.capture(),
+                org.mockito.ArgumentMatchers.eq(1L)
         );
         assertThat(request.getValue().previousRdoId())
                 .isEqualTo("rdo-previous");

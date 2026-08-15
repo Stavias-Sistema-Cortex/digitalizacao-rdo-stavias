@@ -21,6 +21,10 @@ import com.projeto.cortex.financeiro.catalog.PostgresqlServicePriceCatalogReposi
 import com.projeto.cortex.financeiro.catalog.ServiceCatalogEntry;
 import com.projeto.cortex.financeiro.catalog.ServicePriceCatalogService;
 import com.projeto.cortex.financeiro.catalog.ServicePriceVersion;
+import com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionAudit;
+import com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionRequest;
+import com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService;
+import com.projeto.cortex.financeiro.revenue.RevenueOntologyPublisher;
 import com.projeto.cortex.financeiro.unit.FinancialUnitRepository;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.Obra;
@@ -232,6 +236,16 @@ class PostgresqlCortex3FlowIT {
                 actorId,
                 LocalDateTime.of(2026, 7, 22, 9, 0)
         );
+        grants.insertUnit(
+                id(),
+                actorId,
+                worksiteUnitId,
+                worksite.getId(),
+                FinancialPermission.FINANCEIRO_APROVAR,
+                "Cenário de aprovação financeira Cortex 3",
+                actorId,
+                LocalDateTime.of(2026, 7, 22, 9, 0)
+        );
         FinancialAccessService financialAccess = new FinancialAccessService(
                 currentUsers, grants, units
         );
@@ -308,6 +322,55 @@ class PostgresqlCortex3FlowIT {
                 newRdoId
         )).containsExactlyInAnyOrder(actorId, currentWorkerId)
                 .doesNotContain(previousWorkerId);
+
+        RdoOperationalDetailService decisionDetails =
+                new RdoOperationalDetailService(jdbc, memory);
+        RdoQueryService decisionQuery = new RdoQueryService(
+                jdbc,
+                decisionDetails,
+                new RdoAttachmentService(jdbc, mapper)
+        );
+        PrevisaoFinanceiraService decisionForecast =
+                mock(PrevisaoFinanceiraService.class);
+        new RdoWorkflowService(
+                jdbc,
+                decisionQuery,
+                new RdoMemoryPublisher(memory, jdbc),
+                decisionForecast,
+                mock(ObraOperabilityGuard.class)
+        ).enviar(newRdoId);
+        long decisionBaseVersion = jdbc.queryForObject(
+                """
+                SELECT versao_entidade
+                FROM cortex_estado_entidade
+                WHERE tipo_entidade = 'RDO' AND entidade_id = ?
+                """,
+                Long.class,
+                newRdoId
+        );
+        RdoExecutionDecisionService decisionService = new RdoExecutionDecisionService(
+                jdbc,
+                decisionQuery,
+                financialAccess,
+                mock(ObraOperabilityGuard.class),
+                decisionForecast,
+                new RevenueOntologyPublisher(memory),
+                memory
+        );
+        // The production bean enters through Spring's transactional proxy. This
+        // fixture builds the service directly, so supply the same transaction
+        // boundary for the deferred canonical-event foreign key.
+        inTransaction(() -> {
+            decisionService.decidir(
+                    newRdoId,
+                    executionId,
+                    new RdoExecutionDecisionRequest(
+                            "VALIDAR", null, decisionBaseVersion, id()
+                    ),
+                    RdoExecutionDecisionAudit.online(actorId, id())
+            );
+            return null;
+        });
 
         Map<String, Object> execution = jdbc.queryForMap("""
                 SELECT revenue_amount, revenue_coverage_code,
@@ -405,7 +468,7 @@ class PostgresqlCortex3FlowIT {
         );
 
         assertThat(pdor.statusExecucao()).isEqualTo("SUCCESS");
-        assertThat(pdor.algorithmVersion()).isEqualTo("PDOR-REVENUE-2");
+        assertThat(pdor.algorithmVersion()).isEqualTo("PDOR-REVENUE-3");
         assertThat(pdor.evidenceIds())
                 .containsExactly(revenueEvidenceId)
                 .isSorted();
@@ -705,7 +768,8 @@ class PostgresqlCortex3FlowIT {
                 mock(RdoDraftUpdateService.class),
                 mock(RdoWorkflowService.class),
                 query,
-                currentUsers
+                currentUsers,
+                mock(com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService.class)
         );
         return new SyncService(
                 jdbc,
@@ -758,7 +822,7 @@ class PostgresqlCortex3FlowIT {
                 .put("retrabalho", false)
                 .put("serviceId", service.id())
                 .put("servicoNome", service.name())
-                .put("statusValidacao", "VALIDADA")
+                .put("statusValidacao", "REGISTRADA")
                 .put("turno", "DIURNO")
                 .put("unidade", price.unit());
         payload.put("turno", "DIURNO");

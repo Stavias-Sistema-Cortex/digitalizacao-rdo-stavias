@@ -46,7 +46,8 @@ class SyncServiceAuthorizationTest {
             mock(RdoDraftUpdateService.class),
             mock(RdoWorkflowService.class),
             mock(RdoQueryService.class),
-            currentUserService
+            currentUserService,
+            mock(com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService.class)
     );
 
     private SyncPushRequest.MutacaoCliente criarRdo(String obraId) {

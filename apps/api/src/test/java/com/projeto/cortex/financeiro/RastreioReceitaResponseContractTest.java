@@ -81,6 +81,44 @@ class RastreioReceitaResponseContractTest {
         assertTextDecimal(row.path("revenue"), "9007199254740993.99");
     }
 
+    @Test
+    void pendingQueueUsesItsStaticEndpointAndNeverSerializesUnacceptedRevenue()
+            throws Exception {
+        RastreioReceitaService service = mock(RastreioReceitaService.class);
+        FinancialAccessService access = mock(FinancialAccessService.class);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        when(currentUser.requireUserId()).thenReturn(USER_ID);
+        when(access.allowedObraIds(
+                USER_ID, FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(Set.of(OBRA_ID));
+        when(service.pendentes(Set.of(OBRA_ID), null))
+                .thenReturn(pendingPrecisionResponse());
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(
+                new RastreioReceitaController(service, access, currentUser)
+        ).build();
+
+        String body = mockMvc.perform(get(
+                "/api/financeiro/rastreio-receita/pendentes"
+        ))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode row = new ObjectMapper().findAndRegisterModules()
+                .readTree(body)
+                .path("rows")
+                .path(0);
+
+        assertTextDecimal(row.path("quantity"), "9007199254740993.125");
+        assertTextDecimal(
+                row.path("currentUnitPrice"), "9007199254740993.9900"
+        );
+        assertThat(row.path("rdoEntityVersion").longValue()).isEqualTo(27L);
+        assertThat(row.path("priceState").textValue()).isEqualTo("EXACT_ACTIVE");
+        assertThat(row.has("revenue")).isFalse();
+        assertThat(row.has("projectedRevenue")).isFalse();
+    }
+
     private RastreioReceitaResponse precisionResponse() {
         return new RastreioReceitaResponse(
                 LocalDate.of(2026, 7, 1),
@@ -111,6 +149,33 @@ class RastreioReceitaResponseContractTest {
                         Instant.parse("2026-07-23T12:00:00Z")
                 ))
         );
+    }
+
+    private RastreioReceitaPendenciasResponse pendingPrecisionResponse() {
+        return new RastreioReceitaPendenciasResponse(List.of(
+                new RastreioReceitaPendenciasResponse.PendingRevenueExecutionRow(
+                        OBRA_ID,
+                        "Obra precisão",
+                        "00000000-0000-4000-8000-000000000401",
+                        "RDO-001",
+                        "00000000-0000-4000-8000-000000000402",
+                        "00000000-0000-4000-8000-000000000403",
+                        "SERV-001",
+                        "Serviço pendente",
+                        LocalDate.of(2026, 7, 23),
+                        new BigDecimal("9007199254740993.125"),
+                        "m³",
+                        27L,
+                        "REGISTERED",
+                        "NONE",
+                        "EXACT_ACTIVE",
+                        "EXACT_ACTIVE_PRICE",
+                        new BigDecimal("9007199254740993.9900"),
+                        "BRL",
+                        null,
+                        null
+                )
+        ));
     }
 
     private void assertTextDecimal(JsonNode value, String expected) {

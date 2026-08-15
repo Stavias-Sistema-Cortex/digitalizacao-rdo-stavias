@@ -9,8 +9,14 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createEmptyRdo } from "./createEmptyRdo";
-import type { RdoCreationContextLookup } from "./rdoLookupApi";
+import {
+  createEmptyRdo,
+  createEmptyServicoExecutado,
+} from "./createEmptyRdo";
+import type {
+  RdoContextServicePriceChoice,
+  RdoCreationContextLookup,
+} from "./rdoLookupApi";
 
 const ordem: string[] = [];
 
@@ -41,6 +47,13 @@ vi.mock("../../lib/db/rdoRepository", () => ({
 
 vi.mock("../../lib/db/localRdoService", () => ({
   rascunhoDifereDoQueEstaGravado: mocks.rascunhoDiferente,
+  servicoExecutadoNeedsCatalogSelection: (item: {
+    servicoNome: string;
+    serviceId: string;
+    unidade: string;
+  }) => item.servicoNome.trim() !== "" && (
+    item.serviceId.trim() === "" || item.unidade.trim() === ""
+  ),
 }));
 
 vi.mock("./useRdoLocalPersistence", () => ({
@@ -120,16 +133,83 @@ function draft() {
   };
 }
 
-function renderizar() {
+function renderizar(
+  initialDraft = draft(),
+  creationContext = context(),
+) {
   render(
     <RdoCreatePage
-      initialDraft={draft()}
+      initialDraft={initialDraft}
       isExisting
-      creationContext={context()}
+      creationContext={creationContext}
       onBackToList={vi.fn()}
       onSaved={vi.fn()}
     />,
   );
+}
+
+function contextoComServico(
+  priceChoices: RdoContextServicePriceChoice[],
+): RdoCreationContextLookup {
+  const base = context();
+  return {
+    ...base,
+    serviceCatalog: [{
+      id: "service-fresagem",
+      code: "PAV-001",
+      name: "Fresagem",
+      description: "Fresagem do pavimento",
+      priceChoices,
+    }],
+    priceCatalog: priceChoices,
+    coverage: {
+      ...base.coverage,
+      serviceCatalog: {
+        status: "COMPLETE",
+        complete: true,
+        total: 1,
+        returned: 1,
+      },
+      priceCatalog: {
+        status: "COMPLETE",
+        complete: true,
+        total: priceChoices.length,
+        returned: priceChoices.length,
+      },
+    },
+  };
+}
+
+function opcaoDePreco(
+  id: string,
+  unit: string,
+): RdoContextServicePriceChoice {
+  return {
+    id,
+    serviceId: "service-fresagem",
+    unit,
+    version: 1,
+    validFrom: "2026-07-01",
+    effectiveValidTo: null,
+  };
+}
+
+function rascunhoComLinhaDeServico() {
+  const initialDraft = draft();
+  initialDraft.servicosExecutados = [{
+    ...createEmptyServicoExecutado(),
+    localId: "servico-fresagem",
+  }];
+  return initialDraft;
+}
+
+async function selecionarFresagem() {
+  fireEvent.focus(screen.getByRole("combobox", {
+    name: "Tipo de serviço",
+  }));
+  fireEvent.click(await screen.findByRole("option", {
+    name: /Fresagem/i,
+  }));
 }
 
 function apertarSincronizar() {
@@ -212,5 +292,103 @@ describe("sincronizar manda o que está na tela", () => {
       expect(mocks.saveLocally).toHaveBeenCalledOnce();
     });
     expect(mocks.synchronize).not.toHaveBeenCalled();
+  });
+});
+
+describe("serviço sem catálogo", () => {
+  it("não marca a seção como concluída nem entrega a linha à sincronização", async () => {
+    const initialDraft = draft();
+    initialDraft.servicosExecutados = [{
+      ...createEmptyServicoExecutado(),
+      localId: "servico-sem-catalogo",
+      servicoNome: "Fresagem",
+      serviceId: "",
+    }];
+
+    renderizar(initialDraft);
+
+    expect(screen.getByRole("link", {
+      name: /Serviços.*Seção pendente/i,
+    })).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Selecione no catálogo um serviço com unidade válida antes de sincronizar esta linha.",
+    );
+
+    mocks.rascunhoDiferente.mockResolvedValue(true);
+    apertarSincronizar();
+
+    await waitFor(() => {
+      expect(mocks.saveLocally).toHaveBeenCalledOnce();
+    });
+    expect(mocks.synchronize).not.toHaveBeenCalled();
+  });
+});
+
+describe("unidade vinda do catálogo de preços", () => {
+  it.each([
+    ["não há preço vigente", []],
+    [
+      "há unidades concorrentes",
+      [
+        opcaoDePreco("price-m2", "M2"),
+        opcaoDePreco("price-m3", "M3"),
+      ],
+    ],
+  ])(
+    "retém a linha quando %s",
+    async (_scenario, priceChoices) => {
+      mocks.rascunhoDiferente.mockResolvedValue(true);
+      renderizar(
+        rascunhoComLinhaDeServico(),
+        contextoComServico(priceChoices),
+      );
+
+      await selecionarFresagem();
+
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Selecione no catálogo um serviço com unidade válida antes de sincronizar esta linha.",
+      );
+      apertarSincronizar();
+
+      await waitFor(() => {
+        expect(mocks.saveLocally).toHaveBeenCalledWith(
+          expect.objectContaining({
+            servicosExecutados: [expect.objectContaining({
+              serviceId: "service-fresagem",
+              priceVersionId: "",
+              unidade: "",
+            })],
+          }),
+        );
+      });
+      expect(mocks.synchronize).not.toHaveBeenCalled();
+    },
+  );
+
+  it("sincroniza duas versões legítimas da mesma unidade sem inventar um preço", async () => {
+    mocks.rascunhoDiferente.mockResolvedValue(true);
+    renderizar(
+      rascunhoComLinhaDeServico(),
+      contextoComServico([
+        opcaoDePreco("price-m2-v1", "M2"),
+        opcaoDePreco("price-m2-v2", "M2"),
+      ]),
+    );
+
+    await selecionarFresagem();
+    apertarSincronizar();
+
+    await waitFor(() => {
+      expect(mocks.saveLocally).toHaveBeenCalledWith(
+        expect.objectContaining({
+          servicosExecutados: [expect.objectContaining({
+            serviceId: "service-fresagem",
+            priceVersionId: "",
+            unidade: "M2",
+          })],
+        }),
+      );
+      expect(mocks.synchronize).toHaveBeenCalledOnce();
+    });
   });
 });

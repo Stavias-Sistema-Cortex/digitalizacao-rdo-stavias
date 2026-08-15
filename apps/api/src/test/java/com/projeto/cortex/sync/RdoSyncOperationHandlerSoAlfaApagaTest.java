@@ -42,7 +42,8 @@ class RdoSyncOperationHandlerSoAlfaApagaTest {
             mock(RdoDraftUpdateService.class),
             workflowService,
             mock(RdoQueryService.class),
-            currentUserService
+            currentUserService,
+            mock(com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService.class)
     );
 
     @Test

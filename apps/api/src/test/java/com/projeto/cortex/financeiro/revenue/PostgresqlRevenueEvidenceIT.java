@@ -2,20 +2,55 @@ package com.projeto.cortex.financeiro.revenue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
+import com.projeto.cortex.financeiro.RastreioReceitaPendenciasResponse;
+import com.projeto.cortex.financeiro.RastreioReceitaResponse;
+import com.projeto.cortex.financeiro.RastreioReceitaService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.rdos.RdoContextResponse;
 import com.projeto.cortex.rdos.RdoContextService;
 import com.projeto.cortex.rdos.RdoCreateRequest;
+import com.projeto.cortex.rdos.RdoChangeAuditService;
 import com.projeto.cortex.rdos.RdoHistoricalImportServiceCommand;
 import com.projeto.cortex.rdos.RdoOperationalDetailService;
+import com.projeto.cortex.rdos.RdoOperationalEventService;
+import com.projeto.cortex.rdos.RdoQueryService;
 import com.projeto.cortex.rdos.RdoResponse;
+import com.projeto.cortex.rdos.RdoService;
+import com.projeto.cortex.rdos.RdoWorkflowService;
+import com.projeto.cortex.rdos.RdoDraftUpdateService;
+import com.projeto.cortex.rdos.RdoAssetEligibilityService;
+import com.projeto.cortex.rdos.RdoAttachmentService;
+import com.projeto.cortex.rdos.RdoMemoryPublisher;
+import com.projeto.cortex.sync.RdoSyncOperationHandler;
+import com.projeto.cortex.sync.SyncOperationRegistry;
+import com.projeto.cortex.sync.SyncPushRequest;
+import com.projeto.cortex.sync.SyncPushResponse;
+import com.projeto.cortex.sync.SyncService;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -68,6 +103,677 @@ class PostgresqlRevenueEvidenceIT {
                 new DataSourceTransactionManager(dataSource)
         );
         mapper = new ObjectMapper().findAndRegisterModules();
+    }
+
+    @Test
+    void financeAdminValidatesARegisteredExecutionIntoAuditedRevenueEvidence()
+            throws Exception {
+        Fixture fixture = fixture("FINANCIAL-VALIDATION");
+        String executionId = id();
+        replace(
+                fixture.rdoId(), fixture.obraId(), List.of(item(
+                        executionId, fixture.serviceId(), fixture.priceId(),
+                        "2.500", "M2", "REGISTRADA", false, false,
+                        "Medição de campo"
+                ))
+        );
+        jdbc.update(
+                "UPDATE rdo SET status = 'ENVIADO' WHERE id = ?",
+                fixture.rdoId()
+        );
+
+        FinancialAccessService financialAccess = mock(FinancialAccessService.class);
+        ObraOperabilityGuard operabilityGuard = mock(ObraOperabilityGuard.class);
+        PrevisaoFinanceiraService previsao = mock(PrevisaoFinanceiraService.class);
+        RdoQueryService query = mock(RdoQueryService.class);
+        CortexOperationalMemoryService memory = memoryService();
+        RdoResponse expected = mock(RdoResponse.class);
+        when(query.buscarPorId(fixture.rdoId())).thenReturn(expected);
+        RdoExecutionDecisionService validation = new RdoExecutionDecisionService(
+                jdbc,
+                query,
+                financialAccess,
+                operabilityGuard,
+                previsao,
+                new RevenueOntologyPublisher(memory),
+                memory
+        );
+
+        RdoResponse result = transactions.execute(ignored -> validation.decidir(
+                fixture.rdoId(),
+                executionId,
+                new RdoExecutionDecisionRequest(
+                        "VALIDAR", null, 0L, id()
+                ),
+                new RdoExecutionDecisionAudit(
+                        fixture.actorId(), null, null, "ONLINE"
+                )
+        ));
+
+        assertThat(result).isSameAs(expected);
+        assertThat(jdbc.queryForMap("""
+                SELECT status_validacao, revenue_coverage_code,
+                       price_version_id, unit_price_snapshot, currency,
+                       revenue_amount, revenue_evidence_id, revenue_event_id,
+                       accepted_at
+                FROM execucao_servico_rdo
+                WHERE id = ?
+                """, executionId))
+                .containsEntry("status_validacao", "VALIDADA")
+                .containsEntry("revenue_coverage_code", "ACCEPTED_EXACT")
+                .containsEntry("price_version_id", fixture.priceId())
+                .containsEntry("unit_price_snapshot", new BigDecimal("10.0000"))
+                .containsEntry("currency", "BRL")
+                .containsEntry("revenue_amount", new BigDecimal("25.00"))
+                .containsKey("revenue_evidence_id")
+                .containsKey("revenue_event_id")
+                .containsKey("accepted_at");
+        assertThat(jdbc.queryForObject("""
+                SELECT usuario_id
+                FROM cortex_evento_operacional event
+                JOIN execucao_servico_rdo execution
+                  ON execution.revenue_event_id = event.id
+                WHERE execution.id = ?
+                """, String.class, executionId)).isEqualTo(fixture.actorId());
+        assertThat(jdbc.queryForMap("""
+                SELECT event.schema_version,
+                       event.payload_json ->> 'schemaVersion' AS payload_schema_version
+                FROM cortex_evento_operacional event
+                JOIN rdo_execucao_decisao decision
+                  ON decision.evento_id = event.id
+                WHERE decision.execution_id = ?
+                """, executionId))
+                .containsEntry("schema_version", 13)
+                .containsEntry("payload_schema_version", "13");
+        verify(financialAccess).requirePermission(
+                fixture.obraId(), FinancialPermission.FINANCEIRO_APROVAR
+        );
+        verify(operabilityGuard).requireWritable(fixture.obraId());
+        verify(previsao).recalcularAposMudancaRdo(
+                eq(fixture.obraId()), anyString()
+        );
+        String decisionEventId = jdbc.queryForObject("""
+                SELECT evento_id
+                FROM rdo_execucao_decisao
+                WHERE execution_id = ?
+                """, String.class, executionId);
+        assertThatThrownBy(() -> jdbc.update("""
+                UPDATE cortex_evento_operacional
+                SET payload_json = '{}'::jsonb
+                WHERE id = ?
+                """, decisionEventId))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("RDO_EXECUTION_DECISION_EVENT_IMMUTABLE");
+    }
+
+    /**
+     * A validação trava a linha do catálogo depois de travar a execução. Se a
+     * exclusão já possui aquela linha, a validação precisa esperar o commit e
+     * reler o estado vencedor; aceitar o snapshot ACTIVE que leu antes da
+     * espera publicaria uma receita para um serviço já excluído.
+     */
+    @Test
+    void serviceExclusionCommittedWhileValidationWaitsFailsClosedWithoutRevenue()
+            throws Exception {
+        Fixture fixture = fixture("RACE-SERVICE-EXCLUSION");
+        String executionId = id();
+        replace(
+                fixture.rdoId(), fixture.obraId(), List.of(item(
+                        executionId, fixture.serviceId(), fixture.priceId(),
+                        "2.500", "M2", "REGISTRADA", false, false,
+                        "Medição concorrente"
+                ))
+        );
+        markRdoSent(fixture);
+        long baseVersion = rdoVersion(fixture.rdoId());
+        RdoExecutionDecisionService decision = decisionService(fixture);
+        CountDownLatch catalogLocked = new CountDownLatch(1);
+        CountDownLatch allowExclusionCommit = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<?> exclusion = executor.submit(() ->
+                    transactions.executeWithoutResult(ignored -> {
+                        String status = jdbc.query(
+                                "SELECT status FROM catalogo_servico "
+                                        + "WHERE id = ? FOR UPDATE",
+                                rs -> rs.next() ? rs.getString("status") : null,
+                                fixture.serviceId()
+                        );
+                        assertThat(status).isEqualTo("ACTIVE");
+                        catalogLocked.countDown();
+                        awaitLatch(allowExclusionCommit);
+                        assertThat(jdbc.update("""
+                                UPDATE catalogo_servico
+                                SET status = 'EXCLUIDO',
+                                    excluido_em = CURRENT_TIMESTAMP(6),
+                                    excluido_por = ?,
+                                    commit_revision = cortex_next_service_catalog_revision()
+                                WHERE id = ? AND status = 'ACTIVE'
+                                """, fixture.actorId(), fixture.serviceId()))
+                                .isOne();
+                    })
+            );
+            awaitLatch(catalogLocked);
+
+            Future<?> validation = executor.submit(() ->
+                    assertThatThrownBy(() -> transactions.executeWithoutResult(
+                            ignored -> decision.decidir(
+                                    fixture.rdoId(),
+                                    executionId,
+                                    new RdoExecutionDecisionRequest(
+                                            "VALIDAR", null, baseVersion, id()
+                                    ),
+                                    RdoExecutionDecisionAudit.online(
+                                            fixture.actorId(), id()
+                                    )
+                            )
+                    )).isInstanceOf(ResponseStatusException.class)
+                            .hasMessageContaining(
+                                    "RDO_EXECUTION_DECISION_SERVICE_INVALID"
+                            )
+            );
+
+            try {
+                awaitCatalogServiceValidationRowLock(validation);
+                assertThat(validation.isDone()).isFalse();
+            } finally {
+                allowExclusionCommit.countDown();
+            }
+            exclusion.get(10, TimeUnit.SECONDS);
+            validation.get(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(jdbc.queryForMap("""
+                SELECT status, excluido_em, excluido_por
+                FROM catalogo_servico
+                WHERE id = ?
+                """, fixture.serviceId()))
+                .containsEntry("status", "EXCLUIDO")
+                .containsEntry("excluido_por", fixture.actorId())
+                .containsKey("excluido_em");
+        assertThat(jdbc.queryForMap("""
+                SELECT status_validacao, revenue_coverage_code,
+                       revenue_evidence_id, revenue_event_id, accepted_at,
+                       revenue_amount
+                FROM execucao_servico_rdo
+                WHERE id = ?
+                """, executionId))
+                .containsEntry("status_validacao", "REGISTRADA")
+                .containsEntry("revenue_coverage_code", "UNPRICED_REGISTERED")
+                .containsEntry("revenue_evidence_id", null)
+                .containsEntry("revenue_event_id", null)
+                .containsEntry("accepted_at", null)
+                .containsEntry("revenue_amount", new BigDecimal("0.00"));
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*)
+                FROM rdo_execucao_decisao
+                WHERE execution_id = ?
+                """, Integer.class, executionId)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*)
+                FROM cortex_evento_operacional
+                WHERE entidade_id = ?
+                  AND tipo_evento IN (
+                      'RDO_SERVICE_EXECUTED', 'RDO_EXECUTION_DECISION'
+                  )
+                """, Integer.class, executionId)).isZero();
+    }
+
+    /**
+     * A edição comum e a decisão financeira disputam o mesmo RDO. Quando a
+     * decisão chegou primeiro, o PUT que já estava em voo só pode continuar
+     * depois de enxergar a evidência/decisão recém-gravada; jamais pode
+     * reabrir o documento para RASCUNHO ou sobrescrever o cabeçalho.
+     */
+    @Test
+    void concurrentFinancialDecisionPreventsWaitingGenericDraftUpdateFromReopeningRdo()
+            throws Exception {
+        Fixture fixture = fixture("RACE-DECISION-DRAFT-UPDATE");
+        String executionId = id();
+        replace(
+                fixture.rdoId(), fixture.obraId(), List.of(item(
+                        executionId, fixture.serviceId(), fixture.priceId(),
+                        "2.500", "M2", "REGISTRADA", false, false,
+                        "Medição concorrente"
+                ))
+        );
+        jdbc.update(
+                "UPDATE rdo SET observacoes = 'antes da decisão' WHERE id = ?",
+                fixture.rdoId()
+        );
+        markRdoSent(fixture);
+        long baseVersion = rdoVersion(fixture.rdoId());
+        RdoExecutionDecisionService decision = decisionService(fixture);
+        RdoDraftUpdateService draftUpdate = draftUpdateService();
+        RdoCreateRequest draftRequest = genericDraftRequest(fixture);
+        CountDownLatch catalogLocked = new CountDownLatch(1);
+        CountDownLatch allowDecisionCommit = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(3)) {
+            Future<?> catalogLockOwner = executor.submit(() ->
+                    transactions.executeWithoutResult(ignored -> {
+                        String status = jdbc.query(
+                                "SELECT status FROM catalogo_servico "
+                                        + "WHERE id = ? FOR UPDATE",
+                                rs -> rs.next() ? rs.getString("status") : null,
+                                fixture.serviceId()
+                        );
+                        assertThat(status).isEqualTo("ACTIVE");
+                        catalogLocked.countDown();
+                        awaitLatch(allowDecisionCommit);
+                    })
+            );
+            awaitLatch(catalogLocked);
+
+            Future<?> validation = executor.submit(() ->
+                    transactions.executeWithoutResult(ignored -> decision.decidir(
+                            fixture.rdoId(),
+                            executionId,
+                            new RdoExecutionDecisionRequest(
+                                    "VALIDAR", null, baseVersion, id()
+                            ),
+                            RdoExecutionDecisionAudit.online(fixture.actorId(), id())
+                    ))
+            );
+            awaitCatalogServiceValidationRowLock(validation);
+
+            Future<?> genericUpdate = executor.submit(() ->
+                    assertThatThrownBy(() -> transactions.executeWithoutResult(
+                            ignored -> draftUpdate.atualizarRascunho(
+                                    fixture.rdoId(), draftRequest
+                            )
+                    )).isInstanceOf(ResponseStatusException.class)
+                            .satisfies(error -> assertThat(
+                                    ((ResponseStatusException) error).getStatusCode().value()
+                            ).isEqualTo(409))
+            );
+            try {
+                awaitRdoRevenueAdvisoryLock(genericUpdate);
+                assertThat(genericUpdate.isDone()).isFalse();
+            } finally {
+                allowDecisionCommit.countDown();
+            }
+            catalogLockOwner.get(10, TimeUnit.SECONDS);
+            validation.get(10, TimeUnit.SECONDS);
+            genericUpdate.get(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(jdbc.queryForMap("""
+                SELECT status, observacoes
+                FROM rdo
+                WHERE id = ?
+                """, fixture.rdoId()))
+                .containsEntry("status", "ENVIADO")
+                .containsEntry("observacoes", "antes da decisão");
+        Map<String, Object> acceptedExecution = jdbc.queryForMap("""
+                SELECT status_validacao, revenue_coverage_code,
+                       revenue_evidence_id, revenue_event_id
+                FROM execucao_servico_rdo
+                WHERE id = ?
+                """, executionId);
+        assertThat(acceptedExecution)
+                .containsEntry("status_validacao", "VALIDADA")
+                .containsEntry("revenue_coverage_code", "ACCEPTED_EXACT");
+        assertThat(acceptedExecution.get("revenue_evidence_id")).isNotNull();
+        assertThat(acceptedExecution.get("revenue_event_id")).isNotNull();
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*)
+                FROM rdo_execucao_decisao
+                WHERE execution_id = ?
+                """, Integer.class, executionId)).isOne();
+    }
+
+    @Test
+    void legacyAcceptedEvidenceNeedsRevalidationBeforeItCountsAndPreservesItsFact()
+            throws Exception {
+        Fixture fixture = fixture("LEGACY-REVALIDATION");
+        String executionId = id();
+        insertAcceptedExecution(
+                fixture, executionId, "2.500", "10.0000", "25.00"
+        );
+        markRdoSent(fixture);
+
+        Map<String, Object> originalFact = jdbc.queryForMap("""
+                SELECT revenue_evidence_id, revenue_event_id, revenue_amount,
+                       unit_price_snapshot, price_version_id
+                FROM execucao_servico_rdo
+                WHERE id = ?
+                """, executionId);
+        RastreioReceitaService rastreio = new RastreioReceitaService(jdbc);
+        RastreioReceitaResponse before = rastreio.buscar(
+                Set.of(fixture.obraId()), fixture.obraId(), RDO_DATE, RDO_DATE
+        );
+        assertThat(before.evidenceCount()).isZero();
+        assertThat(before.totalRevenue()).isEqualByComparingTo("0.00");
+        assertThat(before.rows()).isEmpty();
+
+        transactions.executeWithoutResult(ignored -> decisionService(fixture)
+                .decidir(
+                        fixture.rdoId(),
+                        executionId,
+                        new RdoExecutionDecisionRequest(
+                                "VALIDAR", null, rdoVersion(fixture.rdoId()), id()
+                        ),
+                        RdoExecutionDecisionAudit.online(fixture.actorId(), id())
+                ));
+
+        assertThat(jdbc.queryForMap("""
+                SELECT decisao, review_mode
+                FROM rdo_execucao_decisao
+                WHERE execution_id = ?
+                """, executionId))
+                .containsEntry("decisao", "VALIDAR")
+                .containsEntry("review_mode", "LEGACY_REVALIDATION");
+        assertThat(jdbc.queryForMap("""
+                SELECT revenue_evidence_id, revenue_event_id, revenue_amount,
+                       unit_price_snapshot, price_version_id
+                FROM execucao_servico_rdo
+                WHERE id = ?
+                """, executionId)).isEqualTo(originalFact);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*)
+                FROM cortex_evento_operacional
+                WHERE entidade_id = ?
+                  AND tipo_evento = 'RDO_SERVICE_EXECUTED'
+                """, Integer.class, executionId)).isOne();
+
+        RastreioReceitaResponse after = rastreio.buscar(
+                Set.of(fixture.obraId()), fixture.obraId(), RDO_DATE, RDO_DATE
+        );
+        assertThat(after.evidenceCount()).isOne();
+        assertThat(after.totalRevenue()).isEqualByComparingTo("25.00");
+        assertThat(after.rows())
+                .extracting(RastreioReceitaResponse.RevenueEvidenceRow::executionId)
+                .containsExactly(executionId);
+    }
+
+    @Test
+    void validLegacyEvidenceCanBeRejectedWithoutMutatingItsHistoricalFact()
+            throws Exception {
+        Fixture fixture = fixture("LEGACY-REJECTION-VALID");
+        String executionId = id();
+        insertAcceptedExecution(
+                fixture, executionId, "1.500", "10.0000", "15.00"
+        );
+        markRdoSent(fixture);
+
+        Map<String, Object> originalFact = jdbc.queryForMap("""
+                SELECT status_validacao, revenue_coverage_code,
+                       revenue_evidence_id, revenue_event_id, revenue_amount
+                FROM execucao_servico_rdo
+                WHERE id = ?
+                """, executionId);
+        RastreioReceitaService rastreio = new RastreioReceitaService(jdbc);
+        RastreioReceitaPendenciasResponse before = rastreio.pendentes(
+                Set.of(fixture.obraId()), fixture.obraId()
+        );
+        assertThat(before.rows()).singleElement().satisfies(row -> {
+            assertThat(row.executionId()).isEqualTo(executionId);
+            assertThat(row.approvalState()).isEqualTo("LEGACY_UNVERIFIED");
+            assertThat(row.legacyEvidenceState()).isEqualTo("VERIFIABLE");
+        });
+
+        transactions.executeWithoutResult(ignored -> decisionService(fixture)
+                .decidir(
+                        fixture.rdoId(),
+                        executionId,
+                        new RdoExecutionDecisionRequest(
+                                "REJEITAR", "sem confirmação financeira",
+                                rdoVersion(fixture.rdoId()), id()
+                        ),
+                        RdoExecutionDecisionAudit.online(fixture.actorId(), id())
+                ));
+
+        assertThat(jdbc.queryForMap("""
+                SELECT decisao, review_mode
+                FROM rdo_execucao_decisao
+                WHERE execution_id = ?
+                """, executionId))
+                .containsEntry("decisao", "REJEITAR")
+                .containsEntry("review_mode", "LEGACY_REJECTION");
+        assertThat(jdbc.queryForMap("""
+                SELECT status_validacao, revenue_coverage_code,
+                       revenue_evidence_id, revenue_event_id, revenue_amount
+                FROM execucao_servico_rdo
+                WHERE id = ?
+                """, executionId)).isEqualTo(originalFact);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*)
+                FROM cortex_evento_operacional
+                WHERE entidade_id = ?
+                  AND tipo_evento = 'RDO_SERVICE_EXECUTED'
+                """, Integer.class, executionId)).isOne();
+        assertThat(rastreio.buscar(
+                Set.of(fixture.obraId()), fixture.obraId(), RDO_DATE, RDO_DATE
+        ).rows()).isEmpty();
+        assertThat(rastreio.pendentes(
+                Set.of(fixture.obraId()), fixture.obraId()
+        ).rows()).isEmpty();
+    }
+
+    @Test
+    void invalidLegacyEvidenceCanOnlyBeRejectedAndItsUnpricedRowStaysHistorical()
+            throws Exception {
+        Fixture fixture = fixture("LEGACY-REJECTION-INVALID");
+        String executionId = id();
+        insertInvalidLegacyExecution(fixture, executionId);
+        markRdoSent(fixture);
+
+        RastreioReceitaService rastreio = new RastreioReceitaService(jdbc);
+        RastreioReceitaPendenciasResponse before = rastreio.pendentes(
+                Set.of(fixture.obraId()), fixture.obraId()
+        );
+        assertThat(before.rows()).singleElement().satisfies(row -> {
+            assertThat(row.executionId()).isEqualTo(executionId);
+            assertThat(row.approvalState()).isEqualTo("LEGACY_UNVERIFIED");
+            assertThat(row.legacyEvidenceState()).isEqualTo("INVALID");
+        });
+
+        transactions.executeWithoutResult(ignored -> decisionService(fixture)
+                .decidir(
+                        fixture.rdoId(),
+                        executionId,
+                        new RdoExecutionDecisionRequest(
+                                "REJEITAR", "fato histórico incompleto",
+                                rdoVersion(fixture.rdoId()), id()
+                        ),
+                        RdoExecutionDecisionAudit.online(fixture.actorId(), id())
+                ));
+
+        assertThat(jdbc.queryForMap("""
+                SELECT decisao, review_mode
+                FROM rdo_execucao_decisao
+                WHERE execution_id = ?
+                """, executionId))
+                .containsEntry("decisao", "REJEITAR")
+                .containsEntry("review_mode", "LEGACY_REJECTION");
+        assertThat(jdbc.queryForMap("""
+                SELECT status_validacao, revenue_coverage_code,
+                       revenue_evidence_id, revenue_event_id, revenue_amount
+                FROM execucao_servico_rdo
+                WHERE id = ?
+                """, executionId))
+                .containsEntry("status_validacao", "VALIDADA")
+                .containsEntry("revenue_coverage_code", "HISTORICAL_UNPRICED")
+                .containsEntry("revenue_amount", new BigDecimal("0.00"))
+                .containsEntry("revenue_evidence_id", null)
+                .containsEntry("revenue_event_id", null);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*)
+                FROM cortex_evento_operacional
+                WHERE entidade_id = ?
+                  AND tipo_evento = 'RDO_SERVICE_EXECUTED'
+                """, Integer.class, executionId)).isZero();
+        assertThat(rastreio.buscar(
+                Set.of(fixture.obraId()), fixture.obraId(), RDO_DATE, RDO_DATE
+        ).rows()).isEmpty();
+        assertThat(rastreio.pendentes(
+                Set.of(fixture.obraId()), fixture.obraId()
+        ).rows()).isEmpty();
+    }
+
+    @Test
+    void canonicalOfflineDecisionBindsItsImmutableAuditBeforePersistingTheReceipt()
+            throws Exception {
+        Fixture fixture = fixture("OFFLINE-DECISION-AUDIT");
+        String deviceId = id();
+        String executionId = id();
+        replace(
+                fixture.rdoId(), fixture.obraId(), List.of(item(
+                        executionId, fixture.serviceId(), fixture.priceId(),
+                        "2.500", "M2", "REGISTRADA", false, false,
+                        "Medição offline"
+                ))
+        );
+        jdbc.update(
+                "UPDATE rdo SET status = 'ENVIADO' WHERE id = ?",
+                fixture.rdoId()
+        );
+        jdbc.update(
+                """
+                INSERT INTO sync_dispositivo (id, usuario_id, ativo)
+                VALUES (?, ?, TRUE)
+                """,
+                deviceId, fixture.actorId()
+        );
+        jdbc.update(
+                "INSERT INTO sync_estado_dispositivo (dispositivo_id) VALUES (?)",
+                deviceId
+        );
+        jdbc.update(
+                """
+                INSERT INTO cortex_estado_entidade (
+                    tipo_entidade, entidade_id, versao_entidade
+                ) VALUES ('RDO', ?, 0)
+                ON CONFLICT (tipo_entidade, entidade_id) DO NOTHING
+                """,
+                fixture.rdoId()
+        );
+
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        when(currentUser.requireUserId()).thenReturn(fixture.actorId());
+        when(currentUser.allowedObraIds(fixture.actorId()))
+                .thenReturn(Optional.of(Set.of(fixture.obraId())));
+        FinancialAccessService financialAccess = mock(FinancialAccessService.class);
+        CortexOperationalMemoryService memory = memoryService();
+        RdoQueryService query = new RdoQueryService(
+                jdbc,
+                detailService(),
+                new com.projeto.cortex.rdos.RdoAttachmentService(jdbc, mapper)
+        );
+        RdoExecutionDecisionService decisions = new RdoExecutionDecisionService(
+                jdbc,
+                query,
+                financialAccess,
+                mock(ObraOperabilityGuard.class),
+                mock(PrevisaoFinanceiraService.class),
+                new RevenueOntologyPublisher(memory),
+                memory
+        );
+        RdoSyncOperationHandler handler = new RdoSyncOperationHandler(
+                jdbc,
+                mapper,
+                mock(RdoService.class),
+                mock(RdoDraftUpdateService.class),
+                mock(RdoWorkflowService.class),
+                query,
+                currentUser,
+                decisions
+        );
+        SyncService sync = new SyncService(
+                jdbc,
+                mapper,
+                transactions,
+                new SyncOperationRegistry(List.of(handler)),
+                currentUser,
+                financialAccess
+        );
+        long baseVersion = jdbc.queryForObject(
+                """
+                SELECT COALESCE(versao_entidade, 0)
+                FROM cortex_estado_entidade
+                WHERE tipo_entidade = 'RDO' AND entidade_id = ?
+                """,
+                Long.class,
+                fixture.rdoId()
+        );
+        ObjectNode payload = mapper.createObjectNode()
+                .put("decisao", "VALIDAR")
+                .put("executionId", executionId);
+        CanonicalDecisionMutation mutation = canonicalDecisionMutation(
+                fixture,
+                deviceId,
+                executionId,
+                baseVersion,
+                payload
+        );
+
+        SyncPushResponse response = sync.push(new SyncPushRequest(
+                deviceId,
+                List.of(mutation.request())
+        ));
+
+        assertThat(response.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("APLICADA");
+            assertThat(result.erro()).isNull();
+        });
+        Map<String, Object> decisionEvent = jdbc.queryForMap("""
+                SELECT event.usuario_id,
+                       event.dispositivo_id,
+                       event.correlacao_id,
+                       event.causacao_id,
+                       event.client_mutation_id,
+                       event.evento_cliente_id,
+                       event.schema_version,
+                       event.ocorrido_em
+                FROM cortex_evento_operacional event
+                JOIN rdo_execucao_decisao decision
+                  ON decision.evento_id = event.id
+                WHERE decision.execution_id = ?
+                """, executionId);
+        assertThat(decisionEvent)
+                .containsEntry("usuario_id", fixture.actorId())
+                .containsEntry("dispositivo_id", deviceId)
+                .containsEntry("correlacao_id", mutation.correlationId())
+                .containsEntry("causacao_id", mutation.causationId())
+                .containsEntry("client_mutation_id", mutation.mutationId())
+                .containsEntry("evento_cliente_id", mutation.clientEventId())
+                .containsEntry("schema_version", 13);
+        assertThat(((Timestamp) decisionEvent.get("ocorrido_em"))
+                .toLocalDateTime())
+                .isEqualTo(LocalDateTime.of(2026, 8, 15, 12, 3));
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*)
+                FROM sync_mutacao_cliente
+                WHERE proprietario_id = ?
+                  AND client_mutation_id = ?
+                  AND status = 'APLICADA'
+                """, Integer.class, fixture.actorId(), mutation.mutationId()))
+                .isOne();
+    }
+
+    @Test
+    void rdoResponseExposesTheCanonicalEntityVersionNotThePhysicalRowVersion() {
+        Fixture fixture = fixture("CANONICAL-RDO-VERSION");
+        jdbc.update(
+                "UPDATE rdo SET versao_linha = 7 WHERE id = ?", fixture.rdoId()
+        );
+        jdbc.update(
+                """
+                INSERT INTO cortex_estado_entidade (
+                    tipo_entidade, entidade_id, versao_entidade
+                ) VALUES ('RDO', ?, 19)
+                """,
+                fixture.rdoId()
+        );
+
+        RdoResponse response = new RdoQueryService(
+                jdbc,
+                detailService(),
+                new com.projeto.cortex.rdos.RdoAttachmentService(jdbc, mapper)
+        ).buscarPorId(fixture.rdoId());
+
+        assertThat(response.versaoEntidade()).isEqualTo(19L);
     }
 
     @Test
@@ -799,6 +1505,67 @@ class PostgresqlRevenueEvidenceIT {
         );
     }
 
+    private static RdoExecutionDecisionService decisionService(Fixture fixture) {
+        RdoQueryService query = mock(RdoQueryService.class);
+        when(query.buscarPorId(fixture.rdoId())).thenReturn(mock(RdoResponse.class));
+        CortexOperationalMemoryService memory = memoryService();
+        return new RdoExecutionDecisionService(
+                jdbc,
+                query,
+                mock(FinancialAccessService.class),
+                mock(ObraOperabilityGuard.class),
+                mock(PrevisaoFinanceiraService.class),
+                new RevenueOntologyPublisher(memory),
+                memory
+        );
+    }
+
+    private static RdoDraftUpdateService draftUpdateService() {
+        return new RdoDraftUpdateService(
+                jdbc,
+                mock(RdoQueryService.class),
+                mock(RdoAssetEligibilityService.class),
+                mock(RdoMemoryPublisher.class),
+                new RdoChangeAuditService(jdbc),
+                mock(RdoOperationalDetailService.class),
+                mock(RdoAttachmentService.class),
+                mock(RdoOperationalEventService.class),
+                mock(PrevisaoFinanceiraService.class),
+                mock(ObraOperabilityGuard.class)
+        );
+    }
+
+    private static RdoCreateRequest genericDraftRequest(Fixture fixture)
+            throws Exception {
+        return mapper.readValue("""
+                {
+                  "id":"%s",
+                  "obraId":"%s",
+                  "dataRdo":"2026-07-22",
+                  "turno":"DIURNO",
+                  "observacoes":"tentativa de editar após decisão"
+                }
+                """.formatted(fixture.rdoId(), fixture.obraId()), RdoCreateRequest.class);
+    }
+
+    private static void markRdoSent(Fixture fixture) {
+        jdbc.update(
+                "UPDATE rdo SET status = 'ENVIADO', cancelado_em = NULL WHERE id = ?",
+                fixture.rdoId()
+        );
+    }
+
+    private static long rdoVersion(String rdoId) {
+        return jdbc.queryForObject("""
+                SELECT COALESCE((
+                    SELECT versao_entidade
+                    FROM cortex_estado_entidade
+                    WHERE tipo_entidade = 'RDO'
+                      AND entidade_id = ?
+                ), 0)
+                """, Long.class, rdoId);
+    }
+
     private static Fixture fixture(String suffix) {
         return fixture(suffix, "10.0000");
     }
@@ -917,6 +1684,25 @@ class PostgresqlRevenueEvidenceIT {
                 new BigDecimal(revenue), evidenceId, eventId);
     }
 
+    private static void insertInvalidLegacyExecution(
+            Fixture fixture,
+            String executionId
+    ) {
+        jdbc.update("""
+                INSERT INTO execucao_servico_rdo (
+                    id, rdo_id, obra_id, servico_nome, service_id,
+                    quantidade_executada, unidade_medida, data_execucao,
+                    status_validacao, estado_receita, retrabalho,
+                    producao_rejeitada, fonte, chave_execucao, revenue_amount,
+                    revenue_coverage_code
+                ) VALUES (?, ?, ?, 'Incomplete legacy execution', ?,
+                          1.000, 'M2', ?, 'VALIDADA', 'PRODUCAO_VALIDADA',
+                          FALSE, FALSE, 'LEGACY_SQL_TEST', ?, 0,
+                          'HISTORICAL_UNPRICED')
+                """, executionId, fixture.rdoId(), fixture.obraId(),
+                fixture.serviceId(), RDO_DATE, executionKey(executionId));
+    }
+
     private static int executionCount(String executionId) {
         return jdbc.queryForObject(
                 "SELECT count(*) FROM execucao_servico_rdo WHERE id = ?",
@@ -927,6 +1713,58 @@ class PostgresqlRevenueEvidenceIT {
     private static void assertBlockedOnAdvisoryLock(Future<?> future) {
         assertThatThrownBy(() -> future.get(300, TimeUnit.MILLISECONDS))
                 .isInstanceOf(TimeoutException.class);
+    }
+
+    private static void awaitCatalogServiceValidationRowLock(Future<?> validation)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (validation.isDone()) {
+                throw new AssertionError(
+                        "RDO validation finished before waiting for the catalog lock."
+                );
+            }
+            Integer waiters = jdbc.queryForObject("""
+                    SELECT count(*)
+                    FROM pg_stat_activity
+                    WHERE pid <> pg_backend_pid()
+                      AND query LIKE '%FROM catalogo_servico%FOR UPDATE%'
+                      AND wait_event_type = 'Lock'
+                    """, Integer.class);
+            if (waiters != null && waiters > 0) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError(
+                "RDO validation did not wait for the catalog service row lock."
+        );
+    }
+
+    private static void awaitRdoRevenueAdvisoryLock(Future<?> update)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (update.isDone()) {
+                throw new AssertionError(
+                        "Generic RDO update finished before waiting for the decision."
+                );
+            }
+            Integer waiters = jdbc.queryForObject("""
+                    SELECT count(*)
+                    FROM pg_stat_activity
+                    WHERE pid <> pg_backend_pid()
+                      AND query LIKE '%pg_advisory_xact_lock%'
+                      AND wait_event_type = 'Lock'
+                    """, Integer.class);
+            if (waiters != null && waiters > 0) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError(
+                "Generic RDO update did not wait for the financial decision lock."
+        );
     }
 
     private static void awaitLatch(CountDownLatch latch) {
@@ -1074,6 +1912,77 @@ class PostgresqlRevenueEvidenceIT {
 
     private static String id() {
         return UUID.randomUUID().toString();
+    }
+
+    private static CanonicalDecisionMutation canonicalDecisionMutation(
+            Fixture fixture,
+            String deviceId,
+            String executionId,
+            long baseVersion,
+            ObjectNode payload
+    ) throws Exception {
+        String mutationId = id();
+        String correlationId = id();
+        String causationId = id();
+        String clientEventId = id();
+        SyncPushRequest.MutacaoCliente request = new SyncPushRequest.MutacaoCliente(
+                mutationId,
+                "RDO",
+                fixture.rdoId(),
+                "DECIDIR_EXECUCAO_SERVICO_RDO",
+                baseVersion,
+                payload,
+                LocalDateTime.of(2026, 8, 15, 12, 3),
+                correlationId,
+                13,
+                deviceId,
+                fixture.actorId(),
+                fixture.obraId(),
+                "RDO",
+                fixture.rdoId(),
+                "TRANSITION",
+                baseVersion,
+                List.of("decisao", "executionId"),
+                "2026-08-15T12:03:00.000Z",
+                new SyncPushRequest.MutationTrace(
+                        fixture.actorId(),
+                        deviceId,
+                        List.of(fixture.obraId()),
+                        correlationId,
+                        causationId,
+                        clientEventId,
+                        sha256(mapper.writeValueAsString(payload))
+                ),
+                new SyncPushRequest.FieldPatch(
+                        payload.deepCopy(),
+                        mapper.createObjectNode()
+                ),
+                List.of(),
+                List.of()
+        );
+        return new CanonicalDecisionMutation(
+                request,
+                mutationId,
+                correlationId,
+                causationId,
+                clientEventId
+        );
+    }
+
+    private static String sha256(String value) throws Exception {
+        return HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256")
+                        .digest(value.getBytes(StandardCharsets.UTF_8))
+        );
+    }
+
+    private record CanonicalDecisionMutation(
+            SyncPushRequest.MutacaoCliente request,
+            String mutationId,
+            String correlationId,
+            String causationId,
+            String clientEventId
+    ) {
     }
 
     private record Fixture(

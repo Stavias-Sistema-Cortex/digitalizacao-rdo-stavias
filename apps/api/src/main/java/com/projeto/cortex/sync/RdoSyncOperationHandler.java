@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionAudit;
+import com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionRequest;
+import com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoPrintableCollectionLimits;
@@ -12,6 +15,9 @@ import com.projeto.cortex.rdos.RdoQueryService;
 import com.projeto.cortex.rdos.RdoResponse;
 import com.projeto.cortex.rdos.RdoService;
 import com.projeto.cortex.rdos.RdoWorkflowService;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,7 +32,8 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
             "ATUALIZAR_RDO_RASCUNHO",
             "ENVIAR_RDO",
             "CANCELAR_RDO",
-            "RESTAURAR_RDO"
+            "RESTAURAR_RDO",
+            "DECIDIR_EXECUCAO_SERVICO_RDO"
     );
 
     private final JdbcTemplate jdbcTemplate;
@@ -36,6 +43,7 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
     private final RdoWorkflowService rdoWorkflowService;
     private final RdoQueryService rdoQueryService;
     private final CurrentUserService currentUserService;
+    private final RdoExecutionDecisionService executionDecisionService;
 
     public RdoSyncOperationHandler(
             JdbcTemplate jdbcTemplate,
@@ -44,7 +52,8 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
             RdoDraftUpdateService rdoDraftUpdateService,
             RdoWorkflowService rdoWorkflowService,
             RdoQueryService rdoQueryService,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            RdoExecutionDecisionService executionDecisionService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -53,6 +62,7 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
         this.rdoWorkflowService = rdoWorkflowService;
         this.rdoQueryService = rdoQueryService;
         this.currentUserService = currentUserService;
+        this.executionDecisionService = executionDecisionService;
     }
 
     @Override
@@ -81,6 +91,9 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
             case "ENVIAR_RDO" -> send(mutation);
             case "CANCELAR_RDO" -> cancel(mutation);
             case "RESTAURAR_RDO" -> restore(mutation);
+            case "DECIDIR_EXECUCAO_SERVICO_RDO" -> decideExecution(
+                    mutation, context
+            );
             default -> throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Operação RDO não suportada."
@@ -89,7 +102,9 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
         return new AppliedSyncMutation(
                 entityType(),
                 response.id(),
-                objectMapper.valueToTree(response)
+                objectMapper.valueToTree(response),
+                null,
+                "DECIDIR_EXECUCAO_SERVICO_RDO".equals(mutation.operacao())
         );
     }
 
@@ -123,7 +138,11 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
         RdoCreateRequest request = toValue(payload, RdoCreateRequest.class);
         currentUserService.requireWorksiteAccess(request.obraId());
         RdoPrintableCollectionLimits.requireWithinTemplateCapacity(request);
-        return rdoDraftUpdateService.atualizarRascunho(entityId, request);
+        return rdoDraftUpdateService.atualizarRascunho(
+                entityId,
+                request,
+                mutation.baseVersao()
+        );
     }
 
     private RdoResponse send(SyncPushRequest.MutacaoCliente mutation) {
@@ -157,6 +176,46 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
         return rdoWorkflowService.restaurar(entityId);
     }
 
+    private RdoResponse decideExecution(
+            SyncPushRequest.MutacaoCliente mutation,
+            SyncMutationContext context
+    ) {
+        String rdoId = requireEntityId(mutation);
+        currentUserService.requireRdoAccess(rdoId);
+        if (context == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Contexto de sincronização é obrigatório para a decisão financeira."
+            );
+        }
+
+        ObjectNode payload = requireObjectPayload(mutation);
+        String executionId = requireText(payload, "executionId");
+        RdoExecutionDecisionRequest request = new RdoExecutionDecisionRequest(
+                optionalText(payload, "decisao"),
+                optionalText(payload, "justificativa"),
+                mutation.baseVersao(),
+                mutation.clientMutationId()
+        );
+        return executionDecisionService.decidir(
+                rdoId,
+                executionId,
+                request,
+                new RdoExecutionDecisionAudit(
+                        context.actorId(),
+                        context.deviceId(),
+                        mutation.trace().correlationId(),
+                        "OFFLINE",
+                        mutation.trace().causationId(),
+                        mutation.trace().ontologyEventId(),
+                        LocalDateTime.ofInstant(
+                                Instant.parse(mutation.occurredAt()),
+                                ZoneOffset.UTC
+                        )
+                )
+        );
+    }
+
     private ObjectNode requireObjectPayload(SyncPushRequest.MutacaoCliente mutation) {
         if (mutation.payload() instanceof ObjectNode objectPayload) {
             return objectPayload;
@@ -178,6 +237,31 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
             );
         }
         return mutation.entidadeId().strip();
+    }
+
+    private String requireText(ObjectNode payload, String field) {
+        String value = optionalText(payload, field);
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    field + " é obrigatório."
+            );
+        }
+        return value.strip();
+    }
+
+    private String optionalText(ObjectNode payload, String field) {
+        JsonNode value = payload.get(field);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.isTextual()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    field + " deve ser texto."
+            );
+        }
+        return value.textValue();
     }
 
     private void putNullable(

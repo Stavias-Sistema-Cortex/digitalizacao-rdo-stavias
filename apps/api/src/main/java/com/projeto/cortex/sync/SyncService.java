@@ -114,7 +114,8 @@ public class SyncService {
                     "ARQUIVAR_OBRA",
                     "RESTAURAR_OBRA",
                     "CANCELAR_RDO",
-                    "RESTAURAR_RDO"
+                    "RESTAURAR_RDO",
+                    "DECIDIR_EXECUCAO_SERVICO_RDO"
             );
     private static final Map<String, String> CANONICAL_OPERATION_BY_TRANSPORT = Map.ofEntries(
             Map.entry("ATUALIZAR_OBRA", "UPDATE"),
@@ -127,6 +128,7 @@ public class SyncService {
             Map.entry("ENVIAR_RDO", "TRANSITION"),
             Map.entry("CANCELAR_RDO", "DELETE"),
             Map.entry("RESTAURAR_RDO", "TRANSITION"),
+            Map.entry("DECIDIR_EXECUCAO_SERVICO_RDO", "TRANSITION"),
             Map.entry("CRIAR_TAREFA", "CREATE"),
             Map.entry("ATUALIZAR_TAREFA", "UPDATE"),
             Map.entry("CONCLUIR_TAREFA", "TRANSITION"),
@@ -818,7 +820,7 @@ public class SyncService {
                 applied.entityType(),
                 applied.entityId()
         );
-        if (isCanonical(mutacao)) {
+        if (isCanonical(mutacao) && !applied.canonicalEventAlreadyBound()) {
             vincularEventoCanonico(
                     commitSeq,
                     dispositivoId,

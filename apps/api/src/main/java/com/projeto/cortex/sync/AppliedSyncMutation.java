@@ -7,7 +7,8 @@ public record AppliedSyncMutation(
         String entityType,
         String entityId,
         JsonNode result,
-        AuthoritativeEvent authoritativeEvent
+        AuthoritativeEvent authoritativeEvent,
+        boolean canonicalEventAlreadyBound
 ) {
 
     public AppliedSyncMutation(
@@ -15,7 +16,16 @@ public record AppliedSyncMutation(
             String entityId,
             JsonNode result
     ) {
-        this(entityType, entityId, result, null);
+        this(entityType, entityId, result, null, false);
+    }
+
+    public AppliedSyncMutation(
+            String entityType,
+            String entityId,
+            JsonNode result,
+            AuthoritativeEvent authoritativeEvent
+    ) {
+        this(entityType, entityId, result, authoritativeEvent, false);
     }
 
     public record AuthoritativeEvent(

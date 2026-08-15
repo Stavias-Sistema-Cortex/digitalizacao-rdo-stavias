@@ -512,7 +512,8 @@ class PostgresqlOfflineGraphFlowIT {
                 mock(RdoDraftUpdateService.class),
                 mock(RdoWorkflowService.class),
                 query,
-                currentUser
+                currentUser,
+                mock(com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService.class)
         );
         SyncService service = new SyncService(
                 jdbc,

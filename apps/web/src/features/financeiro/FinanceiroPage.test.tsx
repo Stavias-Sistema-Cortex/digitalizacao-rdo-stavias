@@ -22,6 +22,7 @@ const {
   listOutboxMutations,
   listObrasLocais,
   pdorSections,
+  pendingValidationMounts,
   servicePriceMounts,
   revenueMounts,
   resolveFinanceCapabilities,
@@ -30,6 +31,7 @@ const {
   listOutboxMutations: vi.fn(),
   listObrasLocais: vi.fn(),
   pdorSections: vi.fn(),
+  pendingValidationMounts: vi.fn(),
   servicePriceMounts: vi.fn(),
   revenueMounts: vi.fn(),
   resolveFinanceCapabilities: vi.fn(),
@@ -104,6 +106,19 @@ vi.mock("./FinanceRevenueTracePage", async () => {
     },
   };
 });
+
+vi.mock("./FinanceRevenuePendingValidationPanel", () => ({
+  FinanceRevenuePendingValidationPanel: (props: {
+    obraId: string;
+    canApprove: boolean;
+    onDecisionApplied?: () => void;
+  }) => {
+    pendingValidationMounts(props);
+    return <section data-testid="pending-revenue-validation">
+      Fila de validação · {props.obraId}
+    </section>;
+  },
+}));
 
 vi.mock("./ServicePriceCatalogPage", async () => {
   const { useEffect } = await import("react");
@@ -259,6 +274,19 @@ describe("FinanceiroPage: superfície de receita", () => {
       "Catálogo de preços versionados",
     )).toBeVisible();
     expect(screen.queryByTestId("revenue-trace")).not.toBeInTheDocument();
+  });
+
+  it("expõe a fila de validação apenas no escopo concreto da obra", async () => {
+    renderFinanceiro("/financeiro?obra=obra-1&secao=receita");
+
+    expect(await screen.findByTestId("pending-revenue-validation"))
+      .toHaveTextContent("obra-1");
+    expect(pendingValidationMounts).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        obraId: "obra-1",
+        canApprove: false,
+      }),
+    );
   });
 
   it("revalida o demonstrativo quando a atualização do header é acionada", async () => {

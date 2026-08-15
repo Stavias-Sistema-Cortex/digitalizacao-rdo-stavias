@@ -53,6 +53,10 @@ vi.mock("../../lib/db/rdoRepository", () => ({
  */
 vi.mock("../../lib/db/localRdoService", () => ({
   rascunhoDifereDoQueEstaGravado: mocks.rascunhoDiferente,
+  servicoExecutadoNeedsCatalogSelection: (item: {
+    servicoNome: string;
+    serviceId: string;
+  }) => item.servicoNome.trim() !== "" && item.serviceId.trim() === "",
 }));
 
 vi.mock("./useRdoLocalPersistence", () => ({

@@ -550,6 +550,105 @@ class PostgresqlPdorRevenueEvidenceIT {
     }
 
     /*
+     * Um rascunho pode ter todos os campos preenchidos no aparelho, mas ainda
+     * não é um fato operacional. Se ele entrasse aqui, apenas salvar uma
+     * edição local mudaria avanço, clima, material, equipamento, atraso,
+     * sincronização, séries históricas e a lista de evidências do PDOR.
+     */
+    @Test
+    void rascunhoComDadosOperacionaisNaoMudaAsEntradasDoPdor() {
+        Obra obra = Obra.criar(
+                "PDOR-RASCUNHO-FORA", null, null, "Obra PDOR rascunho",
+                null, null, null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+        moverRdoBaseParaForaDaSemanaDaProgramacao(fixture);
+        inserirProgramacaoComArea(obra.getId(), REFERENCE_DATE.minusDays(1));
+
+        PdorInputBundle antes = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+        inserirRdoOperacional(fixture, "RASCUNHO", 2501L);
+
+        PdorInputBundle depois = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+
+        assertThat(depois).isEqualTo(antes);
+    }
+
+    @Test
+    void rdoEnviadoComDadosOperacionaisAlimentaAsEntradasDoPdor() {
+        Obra obra = Obra.criar(
+                "PDOR-ENVIADO-CONTA", null, null, "Obra PDOR enviada",
+                null, null, null, null, null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+        moverRdoBaseParaForaDaSemanaDaProgramacao(fixture);
+        inserirProgramacaoComArea(obra.getId(), REFERENCE_DATE.minusDays(1));
+        OperationalRdo enviado = inserirRdoOperacional(fixture, "ENVIADO", 2601L);
+
+        PdorInputBundle input = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+
+        assertThat(input.inputs())
+                .containsEntry("rdoRows", 2)
+                .containsEntry("weatherObservationCount", 1)
+                .containsEntry("delayedRdos", 0)
+                .containsEntry("pendingSyncEvents", 1);
+        assertThat((BigDecimal) input.inputs().get("rainfallMmObserved"))
+                .isEqualByComparingTo("12.500");
+        assertThat((BigDecimal) input.inputs().get("expectedMaterialConsumption"))
+                .isEqualByComparingTo("10.000");
+        assertThat((BigDecimal) input.inputs().get("actualMaterialConsumption"))
+                .isEqualByComparingTo("12.000");
+        assertThat((BigDecimal) input.inputs().get("plannedEquipmentHours30d"))
+                .isEqualByComparingTo("4.000");
+        assertThat((BigDecimal) input.inputs().get("reportedExecutedQuantity"))
+                .isEqualByComparingTo("9.000");
+        assertThat(input.historicalSeries().productivityLossWeekly())
+                .containsExactly(0.8d);
+        assertThat(input.historicalSeries().materialOverconsumptionWeekly())
+                .containsExactly(0.2d);
+        assertThat(input.evidenceReferences())
+                .extracting(PdorEvidenceReference::entityId)
+                .contains(enviado.rdoId(), enviado.executionId(), enviado.eventId());
+    }
+
+    @Test
+    void evidenciaLegadaSemDecisaoFinanceiraNaoFormaReceitaNemPdor() {
+        Obra obra = Obra.criar(
+                "PDOR-LEGADO-SEM-DECISAO", null, null,
+                "Obra PDOR legado sem decisão", null, null, null, null,
+                null, "ATIVA", "TEST", null, null
+        );
+        Fixture fixture = fixture(obra);
+        Accepted legacy = legacyAcceptedExecution(
+                fixture, "2.000", "250.00", 2701L
+        );
+        jdbc.update("""
+                UPDATE cortex_evento_commit_sequence
+                SET ultima_commit_seq = 2701
+                WHERE id = 1
+                """);
+
+        PdorInputBundle input = new RealPdorInputLoader(jdbc)
+                .load(obra, REFERENCE_DATE);
+
+        assertThat(input.canCalculate()).isFalse();
+        assertThat(input.revenueEvidenceIds()).isEmpty();
+        assertThat(input.revenueCoverageCode()).isEqualTo("NO_ACCEPTED_EVIDENCE");
+        assertThat(input.sourceValues().measuredRevenue()).isNull();
+        assertThat(input.sourceValues().validatedRevenue()).isNull();
+        assertThat(input.inputs())
+                .containsEntry("acceptedRevenueEvidenceCount", 0)
+                // A linha continua sendo produção publicada; só a decisão
+                // financeira falta. Não pode parecer cobertura completa.
+                .containsEntry("eligibleRevenueExecutionCount", 1);
+        assertThat(input.evidenceReferences())
+                .extracting(PdorEvidenceReference::entityId)
+                .contains(legacy.executionId());
+    }
+
+    /*
      * Apagar o RDO tira do PDOR o que ele apontou.
      *
      * Cancelar marca `rdo.cancelado_em` e não toca nas linhas de execução —
@@ -791,6 +890,91 @@ class PostgresqlPdorRevenueEvidenceIT {
                 retrabalho, producaoRejeitada, cancelada, key(executionId));
     }
 
+    private static void inserirProgramacaoComArea(String obraId, LocalDate data) {
+        jdbc.update("""
+                INSERT INTO programacao_operacional (
+                    id, obra_id, data_programacao, area_m2, status,
+                    fonte_criacao, chave_negocio
+                ) VALUES (?, ?, ?, 100.000, 'PLANEJADA', 'PDOR_IT', ?)
+                """, id(), obraId, data, key("programacao-" + obraId));
+    }
+
+    private static void moverRdoBaseParaForaDaSemanaDaProgramacao(Fixture fixture) {
+        jdbc.update(
+                "UPDATE rdo SET data_rdo = ? WHERE id = ?",
+                REFERENCE_DATE.minusDays(14), fixture.rdoId()
+        );
+    }
+
+    private static OperationalRdo inserirRdoOperacional(
+            Fixture fixture,
+            String status,
+            long commitSequence
+    ) {
+        String rdoId = id();
+        LocalDate data = REFERENCE_DATE.minusDays(1);
+        jdbc.update("""
+                INSERT INTO rdo (
+                    id, obra_id, numero_rdo, data_rdo, status, observacoes,
+                    condicao_manha, pluviometria_mm
+                ) VALUES (?, ?, ?, ?, ?, 'Interferência operacional.',
+                          'Chuva leve', 12.500)
+                """, rdoId, fixture.obraId(), "RDO-OPERACIONAL-" + rdoId,
+                data, status);
+        jdbc.update("""
+                INSERT INTO rdo_controle_geometrico (
+                    id, rdo_id, area_m2, volume_m3, massa_tonelada
+                ) VALUES (?, ?, 20.000, 2.000, 3.000)
+                """, id(), rdoId);
+        jdbc.update("""
+                INSERT INTO rdo_material (
+                    id, rdo_id, material_nome, unidade,
+                    quantidade_prevista, quantidade_aplicada
+                ) VALUES (?, ?, 'CBUQ teste', 't', 10.000, 12.000)
+                """, id(), rdoId);
+        jdbc.update("""
+                INSERT INTO rdo_equipamento (
+                    id, rdo_id, descricao, quantidade, hora_inicio, hora_fim
+                ) VALUES (?, ?, 'Fresadora teste', 2.000, '08:00', '10:00')
+                """, id(), rdoId);
+
+        String executionId = id();
+        jdbc.update("""
+                INSERT INTO execucao_servico_rdo (
+                    id, rdo_id, obra_id, servico_nome, item_contratual_id,
+                    service_id, quantidade_executada, unidade_medida,
+                    data_execucao, status_validacao, estado_receita,
+                    retrabalho, producao_rejeitada, cancelada, fonte,
+                    chave_execucao, revenue_coverage_code
+                ) VALUES (?, ?, ?, 'PDOR service', NULL, ?, 9.000, 'M2', ?,
+                          'REGISTRADA', 'PRODUCAO_REGISTRADA', FALSE, FALSE,
+                          FALSE, 'PDOR_IT', ?, 'UNPRICED_REGISTERED')
+                """, executionId, rdoId, fixture.obraId(), fixture.serviceId(),
+                data, key(executionId));
+
+        String eventId = evento(
+                fixture, commitSequence, "RDO", rdoId, rdoId,
+                "RDO_ENVIADO", "RDO_API"
+        );
+        inserirSyncPendenteParaRdo(rdoId);
+        return new OperationalRdo(rdoId, executionId, eventId);
+    }
+
+    private static void inserirSyncPendenteParaRdo(String rdoId) {
+        String dispositivoId = id();
+        jdbc.update("""
+                INSERT INTO sync_dispositivo (id, nome, tipo)
+                VALUES (?, 'Tablet PDOR', 'TABLET')
+                """, dispositivoId);
+        jdbc.update("""
+                INSERT INTO sync_mutacao_cliente (
+                    id, dispositivo_id, client_mutation_id, entidade_tipo,
+                    entidade_id, operacao, payload_json, status
+                ) VALUES (?, ?, ?, 'RDO', ?, 'ATUALIZAR_RDO', '{}'::jsonb,
+                          'PENDENTE')
+                """, id(), dispositivoId, "sync-rdo-" + rdoId, rdoId);
+    }
+
     private static Fixture fixture(Obra obra) {
         String actorId = id();
         String rdoId = id();
@@ -806,7 +990,10 @@ class PostgresqlPdorRevenueEvidenceIT {
                 ) VALUES (?, 'pdor-it', 'colaborador', ?, 'PDOR actor', 'ALFA')
                 """, actorId, actorId);
         jdbc.update(
-                "INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo) VALUES (?, ?, 'RDO-PDOR', ?)",
+                """
+                INSERT INTO rdo (id, obra_id, numero_rdo, data_rdo, status)
+                VALUES (?, ?, 'RDO-PDOR', ?, 'ENVIADO')
+                """,
                 rdoId, obra.getId(), REFERENCE_DATE
         );
         /*
@@ -847,7 +1034,18 @@ class PostgresqlPdorRevenueEvidenceIT {
             long commitSequence
     ) {
         return acceptedExecution(
-                fixture, fixture.rdoId(), quantity, revenue, commitSequence
+                fixture, fixture.rdoId(), quantity, revenue, commitSequence, true
+        );
+    }
+
+    private static Accepted legacyAcceptedExecution(
+            Fixture fixture,
+            String quantity,
+            String revenue,
+            long commitSequence
+    ) {
+        return acceptedExecution(
+                fixture, fixture.rdoId(), quantity, revenue, commitSequence, false
         );
     }
 
@@ -857,6 +1055,19 @@ class PostgresqlPdorRevenueEvidenceIT {
             String quantity,
             String revenue,
             long commitSequence
+    ) {
+        return acceptedExecution(
+                fixture, rdoId, quantity, revenue, commitSequence, true
+        );
+    }
+
+    private static Accepted acceptedExecution(
+            Fixture fixture,
+            String rdoId,
+            String quantity,
+            String revenue,
+            long commitSequence,
+            boolean hasFinancialDecision
     ) {
         String executionId = id();
         String evidenceId = id();
@@ -923,7 +1134,53 @@ class PostgresqlPdorRevenueEvidenceIT {
                 fixture.serviceId(), fixture.priceId(),
                 new BigDecimal(quantity), REFERENCE_DATE, key(executionId),
                 new BigDecimal(revenue), evidenceId, eventId);
+        if (hasFinancialDecision) {
+            inserirDecisaoFinanceiraNormal(fixture, rdoId, executionId);
+        }
         return new Accepted(executionId, evidenceId, eventId);
+    }
+
+    private static void inserirDecisaoFinanceiraNormal(
+            Fixture fixture,
+            String rdoId,
+            String executionId
+    ) {
+        String decisionId = id();
+        String eventId = id();
+        String mutationId = id();
+        Long decisionCommitSequence = jdbc.queryForObject(
+                "SELECT COALESCE(MIN(commit_seq), 0) - 1 "
+                        + "FROM cortex_evento_operacional",
+                Long.class
+        );
+        String actorId = jdbc.queryForObject(
+                "SELECT criado_por FROM catalogo_servico WHERE id = ?",
+                String.class,
+                fixture.serviceId()
+        );
+        jdbc.update("""
+                INSERT INTO cortex_evento_operacional (
+                    id, commit_seq, tipo_entidade, entidade_id, obra_id, rdo_id,
+                    tipo_evento, fonte, origem, sync_status, schema_version,
+                    payload_json, ocorrido_em
+                ) VALUES (?, ?, 'RDO', ?, ?, ?, 'RDO_EXECUCAO_VALIDADA',
+                          'PDOR_IT', 'ONLINE', 'SYNCED', 13,
+                          jsonb_build_object(
+                              'executionId', ?,
+                              'decisao', 'VALIDAR',
+                              'clientMutationId', ?,
+                              'mode', 'NORMAL'
+                          ), now())
+                """, eventId, decisionCommitSequence, rdoId, fixture.obraId(),
+                rdoId, executionId, mutationId);
+        jdbc.update("""
+                INSERT INTO rdo_execucao_decisao (
+                    id, execution_id, rdo_id, obra_id, decisao, decidido_por,
+                    client_mutation_id, request_hash, evento_id, review_mode,
+                    decidido_em
+                ) VALUES (?, ?, ?, ?, 'VALIDAR', ?, ?, ?, ?, 'NORMAL', now())
+                """, decisionId, executionId, rdoId, fixture.obraId(), actorId,
+                mutationId, key("decision-" + executionId), eventId);
     }
 
     private static PdorSnapshot snapshot(
@@ -978,6 +1235,13 @@ class PostgresqlPdorRevenueEvidenceIT {
             String rdoId,
             String serviceId,
             String priceId
+    ) {
+    }
+
+    private record OperationalRdo(
+            String rdoId,
+            String executionId,
+            String eventId
     ) {
     }
 

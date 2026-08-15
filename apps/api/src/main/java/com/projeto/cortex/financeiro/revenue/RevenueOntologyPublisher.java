@@ -20,6 +20,16 @@ public class RevenueOntologyPublisher {
     }
 
     public void publishAccepted(RevenueEvidence evidence) {
+        publishAccepted(evidence, null);
+    }
+
+    /**
+     * Publica a evidência que a restrição canônica do banco exige para uma
+     * execução aceita. A aprovação financeira é um ato de pessoa, não apenas
+     * uma consequência técnica do cálculo; por isso o comando explícito passa
+     * o ator para que o evento imutável preserve quem a confirmou.
+     */
+    public void publishAccepted(RevenueEvidence evidence, String actorId) {
         memory.registrarObjeto(
                 "SERVICE", evidence.serviceId(), evidence.serviceCode(),
                 evidence.serviceName(), "ACTIVE", SOURCE,
@@ -106,7 +116,7 @@ public class RevenueOntologyPublisher {
                         )
                 ),
                 "ONLINE", "SYNCED", occurredAt, occurredAt, 1, payload,
-                null, null, evidence.executionId(), null,
+                actorId, null, evidence.executionId(), null,
                 Map.of(), Map.of(
                         "status", "ACCEPTED",
                         "revenueEvidenceId", evidence.evidenceId()

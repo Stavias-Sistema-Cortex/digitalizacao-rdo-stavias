@@ -71,6 +71,7 @@ public class RdoDeletionService {
          */
         currentUserService.requireAlfa();
         recusarSeTemEvidenciaDeReceita(id);
+        recusarSeTemDecisaoFinanceira(id);
         recusarSeEBaseDeOutro(id);
 
         /*
@@ -179,6 +180,33 @@ public class RdoDeletionService {
                             + (comEvidencia == 1
                                     ? " serviço já medido" : " serviços já medidos")
                             + " e não pode ser apagado. A medição é registro financeiro."
+            );
+        }
+    }
+
+    /**
+     * Uma execução rejeitada não tem evidência de receita, mas já tem uma
+     * decisão financeira auditada. A V83 a torna imutável; conferir antes do
+     * DELETE evita expor a pessoa a uma violação de chave/gatilho do banco.
+     */
+    private void recusarSeTemDecisaoFinanceira(String rdoId) {
+        Integer comDecisao = jdbcTemplate.queryForObject(
+                """
+                SELECT count(*)
+                FROM rdo_execucao_decisao
+                WHERE rdo_id = ?
+                """,
+                Integer.class,
+                rdoId
+        );
+        if (comDecisao != null && comDecisao > 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Este RDO tem " + comDecisao
+                            + (comDecisao == 1
+                                    ? " decisão financeira auditada"
+                                    : " decisões financeiras auditadas")
+                            + " e não pode ser apagado."
             );
         }
     }

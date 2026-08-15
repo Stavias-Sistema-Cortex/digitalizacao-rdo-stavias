@@ -350,6 +350,110 @@ class PostgresqlRevenueTraceIT {
     }
 
     @Test
+    void obraArquivadaSaiDoRastreioEDoResultadoOperacional() {
+        Fixture fixture = fixture("OBRA-ARQUIVADA", "125.0000");
+        String executionId = acceptedExecution(fixture, "2.000", "250.00", 402L);
+        publishOntologyChain(fixture, executionId);
+        RastreioReceitaService rastreio = new RastreioReceitaService(jdbc);
+        ResultadoOperacionalFinanceiroService operacional =
+                new ResultadoOperacionalFinanceiroService(
+                        jdbc, mock(PrevisaoFinanceiraService.class)
+                );
+
+        assertThat(rastreio.buscar(
+                Set.of(fixture.obraId()), null, EXECUTION_DATE, EXECUTION_DATE
+        ).totalRevenue()).isEqualByComparingTo("250.00");
+
+        jdbc.update("""
+                UPDATE obra
+                SET arquivado_em = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                """, fixture.obraId());
+
+        RastreioReceitaResponse trace = rastreio.buscar(
+                Set.of(fixture.obraId()), null, EXECUTION_DATE, EXECUTION_DATE
+        );
+        assertThat(trace.rows()).isEmpty();
+        assertThat(trace.evidenceCount()).isZero();
+        assertThat(trace.totalRevenue()).isEqualByComparingTo("0");
+        assertThat(operacional.buscar(
+                fixture.obraId(), EXECUTION_DATE, EXECUTION_DATE
+        ).coverageCode()).isEqualTo("NO_ACCEPTED_EVIDENCE");
+        assertThatThrownBy(() -> rastreio.evidencia(
+                Set.of(fixture.obraId()), executionId
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("REVENUE_EVIDENCE_NOT_FOUND_OR_FORBIDDEN");
+    }
+
+    @Test
+    void pendingQueueShowsOnlyLiveSentRegisteredWorkAndStatesExactPriceEligibility() {
+        Fixture visible = fixture("PENDING-VISIBLE", "125.0000");
+        Fixture cancelledRdo = fixture("PENDING-CANCELLED", "100.0000");
+        Fixture archivedWorksite = fixture("PENDING-ARCHIVED", "100.0000");
+        Fixture draftRdo = fixture("PENDING-DRAFT", "100.0000");
+        markRdoSent(visible);
+        markRdoSent(cancelledRdo);
+        markRdoSent(archivedWorksite);
+        jdbc.update("""
+                INSERT INTO cortex_estado_entidade (
+                    tipo_entidade, entidade_id, versao_entidade
+                ) VALUES ('RDO', ?, 27)
+                """, visible.rdoId());
+
+        String exactPrice = registeredExecution(visible, "2.000", "M2");
+        String noExactPrice = registeredExecution(visible, "3.000", "M3");
+        String rework = registeredExecution(visible, "4.000", "M2");
+        jdbc.update("UPDATE execucao_servico_rdo SET retrabalho = TRUE WHERE id = ?", rework);
+        registeredExecution(cancelledRdo, "1.000", "M2");
+        registeredExecution(archivedWorksite, "1.000", "M2");
+        registeredExecution(draftRdo, "1.000", "M2");
+        jdbc.update("""
+                UPDATE rdo
+                SET status = 'CANCELADA', cancelado_em = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                """, cancelledRdo.rdoId());
+        jdbc.update("""
+                UPDATE obra
+                SET arquivado_em = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                """, archivedWorksite.obraId());
+
+        RastreioReceitaPendenciasResponse response =
+                new RastreioReceitaService(jdbc).pendentes(
+                        Set.of(
+                                visible.obraId(), cancelledRdo.obraId(),
+                                archivedWorksite.obraId(), draftRdo.obraId()
+                        ),
+                        null
+                );
+
+        assertThat(response.rows()).extracting(
+                RastreioReceitaPendenciasResponse.PendingRevenueExecutionRow::executionId
+        ).containsExactlyInAnyOrder(exactPrice, noExactPrice);
+        RastreioReceitaPendenciasResponse.PendingRevenueExecutionRow exact =
+                response.rows().stream()
+                        .filter(row -> row.executionId().equals(exactPrice))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(exact.rdoId()).isEqualTo(visible.rdoId());
+        assertThat(exact.rdoNumber()).isEqualTo("RDO-PENDING-VISIBLE");
+        assertThat(exact.rdoEntityVersion()).isEqualTo(27L);
+        assertThat(exact.quantity()).isEqualByComparingTo("2.000");
+        assertThat(exact.unit()).isEqualTo("M2");
+        assertThat(exact.priceState()).isEqualTo("EXACT_ACTIVE");
+        assertThat(exact.priceReason()).isEqualTo("EXACT_ACTIVE_PRICE");
+        assertThat(exact.currentUnitPrice()).isEqualByComparingTo("125.0000");
+        RastreioReceitaPendenciasResponse.PendingRevenueExecutionRow unavailable =
+                response.rows().stream()
+                        .filter(row -> row.executionId().equals(noExactPrice))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(unavailable.priceState()).isEqualTo("UNAVAILABLE");
+        assertThat(unavailable.priceReason()).isEqualTo("EXACT_PRICE_NOT_FOUND");
+        assertThat(unavailable.currentUnitPrice()).isNull();
+    }
+
+    @Test
     void evidenceDrawerFailsClosedWithoutPersistedOntologyRelations() {
         Fixture allowed = fixture("DETAIL-NO-RELATIONS", "10.0000");
         String executionId = acceptedExecution(allowed, "3.000", "30.00", 201L);
@@ -566,6 +670,7 @@ class PostgresqlRevenueTraceIT {
             long commitSequence,
             Consumer<AcceptedExecutionIds> beforeExecution
     ) {
+        markRdoSent(fixture);
         String executionId = id();
         String evidenceId = id();
         String eventId = id();
@@ -642,7 +747,51 @@ class PostgresqlRevenueTraceIT {
                 EXECUTION_DATE, executionKey(executionId),
                 new BigDecimal(fixture.unitPrice()), new BigDecimal(revenue),
                 evidenceId, eventId);
+        insertValidationDecision(fixture, executionId);
         return executionId;
+    }
+
+    private static void insertValidationDecision(
+            Fixture fixture,
+            String executionId
+    ) {
+        String decisionId = id();
+        String eventId = id();
+        String actorId = id();
+        String mutationId = id();
+        // A prova de rastreio controla o high-water mark com os commits de
+        // receita. O evento de decisão só satisfaz o novo vínculo auditado e
+        // deliberadamente fica fora desse cursor de fixture.
+        Long commitSequence = jdbc.queryForObject(
+                "SELECT COALESCE(MIN(commit_seq), 0) - 1 "
+                        + "FROM cortex_evento_operacional",
+                Long.class
+        );
+        jdbc.update("""
+                INSERT INTO cortex_evento_operacional (
+                    id, commit_seq, tipo_entidade, entidade_id, obra_id, rdo_id,
+                    tipo_evento, fonte, origem, sync_status, schema_version,
+                    payload_json, ocorrido_em
+                ) VALUES (?, ?, 'RDO', ?, ?, ?,
+                          'RDO_EXECUCAO_VALIDADA', 'TRACE_IT', 'ONLINE',
+                          'SYNCED', 13,
+                          jsonb_build_object(
+                              'executionId', ?,
+                              'decisao', 'VALIDAR',
+                              'clientMutationId', ?,
+                              'mode', 'NORMAL'
+                          ), now())
+                """, eventId, commitSequence, fixture.rdoId(), fixture.obraId(),
+                fixture.rdoId(), executionId, mutationId);
+        jdbc.update("""
+                INSERT INTO rdo_execucao_decisao (
+                    id, execution_id, rdo_id, obra_id, decisao,
+                    decidido_por, client_mutation_id, request_hash,
+                    evento_id, review_mode, decidido_em
+                ) VALUES (?, ?, ?, ?, 'VALIDAR', ?, ?, repeat('0', 64),
+                          ?, 'NORMAL', now())
+                """, decisionId, executionId, fixture.rdoId(), fixture.obraId(),
+                actorId, mutationId, eventId);
     }
 
     private static void eligibleUnpricedExecution(Fixture fixture) {
@@ -735,6 +884,36 @@ class PostgresqlRevenueTraceIT {
                           'TRACE_IT', ?, 0, 'UNPRICED_REGISTERED')
                 """, executionId, fixture.rdoId(), fixture.obraId(),
                 fixture.serviceId(), EXECUTION_DATE, executionKey(executionId));
+    }
+
+    private static String registeredExecution(
+            Fixture fixture,
+            String quantity,
+            String unit
+    ) {
+        String executionId = id();
+        jdbc.update("""
+                INSERT INTO execucao_servico_rdo (
+                    id, rdo_id, obra_id, servico_nome, service_id,
+                    quantidade_executada, unidade_medida, data_execucao,
+                    status_validacao, estado_receita, retrabalho,
+                    producao_rejeitada, fonte, chave_execucao,
+                    revenue_amount, revenue_coverage_code
+                ) VALUES (?, ?, ?, 'Registered service', ?, ?, ?, ?,
+                          'REGISTRADA', 'PRODUCAO_REGISTRADA', FALSE, FALSE,
+                          'TRACE_IT', ?, 0, 'UNPRICED_REGISTERED')
+                """, executionId, fixture.rdoId(), fixture.obraId(),
+                fixture.serviceId(), new BigDecimal(quantity), unit,
+                EXECUTION_DATE, executionKey(executionId));
+        return executionId;
+    }
+
+    private static void markRdoSent(Fixture fixture) {
+        jdbc.update("""
+                UPDATE rdo
+                SET status = 'ENVIADO', enviado_em = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                """, fixture.rdoId());
     }
 
     private static void rollbackTransaction(Runnable work) {

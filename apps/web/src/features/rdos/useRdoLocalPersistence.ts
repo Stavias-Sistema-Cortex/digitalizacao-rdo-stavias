@@ -18,6 +18,10 @@ export function rdoLocalSaveMessage(
     return "RDO salvo neste dispositivo. A sincronização aguarda o contexto da obra; reconecte para atualizar os dados de origem.";
   }
 
+  if (blockedReason === "RDO_SERVICE_CATALOG_SELECTION_REQUIRED") {
+    return "RDO salvo neste dispositivo. Selecione o serviço no catálogo antes de sincronizar esta linha.";
+  }
+
   return "RDO salvo apenas neste dispositivo. Pendente de sincronização.";
 }
 

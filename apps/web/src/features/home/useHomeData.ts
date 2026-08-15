@@ -5,7 +5,11 @@ import {
   useState,
 } from "react";
 
-import { getSession, isAlfa } from "../auth/authSession";
+import {
+  AUTH_SESSION_CHANGED_EVENT,
+  getSession,
+  isAlfa,
+} from "../auth/authSession";
 import {
   listObrasLocais,
 } from "../../lib/db/obraLocalRepository";
@@ -35,6 +39,7 @@ import {
 } from "./lastAccessedObra";
 import { filterOperationalObras } from "./homeFilters";
 import { syncSessionFingerprint } from "../../lib/sync/syncSession";
+import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 import { compararCarimbosEmBrasilia } from "../../lib/tempo/fusoBrasilia";
 import {
   findPdorRevenueLocalInvalidation,
@@ -90,6 +95,30 @@ export function useHomeData(
   const reload = useCallback(() => {
     setReloadTick((tick) => tick + 1);
   }, []);
+
+  useEffect(() => {
+    const refresh = () => reload();
+    const resetForSession = () => {
+      setObras([]);
+      setFocusedObraIdState(null);
+      setSnapshots([]);
+      setEvents([]);
+      setLatestRdo(null);
+      setHasConfirmedRemoteHydration(false);
+      setIsLoading(true);
+      reload();
+    };
+    window.addEventListener(SYNC_COMPLETED_EVENT, refresh);
+    window.addEventListener("online", refresh);
+    window.addEventListener("offline", refresh);
+    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
+    return () => {
+      window.removeEventListener(SYNC_COMPLETED_EVENT, refresh);
+      window.removeEventListener("online", refresh);
+      window.removeEventListener("offline", refresh);
+      window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
+    };
+  }, [reload]);
 
   const setFocusedObraId = useCallback(
     (obraId: string) => {

@@ -185,7 +185,12 @@ public class RdoQueryService {
                         previous_rdo_id,
                         creation_context_version,
                         client_mutation_id,
-                        versao_linha,
+                        COALESCE((
+                            SELECT sync_state.versao_entidade
+                            FROM cortex_estado_entidade sync_state
+                            WHERE sync_state.tipo_entidade = 'RDO'
+                              AND sync_state.entidade_id = rdo.id
+                        ), 0) AS versao_entidade,
                         apontador_colaborador_id,
                         dia_semana,
                         cliente,
@@ -223,7 +228,7 @@ public class RdoQueryService {
                             rs.getString("previous_rdo_id"),
                             rs.getObject("creation_context_version", Long.class),
                             rs.getString("client_mutation_id"),
-                            rs.getObject("versao_linha", Long.class),
+                            rs.getObject("versao_entidade", Long.class),
                             rs.getString("apontador_colaborador_id"),
                             rs.getString("dia_semana"),
                             rs.getString("cliente"),

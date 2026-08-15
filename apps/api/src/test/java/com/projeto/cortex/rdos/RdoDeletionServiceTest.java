@@ -85,6 +85,14 @@ class RdoDeletionServiceTest {
         )).thenReturn(quantos);
     }
 
+    private void decisoesFinanceiras(int quantas) {
+        when(jdbcTemplate.queryForObject(
+                contains("FROM rdo_execucao_decisao"),
+                eq(Integer.class),
+                eq("rdo-1")
+        )).thenReturn(quantas);
+    }
+
     /*
      * A frase importa tanto quanto a recusa. "Erro ao apagar" mandaria a pessoa
      * tentar de novo; dizer que a medição é registro financeiro encerra o
@@ -114,6 +122,22 @@ class RdoDeletionServiceTest {
         assertThatThrownBy(() -> service.apagar("rdo-1"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("1 serviço já medido");
+    }
+
+    @Test
+    void recusaRdoComDecisaoFinanceiraRejeitadaAntesDoDeleteDoBanco() {
+        existeRdo("ENVIADO");
+        servicosMedidos(0);
+        decisoesFinanceiras(1);
+
+        assertThatThrownBy(() -> service.apagar("rdo-1"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("1 decisão financeira auditada");
+
+        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
+        verify(memoryPublisher, never()).registrarRdoApagado(
+                anyString(), anyString(), anyString(), anyString()
+        );
     }
 
     /*

@@ -350,7 +350,9 @@ afterEach(async () => {
 function servicoExecutado(): ServicoExecutadoDraft {
   return {
     localId: "servico-1",
-    serviceId: "",
+    // A porta normal do RDO só envia trabalho identificado no catálogo. O
+    // cenário exercita a jornada de campo, não a importação histórica.
+    serviceId: "00000000-0000-4000-8000-0000000009b1",
     priceVersionId: "",
     servicoNome: "Compactação do aterro",
     itemContratualId: "",

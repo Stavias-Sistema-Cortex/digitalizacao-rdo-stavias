@@ -3,7 +3,7 @@ import type {
   OutboxMutationRecord,
 } from "../../lib/db/db.types";
 
-export const PDOR_REVENUE_ALGORITHM_VERSION = "PDOR-REVENUE-2";
+export const PDOR_REVENUE_ALGORITHM_VERSION = "PDOR-REVENUE-3";
 export const PDOR_REVENUE_MODEL_VERSION = "PDOR-0.5.1";
 export const PDOR_REVENUE_ASSUMPTIONS_VERSION =
   "PDOR-ASSUMPTIONS-0.5.0";

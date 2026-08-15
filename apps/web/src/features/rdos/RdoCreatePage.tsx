@@ -19,7 +19,10 @@ import {
   putRdoAttachment,
 } from "../../lib/db/rdoAttachmentRepository";
 import { getLocalRdo } from "../../lib/db/rdoRepository";
-import { rascunhoDifereDoQueEstaGravado } from "../../lib/db/localRdoService";
+import {
+  rascunhoDifereDoQueEstaGravado,
+  servicoExecutadoNeedsCatalogSelection,
+} from "../../lib/db/localRdoService";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 import type {
@@ -46,6 +49,7 @@ import {
   isRdoPriceCatalogSelectable,
   searchRdoServiceTypes,
   type RdoServiceType,
+  unidadeUnicaDasOpcoesDePreco,
 } from "./rdoServiceTypes";
 import {
   calcularSobraMaterial,
@@ -700,6 +704,9 @@ export function RdoCreatePage({
     draft.kmInicialInterditado,
     draft.kmFinalInterditado,
   );
+  const hasServiceWithoutCatalogSelection = draft.servicosExecutados.some(
+    servicoExecutadoNeedsCatalogSelection,
+  );
   const rdoSections = useMemo(
     () => [
       {
@@ -730,9 +737,10 @@ export function RdoCreatePage({
       {
         id: "rdo-servicos",
         label: "Serviços",
-        isComplete: draft.servicosExecutados.some((item) =>
-          hasText(item.servicoNome),
-        ),
+        isComplete:
+          draft.servicosExecutados.some((item) =>
+            hasText(item.servicoNome),
+          ) && !hasServiceWithoutCatalogSelection,
       },
       {
         id: "rdo-mao-de-obra",
@@ -762,7 +770,7 @@ export function RdoCreatePage({
         ),
       },
     ],
-    [draft, photoCount],
+    [draft, photoCount, hasServiceWithoutCatalogSelection],
   );
   const completeSectionCount = rdoSections.filter(
     (section) => section.isComplete,
@@ -1028,6 +1036,10 @@ export function RdoCreatePage({
       }
     } catch {
       // O hook já registra e exibe o erro do salvamento.
+      return;
+    }
+
+    if (hasServiceWithoutCatalogSelection) {
       return;
     }
 
@@ -1847,9 +1859,9 @@ export function RdoCreatePage({
                         servicoNome:
                           formatRdoServiceType(serviceType),
                         unidade:
-                          serviceType.priceChoices.length === 1
-                            ? serviceType.priceChoices[0].unit
-                            : "",
+                          unidadeUnicaDasOpcoesDePreco(
+                            serviceType.priceChoices,
+                          ) ?? "",
                       },
                     )
                   }
@@ -1857,6 +1869,12 @@ export function RdoCreatePage({
                   getTitle={getTipoServicoTitle}
                   getSubtitle={getTipoServicoSubtitle}
                 />
+
+                {servicoExecutadoNeedsCatalogSelection(item) ? (
+                  <p className="notice notice-error" role="alert">
+                    Selecione no catálogo um serviço com unidade válida antes de sincronizar esta linha.
+                  </p>
+                ) : null}
 
                 <label>
                   Pista

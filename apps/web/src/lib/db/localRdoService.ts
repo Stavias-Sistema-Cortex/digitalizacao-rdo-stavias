@@ -73,6 +73,7 @@ import {
   anunciarEscritaLocal,
   commitLocalMutation,
   type LocalMutationDomainWrite,
+  RDO_SERVICE_CATALOG_SELECTION_REQUIRED,
 } from "../sync/localMutationCoordinator";
 import { numeroDigitado } from "../numeros/numeroDigitado";
 import { quilometroDigitado } from "../numeros/quilometroDigitado";
@@ -769,21 +770,37 @@ function isServicoExecutadoEmpty(
  * "aconteceu, não medi", que é um fato registrável, e o servidor a lê como
  * zero.
  *
- * <p>O serviço do catálogo continua sendo. Não é preciosismo do formulário: a
- * entrada sem identidade de catálogo é reservada à importação histórica, que
- * passa por controle de procedência, e o servidor recusa a porta normal. Como a
- * recusa é 400 — terminal, que a fila não reenvia —, mandar a linha assim
- * custaria o RDO inteiro. Ela fica no aparelho até alguém escolher o serviço,
- * que é a única coisa que a completa.
+ * <p>O serviço do catálogo e a unidade continuam sendo. Não é preciosismo do
+ * formulário: a entrada sem identidade de catálogo é reservada à importação
+ * histórica, que passa por controle de procedência, e unidade ausente chega ao
+ * banco como nula. Como a recusa é terminal, que a fila não reenvia, mandar a
+ * linha assim custaria o RDO inteiro. Ela fica no aparelho até a seleção trazer
+ * uma unidade inequívoca do catálogo.
  */
-function isServicoExecutadoSyncable(
+export function servicoExecutadoNeedsCatalogSelection(
   item: ServicoExecutadoDraft,
 ): boolean {
-  if (isServicoExecutadoEmpty(item)) {
-    return false;
-  }
+  return !isServicoExecutadoEmpty(item) &&
+    (item.serviceId.trim() === "" || item.unidade.trim() === "");
+}
 
-  return item.serviceId.trim() !== "";
+function rdoServiceCatalogSelectionBlockReason(
+  draft: RdoDraft,
+): typeof RDO_SERVICE_CATALOG_SELECTION_REQUIRED | null {
+  return draft.servicosExecutados.some(
+    servicoExecutadoNeedsCatalogSelection,
+  )
+    ? RDO_SERVICE_CATALOG_SELECTION_REQUIRED
+    : null;
+}
+
+function rdoMutationBlockedReason(
+  draft: RdoDraft,
+): "RDO_CREATION_CONTEXT_REQUIRED" |
+  typeof RDO_SERVICE_CATALOG_SELECTION_REQUIRED |
+  null {
+  return rdoCreationContextBlockReason(draft) ??
+    rdoServiceCatalogSelectionBlockReason(draft);
 }
 
 function isAlocacaoEmpty(
@@ -907,7 +924,7 @@ export function buildRdoSyncPayload(
     ),
     servicosExecutados:
       draft.servicosExecutados
-        .filter(isServicoExecutadoSyncable)
+        .filter((item) => !isServicoExecutadoEmpty(item))
         .map(buildServicoExecutadoPayload),
     alocacoesColaboradores:
       draft.alocacoesColaboradores
@@ -1850,6 +1867,7 @@ export async function saveNewRdoDraftAtomically(
       },
     ],
     dependsOnMutationIds,
+    initialBlockedReason: rdoMutationBlockedReason(draft) ?? undefined,
     write: () => [
       {
         store: "rdos",
@@ -2389,7 +2407,7 @@ export async function repairRdoCreateMutationsForSync(
     }
 
     const draft = rdoDraftFromLocalRecord(rdo);
-    const blockedReason = rdoCreationContextBlockReason(draft);
+    const blockedReason = rdoMutationBlockedReason(draft);
     const pendingOperationalEvents = (
       await queryOperationalEvents({
         rdoId: rdo.id,
@@ -2850,8 +2868,8 @@ export async function recoverErroredWorkforceRdoMutationsForSync(
       ultimaTentativaEm: null,
       nextAttemptAt: null,
       blockedReason: mutacaoAtual.operacao === "CRIAR_RDO"
-        ? rdoCreationContextBlockReason(draft)
-        : null,
+        ? rdoMutationBlockedReason(draft)
+        : rdoServiceCatalogSelectionBlockReason(draft),
       lastSafeCode: "MAO_OBRA_RECUPERADA_COMO_NOMINAL",
       ultimoErro: VINCULO_RECUPERADO_COMO_NOMINAL,
       conflito: null,
@@ -4810,7 +4828,7 @@ export async function saveExistingRdoDraftAtomically(
       ultimaTentativaEm: null,
       ultimoErro: null,
       conflito: null,
-      blockedReason: rdoCreationContextBlockReason(draft),
+      blockedReason: rdoMutationBlockedReason(draft),
       nextAttemptAt: null,
       updatedAt: timestamp,
     };
@@ -4868,7 +4886,7 @@ export async function saveExistingRdoDraftAtomically(
         ultimaTentativaEm: null,
         ultimoErro: null,
         conflito: null,
-        blockedReason: null,
+        blockedReason: rdoServiceCatalogSelectionBlockReason(draft),
         nextAttemptAt: null,
         updatedAt: timestamp,
       };
@@ -4888,7 +4906,7 @@ export async function saveExistingRdoDraftAtomically(
         ultimaTentativaEm: null,
         ultimoErro: null,
         conflito: null,
-        blockedReason: null,
+        blockedReason: rdoServiceCatalogSelectionBlockReason(draft),
         nextAttemptAt: null,
         dependsOnMutationIds: inFlightLegacyUpdate
           ? [inFlightLegacyUpdate.clientMutationId]
@@ -5109,11 +5127,9 @@ async function replacePendingRdoCreate(input: {
       : crypto.randomUUID(),
     causationId: original.clientMutationId,
     dependsOnMutationIds: original.dependsOnMutationIds,
-    initialBlockedReason:
-      !recoveredAsUpdate &&
-      rdoCreationContextBlockReason(draft) !== null
-        ? "RDO_CREATION_CONTEXT_REQUIRED"
-        : undefined,
+    initialBlockedReason: recoveredAsUpdate
+      ? rdoServiceCatalogSelectionBlockReason(draft) ?? undefined
+      : rdoMutationBlockedReason(draft) ?? undefined,
     supersedesMutationId: original.clientMutationId,
     write: () => writes,
   });

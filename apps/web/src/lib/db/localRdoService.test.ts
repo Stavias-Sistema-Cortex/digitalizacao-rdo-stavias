@@ -15,6 +15,7 @@ import {
   buildRdoSyncPayloadFromLocalRecord,
   canCoalesceLegacyRdoMutation,
   rdoDraftFromLocalRecord,
+  servicoExecutadoNeedsCatalogSelection,
   validateRdoDraftForSync,
 } from "./localRdoService";
 
@@ -163,6 +164,49 @@ describe("buildRdoSyncPayload V48 boundary", () => {
       maoObra: [{
         id: "mao-obra-server-1",
         origemItemId: "mao-obra-anterior-1",
+      }],
+    });
+  });
+
+  it("preserva o serviço nomeado sem catálogo para que a fila o bloqueie", () => {
+    const draft = validDraft();
+    draft.servicosExecutados = [{
+      ...createEmptyServicoExecutado(),
+      localId: "servico-sem-catalogo",
+      servicoNome: "Fresagem",
+      serviceId: "",
+    }];
+
+    expect(
+      servicoExecutadoNeedsCatalogSelection(draft.servicosExecutados[0]),
+    ).toBe(true);
+    expect(buildRdoSyncPayload(draft)).toMatchObject({
+      servicosExecutados: [{
+        id: "servico-sem-catalogo",
+        servicoNome: "Fresagem",
+        serviceId: null,
+      }],
+    });
+  });
+
+  it("preserva o serviço catalogado sem unidade para que a fila o bloqueie", () => {
+    const draft = validDraft();
+    draft.servicosExecutados = [{
+      ...createEmptyServicoExecutado(),
+      localId: "servico-sem-unidade",
+      servicoNome: "Fresagem",
+      serviceId: "service-catalog-fresagem",
+      unidade: "",
+    }];
+
+    expect(
+      servicoExecutadoNeedsCatalogSelection(draft.servicosExecutados[0]),
+    ).toBe(true);
+    expect(buildRdoSyncPayload(draft)).toMatchObject({
+      servicosExecutados: [{
+        id: "servico-sem-unidade",
+        serviceId: "service-catalog-fresagem",
+        unidade: null,
       }],
     });
   });

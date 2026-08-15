@@ -1,5 +1,6 @@
 package com.projeto.cortex.pdor;
 
+import com.projeto.cortex.financeiro.CanonicalRevenueEvidenceSql;
 import com.projeto.cortex.intelligence.PdorEngine;
 import com.projeto.cortex.obras.Obra;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,12 +45,13 @@ public class RealPdorInputLoader implements PdorInputLoader {
      * {@code GERADO_A_PARTIR_DE} apontando para ele.
      *
      * <p>Um evento só entra como evidência se o RDO que ele nomeia ainda
-     * existir. Ele nomeia o RDO por duas colunas — {@code rdo_id} em qualquer
-     * evento de obra, e {@code entidade_id} quando o próprio sujeito do evento é
-     * o RDO —, e as duas precisam apontar para RDO vivo da mesma obra. Evento
-     * sem RDO nenhum (contrato, equipe, geometria) passa como sempre passou.
+     * existir e tiver sido enviado. Ele nomeia o RDO por duas colunas —
+     * {@code rdo_id} em qualquer evento de obra, e {@code entidade_id} quando
+     * o próprio sujeito do evento é o RDO —, e as duas precisam apontar para
+     * RDO enviado e vivo da mesma obra. Evento sem RDO nenhum (contrato,
+     * equipe, geometria) passa como sempre passou.
      */
-    private static final String SOMENTE_EVENTO_DE_RDO_VIVO = """
+    private static final String SOMENTE_EVENTO_DE_RDO_ENVIADO_E_VIVO = """
               AND (
                   event.rdo_id IS NULL
                   OR EXISTS (
@@ -57,6 +59,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                       FROM rdo vivo
                       WHERE vivo.id = event.rdo_id
                         AND vivo.obra_id = event.obra_id
+                        AND vivo.status = 'ENVIADO'
                         AND vivo.cancelado_em IS NULL
                   )
               )
@@ -67,6 +70,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                       FROM rdo vivo
                       WHERE vivo.id = event.entidade_id
                         AND vivo.obra_id = event.obra_id
+                        AND vivo.status = 'ENVIADO'
                         AND vivo.cancelado_em IS NULL
                   )
               )
@@ -226,8 +230,8 @@ public class RealPdorInputLoader implements PdorInputLoader {
         if (!finance.hasRevenueData() && finance.eligibleRows() > 0) {
             warnings.add(
                     "Há " + finance.eligibleRows()
-                            + " execuções validadas sem evidência de receita aceita;"
-                            + " falta preço vigente ou identidade canônica completa para medi-las."
+                            + " execuções validadas sem receita financeira aceita;"
+                            + " falta uma decisão auditada, preço vigente ou identidade canônica completa para medi-las."
             );
         }
 
@@ -906,6 +910,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     SUM(pluviometria_mm) AS pluviometria_mm
                 FROM rdo
                 WHERE obra_id = ?
+                  AND status = 'ENVIADO'
                   AND cancelado_em IS NULL
                   AND data_rdo <= ?
                 """,
@@ -942,7 +947,10 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 """
                 SELECT id, criado_em AS observed_at
                 FROM rdo
-                WHERE obra_id = ? AND cancelado_em IS NULL AND data_rdo <= ?
+                WHERE obra_id = ?
+                  AND status = 'ENVIADO'
+                  AND cancelado_em IS NULL
+                  AND data_rdo <= ?
                 ORDER BY data_rdo DESC, id
                 LIMIT 50
                 """,
@@ -1000,6 +1008,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 JOIN rdo
                   ON rdo.id = execution.rdo_id
                  AND rdo.obra_id = execution.obra_id
+                 AND rdo.status = 'ENVIADO'
                  AND rdo.cancelado_em IS NULL
                 WHERE execution.obra_id = ?
                   AND execution.cancelada = FALSE
@@ -1068,7 +1077,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                   AND event.ocorrido_em < (? + INTERVAL '1 day')
                 """
                         + SEM_EVENTO_DO_PROPRIO_PDOR
-                        + SOMENTE_EVENTO_DE_RDO_VIVO
+                        + SOMENTE_EVENTO_DE_RDO_ENVIADO_E_VIVO
                         + """
                 ORDER BY event.ocorrido_em DESC, event.commit_seq DESC
                 LIMIT 50
@@ -1174,6 +1183,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 LEFT JOIN rdo_controle_geometrico cg
                   ON cg.rdo_id = r.id
                 WHERE r.obra_id = ?
+                  AND r.status = 'ENVIADO'
                   AND r.cancelado_em IS NULL
                   AND (CAST(? AS DATE) IS NULL OR r.data_rdo <= ?)
                 """,
@@ -1203,6 +1213,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 JOIN rdo_material mat
                   ON mat.rdo_id = r.id
                 WHERE r.obra_id = ?
+                  AND r.status = 'ENVIADO'
                   AND r.cancelado_em IS NULL
                   AND r.data_rdo <= ?
                 """,
@@ -1232,6 +1243,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 JOIN rdo_equipamento eq
                   ON eq.rdo_id = r.id
                 WHERE r.obra_id = ?
+                  AND r.status = 'ENVIADO'
                   AND r.cancelado_em IS NULL
                   AND r.data_rdo BETWEEN (? - INTERVAL '30 days') AND ?
                 """,
@@ -1282,6 +1294,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     SELECT DISTINCT TO_CHAR(data_rdo, 'IYYYIW') AS semana
                     FROM rdo
                     WHERE obra_id = ?
+                      AND status = 'ENVIADO'
                       AND cancelado_em IS NULL
                       AND data_rdo <= ?
                 ) semanas_com_rdo
@@ -1294,6 +1307,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     JOIN rdo_controle_geometrico cg
                       ON cg.rdo_id = r.id
                     WHERE r.obra_id = ?
+                      AND r.status = 'ENVIADO'
                       AND r.cancelado_em IS NULL
                       AND r.data_rdo <= ?
                     GROUP BY TO_CHAR(r.data_rdo, 'IYYYIW')
@@ -1336,6 +1350,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 JOIN rdo_material mat
                   ON mat.rdo_id = r.id
                 WHERE r.obra_id = ?
+                  AND r.status = 'ENVIADO'
                   AND r.cancelado_em IS NULL
                   AND r.data_rdo <= ?
                 GROUP BY TO_CHAR(r.data_rdo, 'IYYYIW')
@@ -1398,6 +1413,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     SELECT DISTINCT data_rdo
                     FROM rdo
                     WHERE obra_id = ?
+                      AND status = 'ENVIADO'
                       AND cancelado_em IS NULL
                       AND data_rdo <= ?
                 ) realizadas
@@ -1428,6 +1444,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         SELECT id
                         FROM rdo
                         WHERE obra_id = ?
+                          AND status = 'ENVIADO'
                           AND cancelado_em IS NULL
                    )
                 """,
@@ -1529,17 +1546,14 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 """
                 SELECT COUNT(*)
                 FROM execucao_servico_rdo execution
-                JOIN rdo
-                  ON rdo.id = execution.rdo_id
-                 AND rdo.obra_id = execution.obra_id
-                 AND rdo.cancelado_em IS NULL
+                %s
                 WHERE execution.obra_id = ?
                   AND execution.data_execucao <= ?
-                  AND execution.cancelada = FALSE
-                  AND execution.producao_rejeitada = FALSE
-                  AND execution.retrabalho = FALSE
-                  AND execution.status_validacao = 'VALIDADA'
-                """,
+                  AND %s
+                """.formatted(
+                        CanonicalRevenueEvidenceSql.LIVE_RDO_JOIN,
+                        CanonicalRevenueEvidenceSql.ELIGIBLE_EXECUTION_PREDICATE
+                ),
                 Integer.class,
                 obraId,
                 referenceDate
@@ -1560,80 +1574,14 @@ public class RealPdorInputLoader implements PdorInputLoader {
                        execution.unidade_medida,
                        event.commit_seq
                 FROM execucao_servico_rdo execution
-                JOIN rdo
-                  ON rdo.id = execution.rdo_id
-                 AND rdo.obra_id = execution.obra_id
-                 AND rdo.cancelado_em IS NULL
-                JOIN cortex_evento_operacional event
-                  ON event.id = execution.revenue_event_id
-                 AND event.tipo_entidade = 'RDO_EXECUTION'
-                 AND event.tipo_evento = 'RDO_SERVICE_EXECUTED'
-                 AND event.entidade_id = execution.id
-                 AND event.obra_id = execution.obra_id
-                 AND event.rdo_id = execution.rdo_id
-                 AND event.payload_json ->> 'schemaVersion' = '1'
-                 AND event.payload_json ->> 'status' = 'ACCEPTED'
-                 AND event.payload_json ->> 'rdoId' = execution.rdo_id
-                 AND event.payload_json ->> 'obraId' = execution.obra_id
-                 AND event.payload_json ->> 'serviceId' = execution.service_id
-                 AND event.payload_json ->> 'priceVersionId' = execution.price_version_id
-                 AND event.payload_json ->> 'revenueEvidenceId' = execution.revenue_evidence_id
-                 AND event.payload_json ->> 'unit' = execution.unidade_medida
-                 AND event.payload_json ->> 'currency' = execution.currency
-                 AND CASE
-                     WHEN event.payload_json ->> 'acceptedQuantity'
-                          ~ '^[0-9]+([.][0-9]+)?$'
-                     THEN (event.payload_json ->> 'acceptedQuantity')::numeric
-                          = execution.quantidade_executada
-                     ELSE FALSE
-                 END
-                 AND CASE
-                     WHEN event.payload_json ->> 'unitPrice'
-                          ~ '^[0-9]+([.][0-9]+)?$'
-                     THEN (event.payload_json ->> 'unitPrice')::numeric
-                          = execution.unit_price_snapshot
-                     ELSE FALSE
-                 END
-                 AND CASE
-                     WHEN event.payload_json ->> 'revenue'
-                          ~ '^[0-9]+([.][0-9]+)?$'
-                     THEN (event.payload_json ->> 'revenue')::numeric
-                          = execution.revenue_amount
-                     ELSE FALSE
-                 END
-                 AND jsonb_typeof(event.entidades_relacionadas_json) = 'array'
-                 AND jsonb_array_length(event.entidades_relacionadas_json) = 5
-                 AND event.entidades_relacionadas_json @> jsonb_build_array(
-                     jsonb_build_object('tipo', 'RDO', 'id', execution.rdo_id)
-                 )
-                 AND event.entidades_relacionadas_json @> jsonb_build_array(
-                     jsonb_build_object('tipo', 'WORKSITE', 'id', execution.obra_id)
-                 )
-                 AND event.entidades_relacionadas_json @> jsonb_build_array(
-                     jsonb_build_object('tipo', 'SERVICE', 'id', execution.service_id)
-                 )
-                 AND event.entidades_relacionadas_json @> jsonb_build_array(
-                     jsonb_build_object(
-                         'tipo', 'SERVICE_PRICE_VERSION',
-                         'id', execution.price_version_id
-                     )
-                 )
-                 AND event.entidades_relacionadas_json @> jsonb_build_array(
-                     jsonb_build_object(
-                         'tipo', 'REVENUE_EVIDENCE',
-                         'id', execution.revenue_evidence_id
-                     )
-                 )
+                %s
+                %s
+                %s
                 CROSS JOIN evidence_snapshot snapshot
                 WHERE execution.obra_id = ?
                   AND execution.data_execucao <= ?
-                  AND execution.revenue_coverage_code = 'ACCEPTED_EXACT'
-                  AND execution.revenue_evidence_id IS NOT NULL
-                  AND execution.revenue_event_id IS NOT NULL
-                  AND execution.status_validacao = 'VALIDADA'
-                  AND execution.cancelada = FALSE
-                  AND execution.producao_rejeitada = FALSE
-                  AND execution.retrabalho = FALSE
+                  AND %s
+                  AND %s
                   AND event.commit_seq <= snapshot.high_water_mark
                 )
                 SELECT snapshot.high_water_mark,
@@ -1645,7 +1593,13 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 FROM evidence_snapshot snapshot
                 LEFT JOIN accepted_evidence accepted ON TRUE
                 ORDER BY accepted.revenue_evidence_id
-                """,
+                """.formatted(
+                        CanonicalRevenueEvidenceSql.LIVE_RDO_JOIN,
+                        CanonicalRevenueEvidenceSql.VALIDATED_FINANCIAL_DECISION_JOIN,
+                        CanonicalRevenueEvidenceSql.CANONICAL_EVENT_JOIN,
+                        CanonicalRevenueEvidenceSql.ELIGIBLE_EXECUTION_PREDICATE,
+                        CanonicalRevenueEvidenceSql.ACCEPTED_EVIDENCE_PREDICATE
+                ),
                 rs -> {
                     long highWaterMark = 0L;
                     List<AcceptedRevenueRow> rows = new ArrayList<>();
@@ -1739,17 +1693,18 @@ public class RealPdorInputLoader implements PdorInputLoader {
     }
 
     /**
-     * Produção que os RDOs apontaram, sem passar pela régua da receita.
+     * Produção que RDOs enviados apontaram, sem passar pela régua da receita.
      *
      * Retrabalho e produção rejeitada ficam de fora: refazer não é avançar, e
      * o que foi rejeitado não foi entregue. Fora isso, nenhuma exigência de
      * preço, validação ou evidência — é o que a frente declarou ter feito.
      *
-     * O RDO apagado leva junto o que ele apontou. Apagar o RDO marca
+     * O RDO rascunho ou apagado não leva fatos ao PDOR. Apagar o RDO marca
      * `rdo.cancelado_em` e não toca nas linhas de execução — elas continuam com
      * `cancelada = FALSE`, porque ninguém cancelou a linha, cancelou-se o
      * documento inteiro. Todas as leituras do PDOR sobre execução atravessam o
-     * RDO por isso: sem esse salto, o dia apagado seguiria contando.
+     * RDO por isso: sem esse salto, o dia apagado ou ainda não enviado seguiria
+     * contando.
      */
     private ProducaoApontada buscarProducaoApontada(
             String obraId,
@@ -1765,6 +1720,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 JOIN rdo
                   ON rdo.id = execution.rdo_id
                  AND rdo.obra_id = execution.obra_id
+                 AND rdo.status = 'ENVIADO'
                  AND rdo.cancelado_em IS NULL
                 WHERE execution.obra_id = ?
                   AND execution.data_execucao <= ?

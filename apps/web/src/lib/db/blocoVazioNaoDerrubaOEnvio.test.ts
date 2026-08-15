@@ -156,7 +156,7 @@ describe("bloco de serviço incompleto", () => {
    * no mapa, que nomeia o serviço mas não o identifica: ele espera alguém
    * escolher o serviço, que é a única coisa que o completa.
    */
-  it("guarda no aparelho a linha que ainda não escolheu o serviço", async () => {
+  it("preserva no envelope a linha que ainda não escolheu o serviço", async () => {
     await saveLocalPendingRdoDraftAtomically(
       rascunho([
         {
@@ -168,7 +168,12 @@ describe("bloco de serviço incompleto", () => {
       ]),
     );
 
-    expect(await servicosEnviados()).toEqual([]);
+    expect(await servicosEnviados()).toEqual([
+      expect.objectContaining({
+        servicoNome: "Serviço a identificar",
+        serviceId: null,
+      }),
+    ]);
   });
 
   it("não mexe na linha que veio completa", async () => {

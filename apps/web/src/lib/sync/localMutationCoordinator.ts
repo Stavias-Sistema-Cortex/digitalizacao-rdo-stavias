@@ -224,7 +224,7 @@ export interface LocalMutationCommand<TStore extends LocalDomainStore> {
   causationId?: string | null;
   transport?: OutboxTransport;
   dependsOnMutationIds?: readonly string[];
-  initialBlockedReason?: "RDO_CREATION_CONTEXT_REQUIRED";
+  initialBlockedReason?: RdoInitialBlockedReason;
   /** Immutable canonical envelope replaced causally in the same transaction. */
   supersedesMutationId?: string;
   /**
@@ -233,6 +233,13 @@ export interface LocalMutationCommand<TStore extends LocalDomainStore> {
    */
   write: () => readonly LocalMutationDomainWrite<TStore>[];
 }
+
+export const RDO_SERVICE_CATALOG_SELECTION_REQUIRED =
+  "RDO_SERVICE_CATALOG_SELECTION_REQUIRED";
+
+type RdoInitialBlockedReason =
+  | "RDO_CREATION_CONTEXT_REQUIRED"
+  | typeof RDO_SERVICE_CATALOG_SELECTION_REQUIRED;
 
 export interface CommittedLocalMutation {
   mutation: CanonicalOutboxMutationRecord;
@@ -253,7 +260,7 @@ interface PreparedCoordinatorInput<TStore extends LocalDomainStore> {
   relatedEntities: OperationalEntityRef[];
   colaboradorId: string | null;
   writes: LocalMutationDomainWrite<TStore>[];
-  initialBlockedReason: "RDO_CREATION_CONTEXT_REQUIRED" | null;
+  initialBlockedReason: RdoInitialBlockedReason | null;
   supersedesMutationId: string | null;
   expectedPrincipalSnapshot: Record<string, unknown> | null | undefined;
   expectedActiveMutationIds: string[] | undefined;
@@ -628,20 +635,45 @@ function prepareInitialBlockedReason(
     BuildCanonicalMutationInput,
     "entityType" | "operation" | "transportOperation" | "nextSnapshot"
   >,
-): "RDO_CREATION_CONTEXT_REQUIRED" | null {
+): RdoInitialBlockedReason | null {
   if (value === undefined) return null;
-  if (
-    value !== "RDO_CREATION_CONTEXT_REQUIRED" ||
-    envelope.entityType !== "RDO" ||
-    envelope.operation !== "CREATE" ||
-    envelope.transportOperation !== "CRIAR_RDO" ||
-    envelope.nextSnapshot.creationContextVersion !== null
-  ) {
+  if (value === "RDO_CREATION_CONTEXT_REQUIRED") {
+    if (
+      envelope.entityType === "RDO" &&
+      envelope.operation === "CREATE" &&
+      envelope.transportOperation === "CRIAR_RDO" &&
+      envelope.nextSnapshot.creationContextVersion === null
+    ) {
+      return value;
+    }
     throw new TypeError(
       "RDO_CREATION_CONTEXT_REQUIRED só pode bloquear CREATE de RDO sem receipt.",
     );
   }
-  return value;
+  if (
+    value === RDO_SERVICE_CATALOG_SELECTION_REQUIRED &&
+    envelope.entityType === "RDO" &&
+    rdoPayloadHasServiceWithoutCatalogSelection(envelope.nextSnapshot)
+  ) {
+    return value;
+  }
+  throw new TypeError(
+    "RDO_SERVICE_CATALOG_SELECTION_REQUIRED exige uma linha de serviço sem catálogo ou unidade.",
+  );
+}
+
+function rdoPayloadHasServiceWithoutCatalogSelection(
+  payload: Record<string, unknown>,
+): boolean {
+  const services = payload.servicosExecutados;
+  return Array.isArray(services) && services.some((service) => {
+    if (service === null || typeof service !== "object") return false;
+    const { serviceId, unidade } = service as Record<string, unknown>;
+    return (
+      typeof serviceId !== "string" || serviceId.trim() === "" ||
+      typeof unidade !== "string" || unidade.trim() === ""
+    );
+  });
 }
 
 function prepareWrites<TStore extends LocalDomainStore>(

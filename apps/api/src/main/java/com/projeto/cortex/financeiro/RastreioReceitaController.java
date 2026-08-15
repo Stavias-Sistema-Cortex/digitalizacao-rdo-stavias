@@ -62,6 +62,27 @@ public class RastreioReceitaController {
         return service.buscar(scope, obraId, de, ate, cursor, limit);
     }
 
+    @GetMapping("/pendentes")
+    public RastreioReceitaPendenciasResponse pendentes(
+            @RequestParam(required = false) String obraId
+    ) {
+        String userId = currentUser.requireUserId();
+        Set<String> scope;
+        if (obraId != null && !obraId.isBlank()) {
+            String normalizedWorksite = uuid(obraId);
+            access.requirePermission(
+                    normalizedWorksite, FinancialPermission.FINANCEIRO_VISUALIZAR
+            );
+            scope = Set.of(normalizedWorksite);
+            obraId = normalizedWorksite;
+        } else {
+            scope = access.allowedObraIds(
+                    userId, FinancialPermission.FINANCEIRO_VISUALIZAR
+            );
+        }
+        return service.pendentes(scope, obraId);
+    }
+
     @GetMapping("/{executionId}")
     public RastreioReceitaEvidenceResponse evidencia(
             @PathVariable String executionId

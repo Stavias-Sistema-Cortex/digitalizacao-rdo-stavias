@@ -92,7 +92,7 @@ const PDOR: ObraPdor = {
   ],
   iniciadoPor: OWNER_A,
   tipoIniciador: "PROCESS",
-  algorithmVersion: "PDOR-REVENUE-2",
+  algorithmVersion: "PDOR-REVENUE-3",
   evidenceIds: [EVIDENCE_ID],
   evidenceHighWaterMark: 812,
   coverageCode: "COMPLETE_ACCEPTED_EXACT",
@@ -529,6 +529,7 @@ describe("PDOR revenue cache", () => {
 
   it.each([
     ["algoritmo v1", { algorithmVersion: "PDOR-REVENUE-1" }],
+    ["algoritmo v2", { algorithmVersion: "PDOR-REVENUE-2" }],
     ["modelo anterior", { versaoModelo: "PDOR-0.5.0" }],
     ["premissas anteriores", { versaoPremissas: "PDOR-ASSUMPTIONS-0.4.0" }],
   ])("rejeita cache offline incompatível: %s", async (_label, legacy) => {

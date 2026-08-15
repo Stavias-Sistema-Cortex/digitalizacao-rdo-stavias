@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiTransportError } from "../../lib/api/apiClient";
+import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
+import { AUTH_SESSION_CHANGED_EVENT } from "../auth/authSession";
 import {
   fetchRevenueTraceEvidence,
   type DecimalValue,
@@ -67,32 +69,70 @@ export function FinanceRevenueTracePage({
   const [detail, setDetail] = useState<RevenueTraceEvidence | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const [automaticRefreshVersion, setAutomaticRefreshVersion] = useState(0);
+  const requestSequence = useRef(0);
+  const detailRequestSequence = useRef(0);
 
   useEffect(() => {
     if (controlledRows !== undefined) return;
-    let cancelled = false;
+    const requestId = requestSequence.current + 1;
+    requestSequence.current = requestId;
+    let active = true;
     queueMicrotask(() => {
-      if (cancelled) return;
+      if (!active || requestId !== requestSequence.current) return;
       setLoading(true);
       setError("");
       setSnapshot(null);
       void loadRevenueTraceSnapshot({ obraId, from: de, to: ate })
         .then((loaded) => {
-          if (!cancelled) setSnapshot(loaded);
+          if (active && requestId === requestSequence.current) {
+            setSnapshot(loaded);
+          }
         })
         .catch((reason: unknown) => {
-          if (!cancelled) {
+          if (active && requestId === requestSequence.current) {
+            setSnapshot(null);
             setError(reason instanceof Error
               ? reason.message
               : "Não foi possível carregar as evidências de receita.");
           }
         })
         .finally(() => {
-          if (!cancelled) setLoading(false);
+          if (active && requestId === requestSequence.current) {
+            setLoading(false);
+          }
         });
     });
-    return () => { cancelled = true; };
-  }, [obraId, de, ate, controlledRows]);
+    return () => { active = false; };
+  }, [automaticRefreshVersion, obraId, de, ate, controlledRows]);
+
+  useEffect(() => {
+    if (controlledRows !== undefined) return;
+    const requestRefresh = () => {
+      setAutomaticRefreshVersion((version) => version + 1);
+    };
+    const resetForSession = () => {
+      requestSequence.current += 1;
+      detailRequestSequence.current += 1;
+      setSnapshot(null);
+      setError("");
+      setLoading(true);
+      setDetail(null);
+      setDetailLoading(false);
+      setDetailError("");
+      requestRefresh();
+    };
+    window.addEventListener(SYNC_COMPLETED_EVENT, requestRefresh);
+    window.addEventListener("online", requestRefresh);
+    window.addEventListener("offline", requestRefresh);
+    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
+    return () => {
+      window.removeEventListener(SYNC_COMPLETED_EVENT, requestRefresh);
+      window.removeEventListener("online", requestRefresh);
+      window.removeEventListener("offline", requestRefresh);
+      window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
+    };
+  }, [controlledRows]);
 
   const rows = controlledRows ?? snapshot?.response.rows ?? [];
   const totalResult = useMemo(() => {
@@ -130,6 +170,8 @@ export function FinanceRevenueTracePage({
   const hasConfirmedData = controlledRows !== undefined || snapshot !== null;
 
   function openEvidence(row: RevenueTraceRow) {
+    const requestId = detailRequestSequence.current + 1;
+    detailRequestSequence.current = requestId;
     setDetail(null);
     setDetailError("");
     if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -141,15 +183,25 @@ export function FinanceRevenueTracePage({
     }
     setDetailLoading(true);
     void fetchRevenueTraceEvidence(row.executionId)
-      .then(setDetail)
-      .catch((reason: unknown) => {
-        setDetailError(reason instanceof ApiTransportError
-          ? "O rastro detalhado está indisponível offline. Reconecte para consultar as relações confirmadas; nenhuma relação foi inventada."
-          : reason instanceof Error
-            ? reason.message
-            : "Não foi possível abrir a evidência.");
+      .then((loaded) => {
+        if (requestId === detailRequestSequence.current) {
+          setDetail(loaded);
+        }
       })
-      .finally(() => setDetailLoading(false));
+      .catch((reason: unknown) => {
+        if (requestId === detailRequestSequence.current) {
+          setDetailError(reason instanceof ApiTransportError
+            ? "O rastro detalhado está indisponível offline. Reconecte para consultar as relações confirmadas; nenhuma relação foi inventada."
+            : reason instanceof Error
+              ? reason.message
+              : "Não foi possível abrir a evidência.");
+        }
+      })
+      .finally(() => {
+        if (requestId === detailRequestSequence.current) {
+          setDetailLoading(false);
+        }
+      });
   }
 
   return (
@@ -234,7 +286,12 @@ export function FinanceRevenueTracePage({
         detail={detail}
         loading={detailLoading}
         error={detailError}
-        onClose={() => { setDetail(null); setDetailLoading(false); setDetailError(""); }}
+        onClose={() => {
+          detailRequestSequence.current += 1;
+          setDetail(null);
+          setDetailLoading(false);
+          setDetailError("");
+        }}
       />
     </section>
   );
