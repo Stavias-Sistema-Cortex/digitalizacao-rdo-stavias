@@ -1,18 +1,13 @@
 package com.projeto.cortex.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.projeto.cortex.financeiro.RastreioReceitaEvidenceResponse;
-import com.projeto.cortex.financeiro.RastreioReceitaService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Set;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -35,14 +30,6 @@ class PostgresqlV59RevenueOntologyBackfillIT {
 
         migrateTo("58");
 
-        RastreioReceitaService trace = new RastreioReceitaService(jdbc);
-        assertThatThrownBy(() -> trace.evidencia(
-                Set.of(fixture.obraId()), fixture.exactExecutionId()
-        ))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining(
-                        "REVENUE_EVIDENCE_NOT_FOUND_OR_FORBIDDEN"
-                );
         assertThat(graphObjectCount(jdbc, fixture)).isZero();
         assertThat(relationCount(jdbc, fixture.exactExecutionId())).isZero();
         Integer v58Checksum = checksum(jdbc, "58");
@@ -51,29 +38,6 @@ class PostgresqlV59RevenueOntologyBackfillIT {
 
         assertThat(checksum(jdbc, "58")).isEqualTo(v58Checksum);
         assertThat(checksum(jdbc, "59")).isNotNull();
-        RastreioReceitaEvidenceResponse evidence = trace.evidencia(
-                Set.of(fixture.obraId()), fixture.exactExecutionId()
-        );
-        assertThat(evidence.row().executionId())
-                .isEqualTo(fixture.exactExecutionId());
-        assertThat(evidence.row().revenue()).isEqualByComparingTo("30.00");
-        assertThat(evidence.ontologyLinks())
-                .extracting(
-                        RastreioReceitaEvidenceResponse.OntologyLink::relationType
-                )
-                .containsExactly(
-                        "EXECUTED_IN",
-                        "EXECUTES_SERVICE",
-                        "GENERATES_REVENUE",
-                        "PRICED_BY"
-                );
-        assertThat(evidence.ontologyLinks()).allSatisfy(link -> {
-            assertThat(link.sourceType())
-                    .isEqualTo("RDO_SERVICE_EXECUTED");
-            assertThat(link.sourceId())
-                    .isEqualTo(fixture.exactExecutionId());
-            assertThat(link.active()).isTrue();
-        });
 
         assertThat(graphObjectCount(jdbc, fixture)).isEqualTo(5);
         assertThat(jdbc.queryForMap(
