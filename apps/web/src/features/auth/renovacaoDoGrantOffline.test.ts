@@ -31,11 +31,12 @@ const { precisaRenovar, renovarGrantOfflineSePreciso } = await import(
   "./renovacaoDoGrantOffline"
 );
 
-function guardado(cpfHash = "a".repeat(64)) {
+function guardado() {
   return {
-    key: cpfHash,
-    versao: 1 as const,
-    cpfHash,
+    key: "20000000-0000-4000-8000-000000000001",
+    versao: 2 as const,
+    cpfSalt: "s".repeat(22),
+    cpfVerifier: "v".repeat(43),
     ownerId: DONO,
     scopeFingerprint: "0".repeat(64),
     signedGrant: { keyId: "k", payload: "p", signature: "s", publicKeySpki: "x" },
@@ -78,14 +79,14 @@ describe("renovação do grant offline", () => {
     expect(await renovarGrantOfflineSePreciso(AGORA)).toBe("RENOVADO");
     expect(saveCollaborativeOfflineGrantMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
-        cpfHash: "a".repeat(64),
+        cpfVerifier: "v".repeat(43),
         signedGrant: expect.objectContaining({ keyId: "k2" }),
       }),
     );
   });
 
-  /** O CPF em claro não é guardado; a chave do registro não pode mudar. */
-  it("preserva a chave do registro, que é o resumo do CPF", async () => {
+  /** Renovar a assinatura não precisa nem deve recalcular o verificador. */
+  it("preserva a chave aleatória, o sal e o verificador do registro", async () => {
     verifySignedOfflineGrant.mockResolvedValue(
       claims("2026-08-03T12:00:00.000Z", "2026-08-04T12:00:00.000Z"),
     );
@@ -93,8 +94,9 @@ describe("renovação do grant offline", () => {
     await renovarGrantOfflineSePreciso(AGORA);
 
     const gravado = saveCollaborativeOfflineGrantMetadata.mock.calls.at(-1)?.[0];
-    expect(gravado.key).toBe("a".repeat(64));
-    expect(gravado.key).toBe(gravado.cpfHash);
+    expect(gravado.key).toBe("20000000-0000-4000-8000-000000000001");
+    expect(gravado.cpfSalt).toBe("s".repeat(22));
+    expect(gravado.cpfVerifier).toBe("v".repeat(43));
   });
 
   it("não pede nada quando ainda há validade de sobra", async () => {

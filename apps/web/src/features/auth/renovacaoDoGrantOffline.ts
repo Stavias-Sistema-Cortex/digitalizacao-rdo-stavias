@@ -110,8 +110,8 @@ export async function renovarGrantOfflineSePreciso(
   );
 
   for (const grant of vencendo) {
-    // A chave é o resumo do CPF e não muda: quem abre o registro continua
-    // sendo a mesma pessoa, com o mesmo CPF. O que se troca é o grant.
+    // Chave aleatória, sal e verificador não mudam: renovar troca apenas o
+    // grant assinado e seu escopo, sem voltar a manipular o CPF.
     await saveCollaborativeOfflineGrantMetadata({
       ...grant,
       signedGrant: assinado,

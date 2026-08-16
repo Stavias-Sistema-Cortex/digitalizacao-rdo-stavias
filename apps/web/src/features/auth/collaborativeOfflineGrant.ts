@@ -11,11 +11,20 @@ import type {
   SignedOfflineGrant,
 } from "./offlineVault.types";
 import {
-  loadCollaborativeOfflineGrantMetadata,
+  listCollaborativeOfflineGrantMetadata,
   saveCollaborativeOfflineGrantMetadata,
 } from "./offlineVaultRepository";
+import {
+  bytesEqual,
+  fromBase64Url,
+  toBase64Url,
+} from "./webauthnCodec";
 
-const CPF_HASH_PATTERN = /^[0-9a-f]{64}$/;
+const CPF_SALT_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+const CPF_VERIFIER_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const CPF_KDF_ITERATIONS = 600_000;
+const CPF_SALT_BYTES = 16;
+const MAX_CPF_GRANTS_TO_CHECK = 20;
 
 export class OfflineGrantOwnerMismatchError extends Error {
   constructor() {
@@ -29,15 +38,19 @@ export async function saveCollaborativeOfflineGrant(
   signedGrant: SignedOfflineGrant,
   authenticatedOwnerId: string,
 ): Promise<OfflineCpfGrantMetadata> {
-  const cpfHash = await hashCanonicalCpf(cpf);
+  const canonicalCpf = requireCanonicalCpf(cpf);
   const verified = await verifySignedOfflineGrant(signedGrant);
   if (verified.claims.colaboradorId !== authenticatedOwnerId) {
     throw new OfflineGrantOwnerMismatchError();
   }
+  const existing = await loadCollaborativeOfflineGrant(canonicalCpf);
+  const cpfSalt = crypto.getRandomValues(new Uint8Array(CPF_SALT_BYTES));
+  const cpfVerifier = await deriveCpfVerifier(canonicalCpf, cpfSalt);
   const metadata: OfflineCpfGrantMetadata = {
-    key: cpfHash,
-    versao: 1,
-    cpfHash,
+    key: existing?.key ?? crypto.randomUUID(),
+    versao: 2,
+    cpfSalt: toBase64Url(cpfSalt),
+    cpfVerifier: toBase64Url(cpfVerifier),
     ownerId: verified.claims.colaboradorId,
     scopeFingerprint: await scopeFingerprint(
       verified.claims.colaboradorId,
@@ -54,7 +67,20 @@ export async function saveCollaborativeOfflineGrant(
 export async function loadCollaborativeOfflineGrant(
   cpf: string,
 ): Promise<OfflineCpfGrantMetadata | null> {
-  return loadCollaborativeOfflineGrantMetadata(await hashCanonicalCpf(cpf));
+  const canonicalCpf = requireCanonicalCpf(cpf);
+  const candidates = await listCollaborativeOfflineGrantMetadata();
+  for (const candidate of candidates.slice(0, MAX_CPF_GRANTS_TO_CHECK)) {
+    let normalized: OfflineCpfGrantMetadata;
+    try {
+      normalized = validateMetadata(candidate);
+    } catch {
+      continue;
+    }
+    if (await matchesCpf(canonicalCpf, normalized)) {
+      return normalized;
+    }
+  }
+  return null;
 }
 
 export async function unlockCollaborativeOfflineGrant(
@@ -62,9 +88,9 @@ export async function unlockCollaborativeOfflineGrant(
   metadata: OfflineCpfGrantMetadata,
 ): Promise<void> {
   clearSessionForCurrentDocument();
-  const cpfHash = await hashCanonicalCpf(cpf);
+  const canonicalCpf = requireCanonicalCpf(cpf);
   const normalized = validateMetadata(metadata);
-  if (normalized.cpfHash !== cpfHash) {
+  if (!await matchesCpf(canonicalCpf, normalized)) {
     throw new Error("CPF não corresponde ao grant offline.");
   }
   const verified = await verifySignedOfflineGrant(normalized.signedGrant);
@@ -84,16 +110,45 @@ export async function unlockCollaborativeOfflineGrant(
   activateOfflineGrant(verified.claims);
 }
 
-async function hashCanonicalCpf(cpf: string): Promise<string> {
+function requireCanonicalCpf(cpf: string): string {
   const canonical = onlyDigits(cpf);
   if (!/^\d{11}$/.test(canonical)) {
     throw new Error("CPF inválido para o grant offline.");
   }
-  const digest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical)),
+  return canonical;
+}
+
+async function matchesCpf(
+  canonicalCpf: string,
+  metadata: OfflineCpfGrantMetadata,
+): Promise<boolean> {
+  const salt = fromBase64Url(metadata.cpfSalt, CPF_SALT_BYTES);
+  const expected = fromBase64Url(metadata.cpfVerifier, 32);
+  const actual = await deriveCpfVerifier(canonicalCpf, salt);
+  return bytesEqual(actual, expected);
+}
+
+async function deriveCpfVerifier(
+  canonicalCpf: string,
+  salt: Uint8Array<ArrayBuffer>,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(canonicalCpf),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
   );
-  return Array.from(digest, (value) => value.toString(16).padStart(2, "0"))
-    .join("");
+  return new Uint8Array(await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      salt,
+      iterations: CPF_KDF_ITERATIONS,
+    },
+    material,
+    256,
+  ));
 }
 
 function validateMetadata(
@@ -103,7 +158,8 @@ function validateMetadata(
     !isRecord(value) ||
     !exactKeys(value, [
       "atualizadoEm",
-      "cpfHash",
+      "cpfSalt",
+      "cpfVerifier",
       "key",
       "ownerId",
       "scopeFingerprint",
@@ -111,9 +167,10 @@ function validateMetadata(
       "signedGrant",
       "versao",
     ]) ||
-    value.versao !== 1 ||
-    !CPF_HASH_PATTERN.test(value.cpfHash) ||
-    value.key !== value.cpfHash ||
+    value.versao !== 2 ||
+    !CPF_SALT_PATTERN.test(value.cpfSalt) ||
+    !CPF_VERIFIER_PATTERN.test(value.cpfVerifier) ||
+    !canonicalUuid(value.key) ||
     !canonicalUuid(value.ownerId) ||
     !/^[0-9a-f]{64}$/.test(value.scopeFingerprint) ||
     !/^[A-Za-z0-9_-]{43}$/.test(value.serverKeyFingerprint) ||

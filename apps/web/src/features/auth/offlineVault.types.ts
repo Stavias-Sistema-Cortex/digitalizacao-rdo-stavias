@@ -35,8 +35,9 @@ export type OfflineVaultMetadata = {
 /** Metadados públicos para liberar um grant de CPF colaborativo offline. */
 export type OfflineCpfGrantMetadata = {
   key: string;
-  versao: 1;
-  cpfHash: string;
+  versao: 2;
+  cpfSalt: string;
+  cpfVerifier: string;
   ownerId: string;
   scopeFingerprint: string;
   signedGrant: SignedOfflineGrant;

@@ -6,7 +6,7 @@ import type {
 } from "./offlineVault.types";
 
 const VAULT_DATABASE_NAME = "cortex-auth-vaults";
-const VAULT_DATABASE_VERSION = 2;
+const VAULT_DATABASE_VERSION = 3;
 
 interface OfflineVaultDbSchema extends DBSchema {
   vaults: {
@@ -73,11 +73,13 @@ export async function saveCollaborativeOfflineGrantMetadata(
   await database.put("cpf_grants", metadata);
 }
 
-export async function loadCollaborativeOfflineGrantMetadata(
-  cpfHash: string,
-): Promise<OfflineCpfGrantMetadata | null> {
+export async function listCollaborativeOfflineGrantMetadata(): Promise<
+  OfflineCpfGrantMetadata[]
+> {
   const database = await getVaultDatabase();
-  return await database.get("cpf_grants", cpfHash) ?? null;
+  return (await database.getAll("cpf_grants")).sort((left, right) =>
+    right.atualizadoEm.localeCompare(left.atualizadoEm)
+  );
 }
 
 export async function hasCollaborativeOfflineGrantMetadata(): Promise<boolean> {
@@ -88,9 +90,8 @@ export async function hasCollaborativeOfflineGrantMetadata(): Promise<boolean> {
 /**
  * Os grants por CPF já guardados para esta pessoa.
  *
- * <p>O CPF em claro não é armazenado — a chave é o resumo dele —, então a
- * renovação não tem como recalculá-lo. Ela reaproveita as chaves que já
- * existem aqui, que é o suficiente: o que precisa ser trocado é o grant
+ * <p>O CPF em claro não é armazenado. A renovação reaproveita chave aleatória,
+ * sal e verificador PBKDF2 já existentes; o que precisa ser trocado é o grant
  * assinado, não a identidade que abre o registro.
  */
 export async function listCollaborativeOfflineGrantsForOwner(
@@ -110,7 +111,7 @@ function openVaultDatabase(): Promise<IDBPDatabase<OfflineVaultDbSchema>> {
     VAULT_DATABASE_NAME,
     VAULT_DATABASE_VERSION,
     {
-      upgrade(database, oldVersion) {
+      upgrade(database, oldVersion, _newVersion, transaction) {
         if (oldVersion < 1) {
           const store = database.createObjectStore("vaults", {
             keyPath: "key",
@@ -124,6 +125,12 @@ function openVaultDatabase(): Promise<IDBPDatabase<OfflineVaultDbSchema>> {
           });
           grants.createIndex("by-updated-at", "atualizadoEm");
           grants.createIndex("by-owner", "ownerId");
+        }
+        if (oldVersion < 3) {
+          // A versão 1 guardava SHA-256(CPF), barato de enumerar após uma
+          // cópia do IndexedDB. Não há migração segura sem o CPF em claro:
+          // descarte o verificador e reprovisione o grant no próximo login.
+          transaction.objectStore("cpf_grants").clear();
         }
       },
       terminated() {

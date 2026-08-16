@@ -41,7 +41,7 @@ describe("grant colaborativo de CPF", () => {
     vi.useRealTimers();
   });
 
-  it("armazena o CPF canônico somente como hash e libera seu escopo", async () => {
+  it("protege o CPF com PBKDF2 e sal único antes de liberar seu escopo", async () => {
     const fixture = await signedGrantFixture();
 
     const metadata = await saveCollaborativeOfflineGrant(
@@ -49,8 +49,18 @@ describe("grant colaborativo de CPF", () => {
       fixture.grant,
       fixture.claims.colaboradorId,
     );
+    const hardened = metadata as unknown as Record<string, unknown>;
+    const fastDigest = toBase64Url(await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode("11144477735"),
+    ));
 
-    expect(metadata.cpfHash).not.toBe("11144477735");
+    expect(hardened).toMatchObject({ versao: 2 });
+    expect(hardened).not.toHaveProperty("cpfHash");
+    expect(hardened.cpfSalt).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(hardened.cpfVerifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(hardened.cpfVerifier).not.toBe(fastDigest);
+    expect(hardened.key).not.toBe(hardened.cpfVerifier);
     expect(JSON.stringify(metadata)).not.toContain("11144477735");
 
     await expect(

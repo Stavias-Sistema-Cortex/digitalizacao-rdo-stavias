@@ -10,7 +10,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { Preview } from "./Preview";
+import { MapPreview } from "./MapPreview";
 import "../../src/index.css";
 
 const container = document.getElementById("root");
@@ -20,6 +20,6 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <Preview />
+    <MapPreview />
   </StrictMode>,
 );

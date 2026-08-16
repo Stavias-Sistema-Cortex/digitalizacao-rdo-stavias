@@ -15,16 +15,32 @@ import {
 
 const databaseName = "cortex-auth-vaults";
 
+type LegacyCpfGrantMetadata = {
+  key: string;
+  versao: 1;
+  cpfHash: string;
+  ownerId: string;
+  scopeFingerprint: string;
+  signedGrant: OfflineCpfGrantMetadata["signedGrant"];
+  serverKeyFingerprint: string;
+  atualizadoEm: string;
+};
+
 interface LegacyVaultSchema extends DBSchema {
   vaults: {
     key: string;
     value: OfflineVaultMetadata;
     indexes: { "by-updated-at": string; "by-owner": string };
   };
+  cpf_grants: {
+    key: string;
+    value: LegacyCpfGrantMetadata;
+    indexes: { "by-updated-at": string; "by-owner": string };
+  };
 }
 
 describe("repositório de cofres offline", () => {
-  it("atualiza o banco v1 sem perder vaults e cria cpf_grants", async () => {
+  it("atualiza o banco v2 sem perder vaults e remove verificadores rápidos de CPF", async () => {
     const legacyVault: OfflineVaultMetadata = {
       key: "legacy-vault",
       versao: 1,
@@ -38,20 +54,42 @@ describe("repositório de cofres offline", () => {
       serverKeyFingerprint: "a".repeat(43),
       atualizadoEm: "2026-07-14T12:00:00Z",
     };
-    const legacy = await openDB<LegacyVaultSchema>(databaseName, 1, {
+    const legacyGrant: LegacyCpfGrantMetadata = {
+      key: "b".repeat(64),
+      versao: 1,
+      cpfHash: "b".repeat(64),
+      ownerId: legacyVault.ownerId,
+      scopeFingerprint: legacyVault.scopeFingerprint,
+      signedGrant: {
+        keyId: "offline-test-v1",
+        payload: "payload",
+        signature: "signature",
+        publicKeySpki: "public-key",
+      },
+      serverKeyFingerprint: legacyVault.serverKeyFingerprint,
+      atualizadoEm: "2026-07-14T12:00:00Z",
+    };
+    const legacy = await openDB<LegacyVaultSchema>(databaseName, 2, {
       upgrade(database) {
         const vaults = database.createObjectStore("vaults", { keyPath: "key" });
         vaults.createIndex("by-updated-at", "atualizadoEm");
         vaults.createIndex("by-owner", "ownerId");
+        const grants = database.createObjectStore("cpf_grants", {
+          keyPath: "key",
+        });
+        grants.createIndex("by-updated-at", "atualizadoEm");
+        grants.createIndex("by-owner", "ownerId");
       },
     });
     await legacy.put("vaults", legacyVault);
+    await legacy.put("cpf_grants", legacyGrant);
     legacy.close();
 
     const grant: OfflineCpfGrantMetadata = {
-      key: "cpf-grant",
-      versao: 1,
-      cpfHash: "b".repeat(64),
+      key: "20000000-0000-4000-8000-000000000001",
+      versao: 2,
+      cpfSalt: "s".repeat(22),
+      cpfVerifier: "v".repeat(43),
       ownerId: legacyVault.ownerId,
       scopeFingerprint: legacyVault.scopeFingerprint,
       signedGrant: {

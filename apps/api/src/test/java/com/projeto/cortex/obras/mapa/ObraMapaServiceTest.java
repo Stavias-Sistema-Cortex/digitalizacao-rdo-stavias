@@ -232,6 +232,36 @@ class ObraMapaServiceTest {
     }
 
     @Test
+    void syncCreateRejectsTheSameIdentityWithDifferentGeometry() {
+        String clientId = "60000000-0000-4000-8000-000000000006";
+        ObraGeometria existing = ObraGeometria.criar(
+                clientId, "obra-1", "PONTO_OPERACIONAL", "RDO", "rdo-1", "POINT",
+                "{\"type\":\"Point\",\"coordinates\":[-54.65,-20.44]}",
+                "{}", "CAPTURA_CAMPO", null, "apontador-1"
+        );
+        when(currentUserService.requireUserId()).thenReturn("apontador-1");
+        when(featureRepository.findById(clientId))
+                .thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.registrarCapturaCampo(
+                "obra-1",
+                new ObraGeometriaRequest(
+                        "PONTO_OPERACIONAL", "RDO", "rdo-1",
+                        objectMapper.valueToTree(Map.of(
+                                "type", "Point",
+                                "coordinates", List.of(-54.60, -20.40)
+                        )),
+                        Map.of(), null, null, null, null
+                ),
+                clientId
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("outro conteúdo");
+
+        verify(featureRepository, never()).saveAndFlush(any());
+        verify(memoryPublisher, never()).criada(any(), any(), any());
+    }
+
+    @Test
     void syncCreateRejectsAnIdentityAlreadyUsedInAnotherWorksite() {
         String clientId = "60000000-0000-4000-8000-000000000006";
         ObraGeometria existing = ObraGeometria.criar(

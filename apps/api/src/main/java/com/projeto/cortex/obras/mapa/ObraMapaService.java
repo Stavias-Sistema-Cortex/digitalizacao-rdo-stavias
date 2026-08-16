@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -204,6 +205,7 @@ public class ObraMapaService {
                             "Já existe uma geometria com este identificador em outra obra."
                     );
                 }
+                requireMatchingCreationReplay(existente, normalized);
                 return toResponse(existente);
             }
         }
@@ -216,6 +218,46 @@ public class ObraMapaService {
         ObraGeometriaResponse response = toResponse(saved);
         memoryPublisher.criada(response, obraId, actorId);
         return response;
+    }
+
+    private void requireMatchingCreationReplay(
+            ObraGeometria existente,
+            NormalizedRequest normalized
+    ) {
+        boolean sameContent = Objects.equals(
+                existente.getCategoria(), normalized.category()
+        ) && Objects.equals(existente.getObjetoTipo(), normalized.objectType())
+                && Objects.equals(existente.getObjetoId(), normalized.objectId())
+                && Objects.equals(
+                        existente.getTipoGeometria(), normalized.geometryType()
+                )
+                && sameJson(existente.getGeometriaJson(), normalized.geometryJson())
+                && sameJson(
+                        existente.getPropriedadesJson(), normalized.propertiesJson()
+                )
+                && Objects.equals(existente.getFonte(), normalized.source())
+                && (normalized.validFrom() == null || Objects.equals(
+                        existente.getValidoDesde(), normalized.validFrom()
+                ));
+        if (!sameContent) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Já existe uma geometria com este identificador e outro conteúdo."
+            );
+        }
+    }
+
+    private boolean sameJson(String persisted, String requested) {
+        try {
+            return Objects.equals(
+                    objectMapper.readTree(persisted),
+                    objectMapper.readTree(requested)
+            );
+        } catch (JsonProcessingException error) {
+            throw new IllegalStateException(
+                    "Geometria persistida contém JSON inválido.", error
+            );
+        }
     }
 
     @Transactional

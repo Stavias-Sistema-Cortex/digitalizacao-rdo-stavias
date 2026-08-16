@@ -3,7 +3,7 @@ import { OBRA_FIXTURE } from "./fixtures";
 import "./preview.css";
 
 /** Composição medida pelo harness: obra operável e obra desativada. */
-export function Preview() {
+export function MapPreview() {
   return (
     <main className="preview-root">
       <p className="preview-aviso">

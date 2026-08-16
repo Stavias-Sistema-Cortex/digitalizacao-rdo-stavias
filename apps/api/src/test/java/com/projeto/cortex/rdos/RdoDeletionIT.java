@@ -96,6 +96,34 @@ class RdoDeletionIT {
         )).isZero();
     }
 
+    @Test
+    void apagaAlocacaoDoColaboradorJuntoComORdo() {
+        String obraId = inserirObra("alocacao");
+        String rdoId = inserirRdo(
+                obraId, "RDO-0003", LocalDate.of(2026, 7, 22), "RASCUNHO", null
+        );
+        String colaboradorId = inserirColaborador();
+        String alocacaoId = UUID.randomUUID().toString();
+        jdbc.update(
+                """
+                INSERT INTO alocacao_colaborador (
+                    id, colaborador_id, data_alocacao, minutos, obra_id,
+                    rdo_id, chave_alocacao
+                ) VALUES (?, ?, ?, 480, ?, ?, repeat('a', 64))
+                """,
+                alocacaoId, colaboradorId, LocalDate.of(2026, 7, 22),
+                obraId, rdoId
+        );
+
+        servico("alfa").apagar(rdoId);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM alocacao_colaborador WHERE id = ?",
+                Integer.class,
+                alocacaoId
+        )).isZero();
+    }
+
     /**
      * A ordem importa e a mensagem tem que dizer qual é. Apagar o de ontem
      * primeiro deixaria o de hoje declarando uma origem que não existe mais.
@@ -309,6 +337,20 @@ class RdoDeletionIT {
                 itemId, rdoId, nome, origemItemId
         ));
         return itemId;
+    }
+
+    private String inserirColaborador() {
+        String id = UUID.randomUUID().toString();
+        jdbc.update(
+                """
+                INSERT INTO colaborador (
+                    id, banco_origem, tabela_origem, pk_origem,
+                    codigo_colaborador, nome, papel_acesso, ativo
+                ) VALUES (?, 'rdo-deletion-it', 'colaborador', ?, ?, ?, 'BETA', true)
+                """,
+                id, id, id.substring(0, 8), "Colaborador " + id.substring(0, 8)
+        );
+        return id;
     }
 
     private long inserirSnapshot(String obraId, LocalDate data) {

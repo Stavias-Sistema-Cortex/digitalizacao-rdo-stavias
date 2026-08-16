@@ -22,3 +22,14 @@ export function carregarMapaObra(): Promise<LeituraMapaObra> {
     obtidoEm: "2026-03-03T18:30:00.000Z",
   });
 }
+
+export function silenciarTrechoDerivado(
+  obraId: string,
+  featureId: string,
+  motivo: string,
+): Promise<void> {
+  void obraId;
+  void featureId;
+  void motivo;
+  return Promise.resolve();
+}

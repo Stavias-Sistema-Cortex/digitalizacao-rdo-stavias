@@ -188,6 +188,22 @@ class RdoDeletionServiceTest {
                 .recalcularAposMudancaRdo("obra-1", null);
     }
 
+    @Test
+    void apagaAlocacoesDoColaboradorAntesDeApagarORdo() {
+        existeRdo("ENVIADO");
+        servicosMedidos(0);
+        semDependentes();
+        when(jdbcTemplate.update(contains("DELETE FROM rdo WHERE id"), eq("rdo-1")))
+                .thenReturn(1);
+
+        service.apagar("rdo-1");
+
+        verify(jdbcTemplate).update(
+                "DELETE FROM alocacao_colaborador WHERE rdo_id = ?",
+                "rdo-1"
+        );
+    }
+
     /*
      * Recusado o apagamento, nada mudou — e recalcular anunciaria uma mudança
      * que não houve, trocando o snapshot atual da obra por outro à toa.

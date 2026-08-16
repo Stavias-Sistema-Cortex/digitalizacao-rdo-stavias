@@ -111,6 +111,9 @@ public class RdoDeletionService {
         int anexos = jdbcTemplate.update(
                 "DELETE FROM rdo_attachment WHERE rdo_id = ?", id
         );
+        jdbcTemplate.update(
+                "DELETE FROM alocacao_colaborador WHERE rdo_id = ?", id
+        );
         jdbcTemplate.update("DELETE FROM rdo_mao_obra WHERE rdo_id = ?", id);
         jdbcTemplate.update("DELETE FROM rdo_equipamento WHERE rdo_id = ?", id);
         jdbcTemplate.update("DELETE FROM rdo_material WHERE rdo_id = ?", id);

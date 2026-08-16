@@ -213,9 +213,10 @@ const passkeyVault = {
 };
 
 const cpfGrant = {
-  key: "a".repeat(64),
-  versao: 1,
-  cpfHash: "a".repeat(64),
+  key: "20000000-0000-4000-8000-000000000001",
+  versao: 2,
+  cpfSalt: "s".repeat(22),
+  cpfVerifier: "v".repeat(43),
   ownerId: "00000000-0000-4000-8000-000000000001",
   scopeFingerprint: "b".repeat(64),
   signedGrant: {
