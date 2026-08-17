@@ -325,18 +325,6 @@
   font-weight: 600;
 }
 
-.cortex-login .login__mode-switch {
-  margin-top: 16px;
-  padding: 8px;
-  border: 0;
-  background: transparent;
-  color: var(--text-soft);
-  font: inherit;
-  font-size: 0.82rem;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 .login__success {
   margin: 16px 0 0;
   padding: 12px 14px;

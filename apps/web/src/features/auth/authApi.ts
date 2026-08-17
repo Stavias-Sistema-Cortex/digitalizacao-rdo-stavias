@@ -89,6 +89,20 @@ export async function completePasswordSetup(
   if (response.status === 401) {
     throw new ApiError("Código inválido ou expirado.", 401, null);
   }
+  if (response.status === 400) {
+    throw new ApiError(
+      "A senha deve ter de 12 a 128 caracteres e não pode ser comum.",
+      400,
+      null,
+    );
+  }
+  if (response.status === 429) {
+    throw new ApiError(
+      "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
+      429,
+      null,
+    );
+  }
   throw responseError(body, response.status);
 }
 

@@ -27,7 +27,6 @@ type LoginMode = "login" | "setup";
 export function LoginPage() {
   const cpfId = useId();
   const passwordId = useId();
-  const codeId = useId();
   const newPasswordId = useId();
   const cpfRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -119,6 +118,14 @@ export function LoginPage() {
     }
     if (nextErrors.password) {
       passwordRef.current?.focus();
+      return;
+    }
+
+    if (/^[0-9]{8}$/.test(password)) {
+      setCode(password);
+      setPassword("");
+      setNewPassword("");
+      setMode("setup");
       return;
     }
 
@@ -223,8 +230,8 @@ export function LoginPage() {
             </h1>
             <p className="login__subtitle">
               {mode === "login"
-                ? "Use seu CPF e sua senha para entrar."
-                : "Use o código temporário entregue pelo responsável autorizado."}
+                ? "Use seu CPF e sua senha ou código temporário para entrar."
+                : "Código temporário informado. Agora defina sua nova senha."}
             </p>
           </header>
 
@@ -274,7 +281,7 @@ export function LoginPage() {
                 }}
                 aria-invalid={errors.cpf ? true : undefined}
                 aria-describedby={errors.cpf ? `${cpfId}-error` : undefined}
-                disabled={loading}
+                disabled={loading || mode === "setup"}
               />
               {errors.cpf ? (
                 <p
@@ -290,7 +297,7 @@ export function LoginPage() {
             {mode === "login" ? (
               <div className="login-field">
                 <label className="login-field__label" htmlFor={passwordId}>
-                  Senha
+                  Senha ou código temporário
                 </label>
                 <input
                   ref={passwordRef}
@@ -328,48 +335,27 @@ export function LoginPage() {
                 ) : null}
               </div>
             ) : (
-              <>
-                <div className="login-field">
-                  <label className="login-field__label" htmlFor={codeId}>
-                    Código temporário
-                  </label>
-                  <input
-                    id={codeId}
-                    className="login-field__input"
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    value={code}
-                    maxLength={8}
-                    onChange={(event) => {
-                      setCode(onlyDigits(event.target.value).slice(0, 8));
-                      setAuthError("");
-                    }}
-                    disabled={loading}
-                  />
-                </div>
-                <div className="login-field">
-                  <label
-                    className="login-field__label"
-                    htmlFor={newPasswordId}
-                  >
-                    Nova senha
-                  </label>
-                  <input
-                    id={newPasswordId}
-                    className="login-field__input"
-                    type="password"
-                    autoComplete="new-password"
-                    value={newPassword}
-                    maxLength={128}
-                    onChange={(event) => {
-                      setNewPassword(event.target.value);
-                      setAuthError("");
-                    }}
-                    disabled={loading}
-                  />
-                </div>
-              </>
+              <div className="login-field">
+                <label
+                  className="login-field__label"
+                  htmlFor={newPasswordId}
+                >
+                  Nova senha
+                </label>
+                <input
+                  id={newPasswordId}
+                  className="login-field__input"
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  maxLength={128}
+                  onChange={(event) => {
+                    setNewPassword(event.target.value);
+                    setAuthError("");
+                  }}
+                  disabled={loading}
+                />
+              </div>
             )}
 
             <div className="login__actions">
@@ -408,24 +394,24 @@ export function LoginPage() {
                     "Entrar com passkey"
                   )}
                 </button>
-              ) : null}
+              ) : (
+                <button
+                  type="button"
+                  className="login__submit login__submit-secondary"
+                  disabled={loading}
+                  onClick={() => {
+                    setCode("");
+                    setNewPassword("");
+                    setMode("login");
+                    setErrors({});
+                    setAuthError("");
+                    setSetupSuccess("");
+                  }}
+                >
+                  Voltar para entrar com senha
+                </button>
+              )}
             </div>
-
-            <button
-              type="button"
-              className="login__mode-switch"
-              disabled={loading}
-              onClick={() => {
-                setMode(mode === "login" ? "setup" : "login");
-                setErrors({});
-                setAuthError("");
-                setSetupSuccess("");
-              }}
-            >
-              {mode === "login"
-                ? "Primeiro acesso ou esqueci minha senha"
-                : "Voltar para o login"}
-            </button>
 
             {subindo && status === "cpf" ? (
               <p className="login__aguardando" role="status">

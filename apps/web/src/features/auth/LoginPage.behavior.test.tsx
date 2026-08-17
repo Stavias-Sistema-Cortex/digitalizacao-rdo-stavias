@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   authenticateWithPasskey: vi.fn(),
   autenticarPorCpf: vi.fn(),
+  completePasswordSetup: vi.fn(),
 }));
 
 vi.mock("./passkeyApi", () => ({
@@ -20,6 +21,10 @@ vi.mock("./passkeyApi", () => ({
 
 vi.mock("./authService", () => ({
   autenticarPorCpf: mocks.autenticarPorCpf,
+}));
+
+vi.mock("./authApi", () => ({
+  completePasswordSetup: mocks.completePasswordSetup,
 }));
 
 import { LoginPage } from "./LoginPage";
@@ -44,7 +49,9 @@ describe("LoginPage access methods", () => {
   it("keeps one action instruction and one security note without marketing copy", () => {
     const view = render(<LoginPage />);
 
-    expect(screen.getByText("Use seu CPF e sua senha para entrar."))
+    expect(screen.getByText(
+      "Use seu CPF e sua senha ou código temporário para entrar.",
+    ))
       .toBeVisible();
     expect(
       screen.getByText(
@@ -74,7 +81,7 @@ describe("LoginPage access methods", () => {
       "inputmode",
       "numeric",
     );
-    expect(screen.getByLabelText("Senha")).toHaveAttribute(
+    expect(screen.getByLabelText("Senha ou código temporário")).toHaveAttribute(
       "autocomplete",
       "current-password",
     );
@@ -94,7 +101,10 @@ describe("LoginPage access methods", () => {
     render(<LoginPage />);
 
     await user.type(screen.getByRole("textbox", { name: "CPF" }), "11144477735");
-    await user.type(screen.getByLabelText("Senha"), "Frase secreta individual!");
+    await user.type(
+      screen.getByLabelText("Senha ou código temporário"),
+      "Frase secreta individual!",
+    );
     await user.click(screen.getByRole("button", { name: "Entrar" }));
 
     await waitFor(() => {
@@ -104,7 +114,7 @@ describe("LoginPage access methods", () => {
       );
     });
     expect(navigate).not.toHaveBeenCalled();
-    expect(screen.queryByText(/código|e-mail/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/e-mail/i)).not.toBeInTheDocument();
   });
 
   it("keeps the same direct CPF primary flow in local development", () => {
@@ -119,20 +129,57 @@ describe("LoginPage access methods", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens the first-access form with temporary code and new password", async () => {
+  it("recognizes an eight-digit code in the password field and opens password definition", async () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    await user.click(screen.getByRole("button", {
-      name: "Primeiro acesso ou esqueci minha senha",
-    }));
-
-    expect(screen.getByLabelText("Código temporário")).toHaveAttribute(
-      "autocomplete",
-      "one-time-code",
+    await user.type(screen.getByRole("textbox", { name: "CPF" }), "11144477735");
+    await user.type(
+      screen.getByLabelText("Senha ou código temporário"),
+      "12345678",
     );
+    await user.click(screen.getByRole("button", { name: "Entrar" }));
+
+    expect(mocks.autenticarPorCpf).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Definir sua senha" }))
+      .toBeVisible();
+    expect(screen.queryByLabelText("Código temporário")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("12345678")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Nova senha")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Definir senha" }))
       .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Voltar para entrar com senha" }))
+      .toBeVisible();
+    expect(screen.queryByRole("button", {
+      name: "Primeiro acesso ou esqueci minha senha",
+    })).not.toBeInTheDocument();
+  });
+
+  it("uses the recognized code only with the same CPF to define the new password", async () => {
+    mocks.completePasswordSetup.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<LoginPage />);
+
+    await user.type(screen.getByRole("textbox", { name: "CPF" }), "11144477735");
+    await user.type(
+      screen.getByLabelText("Senha ou código temporário"),
+      "12345678",
+    );
+    await user.click(screen.getByRole("button", { name: "Entrar" }));
+    await user.type(
+      screen.getByLabelText("Nova senha"),
+      "Frase secreta individual!",
+    );
+    await user.click(screen.getByRole("button", { name: "Definir senha" }));
+
+    await waitFor(() => {
+      expect(mocks.completePasswordSetup).toHaveBeenCalledWith(
+        "11144477735",
+        "12345678",
+        "Frase secreta individual!",
+      );
+    });
+    expect(screen.getByText("Senha definida. Agora entre com sua nova senha."))
+      .toBeVisible();
   });
 });

@@ -317,31 +317,42 @@
 .gestao-senha-codigo {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  padding: 12px;
-  border: 1px solid #d4deda;
-  border-left: 3px solid #f2c300;
-  border-radius: 7px;
-  background: #fff;
+  grid-template-columns: minmax(140px, auto) minmax(0, 1fr);
+  gap: 3px 18px;
+  align-items: baseline;
+  padding: 11px 0 2px;
+  border: 0;
+  border-top: 1px solid #f2c300;
+  border-radius: 0;
+  background: transparent;
   color: var(--color-ink);
 }
 
-.gestao-senha-codigo > span {
-  font-size: 0.74rem;
+.gestao-senha-codigo-rotulo {
+  color: var(--color-muted);
+  font-size: 0.66rem;
   font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.gestao-senha-codigo > strong {
+.gestao-senha-codigo-valor {
+  grid-row: 2 / span 2;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 1.25rem;
-  letter-spacing: 0.12em;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+}
+
+.gestao-senha-codigo-meta {
+  font-size: 0.73rem;
+  font-weight: 600;
 }
 
 .gestao-senha-codigo > small {
   color: var(--color-muted);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   line-height: 1.4;
 }
 
@@ -354,13 +365,6 @@
     grid-column: 1 / -1;
   }
 
-  .gestao-senha-codigo {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .gestao-senha-codigo > small {
-    grid-column: 1 / -1;
-  }
 }
 
 @media (max-width: 620px) {
@@ -384,10 +388,11 @@
   .gestao-senha-codigo {
     grid-column: auto;
     grid-template-columns: 1fr;
+    gap: 4px;
   }
 
-  .gestao-senha-codigo > small {
-    grid-column: auto;
+  .gestao-senha-codigo-valor {
+    grid-row: auto;
   }
 }
 

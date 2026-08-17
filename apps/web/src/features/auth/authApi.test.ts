@@ -150,6 +150,31 @@ describe("authApi", () => {
     );
   });
 
+  it.each([
+    [401, "Código inválido ou expirado."],
+    [400, "A senha deve ter de 12 a 128 caracteres e não pode ser comum."],
+    [429, "Muitas tentativas. Aguarde alguns minutos e tente novamente."],
+  ])("reports the known password-setup error for HTTP %i", async (
+    status,
+    message,
+  ) => {
+    mocks.freshAuthenticationFetch.mockResolvedValue(response(status));
+    mocks.readResponseBody.mockResolvedValue(null);
+
+    await expect(completePasswordSetup(
+      "11144477735",
+      "12345678",
+      PASSWORD,
+    )).rejects.toMatchObject({
+      name: "ApiError",
+      status,
+      code: null,
+      message,
+    });
+
+    expect(mocks.apiError).not.toHaveBeenCalled();
+  });
+
   it("obtém somente o envelope assinado exato do grant offline", async () => {
     const grant = {
       keyId: "offline-test-v1",

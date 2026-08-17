@@ -599,15 +599,20 @@ export function GestaoObrasPage() {
                       className="gestao-senha-codigo"
                       aria-live="polite"
                     >
-                      <span>
+                      <span className="gestao-senha-codigo-rotulo">
+                        Código temporário
+                      </span>
+                      <strong className="gestao-senha-codigo-valor">
+                        {codigoEmitido.code}
+                      </strong>
+                      <span className="gestao-senha-codigo-meta">
                         {codigoEmitido.purpose === "FIRST_ACCESS"
                           ? "Primeiro acesso"
                           : "Redefinição de senha"}
+                        {" · expira em 30 min"}
                       </span>
-                      <strong>{codigoEmitido.code}</strong>
                       <small>
-                        Este código é mostrado somente agora e expira em 30
-                        minutos. Entregue diretamente ao colaborador.
+                        Exibido uma vez. Entregue ao colaborador.
                       </small>
                     </output>
                   )}

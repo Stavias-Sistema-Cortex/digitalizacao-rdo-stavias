@@ -250,6 +250,12 @@ describe("a gestão de obras", () => {
 
     expect(api.emitirCodigoSenha).toHaveBeenCalledWith(targetId);
     expect(await screen.findByText("12345678")).toBeInTheDocument();
-    expect(screen.getByText(/mostrado somente agora/i)).toBeInTheDocument();
+    expect(screen.getByText("Código temporário")).toBeInTheDocument();
+    expect(
+      screen.getByText("Primeiro acesso · expira em 30 min"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Exibido uma vez. Entregue ao colaborador."),
+    ).toBeInTheDocument();
   });
 });
