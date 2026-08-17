@@ -108,7 +108,7 @@ describe("LoginPage auth policy", () => {
     );
   });
 
-  it("usa CPF direto e mantém uma única alternativa por passkey", () => {
+  it("uses CPF plus individual password and keeps passkey as an alternative", () => {
     const source = readFileSync(
       new URL("./LoginPage.tsx", import.meta.url),
       "utf8",
@@ -118,7 +118,7 @@ describe("LoginPage auth policy", () => {
     expect(source).not.toContain("filtroOfflinePronto");
     expect(source).not.toContain("login offline está habilitado");
     expect(source).not.toContain("cpfMascarado");
-    expect(source).toContain("autenticarPorCpf(onlyDigits(cpf))");
+    expect(source).toContain("autenticarPorCpf(onlyDigits(cpf), password)");
     expect(source).not.toContain("emailOtpApi");
     expect(source).not.toContain("requestCpfOtpChallenge");
     expect(source).not.toContain("verifyEmailOtpChallenge");
@@ -128,8 +128,10 @@ describe("LoginPage auth policy", () => {
     expect(source.match(/authenticateWithPasskey\(cpf\)/g)).toHaveLength(1);
     expect(source).toContain('"Entrar"');
     expect(source).toContain('"Entrar com passkey"');
-    expect(source).not.toContain("Código de acesso");
-    expect(source).not.toContain('autoComplete="one-time-code"');
+    expect(source).toContain("Código temporário");
+    expect(source).toContain('autoComplete="one-time-code"');
+    expect(source).toContain('autoComplete="current-password"');
+    expect(source).toContain("completePasswordSetup");
     expect(source).not.toContain("PIN");
     expect(source).not.toContain("offlineVault");
     expect(source).not.toMatch(/localStorage|sessionStorage|indexedDB/);

@@ -117,6 +117,7 @@ postgres_admin_secret="$secret_dir/postgres-admin"
 postgres_migrator_secret="$secret_dir/postgres-migrator"
 postgres_runtime_secret="$secret_dir/postgres-runtime"
 cpf_hmac_secret="$secret_dir/cpf-hmac"
+password_setup_hmac_secret="$secret_dir/password-setup-hmac"
 offline_private_secret="$secret_dir/offline-private.pem"
 offline_public_secret="$secret_dir/offline-public.pem"
 memory_cursor_secret="$secret_dir/memory-cursor-hmac"
@@ -126,6 +127,7 @@ zeladoria_secret="$secret_dir/zeladoria-password"
 ensure_random_secret "$postgres_admin_secret"
 ensure_random_secret "$postgres_migrator_secret"
 ensure_random_secret "$postgres_runtime_secret"
+ensure_random_secret "$password_setup_hmac_secret"
 
 if [[ -n "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:-}" ]]; then
   install_secret_file CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE "$cpf_hmac_secret"
@@ -139,7 +141,7 @@ install_secret_file CORTEX_ACADEMY_DB_PASSWORD_FILE "$academy_secret"
 unset CORTEX_ACADEMY_DB_PASSWORD ACAD_DB_PASSWORD
 write_secret_value CORTEX_ZELADORIA_DB_PASSWORD "$zeladoria_secret"
 
-for key_file in "$cpf_hmac_secret" "$memory_cursor_secret"; do
+for key_file in "$cpf_hmac_secret" "$password_setup_hmac_secret" "$memory_cursor_secret"; do
   if (( $(wc -c < "$key_file") < 32 )); then
     echo "HMAC secret material must contain at least 32 bytes." >&2
     exit 1
@@ -203,6 +205,7 @@ runtime_env_tmp="$(mktemp "$runtime_dir/production.env.XXXXXX")"
   printf 'CORTEX_AUTH_WEBAUTHN_RP_ID=cortex.localhost\n'
   printf 'CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID=%s\n' "$CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID"
   printf 'CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE=%s\n' "$cpf_hmac_secret"
+  printf 'CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE=%s\n' "$password_setup_hmac_secret"
   printf 'CORTEX_AUTH_OFFLINE_GRANT_KEY_ID=%s\n' "$CORTEX_AUTH_OFFLINE_GRANT_KEY_ID"
   printf 'CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE=%s\n' "$offline_private_secret"
   printf 'CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE=%s\n' "$offline_public_secret"
@@ -278,6 +281,7 @@ unset \
   CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID \
   CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE \
   CORTEX_AUTH_CPF_HMAC_CURRENT_KEY \
+  CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE \
   CORTEX_AUTH_OFFLINE_GRANT_KEY_ID \
   CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE \
   CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE \

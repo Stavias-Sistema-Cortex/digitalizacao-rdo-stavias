@@ -91,10 +91,13 @@ public final class AuthPublicEndpointPolicy {
         }
         if (normalPostgresqlWebMode) {
             return "/api/auth/login".equals(path)
+                    || "/api/auth/password/setup".equals(path)
                     || "/api/auth/passkeys/authentication/options".equals(path)
                     || "/api/auth/passkeys/authentication/verify".equals(path);
         }
         if ((directCpfLoginEnabled && "/api/auth/login".equals(path))
+                || (directCpfLoginEnabled
+                    && "/api/auth/password/setup".equals(path))
                 || "/api/auth/passkeys/authentication/options".equals(path)
                 || "/api/auth/passkeys/authentication/verify".equals(path)) {
             return true;

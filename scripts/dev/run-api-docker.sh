@@ -21,6 +21,7 @@ cortex_require_text CORTEX_POSTGRES_USER
 cortex_require_secret_file CORTEX_POSTGRES_PASSWORD_FILE
 cortex_require_text CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID
 cortex_require_secret_file CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE
+cortex_require_secret_file CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE
 cortex_require_text CORTEX_AUTH_OFFLINE_GRANT_KEY_ID
 cortex_require_secret_file CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE
 cortex_require_secret_file CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE
@@ -69,6 +70,7 @@ docker run --rm \
   -p "127.0.0.1:${CORTEX_API_PORT}:8080" \
   --mount "type=bind,src=$CORTEX_POSTGRES_PASSWORD_FILE,dst=/run/secrets/CORTEX_POSTGRES_PASSWORD,readonly" \
   --mount "type=bind,src=$CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE,dst=/run/secrets/cortex_cpf_hmac,readonly" \
+  --mount "type=bind,src=$CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE,dst=/run/secrets/cortex_password_setup_hmac,readonly" \
   --mount "type=bind,src=$CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE,dst=/run/secrets/cortex_offline_private,readonly" \
   --mount "type=bind,src=$CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE,dst=/run/secrets/cortex_offline_public,readonly" \
   --mount "type=bind,src=$CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE,dst=/run/secrets/cortex_memory_cursor_hmac,readonly" \
@@ -80,6 +82,7 @@ docker run --rm \
   -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" \
   -e CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID="$CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID" \
   -e CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE=/run/secrets/cortex_cpf_hmac \
+  -e CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE=/run/secrets/cortex_password_setup_hmac \
   -e CORTEX_AUTH_OFFLINE_GRANT_KEY_ID="$CORTEX_AUTH_OFFLINE_GRANT_KEY_ID" \
   -e CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE=/run/secrets/cortex_offline_private \
   -e CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE=/run/secrets/cortex_offline_public \

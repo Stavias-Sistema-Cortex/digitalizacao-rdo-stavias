@@ -9,7 +9,10 @@ class AuthLogRedactionTest {
 
     @Test
     void loginRecordsNeverExposeCredentialsOrJwtThroughToString() {
-        LoginRequest request = new LoginRequest("11144477735");
+        LoginRequest request = new LoginRequest(
+                "11144477735",
+                "Frase secreta individual!"
+        );
         LoginResponse response = new LoginResponse(
                 "header.payload.signature",
                 "user-1",
@@ -22,7 +25,10 @@ class AuthLogRedactionTest {
 
         assertThat(request.toString())
                 .contains("REDACTED")
-                .doesNotContain("11144477735");
+                .doesNotContain(
+                        "11144477735",
+                        "Frase secreta individual!"
+                );
         assertThat(response.toString())
                 .contains("REDACTED")
                 .doesNotContain(

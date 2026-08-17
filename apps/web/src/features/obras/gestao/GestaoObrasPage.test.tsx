@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   queueVinculoColaborador: vi.fn(),
   queueRevogarVinculo: vi.fn(),
   alterarPapelColaborador: vi.fn(),
+  emitirCodigoSenha: vi.fn(),
 }));
 
 vi.mock("./gestaoObrasApi", async () => {
@@ -219,5 +220,36 @@ describe("a gestão de obras", () => {
           .some((linha) => linha.textContent?.includes("BENTO SOUZA")),
       ).toBe(true),
     );
+  });
+
+  it("gera um código temporário individual sem criar perfil MySQL", async () => {
+    const user = userEvent.setup();
+    const targetId = "20000000-0000-4000-8000-000000000002";
+    api.listarObrasAdmin.mockResolvedValue([]);
+    api.listarColaboradores.mockResolvedValue([
+      colaborador(targetId, "PESSOA ALVO"),
+    ]);
+    api.emitirCodigoSenha.mockResolvedValue({
+      collaboratorId: targetId,
+      name: "PESSOA ALVO",
+      code: "12345678",
+      purpose: "FIRST_ACCESS",
+      expiresAt: "2026-08-17T13:30:00Z",
+    });
+
+    render(<GestaoObrasPage />);
+    await user.type(
+      screen.getByRole("searchbox", {
+        name: "Buscar colaborador para alterar papel",
+      }),
+      "PESSOA ALVO{Enter}",
+    );
+    await user.click(await screen.findByRole("button", {
+      name: "Gerar código de acesso para PESSOA ALVO",
+    }));
+
+    expect(api.emitirCodigoSenha).toHaveBeenCalledWith(targetId);
+    expect(await screen.findByText("12345678")).toBeInTheDocument();
+    expect(screen.getByText(/mostrado somente agora/i)).toBeInTheDocument();
   });
 });

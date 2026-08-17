@@ -58,6 +58,7 @@ export async function initializeAuthSession(): Promise<AuthProfile | null> {
 
 export async function autenticarPorCpf(
   cpf: string,
+  password: string,
 ): Promise<CpfAuthenticationResult> {
   const canonicalCpf = onlyDigits(cpf);
   // Keep every ordinary credentialed request blocked throughout this
@@ -67,7 +68,7 @@ export async function autenticarPorCpf(
   markRemoteSessionIsolation();
   let profile: AuthProfile;
   try {
-    profile = await loginWithCpf(canonicalCpf);
+    profile = await loginWithCpf(canonicalCpf, password);
   } catch (error: unknown) {
     failClosedAfterFreshLogin(error);
   }

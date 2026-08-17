@@ -45,6 +45,8 @@ bash -n "$prepare_script"
 grep -Fq 'A PostgreSQL 18 pg_dump client is required' "$prepare_script"
 grep -Fq 'install_secret_file CORTEX_ACADEMY_DB_PASSWORD_FILE' \
   "$prepare_script"
+grep -Fq 'ensure_random_secret "$password_setup_hmac_secret"' \
+  "$prepare_script"
 if [[ "$(grep -Fc 'ALTER ROLE %I WITH LOGIN PASSWORD %L' "$postgres_init_file")" -ne 2 ]]; then
   echo "local PostgreSQL role credentials are not reconciled for both roles" >&2
   exit 1
@@ -124,6 +126,7 @@ for secret_name in \
   academy \
   zeladoria \
   cpf_hmac \
+  password_setup_hmac \
   offline_private \
   offline_public \
   memory_cursor_hmac; do
@@ -146,6 +149,7 @@ env \
   CORTEX_AUTH_WEBAUTHN_RP_ID='cortex.localhost' \
   CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID='cpf-contract-v1' \
   CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE="$contract_dir/cpf_hmac" \
+  CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE="$contract_dir/password_setup_hmac" \
   CORTEX_AUTH_OFFLINE_GRANT_KEY_ID='offline-contract-v1' \
   CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE="$contract_dir/offline_private" \
   CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE="$contract_dir/offline_public" \
@@ -220,6 +224,9 @@ assert api_environment["CORTEX_CORS_ALLOWED_ORIGINS"] == "https://cortex.localho
 assert api_environment["CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS"] == "https://cortex.localhost:18443"
 assert api_environment["CORTEX_AUTH_DEV_ADMIN_ENABLED"] == "false"
 assert api_environment["CORTEX_AUTH_PROVISIONING_ENABLED"] == "false"
+assert api_environment["CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE"] == (
+    "/run/secrets/cortex_password_setup_hmac"
+)
 
 api_secrets = services["cortex-api"].get("secrets", [])
 assert any(
@@ -227,6 +234,11 @@ assert any(
     and secret.get("target") == "cortex_academy_password"
     for secret in api_secrets
 ), "Academy password must be mounted at the explicit file-backed path"
+assert any(
+    secret.get("source") == "cortex_password_setup_hmac"
+    and secret.get("target") == "/run/secrets/cortex_password_setup_hmac"
+    for secret in api_secrets
+), "Password setup HMAC must be mounted as an isolated secret"
 
 migrate_environment = services["cortex-migrate"]["environment"]
 assert migrate_environment["CORTEX_POSTGRES_USER"] == "cortex_migrator"

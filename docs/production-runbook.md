@@ -36,14 +36,22 @@ continuam na mesma origem HTTPS externa.
 
 ## Modelo de entrada
 
-No runtime `postgresql`, o CPF é somente um identificador: ele localiza a
-identidade Academy canônica já persistida em PostgreSQL e emite a sessão opaca
-existente. Passkey permanece como alternativa online. Por política explícita de
-dispositivo colaborativo, esse endpoint não tem rate limit da aplicação nem
-retorna `429`; qualquer proteção de borda deve ser adotada e validada no
-ingresso. O runtime normal não consulta Academy ou Zeladoria durante essa
-autenticação e não carrega configuração de OTP; e-mail/OTP pertence somente à
-ativação explícita `postgresql-activation`.
+No runtime `postgresql`, o CPF é somente o identificador: ele localiza a
+identidade Academy canônica já persistida em PostgreSQL, e a senha individual
+é verificada por hash Argon2id no banco canônico. O primeiro acesso e a
+redefinição usam um código de oito dígitos emitido por um ALFA autorizado,
+válido por 30 minutos e no máximo cinco tentativas. O código é mostrado uma vez
+ao administrador; o banco guarda somente seu HMAC. Não é criado usuário MySQL
+por colaborador. Passkey permanece como alternativa online.
+
+Login e definição de senha compartilham rate limit persistido: por padrão, 250
+requisições por origem e 600 globais a cada 15 minutos. Isso comporta uma
+mobilização atrás do mesmo roteador sem retirar o teto contra abuso; ajuste
+somente por `CORTEX_AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS` e
+`CORTEX_AUTH_LOGIN_GLOBAL_RATE_LIMIT_MAX_REQUESTS`. O runtime normal não
+consulta Academy ou Zeladoria durante a autenticação e não carrega configuração
+de OTP; e-mail/OTP pertence somente à ativação explícita
+`postgresql-activation`.
 
 O template normal `.env.example` não contém variáveis de OTP ou SMTP. A
 ativação deve receber seu ambiente próprio diretamente do gerenciador de
@@ -59,6 +67,8 @@ API; PIN, e-mail e OTP não são fallbacks offline.
 ## Preparação de chaves
 
 - CPF HMAC: material aleatório com pelo menos 32 bytes no runtime normal.
+- Password setup HMAC: material aleatório independente, com pelo menos 32
+  bytes, montado em `CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE`.
 - OTP HMAC: material independente, montado somente no deployment explícito de
   ativação.
 - Offline grant: chave privada RSA PKCS#8 e chave pública SubjectPublicKeyInfo
@@ -66,7 +76,7 @@ API; PIN, e-mail e OTP não são fallbacks offline.
 - Calcule o SHA-256 base64url sem padding do DER da chave pública e forneça em
   `VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256` no build web.
 - Rotacione CPF HMAC usando `previous-key-*` durante a janela de transição; não
-  reutilize a chave OTP, SMTP ou offline.
+  reutilize a chave de código temporário, OTP, SMTP ou offline.
 
 ## Cutover
 
@@ -89,7 +99,8 @@ API; PIN, e-mail e OTP não são fallbacks offline.
    contrato de secrets, fontes e porta loopback.
 6. Inicie com `CORTEX_SYNC_ACADEMY_ENABLED=false` e
    `CORTEX_SYNC_ZELADORIA_ENABLED=false`, aguarde `/api/readiness`, faça login
-   direto por CPF canônico, valide a passkey como alternativa e exercite
+   por CPF e senha individual, valide a emissão e o consumo de um código
+   temporário, valide a passkey como alternativa e exercite
    separadamente o grant colaborativo e uma passkey PRF registrada.
 7. Inicie a PWA e execute `scripts/smoke-deploy.sh` na origem HTTPS final.
 8. Depois de configurar e validar explicitamente as URLs, usuários

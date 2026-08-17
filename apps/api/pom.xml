@@ -21,6 +21,7 @@
     <properties>
         <java.version>21</java.version>
         <aws.sdk.version>2.47.6</aws.sdk.version>
+        <bouncycastle.version>1.84</bouncycastle.version>
         <commons-codec.version>1.20.0</commons-codec.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <httpcore5.version>5.4.3</httpcore5.version>
@@ -58,6 +59,17 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
         </dependency>
 
         <dependency>

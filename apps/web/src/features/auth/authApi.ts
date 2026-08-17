@@ -31,21 +31,24 @@ export { parseAuthProfile } from "./authProfile";
  */
 const PRAZO_DE_ENTRADA_MS = 150_000;
 
-function postLogin(cpf: string): Promise<Response> {
+function postLogin(cpf: string, password: string): Promise<Response> {
   return freshAuthenticationFetch("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cpf }),
+    body: JSON.stringify({ cpf, password }),
     timeoutMs: PRAZO_DE_ENTRADA_MS,
     timeoutErrorMessage:
       "O Córtex não respondeu a tempo. Ele pode estar subindo agora; tente entrar outra vez em alguns instantes.",
   });
 }
 
-export async function loginWithCpf(cpf: string): Promise<AuthProfile> {
+export async function loginWithCpf(
+  cpf: string,
+  password: string,
+): Promise<AuthProfile> {
   let response: Response;
   try {
-    response = await postLogin(cpf);
+    response = await postLogin(cpf, password);
   } catch (error: unknown) {
     if (
       !(error instanceof ApiTransportError) ||
@@ -56,16 +59,37 @@ export async function loginWithCpf(cpf: string): Promise<AuthProfile> {
     // A tentativa que estourou o prazo é justamente o que acorda um serviço
     // parado; a segunda costuma responder de imediato. Repetir é seguro:
     // uma entrada abortada não deixou sessão estabelecida neste dispositivo.
-    response = await postLogin(cpf);
+    response = await postLogin(cpf, password);
   }
   const body = await readResponseBody(response);
   if (!response.ok) {
     if (response.status === 401) {
-      throw new ApiError("CPF ou acesso inválido.", 401, null);
+      throw new ApiError("CPF, senha ou acesso inválido.", 401, null);
     }
     throw responseError(body, response.status);
   }
   return parseAuthProfile(body);
+}
+
+export async function completePasswordSetup(
+  cpf: string,
+  code: string,
+  password: string,
+): Promise<void> {
+  const response = await freshAuthenticationFetch("/auth/password/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cpf, code, password }),
+    timeoutMs: PRAZO_DE_ENTRADA_MS,
+  });
+  const body = await readResponseBody(response);
+  if (response.status === 204) {
+    return;
+  }
+  if (response.status === 401) {
+    throw new ApiError("Código inválido ou expirado.", 401, null);
+  }
+  throw responseError(body, response.status);
 }
 
 export async function fetchSession(): Promise<AuthProfile | null> {

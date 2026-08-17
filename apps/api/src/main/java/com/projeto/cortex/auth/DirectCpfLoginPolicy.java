@@ -7,12 +7,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Enables direct CPF sessions only for the canonical PostgreSQL runtime. */
+/** Enables CPF plus password sessions only for the canonical PostgreSQL runtime. */
 @Component
 public final class DirectCpfLoginPolicy {
 
     static final String DISABLED_MESSAGE =
-            "Login direto por CPF indisponível.";
+            "Login por CPF e senha indisponível.";
 
     private final boolean enabled;
 

@@ -29,6 +29,8 @@ class PostgresqlLocalRuntimeContractTest {
                 "CORTEX_SYNC_ACADEMY_ENABLED:",
                 "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS:",
                 "CORTEX_SYNC_ZELADORIA_ENABLED:",
+                "CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE: /run/secrets/cortex_password_setup_hmac",
+                "- cortex_password_setup_hmac",
                 "VITE_CORTEX_AUTH_MODE: postgresql",
                 "127.0.0.1:${CORTEX_API_PORT:-8081}:8080",
                 "127.0.0.1:${CORTEX_WEB_PORT:-5173}:8080"
@@ -94,7 +96,8 @@ class PostgresqlLocalRuntimeContractTest {
 
         assertThat(productionCompose).contains(
                 "SPRING_PROFILES_ACTIVE: production,postgresql",
-                "CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac"
+                "CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac",
+                "CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE: /run/secrets/cortex_password_setup_hmac"
         ).doesNotContain(
                 "CORTEX_AUTH_OTP_HMAC_KEY_FILE",
                 "cortex_otp_hmac",
@@ -127,6 +130,7 @@ class PostgresqlLocalRuntimeContractTest {
                 "CORTEX_POSTGRES_DOCKER_URL=jdbc:postgresql://"
                         + "host.docker.internal:5432/" + CANONICAL_DATABASE,
                 "CORTEX_POSTGRES_PASSWORD_FILE=",
+                "CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE=",
                 "SPRING_PROFILES_ACTIVE=local,postgresql",
                 "CORTEX_POSTGRES_RUNTIME_READY=false",
                 "CORTEX_WEB_PORT=5173",
@@ -165,7 +169,9 @@ class PostgresqlLocalRuntimeContractTest {
 
         assertThat(application).contains(
                 "hmac-key-file: ${CORTEX_AUTH_OTP_HMAC_KEY_FILE:}",
-                "hmac-key-inline: ${CORTEX_AUTH_OTP_HMAC_KEY:}"
+                "hmac-key-inline: ${CORTEX_AUTH_OTP_HMAC_KEY:}",
+                "max-requests: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS:250}",
+                "global-max-requests: ${CORTEX_AUTH_LOGIN_GLOBAL_RATE_LIMIT_MAX_REQUESTS:600}"
         );
         assertThat(localProfile).doesNotContain(
                 "hmac-key-inline",
@@ -200,6 +206,7 @@ class PostgresqlLocalRuntimeContractTest {
     private static void assertNormalRuntimeLauncher(String launcher) {
         assertThat(launcher).contains(
                 "CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE",
+                "CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE",
                 "CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE",
                 "CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE"
         ).doesNotContain(

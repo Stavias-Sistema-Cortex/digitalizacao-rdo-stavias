@@ -10,7 +10,7 @@ Este diretório é a definição executável do ambiente de produção do reposi
 - API e PWA sem portas públicas próprias;
 - uma única entrada HTTPS para a PWA e `/api`;
 - Academy e Zeladoria somente como fontes MySQL de leitura;
-- login principal por CPF canônico e passkey como alternativa;
+- login principal por CPF canônico e senha individual, com passkey opcional;
 - segredos somente por arquivos montados;
 - papéis PostgreSQL separados para administração, Flyway e runtime da API.
 
@@ -30,7 +30,8 @@ CORTEX_SOURCE_ENV_FILE=/caminho/seguro/.env.local \
 
 O comando:
 
-1. copia somente os segredos necessários para um diretório ignorado pelo Git;
+1. copia somente os segredos necessários e gera uma chave exclusiva para os
+   códigos temporários em um diretório ignorado pelo Git;
 2. cria um backup lógico restaurável do PostgreSQL canônico atual;
 3. restaura esse backup no PostgreSQL 18 isolado;
 4. executa Flyway;

@@ -44,6 +44,14 @@ export interface AdminRoleChangeApi {
   alteradoEm: string;
 }
 
+export interface PasswordSetupCodeApi {
+  collaboratorId: string;
+  name: string | null;
+  code: string;
+  purpose: "FIRST_ACCESS" | "RESET";
+  expiresAt: string;
+}
+
 export interface VinculoApi {
   id: string;
   obraId: string;
@@ -164,6 +172,17 @@ export async function alterarPapelColaborador(
           justificativa: justificativa.trim(),
         }),
       },
+    ),
+  );
+}
+
+export async function emitirCodigoSenha(
+  colaboradorId: string,
+): Promise<PasswordSetupCodeApi> {
+  return readJson<PasswordSetupCodeApi>(
+    await apiFetch(
+      `/admin/colaboradores/${encodeURIComponent(colaboradorId)}/password-code`,
+      { method: "POST" },
     ),
   );
 }

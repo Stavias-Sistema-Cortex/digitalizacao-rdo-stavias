@@ -14,11 +14,9 @@ import org.springframework.stereotype.Service;
  * Disjuntor da porta que o campo realmente usa.
  *
  * <p>A passkey tinha o seu disjuntor e o desafio por e-mail tinha o dele. O
- * login direto por CPF, que é por onde entra quem trabalha na obra, não tinha
- * nenhum — e é justamente ele quem aceita a credencial mais adivinhável do
- * conjunto: CPF não é segredo, circula em nota fiscal e ficha de entrega. Sem
- * freio, testar CPFs em sequência até achar um cadastrado era só questão de
- * tempo de máquina.
+ * login por CPF e senha, que é por onde entra quem trabalha na obra, também
+ * precisa de limite. O teto por origem comporta uma mobilização de cem pessoas
+ * atrás do mesmo roteador; o teto global continua impedindo tentativa sem fim.
  *
  * <p>Reaproveita o armazenamento de baldes que já existe e já está de pé em
  * produção ({@code PostgresqlRateLimitBucketRepository}), então o freio é
@@ -51,9 +49,9 @@ public class AuthLoginRateLimiter {
     @Autowired
     public AuthLoginRateLimiter(
             AuthRateLimitStore buckets,
-            @Value("${cortex.auth.login.rate-limit.max-requests:15}")
+            @Value("${cortex.auth.login.rate-limit.max-requests:250}")
             int maxRequests,
-            @Value("${cortex.auth.login.rate-limit.global-max-requests:400}")
+            @Value("${cortex.auth.login.rate-limit.global-max-requests:600}")
             int globalMaxRequests,
             @Value("${cortex.auth.login.rate-limit.window-seconds:900}")
             int windowSeconds

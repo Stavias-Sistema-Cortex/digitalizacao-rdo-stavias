@@ -6,6 +6,7 @@ import com.projeto.cortex.auth.otp.EmailOtpChallengeService;
 import com.projeto.cortex.auth.otp.OtpChallengeRequest;
 import com.projeto.cortex.auth.otp.OtpChallengeResponse;
 import com.projeto.cortex.auth.otp.OtpVerifyRequest;
+import com.projeto.cortex.auth.password.PasswordAuthenticationService;
 import com.projeto.cortex.auth.session.AuthCookieService;
 import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.projeto.cortex.auth.session.AuthSessionFilter;
@@ -13,7 +14,6 @@ import com.projeto.cortex.auth.session.AuthSessionProfileResolver;
 import com.projeto.cortex.auth.session.AuthSessionService;
 import com.projeto.cortex.auth.session.IssuedAuthSession;
 import com.projeto.cortex.auth.session.ResolvedAuthSession;
-import com.projeto.cortex.auth.identity.CpfNormalizer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
@@ -38,14 +38,15 @@ public class AuthController {
     private static final Logger log =
             LoggerFactory.getLogger(AuthController.class);
 
-    static final String LOGIN_REJECTED_MESSAGE = "CPF ou acesso inválido.";
+    static final String LOGIN_REJECTED_MESSAGE =
+            "CPF, senha ou acesso inválido.";
     static final String LOGIN_THROTTLED_MESSAGE =
             "Muitas tentativas de autenticação. Tente novamente mais tarde.";
     static final String CPF_FILTER_DISABLED_MESSAGE =
             "Filtro de CPF desativado.";
 
     private final Optional<EmailOtpChallengeService> otpChallenges;
-    private final Optional<AuthService> authService;
+    private final Optional<PasswordAuthenticationService> passwordAuthentication;
     private final ClientAddressResolver clientAddresses;
     private final AuthSessionService sessions;
     private final AuthCookieService cookies;
@@ -57,7 +58,7 @@ public class AuthController {
     @Autowired
     public AuthController(
             Optional<EmailOtpChallengeService> otpChallenges,
-            Optional<AuthService> authService,
+            Optional<PasswordAuthenticationService> passwordAuthentication,
             ClientAddressResolver clientAddresses,
             AuthSessionService sessions,
             AuthCookieService cookies,
@@ -67,7 +68,7 @@ public class AuthController {
             AuthLoginRateLimiter loginRateLimiter
     ) {
         this.otpChallenges = otpChallenges;
-        this.authService = authService;
+        this.passwordAuthentication = passwordAuthentication;
         this.clientAddresses = clientAddresses;
         this.sessions = sessions;
         this.cookies = cookies;
@@ -179,13 +180,15 @@ public class AuthController {
         ClientInstanceProof clientInstance = ClientInstanceProof.require(
                 servletRequest
         );
-        String cpf = canonicalCpf(request);
-        AuthenticatedIdentity identity = authService.orElseThrow(
+        AuthenticatedIdentity identity = passwordAuthentication.orElseThrow(
                 () -> new ResponseStatusException(
                         HttpStatus.SERVICE_UNAVAILABLE,
                         "Autenticação indisponível."
                 )
-        ).autenticarPorCpf(cpf)
+        ).authenticate(
+                request == null ? null : request.cpf(),
+                request == null ? null : request.password()
+        )
                 .orElseThrow(() -> {
                     // O CPF não entra na linha: é dado pessoal, e o que a
                     // investigação precisa é de onde veio e quando.
@@ -223,16 +226,4 @@ public class AuthController {
         ));
     }
 
-    private String canonicalCpf(LoginRequest request) {
-        try {
-            return CpfNormalizer.requireValid(
-                    request == null ? null : request.cpf()
-            );
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    LOGIN_REJECTED_MESSAGE
-            );
-        }
-    }
 }

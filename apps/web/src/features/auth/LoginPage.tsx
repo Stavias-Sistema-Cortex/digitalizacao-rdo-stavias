@@ -14,24 +14,35 @@ import {
   type LoginFieldErrors,
 } from "./loginValidation";
 import { autenticarPorCpf } from "./authService";
+import { completePasswordSetup } from "./authApi";
 import { despertarApi } from "./despertarApi";
 import { queueOfflineGrantUnavailableNotice } from "./authNotice";
 import { authenticateWithPasskey } from "./passkeyApi";
 
 import "./LoginPage.css";
 
-type SubmitStatus = "idle" | "cpf" | "passkey";
+type SubmitStatus = "idle" | "cpf" | "passkey" | "setup";
+type LoginMode = "login" | "setup";
 
 export function LoginPage() {
   const cpfId = useId();
+  const passwordId = useId();
+  const codeId = useId();
+  const newPasswordId = useId();
   const cpfRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   const [cpf, setCpf] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [mode, setMode] = useState<LoginMode>("login");
   const [errors, setErrors] = useState<LoginFieldErrors>({});
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [authError, setAuthError] = useState("");
   const [online, setOnline] = useState(() => navigator.onLine);
   const [subindo, setSubindo] = useState(false);
+  const [setupSuccess, setSetupSuccess] = useState("");
 
   const loading = status !== "idle";
 
@@ -100,16 +111,20 @@ export function LoginPage() {
     }
 
     setAuthError("");
-    const nextErrors = validateLoginForm(cpf);
+    const nextErrors = validateLoginForm(cpf, password);
     setErrors(nextErrors);
     if (nextErrors.cpf) {
       cpfRef.current?.focus();
       return;
     }
+    if (nextErrors.password) {
+      passwordRef.current?.focus();
+      return;
+    }
 
     setStatus("cpf");
     try {
-      const result = await autenticarPorCpf(onlyDigits(cpf));
+      const result = await autenticarPorCpf(onlyDigits(cpf), password);
       if (result.offlineGrant === "UNAVAILABLE") {
         queueOfflineGrantUnavailableNotice();
       }
@@ -117,7 +132,7 @@ export function LoginPage() {
     } catch (error: unknown) {
       setStatus("idle");
       setAuthError(errorMessage(error));
-      cpfRef.current?.focus();
+      passwordRef.current?.focus();
     }
   }
 
@@ -144,6 +159,45 @@ export function LoginPage() {
     }
   }
 
+  async function definePassword(
+    event: SubmitEvent<HTMLFormElement>,
+  ): Promise<void> {
+    event.preventDefault();
+    if (loading || !online) {
+      return;
+    }
+    setAuthError("");
+    setSetupSuccess("");
+    const nextErrors = validateLoginForm(cpf);
+    setErrors(nextErrors);
+    if (nextErrors.cpf) {
+      cpfRef.current?.focus();
+      return;
+    }
+    if (!/^[0-9]{8}$/.test(code)) {
+      setAuthError("Informe o código temporário de 8 dígitos.");
+      return;
+    }
+    if (newPassword.length < 12 || newPassword.length > 128) {
+      setAuthError("A nova senha deve ter de 12 a 128 caracteres.");
+      return;
+    }
+
+    setStatus("setup");
+    try {
+      await completePasswordSetup(onlyDigits(cpf), code, newPassword);
+      setCode("");
+      setNewPassword("");
+      setPassword("");
+      setMode("login");
+      setSetupSuccess("Senha definida. Agora entre com sua nova senha.");
+      setStatus("idle");
+    } catch (error: unknown) {
+      setStatus("idle");
+      setAuthError(errorMessage(error));
+    }
+  }
+
   return (
     <main className="cortex-login">
       <section
@@ -164,9 +218,13 @@ export function LoginPage() {
         <div className="login__card">
           <header className="login__card-header">
             <p className="login__eyebrow">Área restrita</p>
-            <h1 id="login-title">Entrar no sistema</h1>
+            <h1 id="login-title">
+              {mode === "login" ? "Entrar no sistema" : "Definir sua senha"}
+            </h1>
             <p className="login__subtitle">
-              Use seu CPF ou uma passkey para entrar.
+              {mode === "login"
+                ? "Use seu CPF e sua senha para entrar."
+                : "Use o código temporário entregue pelo responsável autorizado."}
             </p>
           </header>
 
@@ -179,7 +237,11 @@ export function LoginPage() {
           <form
             className="login__form"
             onSubmit={(event) => {
-              void authenticateCpf(event);
+              if (mode === "login") {
+                void authenticateCpf(event);
+              } else {
+                void definePassword(event);
+              }
             }}
             noValidate
           >
@@ -225,40 +287,145 @@ export function LoginPage() {
               ) : null}
             </div>
 
+            {mode === "login" ? (
+              <div className="login-field">
+                <label className="login-field__label" htmlFor={passwordId}>
+                  Senha
+                </label>
+                <input
+                  ref={passwordRef}
+                  id={passwordId}
+                  className={
+                    errors.password
+                      ? "login-field__input login-field__input--error"
+                      : "login-field__input"
+                  }
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  maxLength={128}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    if (errors.password) {
+                      setErrors({ ...errors, password: undefined });
+                    }
+                    setAuthError("");
+                  }}
+                  aria-invalid={errors.password ? true : undefined}
+                  aria-describedby={
+                    errors.password ? `${passwordId}-error` : undefined
+                  }
+                  disabled={loading}
+                />
+                {errors.password ? (
+                  <p
+                    className="login-field__error"
+                    id={`${passwordId}-error`}
+                    role="alert"
+                  >
+                    {errors.password}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                <div className="login-field">
+                  <label className="login-field__label" htmlFor={codeId}>
+                    Código temporário
+                  </label>
+                  <input
+                    id={codeId}
+                    className="login-field__input"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={code}
+                    maxLength={8}
+                    onChange={(event) => {
+                      setCode(onlyDigits(event.target.value).slice(0, 8));
+                      setAuthError("");
+                    }}
+                    disabled={loading}
+                  />
+                </div>
+                <div className="login-field">
+                  <label
+                    className="login-field__label"
+                    htmlFor={newPasswordId}
+                  >
+                    Nova senha
+                  </label>
+                  <input
+                    id={newPasswordId}
+                    className="login-field__input"
+                    type="password"
+                    autoComplete="new-password"
+                    value={newPassword}
+                    maxLength={128}
+                    onChange={(event) => {
+                      setNewPassword(event.target.value);
+                      setAuthError("");
+                    }}
+                    disabled={loading}
+                  />
+                </div>
+              </>
+            )}
+
             <div className="login__actions">
               <button
                 type="submit"
                 className="login__submit"
                 disabled={loading || !online}
               >
-                {status === "cpf" ? (
+                {status === "cpf" || status === "setup" ? (
                   <span className="login__submit-loading">
                     <span className="login__spinner" aria-hidden="true" />
-                    Verificando acesso...
+                    {status === "setup"
+                      ? "Definindo senha..."
+                      : "Verificando acesso..."}
                   </span>
                 ) : (
-                  "Entrar"
+                  mode === "login" ? "Entrar" : "Definir senha"
                 )}
               </button>
 
-              <button
-                type="button"
-                className="login__submit login__submit-secondary"
-                disabled={loading || !online}
-                onClick={() => {
-                  void authenticatePasskey();
-                }}
-              >
-                {status === "passkey" ? (
-                  <span className="login__submit-loading">
-                    <span className="login__spinner" aria-hidden="true" />
-                    Validando passkey...
-                  </span>
-                ) : (
-                  "Entrar com passkey"
-                )}
-              </button>
+              {mode === "login" ? (
+                <button
+                  type="button"
+                  className="login__submit login__submit-secondary"
+                  disabled={loading || !online}
+                  onClick={() => {
+                    void authenticatePasskey();
+                  }}
+                >
+                  {status === "passkey" ? (
+                    <span className="login__submit-loading">
+                      <span className="login__spinner" aria-hidden="true" />
+                      Validando passkey...
+                    </span>
+                  ) : (
+                    "Entrar com passkey"
+                  )}
+                </button>
+              ) : null}
             </div>
+
+            <button
+              type="button"
+              className="login__mode-switch"
+              disabled={loading}
+              onClick={() => {
+                setMode(mode === "login" ? "setup" : "login");
+                setErrors({});
+                setAuthError("");
+                setSetupSuccess("");
+              }}
+            >
+              {mode === "login"
+                ? "Primeiro acesso ou esqueci minha senha"
+                : "Voltar para o login"}
+            </button>
 
             {subindo && status === "cpf" ? (
               <p className="login__aguardando" role="status">
@@ -273,6 +440,11 @@ export function LoginPage() {
                 role="alert"
               >
                 {authError}
+              </p>
+            ) : null}
+            {setupSuccess ? (
+              <p className="login__success" role="status">
+                {setupSuccess}
               </p>
             ) : null}
           </form>

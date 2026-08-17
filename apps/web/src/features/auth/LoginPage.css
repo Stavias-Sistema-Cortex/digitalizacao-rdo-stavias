@@ -155,6 +155,10 @@
   flex-direction: column;
 }
 
+.login-field + .login-field {
+  margin-top: 16px;
+}
+
 .cortex-login .login-field__label {
   margin: 0 0 8px 2px;
   font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
@@ -319,6 +323,29 @@
   color: #3a0f08;
   font-size: 0.74rem;
   font-weight: 600;
+}
+
+.cortex-login .login__mode-switch {
+  margin-top: 16px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.82rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.login__success {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid rgb(254 210 3 / 40%);
+  border-radius: 10px;
+  color: var(--text-strong);
+  background: rgb(254 210 3 / 12%);
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 /* Nota de acesso restrito / suporte */

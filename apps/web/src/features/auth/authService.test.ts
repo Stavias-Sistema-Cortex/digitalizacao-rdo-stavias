@@ -63,6 +63,7 @@ const profile = {
   obraIds: ["00000000-0000-4000-8000-000000000002"],
   expiraEm: "2099-07-14T12:00:00Z",
 };
+const PASSWORD = "Frase secreta individual!";
 const REMOTE_SESSION_ISOLATION_KEY = "cortex.auth.remote-session-isolation";
 
 describe("authService", () => {
@@ -128,9 +129,9 @@ describe("authService", () => {
     mocks.loginWithCpf.mockResolvedValue(profile);
     mocks.fetchOfflineGrantAfterFreshCpfLogin.mockResolvedValue({ signed: "grant" });
 
-    await expect(autenticarPorCpf("111.444.777-35"))
+    await expect(autenticarPorCpf("111.444.777-35", PASSWORD))
       .resolves.toEqual({ profile, offlineGrant: "READY" });
-    expect(mocks.loginWithCpf).toHaveBeenCalledWith("11144477735");
+    expect(mocks.loginWithCpf).toHaveBeenCalledWith("11144477735", PASSWORD);
     expect(mocks.saveCollaborativeOfflineGrant).toHaveBeenCalledWith(
       "11144477735",
       { signed: "grant" },
@@ -143,7 +144,7 @@ describe("authService", () => {
     setSession(profile);
     rejectIsolationMarkerWrite = true;
 
-    await expect(autenticarPorCpf("11144477735"))
+    await expect(autenticarPorCpf("11144477735", PASSWORD))
       .rejects.toThrow("isolar a sessão remota");
 
     expect(getSession()).toBeNull();
@@ -157,7 +158,7 @@ describe("authService", () => {
       new TypeError("offline"),
     );
 
-    await expect(autenticarPorCpf("11144477735"))
+    await expect(autenticarPorCpf("11144477735", PASSWORD))
       .resolves.toEqual({ profile, offlineGrant: "UNAVAILABLE" });
 
     expect(getSession()).toEqual(profile);
@@ -171,7 +172,7 @@ describe("authService", () => {
       signed: "grant",
     });
 
-    await expect(autenticarPorCpf("11144477735")).resolves.toEqual({
+    await expect(autenticarPorCpf("11144477735", PASSWORD)).resolves.toEqual({
       profile,
       offlineGrant: "READY",
     });
@@ -189,7 +190,7 @@ describe("authService", () => {
       new mocks.OfflineGrantOwnerMismatchError("owner mismatch"),
     );
 
-    await expect(autenticarPorCpf("11144477735")).rejects.toThrow(
+    await expect(autenticarPorCpf("11144477735", PASSWORD)).rejects.toThrow(
       "sessão foi alterada",
     );
 
@@ -204,7 +205,7 @@ describe("authService", () => {
       new ApiError("Sessão incompatível.", 401, null),
     );
 
-    await expect(autenticarPorCpf("11144477735"))
+    await expect(autenticarPorCpf("11144477735", PASSWORD))
       .rejects.toThrow("Sessão incompatível.");
 
     expect(getSession()).toBeNull();
@@ -219,7 +220,7 @@ describe("authService", () => {
       ),
     );
 
-    await expect(autenticarPorCpf("11144477735")).rejects.toThrow(
+    await expect(autenticarPorCpf("11144477735", PASSWORD)).rejects.toThrow(
       "Não foi possível preparar a prova desta aba. Atualize a página e entre novamente.",
     );
 

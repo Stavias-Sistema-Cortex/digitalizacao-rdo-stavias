@@ -76,6 +76,7 @@ describe("App direct CPF authentication notice", () => {
     render(<App />);
 
     await user.type(await screen.findByRole("textbox", { name: "CPF" }), "11144477735");
+    await user.type(screen.getByLabelText("Senha"), "Frase secreta individual!");
     await user.click(screen.getByRole("button", { name: "Entrar" }));
 
     expect(await screen.findByTestId("authenticated-home"))

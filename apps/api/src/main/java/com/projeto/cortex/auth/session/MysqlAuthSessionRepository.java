@@ -89,6 +89,16 @@ public class MysqlAuthSessionRepository implements AuthSessionRepository {
                 """, requireReason(reason), tokenHash);
     }
 
+    @Override
+    public int revokeAllByCollaboratorId(String collaboratorId, String reason) {
+        requireUuid(collaboratorId, "colaborador");
+        return jdbcTemplate.update("""
+                UPDATE auth_session
+                SET revogado_em = CURRENT_TIMESTAMP(6), revogado_motivo = ?
+                WHERE colaborador_id = ? AND revogado_em IS NULL
+                """, requireReason(reason), collaboratorId);
+    }
+
     static ResolvedAuthSession resolved(java.sql.ResultSet resultSet) throws java.sql.SQLException {
         return new ResolvedAuthSession(resultSet.getString("id"),
                 resultSet.getString("colaborador_id"), resultSet.getString("nome"),

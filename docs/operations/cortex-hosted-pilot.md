@@ -32,6 +32,7 @@ valores de segredo, URL de conexão, identificador de conta ou endpoint.
   `CORTEX_AUTH_WEBAUTHN_RP_NAME`, `CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS`,
   `CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID`,
   `CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE`,
+  `CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE`,
   `CORTEX_AUTH_OFFLINE_GRANT_KEY_ID`,
   `CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE`,
   `CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE`,
@@ -84,13 +85,18 @@ segredo não são argumentos de shell, logs, outputs ou artefatos.
 
 ## 3. Arquivos secretos do Render
 
-Configure estes cinco arquivos secretos exatamente sob `/etc/secrets`:
+Configure estes seis arquivos secretos exatamente sob `/etc/secrets`:
 
 - `/etc/secrets/cortex-cpf-hmac`
+- `/etc/secrets/cortex-password-setup-hmac`
 - `/etc/secrets/cortex-offline-private.pem`
 - `/etc/secrets/cortex-offline-public.pem`
 - `/etc/secrets/cortex-memory-cursor-hmac`
 - `/etc/secrets/cortex-academy-password`
+
+O arquivo `cortex-password-setup-hmac` deve conter pelo menos 32 bytes
+aleatórios e independentes. Ele assina os códigos temporários de primeiro
+acesso/redefinição e não é a senha de nenhum colaborador.
 
 `sslMode=VERIFY_IDENTITY` é o padrão preferido da Academy. Somente quando o
 servidor legado não fornecer identidade de hostname, adicione também o secret

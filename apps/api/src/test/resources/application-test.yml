@@ -6,6 +6,8 @@ cortex:
       allowed-origins: http://127.0.0.1:5173
     otp:
       hmac-key-inline: test-only-otp-hmac-key-material-00000001
+    password-setup:
+      hmac-key-inline: test-only-password-code-hmac-material-0001
   ontology:
     memory:
       cursor-hmac:

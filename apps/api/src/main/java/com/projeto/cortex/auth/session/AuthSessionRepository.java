@@ -21,4 +21,6 @@ public interface AuthSessionRepository {
     );
 
     int revokeByTokenHash(String tokenHash, String reason);
+
+    int revokeAllByCollaboratorId(String collaboratorId, String reason);
 }

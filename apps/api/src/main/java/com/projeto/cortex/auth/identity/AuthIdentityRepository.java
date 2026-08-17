@@ -113,6 +113,27 @@ public class AuthIdentityRepository {
      */
     @Transactional
     public Optional<AuthIdentity> findActiveAcademyByCpf(String cpfRaw) {
+        return findAcademyByCpf(cpfRaw, false);
+    }
+
+    /**
+     * First-access lookup that also accepts a pending Academy identity.
+     *
+     * <p>The administrator-issued, single-use challenge remains mandatory;
+     * this method only resolves its owner without turning CPF possession into
+     * authentication.</p>
+     */
+    @Transactional
+    public Optional<AuthIdentity> findAcademyPasswordSetupCandidateByCpf(
+            String cpfRaw
+    ) {
+        return findAcademyByCpf(cpfRaw, true);
+    }
+
+    private Optional<AuthIdentity> findAcademyByCpf(
+            String cpfRaw,
+            boolean includePending
+    ) {
         AuthChallengeLookupMaterial material =
                 digestService.challengeLookup(cpfRaw);
         CpfLookupDigest current = material.candidates().get(0);
@@ -142,9 +163,10 @@ public class AuthIdentityRepository {
             return Optional.empty();
         }
 
-        List<AuthIdentity> identities = findActiveAcademyByRotationHmacs(
+        List<AuthIdentity> identities = findAcademyByRotationHmacs(
                 current,
-                previous
+                previous,
+                includePending
         );
         if (identities.size() == 1) {
             AuthIdentity identity = identities.get(0);
@@ -169,10 +191,14 @@ public class AuthIdentityRepository {
         );
     }
 
-    private List<AuthIdentity> findActiveAcademyByRotationHmacs(
+    private List<AuthIdentity> findAcademyByRotationHmacs(
             CpfLookupDigest current,
-            CpfLookupDigest previous
+            CpfLookupDigest previous,
+            boolean includePending
     ) {
+        String identityStatusClause = includePending
+                ? "AND identity.status IN ('PENDENTE', 'ATIVA')"
+                : "AND identity.status = 'ATIVA'";
         return jdbcTemplate.query("""
                 SELECT
                     colaborador.id AS colaborador_id,
@@ -196,7 +222,7 @@ public class AuthIdentityRepository {
                   AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
-                  AND identity.status = 'ATIVA'
+                """ + identityStatusClause + """
                 LIMIT 2
                 """,
                 IDENTITY_ROW_MAPPER,
@@ -783,7 +809,7 @@ public class AuthIdentityRepository {
         }
 
         List<AuthIdentity> persisted =
-                findActiveAcademyByRotationHmacs(current, current);
+                findAcademyByRotationHmacs(current, current, false);
         return persisted.size() == 1
                 && collaboratorId.equals(
                         persisted.get(0).colaboradorId()

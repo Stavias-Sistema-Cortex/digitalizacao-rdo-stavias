@@ -44,7 +44,7 @@ describe("LoginPage access methods", () => {
   it("keeps one action instruction and one security note without marketing copy", () => {
     const view = render(<LoginPage />);
 
-    expect(screen.getByText("Use seu CPF ou uma passkey para entrar."))
+    expect(screen.getByText("Use seu CPF e sua senha para entrar."))
       .toBeVisible();
     expect(
       screen.getByText(
@@ -58,7 +58,7 @@ describe("LoginPage access methods", () => {
     expect(view.container.querySelector(".login__footer")).toBeNull();
   });
 
-  it("offers direct CPF first and passkey as the explicit secondary production action", () => {
+  it("offers CPF plus password first and passkey as the secondary action", () => {
     vi.stubEnv("DEV", false);
     vi.stubEnv("PROD", true);
 
@@ -73,6 +73,10 @@ describe("LoginPage access methods", () => {
     expect(screen.getByRole("textbox", { name: "CPF" })).toHaveAttribute(
       "inputmode",
       "numeric",
+    );
+    expect(screen.getByLabelText("Senha")).toHaveAttribute(
+      "autocomplete",
+      "current-password",
     );
   });
 
@@ -90,10 +94,14 @@ describe("LoginPage access methods", () => {
     render(<LoginPage />);
 
     await user.type(screen.getByRole("textbox", { name: "CPF" }), "11144477735");
+    await user.type(screen.getByLabelText("Senha"), "Frase secreta individual!");
     await user.click(screen.getByRole("button", { name: "Entrar" }));
 
     await waitFor(() => {
-      expect(mocks.autenticarPorCpf).toHaveBeenCalledWith("11144477735");
+      expect(mocks.autenticarPorCpf).toHaveBeenCalledWith(
+        "11144477735",
+        "Frase secreta individual!",
+      );
     });
     expect(navigate).not.toHaveBeenCalled();
     expect(screen.queryByText(/código|e-mail/i)).not.toBeInTheDocument();
@@ -109,5 +117,22 @@ describe("LoginPage access methods", () => {
     expect(
       screen.getByRole("button", { name: "Entrar com passkey" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the first-access form with temporary code and new password", async () => {
+    const user = userEvent.setup();
+    render(<LoginPage />);
+
+    await user.click(screen.getByRole("button", {
+      name: "Primeiro acesso ou esqueci minha senha",
+    }));
+
+    expect(screen.getByLabelText("Código temporário")).toHaveAttribute(
+      "autocomplete",
+      "one-time-code",
+    );
+    expect(screen.getByLabelText("Nova senha")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Definir senha" }))
+      .toBeInTheDocument();
   });
 });

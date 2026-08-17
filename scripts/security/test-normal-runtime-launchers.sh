@@ -43,7 +43,7 @@ for source_path in \
 done
 cp "$repository_root/compose.local.yml" "$mirror_root/compose.local.yml"
 
-for secret_name in postgres cpf_hmac offline_private offline_public memory_cursor; do
+for secret_name in postgres cpf_hmac password_setup_hmac offline_private offline_public memory_cursor; do
   printf 'disposable-contract-value-0000000000000000' > "$secret_root/$secret_name"
 done
 
@@ -65,6 +65,7 @@ CORTEX_POSTGRES_PASSWORD_FILE=$secret_root/postgres
 CORTEX_POSTGRES_RUNTIME_READY=true
 CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID=cpf-contract
 CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE=$secret_root/cpf_hmac
+CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE=$secret_root/password_setup_hmac
 CORTEX_AUTH_OFFLINE_GRANT_KEY_ID=offline-contract
 CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE=$secret_root/offline_private
 CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE=$secret_root/offline_public
@@ -290,6 +291,7 @@ sed -n '2p' "$capture_root/api.server-port" |
 sed -n '3p' "$capture_root/api.server-port" |
   grep -Fxq 'http://localhost:15473'
 grep -Fq 'CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE' "$capture_root/api.environment"
+grep -Fq 'CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE' "$capture_root/api.environment"
 grep -Fq 'CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE' "$capture_root/api.environment"
 grep -Fq 'CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE' "$capture_root/api.environment"
 

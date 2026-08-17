@@ -28,6 +28,7 @@ class AuthPublicEndpointPolicyTest {
                 OPTIONS,
                 VERIFY,
                 "/api/auth/login",
+                "/api/auth/password/setup",
                 EMAIL_CHALLENGES,
                 EMAIL_VERIFY,
                 "/api/auth/email/challenges/not-a-uuid/verify",
@@ -43,7 +44,8 @@ class AuthPublicEndpointPolicyTest {
         assertThat(publicPosts).containsExactly(
                 OPTIONS,
                 VERIFY,
-                "/api/auth/login"
+                "/api/auth/login",
+                "/api/auth/password/setup"
         );
     }
 
@@ -53,6 +55,9 @@ class AuthPublicEndpointPolicyTest {
 
         assertThat(policy.isPublicAuthenticationRequest(
                 request("POST", "/api/auth/login")
+        )).isTrue();
+        assertThat(policy.isPublicAuthenticationRequest(
+                request("POST", "/api/auth/password/setup")
         )).isTrue();
         assertThat(policy.isPublicAuthenticationRequest(
                 request("POST", OPTIONS)

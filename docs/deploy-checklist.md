@@ -39,9 +39,12 @@ estado; `/api/health` mede somente o processo.
 - [ ] O par PEM do offline grant está montado e o fingerprint público usado no
   build da PWA corresponde exatamente a esse par.
 - [ ] O login por CPF normaliza o identificador, resolve somente a identidade
-  Academy já espelhada em PostgreSQL e não depende de OTP/e-mail, senha ou de
-  um gate de rate limit da aplicação. Proteções de borda, se adotadas, são
-  configuradas e testadas no ingresso sem mudar essa política colaborativa.
+  Academy já espelhada em PostgreSQL e exige a senha individual verificada por
+  Argon2id. Não depende de OTP/e-mail nem de perfil MySQL por pessoa; o rate
+  limit da aplicação foi validado para a mobilização prevista.
+- [ ] Primeiro acesso e redefinição usam código individual de oito dígitos,
+  validade de 30 minutos, cinco tentativas e consumo único; reset revoga as
+  sessões anteriores.
 - [ ] Sucesso por CPF emite somente cookie opaco + CSRF no hostname final; a
   resposta e os logs não expõem material de lookup, CPF persistido ou segredo.
 - [ ] E-mail/OTP está indisponível no runtime normal e permanece isolado no
@@ -55,7 +58,8 @@ estado; `/api/health` mede somente o processo.
 
 ## 3. Secrets e providers
 
-- [ ] CPF HMAC e chave privada offline vêm de arquivos secretos montados; os
+- [ ] CPF HMAC, HMAC dos códigos temporários e chave privada offline vêm de
+  arquivos secretos montados; os
   equivalentes inline estão vazios. OTP HMAC é requisito apenas do deployment
   de ativação explícita, nunca do runtime normal. O runtime normal
   `production,postgresql` não instancia `EmailGateway`, não configura SMTP e

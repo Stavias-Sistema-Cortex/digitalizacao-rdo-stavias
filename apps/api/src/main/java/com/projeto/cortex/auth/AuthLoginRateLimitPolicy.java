@@ -3,12 +3,9 @@ package com.projeto.cortex.auth;
 /**
  * Quanto o login direto por CPF aceita antes de fechar.
  *
- * <p>Os limites da porta de passkey moram em {@code WebAuthnRateLimitPolicy} e
- * são deliberadamente mais frouxos: lá cada tentativa exige uma assinatura que
- * só o aparelho certo produz, então repetir não aproxima ninguém de entrar.
- * Aqui repetir é exatamente o ataque — o CPF é a credencial inteira, e cada
- * tentativa a mais é um palpite a mais. Por isso o teto por origem é menor e a
- * janela, a mesma.
+ * <p>O limite por origem precisa comportar muitos aparelhos de uma obra atrás
+ * do mesmo roteador. A combinação do teto global com o custo do Argon2id ainda
+ * impede tentativas ilimitadas; a janela continua igual à da passkey.
  */
 public record AuthLoginRateLimitPolicy(
         int maxRequests,

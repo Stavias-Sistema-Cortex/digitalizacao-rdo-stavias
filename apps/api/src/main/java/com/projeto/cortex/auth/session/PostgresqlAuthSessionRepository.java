@@ -88,4 +88,15 @@ public class PostgresqlAuthSessionRepository implements AuthSessionRepository {
                 WHERE token_hash = ? AND revogado_em IS NULL
                 """, MysqlAuthSessionRepository.requireReason(reason), tokenHash);
     }
+
+    @Override
+    public int revokeAllByCollaboratorId(String collaboratorId, String reason) {
+        MysqlAuthSessionRepository.requireUuid(collaboratorId, "colaborador");
+        return jdbcTemplate.update("""
+                UPDATE auth_session
+                SET revogado_em = clock_timestamp(), revogado_motivo = ?
+                WHERE colaborador_id = ? AND revogado_em IS NULL
+                """, MysqlAuthSessionRepository.requireReason(reason),
+                collaboratorId);
+    }
 }

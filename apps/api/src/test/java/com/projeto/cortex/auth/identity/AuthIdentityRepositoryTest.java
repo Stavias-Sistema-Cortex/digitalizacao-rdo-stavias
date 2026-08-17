@@ -388,6 +388,49 @@ class AuthIdentityRepositoryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void passwordSetupAlsoFindsPendingAcademyIdentity() {
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT),
+                        "c".repeat(64)
+                )
+        );
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of(activeIdentity()));
+        stubDigestOwners(CURRENT, List.of("alfa-sintetico"));
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.cpf_hash = ?")
+                        && !sql.contains("colaborador.banco_origem")),
+                any(RowMapper.class),
+                eq("c".repeat(64))
+        )).thenReturn(List.of(activeIdentity()));
+
+        assertThat(repository.findAcademyPasswordSetupCandidateByCpf(
+                SYNTHETIC_CPF
+        )).contains(activeIdentity());
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(
+                sql.capture(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        );
+        assertThat(sql.getValue())
+                .contains("identity.status IN ('PENDENTE', 'ATIVA')");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void directCpfLoginAllowsOneProtectedOnlyAcademyOwner() {
         String legacyDigest = CpfHasher.hashDeDigitos(SYNTHETIC_CPF);
         when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(

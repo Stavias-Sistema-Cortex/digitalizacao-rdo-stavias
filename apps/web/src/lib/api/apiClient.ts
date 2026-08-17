@@ -22,6 +22,7 @@ const CSRF_HEADER = "X-CSRF-Token";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 const FRESH_AUTHENTICATION_PATHS = new Set([
   "/auth/login",
+  "/auth/password/setup",
   "/auth/passkeys/authentication/options",
   "/auth/passkeys/authentication/verify",
 ]);
@@ -195,6 +196,7 @@ function isPublicAuthenticationPath(path: string): boolean {
   const pathname = path.split(/[?#]/, 1)[0];
   return pathname === "/auth/email/challenges" ||
     pathname === "/auth/login" ||
+    pathname === "/auth/password/setup" ||
     pathname === "/auth/passkeys/authentication/options" ||
     pathname === "/auth/passkeys/authentication/verify" ||
     /^\/auth\/email\/challenges\/[^/]{1,64}\/verify$/.test(

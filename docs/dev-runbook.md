@@ -6,8 +6,9 @@
 - PostgreSQL 18 acessível com o banco canônico `StaviasCortex`;
 - Docker Desktop apenas se a API/PWA forem executadas em containers;
 - `.env` local ignorado pelo Git, criado a partir de `.env.example`;
-- arquivos locais protegidos para senha PostgreSQL, HMAC de CPF, cursor de
-  Memória e chaves offline. O HMAC de OTP é exigido somente na ativação
+- arquivos locais protegidos para senha PostgreSQL, HMAC de CPF, HMAC dos
+  códigos temporários, cursor de Memória e chaves offline. O HMAC de OTP é
+  exigido somente na ativação
   explícita, não no runtime normal.
 
 Academy e Zeladoria não são bancos do Córtex. Elas podem ser configuradas
@@ -35,7 +36,8 @@ CORTEX_POSTGRES_RUNTIME_READY=true \
   ./scripts/dev/check-postgres-runtime-release.sh
 ```
 
-`start-postgres-activation.sh` não faz parte da entrada normal por CPF. Use-o
+`start-postgres-activation.sh` não faz parte da entrada normal por CPF e senha.
+Use-o
 somente quando uma transição de ativação explicitamente autorizada exigir
 e-mail/OTP no processo separado descrito abaixo.
 

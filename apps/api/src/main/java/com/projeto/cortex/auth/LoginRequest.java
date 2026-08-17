@@ -1,6 +1,6 @@
 package com.projeto.cortex.auth;
 
-public record LoginRequest(String cpf) {
+public record LoginRequest(String cpf, String password) {
 
     @Override
     public String toString() {

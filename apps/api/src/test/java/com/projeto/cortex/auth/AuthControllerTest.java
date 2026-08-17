@@ -18,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.projeto.cortex.auth.activation.PostgresqlActivationSessionProfileResolver;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
+import com.projeto.cortex.auth.password.PasswordAuthenticationService;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.otp.EmailOtpChallengeService;
 import com.projeto.cortex.auth.otp.OtpChallengeResponse;
@@ -52,7 +53,8 @@ class AuthControllerTest {
 
     private final EmailOtpChallengeService otp =
             mock(EmailOtpChallengeService.class);
-    private final AuthService authService = mock(AuthService.class);
+    private final PasswordAuthenticationService passwordAuthentication =
+            mock(PasswordAuthenticationService.class);
     private final ClientAddressResolver addresses =
             mock(ClientAddressResolver.class);
     private final AuthSessionService sessions = mock(AuthSessionService.class);
@@ -68,7 +70,7 @@ class AuthControllerTest {
         when(loginRateLimiter.allow(anyString())).thenReturn(true);
         mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(
                 Optional.of(otp),
-                Optional.of(authService),
+                Optional.of(passwordAuthentication),
                 addresses,
                 sessions,
                 cookies,
@@ -104,10 +106,10 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/auth/login")
                         .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                        .content(loginBody("111.444.777-35")))
                 .andExpect(status().isTooManyRequests());
 
-        verifyNoInteractions(authService);
+        verifyNoInteractions(passwordAuthentication);
         verify(sessions, never()).issue(any(), any());
         verify(cookies, never()).write(any(), any());
     }
@@ -116,13 +118,16 @@ class AuthControllerTest {
     @Test
     void directCpfLoginConsumesTheThrottleExactlyOncePerAttempt()
             throws Exception {
-        when(authService.autenticarPorCpf("11144477735"))
+        when(passwordAuthentication.authenticate(
+                "111.444.777-35",
+                "Frase secreta individual!"
+        ))
                 .thenReturn(Optional.empty());
 
         mockMvc.perform(post("/api/auth/login")
                         .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                        .content(loginBody("111.444.777-35")))
                 .andExpect(status().isUnauthorized());
 
         verify(loginRateLimiter).allow("203.0.113.10");
@@ -133,7 +138,10 @@ class AuthControllerTest {
             throws Exception {
         AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
         IssuedAuthSession issued = issuedSession();
-        when(authService.autenticarPorCpf("11144477735"))
+        when(passwordAuthentication.authenticate(
+                "111.444.777-35",
+                "Frase secreta individual!"
+        ))
                 .thenReturn(Optional.of(identity));
         when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
                 .thenReturn(issued);
@@ -141,7 +149,7 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/auth/login")
                         .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                        .content(loginBody("111.444.777-35")))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.colaboradorId").value(
@@ -164,18 +172,21 @@ class AuthControllerTest {
     void directCpfRejectsMissingClientInstanceBeforeIdentityLookup()
             throws Exception {
         AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
-        when(authService.autenticarPorCpf("11144477735"))
+        when(passwordAuthentication.authenticate(
+                "111.444.777-35",
+                "Frase secreta individual!"
+        ))
                 .thenReturn(Optional.of(identity));
         when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
                 .thenReturn(issuedSession());
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                        .content(loginBody("111.444.777-35")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("Cache-Control", "no-store"));
 
-        verify(authService, never()).autenticarPorCpf(any());
+        verify(passwordAuthentication, never()).authenticate(any(), any());
         verify(sessions, never()).issue(any(), any());
         verify(cookies, never()).write(any(), any());
     }
@@ -184,7 +195,10 @@ class AuthControllerTest {
     void directCpfRejectsMalformedClientInstanceBeforeIdentityLookup()
             throws Exception {
         AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
-        when(authService.autenticarPorCpf("11144477735"))
+        when(passwordAuthentication.authenticate(
+                "111.444.777-35",
+                "Frase secreta individual!"
+        ))
                 .thenReturn(Optional.of(identity));
         when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
                 .thenReturn(issuedSession());
@@ -192,11 +206,11 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/auth/login")
                         .header("X-Cortex-Client-Instance", "malformed")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                        .content(loginBody("111.444.777-35")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("Cache-Control", "no-store"));
 
-        verify(authService, never()).autenticarPorCpf(any());
+        verify(passwordAuthentication, never()).authenticate(any(), any());
         verify(sessions, never()).issue(any(), any());
         verify(cookies, never()).write(any(), any());
     }
@@ -204,13 +218,16 @@ class AuthControllerTest {
     @Test
     void malformedCpfUsesTheSameGenericRejectionAsAnUnknownCpf()
             throws Exception {
-        when(authService.autenticarPorCpf("11144477735"))
+        when(passwordAuthentication.authenticate(
+                "11144477735",
+                "Frase secreta individual!"
+        ))
                 .thenReturn(Optional.empty());
 
         var malformed = mockMvc.perform(post("/api/auth/login")
                         .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"123\"}"))
+                        .content(loginBody("123")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andReturn()
@@ -218,7 +235,7 @@ class AuthControllerTest {
         var unknown = mockMvc.perform(post("/api/auth/login")
                         .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"11144477735\"}"))
+                        .content(loginBody("11144477735")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andReturn()
@@ -231,8 +248,14 @@ class AuthControllerTest {
                 AuthController.LOGIN_REJECTED_MESSAGE,
                 malformed.getErrorMessage()
         );
-        verify(authService, never()).autenticarPorCpf("123");
-        verify(authService).autenticarPorCpf("11144477735");
+        verify(passwordAuthentication).authenticate(
+                "123",
+                "Frase secreta individual!"
+        );
+        verify(passwordAuthentication).authenticate(
+                "11144477735",
+                "Frase secreta individual!"
+        );
         verify(sessions, never()).issue(any(), any());
     }
 
@@ -241,14 +264,17 @@ class AuthControllerTest {
             throws Exception {
         AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
         IssuedAuthSession issued = issuedSession();
-        when(authService.autenticarPorCpf("11144477735"))
+        when(passwordAuthentication.authenticate(
+                "111.444.777-35",
+                "Frase secreta individual!"
+        ))
                 .thenReturn(Optional.of(identity));
         when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
                 .thenReturn(issued);
         MockMvc postgresqlMvc = MockMvcBuilders.standaloneSetup(
                 new AuthController(
                         Optional.empty(),
-                        Optional.of(authService),
+                        Optional.of(passwordAuthentication),
                         addresses,
                         sessions,
                         cookies,
@@ -262,23 +288,29 @@ class AuthControllerTest {
         postgresqlMvc.perform(post("/api/auth/login")
                         .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                        .content(loginBody("111.444.777-35")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cpf").doesNotExist())
                 .andExpect(jsonPath("$.email").doesNotExist());
 
-        verify(authService).autenticarPorCpf("11144477735");
+        verify(passwordAuthentication).authenticate(
+                "111.444.777-35",
+                "Frase secreta individual!"
+        );
     }
 
     @Test
     void ineligibleCpfNeverIssuesSessionOrCookies() throws Exception {
-        when(authService.autenticarPorCpf("11144477735"))
+        when(passwordAuthentication.authenticate(
+                "11144477735",
+                "Frase secreta individual!"
+        ))
                 .thenReturn(Optional.empty());
 
         mockMvc.perform(post("/api/auth/login")
                         .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"11144477735\"}"))
+                        .content(loginBody("11144477735")))
                 .andExpect(status().isUnauthorized());
 
         verify(sessions, never()).issue(any(), any());
@@ -317,7 +349,7 @@ class AuthControllerTest {
         MockMvc postgresqlMvc = MockMvcBuilders.standaloneSetup(
                 new AuthController(
                         Optional.empty(),
-                        Optional.of(authService),
+                        Optional.of(passwordAuthentication),
                         addresses,
                         sessions,
                         cookies,
@@ -439,7 +471,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.escopoGlobal").value(true))
                 .andExpect(jsonPath("$.obraIds").isEmpty());
 
-        verifyNoInteractions(authService);
+        verifyNoInteractions(passwordAuthentication);
         verify(cookies).write(any(HttpServletResponse.class), eq(issued));
     }
 
@@ -499,6 +531,11 @@ class AuthControllerTest {
                 token('c'),
                 EXPIRY
         );
+    }
+
+    private String loginBody(String cpf) {
+        return "{\"cpf\":\"" + cpf
+                + "\",\"password\":\"Frase secreta individual!\"}";
     }
 
     private AuthenticatedIdentity identity(PapelAcesso role) {

@@ -43,6 +43,7 @@ vi.mock("../../lib/api/apiClient", () => ({
 }));
 
 import {
+  completePasswordSetup,
   fetchOfflineGrant,
   fetchOfflineGrantAfterFreshCpfLogin,
   fetchSession,
@@ -62,6 +63,7 @@ const profile = {
   obraIds: ["00000000-0000-4000-8000-000000000002"],
   expiraEm: "2099-07-14T12:00:00Z",
 };
+const PASSWORD = "Frase secreta individual!";
 
 describe("authApi", () => {
   beforeEach(() => {
@@ -79,14 +81,14 @@ describe("authApi", () => {
       email: "não deve atravessar o parser",
     });
 
-    await expect(loginWithCpf("11144477735")).resolves.toEqual(profile);
+    await expect(loginWithCpf("11144477735", PASSWORD)).resolves.toEqual(profile);
 
     expect(mocks.freshAuthenticationFetch).toHaveBeenCalledWith(
       "/auth/login",
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cpf: "11144477735" }),
+        body: JSON.stringify({ cpf: "11144477735", password: PASSWORD }),
       }),
     );
   });
@@ -95,7 +97,7 @@ describe("authApi", () => {
     mocks.freshAuthenticationFetch.mockResolvedValue(response(200));
     mocks.readResponseBody.mockResolvedValue(profile);
 
-    await expect(loginWithCpf("11144477735")).resolves.toEqual(profile);
+    await expect(loginWithCpf("11144477735", PASSWORD)).resolves.toEqual(profile);
 
     expect(mocks.apiFetch).not.toHaveBeenCalled();
     expect(mocks.freshAuthenticationFetch).toHaveBeenCalledWith(
@@ -103,7 +105,7 @@ describe("authApi", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cpf: "11144477735" }),
+        body: JSON.stringify({ cpf: "11144477735", password: PASSWORD }),
       }),
     );
   });
@@ -114,14 +116,38 @@ describe("authApi", () => {
       message: "Autenticação necessária ou sessão expirada.",
     });
 
-    await expect(loginWithCpf("11144477735")).rejects.toMatchObject({
+    await expect(loginWithCpf("11144477735", PASSWORD)).rejects.toMatchObject({
       name: "ApiError",
       status: 401,
       code: null,
-      message: "CPF ou acesso inválido.",
+      message: "CPF, senha ou acesso inválido.",
     });
 
     expect(mocks.apiError).not.toHaveBeenCalled();
+  });
+
+  it("submits the one-time code and new password without retaining a response secret", async () => {
+    mocks.freshAuthenticationFetch.mockResolvedValue(response(204));
+    mocks.readResponseBody.mockResolvedValue(null);
+
+    await expect(completePasswordSetup(
+      "11144477735",
+      "12345678",
+      PASSWORD,
+    )).resolves.toBeUndefined();
+
+    expect(mocks.freshAuthenticationFetch).toHaveBeenCalledWith(
+      "/auth/password/setup",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cpf: "11144477735",
+          code: "12345678",
+          password: PASSWORD,
+        }),
+      }),
+    );
   });
 
   it("obtém somente o envelope assinado exato do grant offline", async () => {
@@ -223,7 +249,7 @@ describe("entrada por CPF com a API fria", () => {
   it("reserva um prazo compatível com a subida do serviço", async () => {
     mocks.freshAuthenticationFetch.mockResolvedValue(response(200));
 
-    await loginWithCpf("12345678901");
+    await loginWithCpf("12345678901", PASSWORD);
 
     const [, opcoes] = mocks.freshAuthenticationFetch.mock.calls[0];
     expect(opcoes.timeoutMs).toBeGreaterThanOrEqual(120_000);
@@ -239,7 +265,7 @@ describe("entrada por CPF com a API fria", () => {
       )
       .mockResolvedValueOnce(response(200));
 
-    await expect(loginWithCpf("12345678901")).resolves.toMatchObject({
+    await expect(loginWithCpf("12345678901", PASSWORD)).resolves.toMatchObject({
       colaboradorId: profile.colaboradorId,
     });
     expect(mocks.freshAuthenticationFetch).toHaveBeenCalledTimes(2);
@@ -250,7 +276,7 @@ describe("entrada por CPF com a API fria", () => {
       new mocks.ApiTransportError("Sem conexão.", "CONNECTION"),
     );
 
-    await expect(loginWithCpf("12345678901")).rejects.toThrow(/Sem conexão/);
+    await expect(loginWithCpf("12345678901", PASSWORD)).rejects.toThrow(/Sem conexão/);
     expect(mocks.freshAuthenticationFetch).toHaveBeenCalledTimes(1);
   });
 });

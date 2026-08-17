@@ -5,6 +5,7 @@ import { OperationalWorkspace } from "../../../components/workspace/OperationalW
 
 import {
   alterarPapelColaborador,
+  emitirCodigoSenha,
   listarColaboradores,
   listarObrasAdmin,
   listarVinculos,
@@ -12,6 +13,7 @@ import {
   queueVinculoColaborador,
   type ColaboradorApi,
   type ObraAdminApi,
+  type PasswordSetupCodeApi,
   type VinculoApi,
 } from "./gestaoObrasApi";
 import { NovaObraForm } from "./NovaObraForm";
@@ -65,6 +67,12 @@ export function GestaoObrasPage() {
   >({});
   const [papelSalvandoId, setPapelSalvandoId] = useState<
     string | null
+  >(null);
+  const [codigoSalvandoId, setCodigoSalvandoId] = useState<
+    string | null
+  >(null);
+  const [codigoEmitido, setCodigoEmitido] = useState<
+    PasswordSetupCodeApi | null
   >(null);
 
   const obraSelecionada = useMemo(
@@ -238,6 +246,19 @@ export function GestaoObrasPage() {
       setAviso(mensagemErro(erro));
     } finally {
       setPapelSalvandoId(null);
+    }
+  }
+
+  async function gerarCodigoSenha(colaborador: ColaboradorApi) {
+    setCodigoSalvandoId(colaborador.id);
+    setCodigoEmitido(null);
+    setAviso(null);
+    try {
+      setCodigoEmitido(await emitirCodigoSenha(colaborador.id));
+    } catch (erro) {
+      setAviso(mensagemErro(erro));
+    } finally {
+      setCodigoSalvandoId(null);
     }
   }
 
@@ -500,7 +521,7 @@ export function GestaoObrasPage() {
             type="search"
             value={papelQuery}
             onChange={(event) => setPapelQuery(event.target.value)}
-            placeholder="Buscar colaborador por nome ou e-mail"
+            placeholder="Buscar colaborador por nome"
             aria-label="Buscar colaborador para alterar papel"
           />
           <button type="submit">Buscar</button>
@@ -562,6 +583,34 @@ export function GestaoObrasPage() {
                       ? "Salvando…"
                       : "Confirmar mudança"}
                   </button>
+                  <button
+                    type="button"
+                    className="gestao-senha-gerar"
+                    aria-label={`Gerar código de acesso para ${colaborador.nome ?? colaborador.id}`}
+                    disabled={codigoSalvandoId === colaborador.id}
+                    onClick={() => gerarCodigoSenha(colaborador)}
+                  >
+                    {codigoSalvandoId === colaborador.id
+                      ? "Gerando…"
+                      : "Gerar código de acesso"}
+                  </button>
+                  {codigoEmitido?.collaboratorId === colaborador.id && (
+                    <output
+                      className="gestao-senha-codigo"
+                      aria-live="polite"
+                    >
+                      <span>
+                        {codigoEmitido.purpose === "FIRST_ACCESS"
+                          ? "Primeiro acesso"
+                          : "Redefinição de senha"}
+                      </span>
+                      <strong>{codigoEmitido.code}</strong>
+                      <small>
+                        Este código é mostrado somente agora e expira em 30
+                        minutos. Entregue diretamente ao colaborador.
+                      </small>
+                    </output>
+                  )}
                 </li>
               );
             })}

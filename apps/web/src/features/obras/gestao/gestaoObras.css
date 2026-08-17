@@ -260,7 +260,7 @@
 
 .gestao-papeis-lista li {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) auto 110px minmax(220px, 1.5fr) auto;
+  grid-template-columns: minmax(150px, 1fr) auto 110px minmax(220px, 1.5fr) auto auto;
   gap: 12px;
   align-items: end;
   padding: 13px 0;
@@ -306,12 +306,59 @@
   white-space: nowrap;
 }
 
+.gestao-papeis .gestao-senha-gerar {
+  min-height: 40px;
+  border-color: #0d3f3c;
+  background: #fff;
+  color: #0d3f3c;
+  white-space: nowrap;
+}
+
+.gestao-senha-codigo {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #d4deda;
+  border-left: 3px solid #f2c300;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--color-ink);
+}
+
+.gestao-senha-codigo > span {
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.gestao-senha-codigo > strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1.25rem;
+  letter-spacing: 0.12em;
+}
+
+.gestao-senha-codigo > small {
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 @media (max-width: 920px) {
   .gestao-papeis-lista li {
     grid-template-columns: 1fr 1fr;
   }
 
   .gestao-papeis-justificativa {
+    grid-column: 1 / -1;
+  }
+
+  .gestao-senha-codigo {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .gestao-senha-codigo > small {
     grid-column: 1 / -1;
   }
 }
@@ -331,6 +378,15 @@
   }
 
   .gestao-papeis-justificativa {
+    grid-column: auto;
+  }
+
+  .gestao-senha-codigo {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .gestao-senha-codigo > small {
     grid-column: auto;
   }
 }

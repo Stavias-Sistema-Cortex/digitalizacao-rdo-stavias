@@ -99,17 +99,17 @@ cortex:
       previous-key-id: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY_ID:}
       previous-key-file: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY_FILE:}
       previous-key-inline: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY:}
-    # Teto do login direto por CPF. O da passkey (acima) é mais frouxo de
-    # propósito: lá cada tentativa exige assinatura do aparelho certo, então
-    # repetir não aproxima ninguém de entrar. Aqui repetir É o ataque, porque o
-    # CPF é a credencial inteira. O piso global existe separado do teto por
-    # origem porque, atrás de proxy sem trusted-proxy-cidrs configurado, todas
-    # as tentativas chegam com o mesmo endereço — e aí ele é o único que segura.
+    # O teto por origem comporta a mobilização de muitos aparelhos da mesma
+    # obra atrás de um único roteador. O teto global continua limitando o custo
+    # do Argon2id e vale também quando o proxy não distingue os clientes.
     login:
       rate-limit:
-        max-requests: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS:15}
-        global-max-requests: ${CORTEX_AUTH_LOGIN_GLOBAL_RATE_LIMIT_MAX_REQUESTS:400}
+        max-requests: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS:250}
+        global-max-requests: ${CORTEX_AUTH_LOGIN_GLOBAL_RATE_LIMIT_MAX_REQUESTS:600}
         window-seconds: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS:900}
+    password-setup:
+      hmac-key-file: ${CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE:}
+      hmac-key-inline: ${CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY:}
     dev-admin:
       enabled: ${CORTEX_AUTH_DEV_ADMIN_ENABLED:false}
     trusted-proxy-cidrs: ${CORTEX_AUTH_TRUSTED_PROXY_CIDRS:}

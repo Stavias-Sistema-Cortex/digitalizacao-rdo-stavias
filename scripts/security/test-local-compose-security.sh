@@ -68,6 +68,7 @@ assert_production_compose_renders_from_documented_contract() {
         academy \
         zeladoria \
         cpf_hmac \
+        password_setup_hmac \
         offline_private \
         offline_public \
         memory_cursor_hmac; do
@@ -83,6 +84,7 @@ assert_production_compose_renders_from_documented_contract() {
     academy \
     zeladoria \
     cpf_hmac \
+    password_setup_hmac \
     offline_private \
     offline_public \
     memory_cursor_hmac; do
@@ -98,6 +100,7 @@ assert_production_compose_renders_from_documented_contract() {
     CORTEX_AUTH_WEBAUTHN_RP_ID='cortex.example.invalid' \
     CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID='cpf-contract-key' \
     CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE="$contract_secret_dir/cpf_hmac" \
+    CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE="$contract_secret_dir/password_setup_hmac" \
     CORTEX_AUTH_OFFLINE_GRANT_KEY_ID='offline-contract-key' \
     CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE="$contract_secret_dir/offline_private" \
     CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE="$contract_secret_dir/offline_public" \
@@ -191,6 +194,7 @@ for documented_variable in \
   CORTEX_WEB_PORT \
   CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID \
   CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE \
+  CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE \
   CORTEX_AUTH_WEBAUTHN_RP_ID \
   CORTEX_AUTH_OFFLINE_GRANT_KEY_ID \
   CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID \
