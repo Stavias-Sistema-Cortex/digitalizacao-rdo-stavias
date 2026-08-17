@@ -71,6 +71,7 @@ class PasswordSetupServiceTest {
         );
         when(credentials.findHashByCollaboratorId(TARGET_ID))
                 .thenReturn(Optional.of("$argon2id$existing"));
+        when(credentials.invalidateEpoch(TARGET_ID)).thenReturn(2L);
         when(codes.generateCode()).thenReturn(CODE);
         when(codes.digest(CHALLENGE_ID, CODE)).thenReturn("a".repeat(64));
         when(setups.create(
@@ -92,7 +93,7 @@ class PasswordSetupServiceTest {
                 PasswordSetupPurpose.RESET,
                 EXPIRES
         ));
-        InOrder order = inOrder(setups);
+        InOrder order = inOrder(setups, credentials, sessions);
         order.verify(setups).invalidatePending(TARGET_ID, "NOVO_CODIGO_EMITIDO");
         order.verify(setups).create(
                 CHALLENGE_ID,
@@ -109,7 +110,8 @@ class PasswordSetupServiceTest {
                 TARGET_ID,
                 CHALLENGE_ID
         );
-        verify(sessions).revokeAllByCollaboratorId(
+        order.verify(credentials).invalidateEpoch(TARGET_ID);
+        order.verify(sessions).revokeAllByCollaboratorId(
                 TARGET_ID,
                 "REDEFINICAO_DE_SENHA_SOLICITADA"
         );
@@ -139,13 +141,20 @@ class PasswordSetupServiceTest {
         when(codes.matches(CHALLENGE_ID, CODE, "a".repeat(64)))
                 .thenReturn(true);
         when(hashes.hash(PASSWORD)).thenReturn("$argon2id$new-hash");
+        when(credentials.rotateHashAndEpoch(
+                TARGET_ID,
+                "$argon2id$new-hash"
+        )).thenReturn(2L);
         when(setups.activateIdentity(TARGET_ID)).thenReturn(1);
         when(setups.consume(CHALLENGE_ID)).thenReturn(1);
 
         assertThat(service.complete(CPF, CODE, PASSWORD)).isTrue();
 
         InOrder order = inOrder(setups, credentials, sessions);
-        order.verify(credentials).upsertHash(TARGET_ID, "$argon2id$new-hash");
+        order.verify(credentials).rotateHashAndEpoch(
+                TARGET_ID,
+                "$argon2id$new-hash"
+        );
         order.verify(setups).activateIdentity(TARGET_ID);
         order.verify(setups).consume(CHALLENGE_ID);
         order.verify(sessions).revokeAllByCollaboratorId(
@@ -175,7 +184,7 @@ class PasswordSetupServiceTest {
 
         verify(setups).recordFailedAttempt(CHALLENGE_ID);
         verify(hashes, never()).hash(anyString());
-        verify(credentials, never()).upsertHash(anyString(), anyString());
+        verify(credentials, never()).rotateHashAndEpoch(anyString(), anyString());
         verify(sessions, never()).revokeAllByCollaboratorId(
                 anyString(),
                 anyString()
@@ -195,7 +204,7 @@ class PasswordSetupServiceTest {
 
         verify(setups).markExpired(CHALLENGE_ID);
         verify(codes, never()).matches(anyString(), anyString(), anyString());
-        verify(credentials, never()).upsertHash(anyString(), anyString());
+        verify(credentials, never()).rotateHashAndEpoch(anyString(), anyString());
     }
 
     @Test
@@ -207,7 +216,7 @@ class PasswordSetupServiceTest {
         assertThat(service.complete(CPF, CODE, PASSWORD)).isFalse();
 
         verify(setups, never()).lockLatestPending(anyString());
-        verify(credentials, never()).upsertHash(anyString(), anyString());
+        verify(credentials, never()).rotateHashAndEpoch(anyString(), anyString());
     }
 
     private AuthIdentity activeIdentity() {

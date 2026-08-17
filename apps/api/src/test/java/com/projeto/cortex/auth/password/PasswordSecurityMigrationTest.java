@@ -28,4 +28,27 @@ class PasswordSecurityMigrationTest {
                 .doesNotContain("senha_texto")
                 .doesNotContain("codigo_texto");
     }
+
+    @Test
+    void v88AddsMonotonicOfflineAuthorizationEpochAndRevocationTriggers()
+            throws Exception {
+        String sql;
+        try (var stream = getClass().getResourceAsStream(
+                "/db/migration-postgresql/"
+                        + "V88__offline_password_vault_authorization_epoch.sql"
+        )) {
+            assertThat(stream).isNotNull();
+            sql = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        assertThat(sql)
+                .contains("ADD COLUMN auth_epoch bigint NOT NULL DEFAULT 1")
+                .contains("CHECK (auth_epoch >= 1)")
+                .contains("OLD.status = 'ATIVA'")
+                .contains("NEW.status <> 'ATIVA'")
+                .contains("OLD.ativo = TRUE")
+                .contains("NEW.ativo = FALSE")
+                .contains("NEW.deletado_em IS NOT NULL")
+                .contains("SET auth_epoch = auth_epoch + 1");
+    }
 }

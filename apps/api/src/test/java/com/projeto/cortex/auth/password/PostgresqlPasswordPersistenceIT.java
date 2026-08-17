@@ -70,9 +70,31 @@ class PostgresqlPasswordPersistenceIT
                     .isEqualTo(targetId);
 
             String encoded = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA";
-            credentials.upsertHash(targetId, encoded);
+            long firstEpoch = credentials.rotateHashAndEpoch(targetId, encoded);
+            assertThat(firstEpoch).isEqualTo(1L);
             assertThat(credentials.findHashByCollaboratorId(targetId))
                     .contains(encoded);
+            assertThat(credentials.findAuthEpochByCollaboratorId(targetId))
+                    .contains(1L);
+
+            long rotatedEpoch = credentials.rotateHashAndEpoch(
+                    targetId,
+                    encoded
+            );
+            assertThat(rotatedEpoch).isEqualTo(2L);
+            assertThat(credentials.invalidateEpoch(targetId)).isEqualTo(3L);
+            jdbc.update("""
+                    UPDATE auth_identity
+                    SET status = 'ATIVA'
+                    WHERE colaborador_id = ?
+                    """, targetId);
+            jdbc.update("""
+                    UPDATE auth_identity
+                    SET status = 'BLOQUEADA'
+                    WHERE colaborador_id = ?
+                    """, targetId);
+            assertThat(credentials.findAuthEpochByCollaboratorId(targetId))
+                    .contains(4L);
 
             Instant expiresAt = setups.create(
                     challengeId,

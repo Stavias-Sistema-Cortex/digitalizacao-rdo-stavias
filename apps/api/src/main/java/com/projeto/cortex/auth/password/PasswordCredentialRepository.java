@@ -6,5 +6,9 @@ public interface PasswordCredentialRepository {
 
     Optional<String> findHashByCollaboratorId(String collaboratorId);
 
-    void upsertHash(String collaboratorId, String passwordHash);
+    Optional<Long> findAuthEpochByCollaboratorId(String collaboratorId);
+
+    long rotateHashAndEpoch(String collaboratorId, String passwordHash);
+
+    long invalidateEpoch(String collaboratorId);
 }

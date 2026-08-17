@@ -124,6 +124,7 @@ public final class PasswordSetupService {
                 challengeId
         );
         if (purpose == PasswordSetupPurpose.RESET) {
+            credentials.invalidateEpoch(targetId);
             sessions.revokeAllByCollaboratorId(
                     targetId,
                     RESET_SESSION_REVOCATION_REASON
@@ -174,7 +175,7 @@ public final class PasswordSetupService {
         }
 
         String passwordHash = hashes.hash(acceptedPassword);
-        credentials.upsertHash(collaboratorId, passwordHash);
+        credentials.rotateHashAndEpoch(collaboratorId, passwordHash);
         if (setups.activateIdentity(collaboratorId) != 1) {
             throw new IllegalStateException(
                     "Identidade não pôde ser ativada para senha."
