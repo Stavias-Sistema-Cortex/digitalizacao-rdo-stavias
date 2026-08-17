@@ -713,6 +713,10 @@ textarea:focus {
   flex-wrap: wrap;
   gap: 6px 32px;
   margin-top: 2px;
+  /* A faixa encostava nas caixas de marcar logo abaixo, e duas coisas de
+   * naturezas diferentes — um resultado de conta e duas perguntas de sim ou
+   * não — pareciam o mesmo bloco. */
+  margin-bottom: 14px;
   padding: 10px 14px;
   border: 1px solid #e6ece8;
   border-radius: var(--radius-sm);
@@ -735,19 +739,18 @@ textarea:focus {
 
 /* A medida que o contrato cobra.
  *
- * Era marcada por um "· quantidade" preso ao rótulo, na mesma cor e no mesmo
- * corpo das outras duas — três números de peso igual, e nenhuma pista de qual
- * deles vira medição. O selo separa o papel do nome, e o valor sobe de peso
- * para ser o primeiro que o olho encontra na faixa. */
-.rdo-servico-medidas .calculated-metric--quantidade {
-  padding: 2px 12px 2px 10px;
-  border-left: 3px solid var(--color-focus);
-}
-
+ * Passou por uma barra vertical de acento com um selo em caixa alta ao lado —
+ * dois enfeites para dizer uma coisa só, e do tipo que se reconhece de longe
+ * como decoração aplicada por fora. O que distingue esta medida das outras
+ * duas é o que ela é, então quem distingue é a tipografia: o valor em tom da
+ * marca e um corpo acima, e o papel escrito por extenso ao lado do nome, em
+ * minúsculas, do tamanho de uma nota de rodapé.
+ *
+ * Nenhuma régua, nenhuma cápsula, nenhum caixa-alta. */
 .rdo-servico-medidas .calculated-metric--quantidade span {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 5px;
   color: #4a5d57;
 }
 
@@ -757,16 +760,15 @@ textarea:focus {
 }
 
 .calculated-metric__selo {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: #e3efec;
   color: var(--color-focus);
-  /* 600 é o peso mais alto que a tipografia operacional admite; o selo se
-   * destaca pela cor e pela cápsula, não por um peso fora da escala. */
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+/* O ponto separa o nome do papel sem entrar no texto do elemento, que
+ * continua sendo só a palavra. */
+.calculated-metric__selo::before {
+  content: "· ";
 }
 
 .row-title {
@@ -808,6 +810,24 @@ textarea:focus {
 .row-actions .link-button:hover {
   border-color: var(--color-focus);
   background: #eef5f3;
+}
+
+/* Gaveta de diagnóstico no rodapé: fechada, uma linha, sem competir com o que
+ * se veio fazer na tela. */
+.json-preview {
+  margin-top: 18px;
+}
+
+.json-preview summary {
+  padding: 4px 0;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.json-preview[open] summary {
+  margin-bottom: 10px;
 }
 
 .json-preview pre {

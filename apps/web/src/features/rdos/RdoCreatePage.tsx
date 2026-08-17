@@ -635,7 +635,6 @@ export function RdoCreatePage({
     );
 
   const canViewRawPayload = isAlfa(getSession());
-  const [showJson, setShowJson] = useState(false);
   const [notice, setNotice] = useState(initialNotice ?? "");
   const [photoError, setPhotoError] = useState("");
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
@@ -1231,7 +1230,6 @@ export function RdoCreatePage({
     );
 
     setNotice("");
-    setShowJson(false);
   }
 
   return (
@@ -2334,24 +2332,6 @@ export function RdoCreatePage({
       </section>
 
 
-      {canViewRawPayload && showJson && (
-        <section className="form-card json-preview">
-          <div className="section-heading">
-            <div>
-              <h2>Payload gerado</h2>
-            </div>
-          </div>
-
-          <pre>
-            {JSON.stringify(
-              payload,
-              null,
-              2,
-            )}
-          </pre>
-        </section>
-      )}
-
           <footer className="action-bar">
         <button
           type="button"
@@ -2363,23 +2343,6 @@ export function RdoCreatePage({
             ? "Descartar alterações"
             : "Limpar"}
         </button>
-
-        {canViewRawPayload && (
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() =>
-              setShowJson(
-                (current) => !current,
-              )
-            }
-            disabled={isSaving || isSyncing}
-          >
-            {showJson
-              ? "Ocultar JSON"
-              : "Visualizar JSON"}
-          </button>
-        )}
 
         <button
           type="button"
@@ -2403,6 +2366,22 @@ export function RdoCreatePage({
             : "Salvar localmente"}
         </button>
           </footer>
+
+          {/*
+            O payload cru é ferramenta de diagnóstico, e ocupava um dos quatro
+            botões da barra de ações — do mesmo tamanho e do mesmo peso que
+            "Sincronizar agora" e "Salvar localmente", que são o que se vem
+            fazer aqui. Quem aponta a frente lia quatro escolhas onde há duas.
+
+            Vira gaveta fechada no rodapé: uma linha discreta, aberta por quem
+            for procurá-la, sem estado próprio para a tela administrar.
+          */}
+          {canViewRawPayload && (
+            <details className="json-preview">
+              <summary>Payload gerado</summary>
+              <pre>{JSON.stringify(payload, null, 2)}</pre>
+            </details>
+          )}
         </div>
       </div>
     </main>
@@ -2492,7 +2471,7 @@ function CalculatedMetric({
       <span>
         {label}
         {quantidade ? (
-          <b className="calculated-metric__selo">quantidade</b>
+          <span className="calculated-metric__selo">quantidade</span>
         ) : null}
       </span>
       <strong>{value}</strong>
