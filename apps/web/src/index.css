@@ -749,6 +749,17 @@ textarea:focus {
   font-weight: 600;
 }
 
+/* Duas ações no canto da linha: o espaçamento evita o toque errado no dedo. */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.row-actions .link-button {
+  font-size: 0.78rem;
+}
+
 .json-preview pre {
   max-height: 520px;
   overflow: auto;

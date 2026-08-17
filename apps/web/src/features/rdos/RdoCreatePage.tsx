@@ -20,6 +20,7 @@ import {
 } from "../../lib/db/rdoAttachmentRepository";
 import { getLocalRdo } from "../../lib/db/rdoRepository";
 import { garantirArquivoDaFoto } from "./rdoPhotoSync";
+import { duplicarServicoExecutado } from "./servicoDuplicado";
 import {
   rascunhoDifereDoQueEstaGravado,
   servicoExecutadoNeedsCatalogSelection,
@@ -995,6 +996,24 @@ export function RdoCreatePage({
     }));
   }
 
+  /*
+   * A cópia entra logo abaixo da linha copiada e sem o serviço, que é o campo
+   * que se veio trocar. O aviso de catálogo pendente já a segura até alguém
+   * dizer o que ela é, e a quantidade se refaz sozinha do trecho e das medidas
+   * assim que o serviço escolhido define a unidade.
+   */
+  function duplicarServico(localId: string) {
+    setDraft((current) => {
+      const servicosExecutados = duplicarServicoExecutado(
+        current.servicosExecutados,
+        localId,
+      );
+      return servicosExecutados === current.servicosExecutados
+        ? current
+        : { ...current, servicosExecutados };
+    });
+  }
+
   function removeCollectionItem(
     collection:
       | "servicosExecutados"
@@ -1826,18 +1845,28 @@ export function RdoCreatePage({
                   Serviço {index + 1}
                 </strong>
 
-                <button
-                  type="button"
-                  className="danger-link"
-                  onClick={() =>
-                    removeCollectionItem(
-                      "servicosExecutados",
-                      item.localId,
-                    )
-                  }
-                >
-                  Remover
-                </button>
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => duplicarServico(item.localId)}
+                  >
+                    Duplicar
+                  </button>
+
+                  <button
+                    type="button"
+                    className="danger-link"
+                    onClick={() =>
+                      removeCollectionItem(
+                        "servicosExecutados",
+                        item.localId,
+                      )
+                    }
+                  >
+                    Remover
+                  </button>
+                </div>
               </div>
 
               <div className="form-grid">
