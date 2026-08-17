@@ -698,3 +698,82 @@
     padding-inline: 20px;
   }
 }
+
+/* A orientação de primeiro acesso fica disponível sem competir com o login. */
+.login-field__label-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 8px;
+}
+
+.cortex-login .login-field__label-row .login-field__label {
+  margin: 0;
+}
+
+.login-field__info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.cortex-login .login-field__info-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 1px solid #9aa49e;
+  border-radius: 50%;
+  background: #f5f7f6;
+  color: var(--login-green);
+  font: 600 0.72rem/1 "Poppins", ui-sans-serif, system-ui, sans-serif;
+  text-transform: none;
+  cursor: help;
+}
+
+.cortex-login .login-field__info-trigger:hover,
+.cortex-login .login-field__info-trigger:focus-visible,
+.login-field__info[data-open="true"] .login-field__info-trigger {
+  border-color: var(--login-green);
+  background: #e9f0ee;
+}
+
+.login-field__info-tooltip {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(100% + 9px);
+  left: 0;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 72px));
+  padding: 9px 11px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 6px;
+  background: #113330;
+  color: #fff;
+  box-shadow: 0 10px 24px rgb(17 51 48 / 18%);
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(3px);
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+}
+
+.login-field__info[data-open="true"] .login-field__info-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}

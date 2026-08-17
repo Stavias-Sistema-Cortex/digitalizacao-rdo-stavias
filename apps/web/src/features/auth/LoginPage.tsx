@@ -27,6 +27,7 @@ type LoginMode = "login" | "setup";
 export function LoginPage() {
   const cpfId = useId();
   const passwordId = useId();
+  const passwordHelpId = useId();
   const newPasswordId = useId();
   const cpfRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -42,6 +43,7 @@ export function LoginPage() {
   const [online, setOnline] = useState(() => navigator.onLine);
   const [subindo, setSubindo] = useState(false);
   const [setupSuccess, setSetupSuccess] = useState("");
+  const [passwordHelpOpen, setPasswordHelpOpen] = useState(false);
 
   const loading = status !== "idle";
 
@@ -125,6 +127,7 @@ export function LoginPage() {
       setCode(password);
       setPassword("");
       setNewPassword("");
+      setPasswordHelpOpen(false);
       setMode("setup");
       return;
     }
@@ -196,6 +199,7 @@ export function LoginPage() {
       setCode("");
       setNewPassword("");
       setPassword("");
+      setPasswordHelpOpen(false);
       setMode("login");
       setSetupSuccess("Senha definida. Agora entre com sua nova senha.");
       setStatus("idle");
@@ -230,7 +234,7 @@ export function LoginPage() {
             </h1>
             <p className="login__subtitle">
               {mode === "login"
-                ? "Use seu CPF e sua senha ou código temporário para entrar."
+                ? "Use seu CPF e sua senha para entrar."
                 : "Código temporário informado. Agora defina sua nova senha."}
             </p>
           </header>
@@ -296,9 +300,41 @@ export function LoginPage() {
 
             {mode === "login" ? (
               <div className="login-field">
-                <label className="login-field__label" htmlFor={passwordId}>
-                  Senha ou código temporário
-                </label>
+                <div className="login-field__label-row">
+                  <label className="login-field__label" htmlFor={passwordId}>
+                    Senha
+                  </label>
+                  <span
+                    className="login-field__info"
+                    data-open={passwordHelpOpen ? "true" : "false"}
+                    onMouseEnter={() => setPasswordHelpOpen(true)}
+                    onMouseLeave={() => setPasswordHelpOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      className="login-field__info-trigger"
+                      aria-label="Informação sobre primeiro acesso"
+                      aria-describedby={passwordHelpId}
+                      aria-expanded={passwordHelpOpen}
+                      onClick={() => setPasswordHelpOpen(true)}
+                      onBlur={() => setPasswordHelpOpen(false)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          setPasswordHelpOpen(false);
+                        }
+                      }}
+                    >
+                      i
+                    </button>
+                    <span
+                      id={passwordHelpId}
+                      className="login-field__info-tooltip"
+                      role="tooltip"
+                    >
+                      Se este é seu primeiro login, adicione o código de acesso.
+                    </span>
+                  </span>
+                </div>
                 <input
                   ref={passwordRef}
                   id={passwordId}
@@ -402,6 +438,7 @@ export function LoginPage() {
                   onClick={() => {
                     setCode("");
                     setNewPassword("");
+                    setPasswordHelpOpen(false);
                     setMode("login");
                     setErrors({});
                     setAuthError("");

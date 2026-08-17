@@ -83,11 +83,17 @@ class PostgresqlPasswordPersistenceIT
             );
             assertThat(rotatedEpoch).isEqualTo(2L);
             assertThat(credentials.invalidateEpoch(targetId)).isEqualTo(3L);
-            jdbc.update("""
-                    UPDATE auth_identity
-                    SET status = 'ATIVA'
+            Integer activated = transactions(jdbc).execute(
+                    ignored -> setups.activateIdentity(targetId)
+            );
+            assertThat(activated).isEqualTo(1);
+            assertThat(jdbc.queryForMap("""
+                    SELECT status, versao_linha
+                    FROM auth_identity
                     WHERE colaborador_id = ?
-                    """, targetId);
+                    """, targetId))
+                    .containsEntry("status", "ATIVA")
+                    .containsEntry("versao_linha", 1L);
             jdbc.update("""
                     UPDATE auth_identity
                     SET status = 'BLOQUEADA'
