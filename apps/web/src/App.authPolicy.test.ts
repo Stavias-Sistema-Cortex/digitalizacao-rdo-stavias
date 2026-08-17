@@ -14,7 +14,7 @@ describe("App normal authentication policy", () => {
     );
     expect(source).not.toContain("EmailOtpAccessForm");
     expect(source).not.toContain("PostgresqlAccessPage");
-    expect(source).toContain("hasCollaborativeOfflineGrantMetadata");
+    expect(source).toContain("hasCollaborativePasswordVaultMetadata");
 
     const offlineUnlockDecision = source.indexOf(
       "(offlineVault || hasCollaborativeCpfGrant)",

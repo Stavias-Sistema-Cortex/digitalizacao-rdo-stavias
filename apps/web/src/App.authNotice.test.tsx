@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   autenticarPorCpf: vi.fn(),
-  hasCollaborativeOfflineGrantMetadata: vi.fn(),
+  hasCollaborativePasswordVaultMetadata: vi.fn(),
   initializeCortexDb: vi.fn(),
   loadOfflineVaultMetadata: vi.fn(),
 }));
@@ -20,8 +20,8 @@ vi.mock("./features/auth/authService", () => ({
 }));
 
 vi.mock("./features/auth/offlineVaultRepository", () => ({
-  hasCollaborativeOfflineGrantMetadata:
-    mocks.hasCollaborativeOfflineGrantMetadata,
+  hasCollaborativePasswordVaultMetadata:
+    mocks.hasCollaborativePasswordVaultMetadata,
   loadOfflineVaultMetadata: mocks.loadOfflineVaultMetadata,
 }));
 
@@ -53,7 +53,7 @@ beforeEach(() => {
   clearSession();
   sessionStorage.clear();
   window.history.replaceState({}, "", "/home");
-  mocks.hasCollaborativeOfflineGrantMetadata.mockResolvedValue(false);
+  mocks.hasCollaborativePasswordVaultMetadata.mockResolvedValue(false);
   mocks.initializeCortexDb.mockResolvedValue(undefined);
   mocks.loadOfflineVaultMetadata.mockResolvedValue(null);
   mocks.autenticarPorCpf.mockImplementation(async () => {
