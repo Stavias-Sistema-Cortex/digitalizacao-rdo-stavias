@@ -2,7 +2,7 @@
 const STAVIAS_LINKS: { label: string; href: string }[] = [
   {
     label: "Portal Stavias",
-    href: "https://portalstavias.com.br/",
+    href: "https://portalstavias.com.br/stavias_academy",
   },
   {
     label: "Stavias Academy",
@@ -20,7 +20,10 @@ export function MaisStaviasCard() {
       <h3>Mais Stavias</h3>
       <ul>
         {STAVIAS_LINKS.map((link) => (
-          <li key={link.href}>
+          // Pela chave e não pelo destino: dois rótulos podem apontar para o
+          // mesmo endereço, e o href repetido faria o React descartar a
+          // segunda linha por chave duplicada.
+          <li key={link.label}>
             {/*
               A seta de "abre fora" é marca de estilo, não texto do link: no
               rótulo ela entrava no nome acessível — o leitor de tela anunciava

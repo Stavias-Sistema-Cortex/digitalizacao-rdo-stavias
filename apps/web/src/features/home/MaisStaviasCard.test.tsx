@@ -15,12 +15,21 @@ describe("MaisStaviasCard", () => {
   const markup = renderToStaticMarkup(<MaisStaviasCard />);
 
   it.each([
-    ["Portal Stavias", "https://portalstavias.com.br/"],
+    ["Portal Stavias", "https://portalstavias.com.br/stavias_academy"],
     ["Stavias Academy", "https://portalstavias.com.br/stavias_academy"],
     ["Central de Suporte", "https://suporte.stavias.com.br"],
   ])("leva %s para %s", (rotulo, destino) => {
     expect(markup).toContain(`href="${destino}"`);
     expect(markup).toContain(`>${rotulo}</a>`);
+  });
+
+  /*
+   * Os dois primeiros levam ao mesmo endereço hoje, e a lista é renderizada por
+   * chave: pelo destino, o React descartaria a segunda linha como duplicada e o
+   * card perderia um item sem que nada acusasse.
+   */
+  it("mantém um item por rótulo mesmo com destinos repetidos", () => {
+    expect(markup.split("<li>")).toHaveLength(4);
   });
 
   it("abre fora sem entregar a aba de origem ao destino", () => {
