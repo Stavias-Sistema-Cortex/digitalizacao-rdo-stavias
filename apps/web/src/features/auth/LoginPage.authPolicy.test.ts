@@ -128,7 +128,8 @@ describe("LoginPage auth policy", () => {
     expect(source.match(/authenticateWithPasskey\(cpf\)/g)).toHaveLength(1);
     expect(source).toContain('"Entrar"');
     expect(source).toContain('"Entrar com passkey"');
-    expect(source).toContain("Senha ou código temporário");
+    expect(source).toContain("Se este é seu primeiro login, adicione o código de acesso.");
+    expect(source).not.toContain("Senha ou código temporário");
     expect(source).not.toContain('autoComplete="one-time-code"');
     expect(source).toContain('autoComplete="current-password"');
     expect(source).toContain("completePasswordSetup");

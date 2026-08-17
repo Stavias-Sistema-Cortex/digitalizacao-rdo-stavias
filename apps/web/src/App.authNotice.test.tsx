@@ -77,7 +77,7 @@ describe("App direct CPF authentication notice", () => {
 
     await user.type(await screen.findByRole("textbox", { name: "CPF" }), "11144477735");
     await user.type(
-      screen.getByLabelText("Senha ou código temporário"),
+      screen.getByLabelText("Senha"),
       "Frase secreta individual!",
     );
     await user.click(screen.getByRole("button", { name: "Entrar" }));

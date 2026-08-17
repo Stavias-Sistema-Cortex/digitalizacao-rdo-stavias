@@ -176,7 +176,8 @@ public class PostgresqlPasswordSetupStore
         PostgresqlAuthIdentityMutationLock.acquire(jdbcTemplate);
         return jdbcTemplate.update("""
                 UPDATE auth_identity identity
-                SET status = 'ATIVA', versao_linha = versao_linha + 1
+                SET status = 'ATIVA',
+                    versao_linha = identity.versao_linha + 1
                 FROM colaborador
                 WHERE identity.colaborador_id = colaborador.id
                   AND identity.colaborador_id = ?

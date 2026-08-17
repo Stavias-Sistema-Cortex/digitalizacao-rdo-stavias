@@ -49,9 +49,7 @@ describe("LoginPage access methods", () => {
   it("keeps one action instruction and one security note without marketing copy", () => {
     const view = render(<LoginPage />);
 
-    expect(screen.getByText(
-      "Use seu CPF e sua senha ou código temporário para entrar.",
-    ))
+    expect(screen.getByText("Use seu CPF e sua senha para entrar."))
       .toBeVisible();
     expect(
       screen.getByText(
@@ -81,10 +79,40 @@ describe("LoginPage access methods", () => {
       "inputmode",
       "numeric",
     );
-    expect(screen.getByLabelText("Senha ou código temporário")).toHaveAttribute(
+    expect(screen.getByLabelText("Senha")).toHaveAttribute(
       "autocomplete",
       "current-password",
     );
+  });
+
+  it("explains first access through an accessible info control", async () => {
+    const user = userEvent.setup();
+    render(<LoginPage />);
+
+    const info = screen.getByRole("button", {
+      name: "Informação sobre primeiro acesso",
+    });
+    const guidance = screen.getByRole("tooltip");
+
+    expect(info).toHaveAttribute("aria-expanded", "false");
+    expect(info).toHaveAttribute("aria-describedby", guidance.id);
+    expect(guidance).toHaveTextContent(
+      "Se este é seu primeiro login, adicione o código de acesso.",
+    );
+
+    await user.hover(info);
+    expect(info).toHaveAttribute("aria-expanded", "true");
+
+    await user.unhover(info);
+    expect(info).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(info);
+
+    expect(info).toHaveAttribute("aria-expanded", "true");
+
+    await user.keyboard("{Escape}");
+
+    expect(info).toHaveAttribute("aria-expanded", "false");
   });
 
   it("keeps the live document after direct CPF authentication so a memory-only lease survives", async () => {
@@ -102,7 +130,7 @@ describe("LoginPage access methods", () => {
 
     await user.type(screen.getByRole("textbox", { name: "CPF" }), "11144477735");
     await user.type(
-      screen.getByLabelText("Senha ou código temporário"),
+      screen.getByLabelText("Senha"),
       "Frase secreta individual!",
     );
     await user.click(screen.getByRole("button", { name: "Entrar" }));
@@ -135,7 +163,7 @@ describe("LoginPage access methods", () => {
 
     await user.type(screen.getByRole("textbox", { name: "CPF" }), "11144477735");
     await user.type(
-      screen.getByLabelText("Senha ou código temporário"),
+      screen.getByLabelText("Senha"),
       "12345678",
     );
     await user.click(screen.getByRole("button", { name: "Entrar" }));
@@ -155,6 +183,28 @@ describe("LoginPage access methods", () => {
     })).not.toBeInTheDocument();
   });
 
+  it("closes first-access guidance while switching through password setup", async () => {
+    const user = userEvent.setup();
+    render(<LoginPage />);
+
+    const info = screen.getByRole("button", {
+      name: "Informação sobre primeiro acesso",
+    });
+    await user.click(info);
+    expect(info).toHaveAttribute("aria-expanded", "true");
+
+    await user.type(screen.getByRole("textbox", { name: "CPF" }), "11144477735");
+    await user.type(screen.getByLabelText("Senha"), "12345678");
+    await user.click(screen.getByRole("button", { name: "Entrar" }));
+    await user.click(screen.getByRole("button", {
+      name: "Voltar para entrar com senha",
+    }));
+
+    expect(screen.getByRole("button", {
+      name: "Informação sobre primeiro acesso",
+    })).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("uses the recognized code only with the same CPF to define the new password", async () => {
     mocks.completePasswordSetup.mockResolvedValue(undefined);
     const user = userEvent.setup();
@@ -162,7 +212,7 @@ describe("LoginPage access methods", () => {
 
     await user.type(screen.getByRole("textbox", { name: "CPF" }), "11144477735");
     await user.type(
-      screen.getByLabelText("Senha ou código temporário"),
+      screen.getByLabelText("Senha"),
       "12345678",
     );
     await user.click(screen.getByRole("button", { name: "Entrar" }));
