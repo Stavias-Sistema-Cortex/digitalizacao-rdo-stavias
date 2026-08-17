@@ -991,7 +991,7 @@ describe("StavIA runtime boundary", () => {
     }
     expect(
       inspectDistCorporateContent(
-        "label:`Portal Stavias`,href:`https://www.stavias.com.br`,children:`Mais Stavias`",
+        "label:`Portal Stavias`,href:`https://portalstavias.com.br/`,children:`Mais Stavias`",
       ),
     ).toEqual([]);
     expect(

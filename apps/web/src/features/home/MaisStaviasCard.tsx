@@ -2,11 +2,11 @@
 const STAVIAS_LINKS: { label: string; href: string }[] = [
   {
     label: "Portal Stavias",
-    href: "https://www.stavias.com.br",
+    href: "https://portalstavias.com.br/",
   },
   {
     label: "Stavias Academy",
-    href: "https://academy.stavias.com.br",
+    href: "https://portalstavias.com.br/stavias_academy",
   },
   {
     label: "Central de Suporte",
