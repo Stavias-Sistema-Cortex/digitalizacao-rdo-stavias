@@ -1,5 +1,4 @@
-export type OfflineGrantClaims = {
-  versao: 1;
+export type BaseOfflineGrantClaims = {
   colaboradorId: string;
   nome: string;
   papelAcesso: "ALFA" | "BETA";
@@ -8,6 +7,19 @@ export type OfflineGrantClaims = {
   emitidoEm: string;
   expiraEm: string;
 };
+
+export type LegacyOfflineGrantClaims = BaseOfflineGrantClaims & {
+  versao: 1;
+};
+
+export type CurrentOfflineGrantClaims = BaseOfflineGrantClaims & {
+  versao: 2;
+  authEpoch: number;
+};
+
+export type OfflineGrantClaims =
+  | LegacyOfflineGrantClaims
+  | CurrentOfflineGrantClaims;
 
 /** Envelope assinado pelo servidor; não é uma credencial de sessão. */
 export type SignedOfflineGrant = {

@@ -7,6 +7,7 @@ import {
   getOfflineGrant,
   renewOfflineVault,
   unlockOfflineVault,
+  verifySignedOfflineGrant,
 } from "./offlineVault";
 import { clearRemoteSessionIsolation } from "./remoteSessionIsolation";
 import type {
@@ -261,8 +262,63 @@ describe("offlineVault PRF-only", () => {
   });
 });
 
+describe("versioned signed offline grants", () => {
+  it("accepts legacy v1 only through the exact 24-hour boundary", async () => {
+    const exact = await signedGrantFixture({
+      emitidoEm: "2026-07-14T11:55:00Z",
+      expiraEm: "2026-07-15T11:55:00Z",
+    });
+    const over = await signedGrantFixture({
+      emitidoEm: "2026-07-14T11:55:00Z",
+      expiraEm: "2026-07-15T11:55:01Z",
+    });
+
+    await expect(verifyFixture(exact)).resolves.toMatchObject({
+      claims: { versao: 1 },
+    });
+    await expect(verifyFixture(over)).rejects.toThrow("validade");
+  });
+
+  it("accepts current v2 only through seven days with a valid epoch", async () => {
+    const exact = await signedGrantFixture({
+      versao: 2,
+      authEpoch: 7,
+      emitidoEm: "2026-07-14T11:55:00Z",
+      expiraEm: "2026-07-21T11:55:00Z",
+    });
+    const over = await signedGrantFixture({
+      versao: 2,
+      authEpoch: 7,
+      emitidoEm: "2026-07-14T11:55:00Z",
+      expiraEm: "2026-07-21T11:55:01Z",
+    });
+
+    await expect(verifyFixture(exact)).resolves.toMatchObject({
+      claims: { versao: 2, authEpoch: 7 },
+    });
+    await expect(verifyFixture(over)).rejects.toThrow("validade");
+  });
+
+  it("rejects v2 without epoch, unsafe epochs, and extra fields", async () => {
+    const missingEpoch = await signedGrantFixture({ versao: 2 });
+    const unsafeEpoch = await signedGrantFixture({
+      versao: 2,
+      authEpoch: Number.MAX_SAFE_INTEGER + 1,
+    });
+    const extraField = await signedGrantFixture({
+      versao: 2,
+      authEpoch: 7,
+      unexpected: true,
+    });
+
+    await expect(verifyFixture(missingEpoch)).rejects.toThrow("inválido");
+    await expect(verifyFixture(unsafeEpoch)).rejects.toThrow("inválido");
+    await expect(verifyFixture(extraField)).rejects.toThrow("inválido");
+  });
+});
+
 async function signedGrantFixture(
-  overrides: Partial<OfflineGrantClaims> = {},
+  overrides: Record<string, unknown> = {},
 ): Promise<{
   claims: OfflineGrantClaims;
   grant: SignedOfflineGrant;
@@ -312,6 +368,15 @@ async function signedGrantFixture(
       publicKeySpki: toBase64Url(publicKeySpki),
     },
   };
+}
+
+function verifyFixture(
+  fixture: Awaited<ReturnType<typeof signedGrantFixture>>,
+) {
+  return verifySignedOfflineGrant(fixture.grant, {
+    allowedKeyFingerprints: [fixture.fingerprint],
+    now: () => now,
+  });
 }
 
 function assertionCredential(

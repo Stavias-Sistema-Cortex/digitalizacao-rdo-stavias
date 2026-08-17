@@ -16,7 +16,8 @@ import {
 } from "./webauthnCodec";
 import { scopeFingerprint } from "../../lib/db/localDataNamespace";
 
-const MAX_GRANT_SECONDS = 24 * 60 * 60;
+const LEGACY_MAX_GRANT_SECONDS = 24 * 60 * 60;
+const CURRENT_MAX_GRANT_SECONDS = 7 * 24 * 60 * 60;
 const CLOCK_SKEW_MS = 5 * 60 * 1_000;
 const VAULT_INFO = new TextEncoder().encode(
   "cortex:offline-vault:aes-gcm:v1",
@@ -422,9 +423,11 @@ function parseClaims(value: string, now: number): OfflineGrantClaims {
   } catch {
     throw new Error("Grant offline inválido.");
   }
-  if (
-    !isRecord(parsed) ||
-    !exactKeys(parsed, [
+  if (!isRecord(parsed)) {
+    throw new Error("Grant offline inválido.");
+  }
+  const versionIsValid = parsed.versao === 1
+    ? exactKeys(parsed, [
       "colaboradorId",
       "emitidoEm",
       "escopoGlobal",
@@ -433,8 +436,24 @@ function parseClaims(value: string, now: number): OfflineGrantClaims {
       "obraIds",
       "papelAcesso",
       "versao",
-    ]) ||
-    parsed.versao !== 1 ||
+    ])
+    : parsed.versao === 2 &&
+      exactKeys(parsed, [
+        "authEpoch",
+        "colaboradorId",
+        "emitidoEm",
+        "escopoGlobal",
+        "expiraEm",
+        "nome",
+        "obraIds",
+        "papelAcesso",
+        "versao",
+      ]) &&
+      typeof parsed.authEpoch === "number" &&
+      Number.isSafeInteger(parsed.authEpoch) &&
+      parsed.authEpoch >= 1;
+  if (
+    !versionIsValid ||
     !canonicalUuid(parsed.colaboradorId) ||
     !boundedString(parsed.nome, 1, 255) ||
     (parsed.papelAcesso !== "ALFA" && parsed.papelAcesso !== "BETA") ||
@@ -457,13 +476,16 @@ function parseClaims(value: string, now: number): OfflineGrantClaims {
   }
   const issuedAt = Date.parse(parsed.emitidoEm);
   const expiresAt = Date.parse(parsed.expiraEm);
+  const maximumGrantSeconds = parsed.versao === 1
+    ? LEGACY_MAX_GRANT_SECONDS
+    : CURRENT_MAX_GRANT_SECONDS;
   if (
     !Number.isFinite(issuedAt) ||
     !Number.isFinite(expiresAt) ||
     issuedAt > now + CLOCK_SKEW_MS ||
     expiresAt <= now ||
     expiresAt <= issuedAt ||
-    expiresAt - issuedAt > MAX_GRANT_SECONDS * 1_000
+    expiresAt - issuedAt > maximumGrantSeconds * 1_000
   ) {
     throw new Error("O grant offline expirou ou possui validade inválida.");
   }
