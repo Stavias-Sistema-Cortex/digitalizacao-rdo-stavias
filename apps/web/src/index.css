@@ -733,6 +733,42 @@ textarea:focus {
   white-space: nowrap;
 }
 
+/* A medida que o contrato cobra.
+ *
+ * Era marcada por um "· quantidade" preso ao rótulo, na mesma cor e no mesmo
+ * corpo das outras duas — três números de peso igual, e nenhuma pista de qual
+ * deles vira medição. O selo separa o papel do nome, e o valor sobe de peso
+ * para ser o primeiro que o olho encontra na faixa. */
+.rdo-servico-medidas .calculated-metric--quantidade {
+  padding: 2px 12px 2px 10px;
+  border-left: 3px solid var(--color-focus);
+}
+
+.rdo-servico-medidas .calculated-metric--quantidade span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #4a5d57;
+}
+
+.rdo-servico-medidas .calculated-metric--quantidade strong {
+  color: var(--color-brand-teal);
+  font-size: 1.06rem;
+}
+
+.calculated-metric__selo {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e3efec;
+  color: var(--color-focus);
+  /* 600 é o peso mais alto que a tipografia operacional admite; o selo se
+   * destaca pela cor e pela cápsula, não por um peso fora da escala. */
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .row-title {
   display: flex;
   justify-content: space-between;
@@ -756,8 +792,22 @@ textarea:focus {
   gap: 18px;
 }
 
+/* Duplicar é atalho, e atalho que ninguém vê não economiza nada: como link
+ * puro ele se perdia ao lado de "Remover" e do título da linha. Com contorno
+ * ele se lê como ação e ganha área de toque, sem virar botão cheio — quem
+ * decide o que a linha é continua sendo o formulário abaixo. */
 .row-actions .link-button {
+  padding: 5px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--color-brand-teal);
   font-size: 0.78rem;
+}
+
+.row-actions .link-button:hover {
+  border-color: var(--color-focus);
+  background: #eef5f3;
 }
 
 .json-preview pre {

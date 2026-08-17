@@ -293,8 +293,17 @@ function MedidasDoServicoCalculadas({
   const quantidade = quantidadeDoServico(item);
   return (
     <div className="rdo-servico-medidas">
+      {/*
+       * As três medidas saem do mesmo trecho, mas só uma é cobrada — a que a
+       * unidade do contrato nomeia. Ela vinha marcada por um "· quantidade"
+       * colado ao rótulo, do mesmo tamanho e da mesma cor que o resto: quem
+       * olhava via três números iguais e não sabia qual ia para a medição. As
+       * outras duas continuam à vista porque conferi-las é como se percebe o
+       * erro de digitação na largura, mas agora são o apoio, não o resultado.
+       */}
       <CalculatedMetric
-        label={medida === "Comprimento" ? "Comprimento · quantidade" : "Comprimento"}
+        label="Comprimento"
+        quantidade={medida === "Comprimento"}
         value={
           comprimentoM === null
             ? "—"
@@ -302,7 +311,8 @@ function MedidasDoServicoCalculadas({
         }
       />
       <CalculatedMetric
-        label={medida === "Área" ? "Área · quantidade" : "Área"}
+        label="Área"
+        quantidade={medida === "Área"}
         value={
           areaM2 === null
             ? "—"
@@ -310,7 +320,8 @@ function MedidasDoServicoCalculadas({
         }
       />
       <CalculatedMetric
-        label={medida === "Volume" ? "Volume · quantidade" : "Volume"}
+        label="Volume"
+        quantidade={medida === "Volume"}
         value={
           volumeM3 === null
             ? "—"
@@ -2461,15 +2472,29 @@ function NumericField({
 interface CalculatedMetricProps {
   label: string;
   value: string;
+  /** A medida que a unidade do contrato cobra, e que vira a medição. */
+  quantidade?: boolean;
 }
 
 function CalculatedMetric({
   label,
   value,
+  quantidade = false,
 }: CalculatedMetricProps) {
   return (
-    <div className="calculated-metric">
-      <span>{label}</span>
+    <div
+      className={
+        quantidade
+          ? "calculated-metric calculated-metric--quantidade"
+          : "calculated-metric"
+      }
+    >
+      <span>
+        {label}
+        {quantidade ? (
+          <b className="calculated-metric__selo">quantidade</b>
+        ) : null}
+      </span>
       <strong>{value}</strong>
     </div>
   );
