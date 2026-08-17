@@ -4,12 +4,16 @@ import { openDB, type DBSchema } from "idb";
 import { describe, expect, it } from "vitest";
 
 import type {
+  OfflinePasswordVaultMetadata,
   OfflineCpfGrantMetadata,
   OfflineVaultMetadata,
 } from "./offlineVault.types";
 import {
+  deleteCollaborativeOfflineGrantMetadata,
   hasCollaborativeOfflineGrantMetadata,
+  hasCollaborativePasswordVaultMetadata,
   loadOfflineVaultMetadata,
+  replaceLegacyGrantAfterV3Save,
   saveCollaborativeOfflineGrantMetadata,
 } from "./offlineVaultRepository";
 
@@ -106,13 +110,50 @@ describe("repositório de cofres offline", () => {
     await saveCollaborativeOfflineGrantMetadata(grant);
 
     expect(await hasCollaborativeOfflineGrantMetadata()).toBe(true);
+    expect(await hasCollaborativePasswordVaultMetadata()).toBe(false);
     expect(await loadOfflineVaultMetadata()).toEqual(legacyVault);
+    const passwordVault: OfflinePasswordVaultMetadata = {
+      key: "20000000-0000-4000-8000-000000000002",
+      versao: 3,
+      cpfSalt: "s".repeat(22),
+      cpfVerifier: "v".repeat(43),
+      passwordSalt: "p".repeat(22),
+      kdf: "PBKDF2-SHA256",
+      kdfIterations: 600_000,
+      iv: "i".repeat(16),
+      ciphertext: "c".repeat(64),
+      serverKeyFingerprint: "f".repeat(43),
+      atualizadoEm: "2026-07-14T12:02:00Z",
+      failedAttemptState: {
+        windowStartedAt: null,
+        failures: 0,
+        blockedUntil: null,
+      },
+    };
+    await expect(replaceLegacyGrantAfterV3Save(
+      grant.key,
+      { ...passwordVault, kdfIterations: 1 } as OfflinePasswordVaultMetadata,
+    )).rejects.toThrow("inválidos");
+    const beforeConfirmedWrite = await openDB(databaseName);
+    expect(await beforeConfirmedWrite.get("cpf_grants", grant.key))
+      .toEqual(grant);
+    beforeConfirmedWrite.close();
+
+    await replaceLegacyGrantAfterV3Save(grant.key, passwordVault);
+
+    expect(await hasCollaborativePasswordVaultMetadata()).toBe(true);
     const upgraded = await openDB(databaseName);
     expect([...upgraded.objectStoreNames]).toEqual(expect.arrayContaining([
       "vaults",
       "cpf_grants",
     ]));
-    expect(await upgraded.get("cpf_grants", grant.key)).toEqual(grant);
+    expect(await upgraded.get("cpf_grants", grant.key)).toBeUndefined();
+    expect(await upgraded.get("cpf_grants", passwordVault.key))
+      .toEqual(passwordVault);
     upgraded.close();
+
+    await deleteCollaborativeOfflineGrantMetadata(passwordVault.key);
+    expect(await hasCollaborativePasswordVaultMetadata()).toBe(false);
+    expect(await loadOfflineVaultMetadata()).toEqual(legacyVault);
   });
 });

@@ -1,9 +1,12 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
 import type {
+  CollaborativeOfflineMetadata,
   OfflineCpfGrantMetadata,
+  OfflinePasswordVaultMetadata,
   OfflineVaultMetadata,
 } from "./offlineVault.types";
+import { isOfflinePasswordVaultMetadata } from "./passwordOfflineVault";
 
 const VAULT_DATABASE_NAME = "cortex-auth-vaults";
 const VAULT_DATABASE_VERSION = 3;
@@ -16,7 +19,7 @@ interface OfflineVaultDbSchema extends DBSchema {
   };
   cpf_grants: {
     key: string;
-    value: OfflineCpfGrantMetadata;
+    value: CollaborativeOfflineMetadata;
     indexes: { "by-updated-at": string; "by-owner": string };
   };
 }
@@ -77,6 +80,17 @@ export async function listCollaborativeOfflineGrantMetadata(): Promise<
   OfflineCpfGrantMetadata[]
 > {
   const database = await getVaultDatabase();
+  return (await database.getAll("cpf_grants"))
+    .filter((record): record is OfflineCpfGrantMetadata => record.versao === 2)
+    .sort((left, right) =>
+      right.atualizadoEm.localeCompare(left.atualizadoEm)
+    );
+}
+
+export async function listCollaborativeOfflineMetadata(): Promise<
+  CollaborativeOfflineMetadata[]
+> {
+  const database = await getVaultDatabase();
   return (await database.getAll("cpf_grants")).sort((left, right) =>
     right.atualizadoEm.localeCompare(left.atualizadoEm)
   );
@@ -85,6 +99,42 @@ export async function listCollaborativeOfflineGrantMetadata(): Promise<
 export async function hasCollaborativeOfflineGrantMetadata(): Promise<boolean> {
   const database = await getVaultDatabase();
   return (await database.count("cpf_grants")) > 0;
+}
+
+export async function hasCollaborativePasswordVaultMetadata(): Promise<boolean> {
+  const records = await listCollaborativeOfflineMetadata();
+  return records.slice(0, 20).some(isOfflinePasswordVaultMetadata);
+}
+
+export async function deleteCollaborativeOfflineGrantMetadata(
+  key: string,
+): Promise<void> {
+  const database = await getVaultDatabase();
+  await database.delete("cpf_grants", key);
+}
+
+export async function replaceLegacyGrantAfterV3Save(
+  legacyKey: string | null,
+  metadata: OfflinePasswordVaultMetadata,
+): Promise<void> {
+  if (!isOfflinePasswordVaultMetadata(metadata)) {
+    throw new Error("Metadados do cofre offline inválidos.");
+  }
+  const database = await getVaultDatabase();
+  const transaction = database.transaction("cpf_grants", "readwrite");
+  await transaction.store.put(metadata);
+  const confirmed = await transaction.store.get(metadata.key);
+  if (
+    !isOfflinePasswordVaultMetadata(confirmed) ||
+    JSON.stringify(confirmed) !== JSON.stringify(metadata)
+  ) {
+    transaction.abort();
+    throw new Error("O cofre offline não pôde ser confirmado.");
+  }
+  if (legacyKey !== null && legacyKey !== metadata.key) {
+    await transaction.store.delete(legacyKey);
+  }
+  await transaction.done;
 }
 
 /**
@@ -98,7 +148,13 @@ export async function listCollaborativeOfflineGrantsForOwner(
   ownerId: string,
 ): Promise<OfflineCpfGrantMetadata[]> {
   const database = await getVaultDatabase();
-  return database.getAllFromIndex("cpf_grants", "by-owner", ownerId);
+  return (await database.getAllFromIndex(
+    "cpf_grants",
+    "by-owner",
+    ownerId,
+  )).filter(
+    (record): record is OfflineCpfGrantMetadata => record.versao === 2,
+  );
 }
 
 function getVaultDatabase(): Promise<IDBPDatabase<OfflineVaultDbSchema>> {

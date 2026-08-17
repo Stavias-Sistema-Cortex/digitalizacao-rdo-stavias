@@ -45,7 +45,7 @@ export type OfflineVaultMetadata = {
 };
 
 /** Metadados públicos para liberar um grant de CPF colaborativo offline. */
-export type OfflineCpfGrantMetadata = {
+export type LegacyOfflineCpfGrantMetadata = {
   key: string;
   versao: 2;
   cpfSalt: string;
@@ -56,5 +56,33 @@ export type OfflineCpfGrantMetadata = {
   serverKeyFingerprint: string;
   atualizadoEm: string;
 };
+
+export type OfflineCpfGrantMetadata = LegacyOfflineCpfGrantMetadata;
+
+export type OfflinePasswordVaultFailureState = {
+  windowStartedAt: string | null;
+  failures: number;
+  blockedUntil: string | null;
+};
+
+/** Cofre colaborativo protegido por CPF e senha; identidade fica cifrada. */
+export type OfflinePasswordVaultMetadata = {
+  key: string;
+  versao: 3;
+  cpfSalt: string;
+  cpfVerifier: string;
+  passwordSalt: string;
+  kdf: "PBKDF2-SHA256";
+  kdfIterations: 600_000;
+  iv: string;
+  ciphertext: string;
+  serverKeyFingerprint: string;
+  atualizadoEm: string;
+  failedAttemptState: OfflinePasswordVaultFailureState;
+};
+
+export type CollaborativeOfflineMetadata =
+  | LegacyOfflineCpfGrantMetadata
+  | OfflinePasswordVaultMetadata;
 
 export type OfflineUnlockResult = "UNLOCKED" | "PRF_UNAVAILABLE";
