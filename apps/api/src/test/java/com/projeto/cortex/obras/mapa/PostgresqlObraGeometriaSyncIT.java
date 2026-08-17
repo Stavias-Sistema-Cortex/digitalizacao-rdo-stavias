@@ -209,16 +209,17 @@ class PostgresqlObraGeometriaSyncIT {
             throws Exception {
         Fixture fixture = fixture();
         String entityId = UUID.randomUUID().toString();
+        String objectId = UUID.randomUUID().toString();
         SyncPushResponse first = fixture.service().push(new SyncPushRequest(
                 fixture.deviceId(),
                 List.of(fieldCaptureMutation(
-                        fixture, UUID.randomUUID().toString(), entityId
+                        fixture, UUID.randomUUID().toString(), entityId, objectId
                 ))
         ));
         SyncPushResponse resent = fixture.service().push(new SyncPushRequest(
                 fixture.deviceId(),
                 List.of(fieldCaptureMutation(
-                        fixture, UUID.randomUUID().toString(), entityId
+                        fixture, UUID.randomUUID().toString(), entityId, objectId
                 ))
         ));
 
@@ -424,12 +425,26 @@ class PostgresqlObraGeometriaSyncIT {
             String clientMutationId,
             String entityId
     ) throws Exception {
+        return fieldCaptureMutation(
+                fixture,
+                clientMutationId,
+                entityId,
+                UUID.randomUUID().toString()
+        );
+    }
+
+    private SyncPushRequest.MutacaoCliente fieldCaptureMutation(
+            Fixture fixture,
+            String clientMutationId,
+            String entityId,
+            String objectId
+    ) throws Exception {
         ObjectNode payload = mapper.createObjectNode();
         payload.put("id", entityId);
         payload.put("obraId", fixture.obraId());
         payload.put("categoria", "PONTO_OPERACIONAL");
         payload.put("objetoTipo", "RDO");
-        payload.put("objetoId", UUID.randomUUID().toString());
+        payload.put("objetoId", objectId);
         ObjectNode geometry = payload.putObject("geometry");
         geometry.put("type", "Point");
         geometry.putArray("coordinates").add(-54.65).add(-20.44);
