@@ -44,6 +44,28 @@ final class RdoPdfFormRenderer {
     private static final String UNREADABLE_FITTED_TEXT_MESSAGE =
             "O conteúdo do RDO não permanece legível na célula fixa do PDF; "
                     + "nenhum conteúdo foi truncado.";
+    /*
+     * Os rótulos das colunas que recebem conteúdo do usuário. Ficam aqui, e
+     * não soltos em cada chamada, porque servem duas vezes: desenham o
+     * cabeçalho da tabela e nomeiam a coluna quando o conteúdo não couber.
+     */
+    private static final String[] WORKFORCE_COLUMNS = {
+        "FUNÇÃO", "PRÓPRIA", "SUBCONT.",
+        "FUNÇÃO", "PRÓPRIA", "SUBCONT."
+    };
+    private static final String[] EQUIPMENT_COLUMNS = {
+        "DESCRIÇÃO", "PREFIXO", "QTD.", "VÍNCULO",
+        "DESCRIÇÃO", "PREFIXO", "QTD.", "VÍNCULO"
+    };
+    private static final String[] WORKED_COLUMNS = {
+        "INÍCIO", "FIM", "Nº", "COMP.", "LARG.", "ESP. m",
+        "PISTA", "FAIXA", "OS", "ATIVIDADE / SERVIÇO"
+    };
+    private static final String[] MATERIAL_COLUMNS = {
+        "MATERIAL", "QTD.", "UN.", "NF",
+        "MATERIAL", "QTD.", "UN.", "NF",
+        "MATERIAL", "QTD.", "UN.", "NF"
+    };
     private static final DateTimeFormatter DATE_FORMAT =
             DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMAT =
@@ -417,10 +439,7 @@ final class RdoPdfFormRenderer {
                 top,
                 widths,
                 11f,
-                new String[] {
-                    "FUNÇÃO", "PRÓPRIA", "SUBCONT.",
-                    "FUNÇÃO", "PRÓPRIA", "SUBCONT."
-                },
+                WORKFORCE_COLUMNS,
                 bold,
                 5.4f
         );
@@ -443,7 +462,8 @@ final class RdoPdfFormRenderer {
                         workforceQuantity(right, true)
                     },
                     regular,
-                    5.2f
+                    5.2f,
+                    WORKFORCE_COLUMNS
             );
         }
         return top - 118f;
@@ -465,10 +485,7 @@ final class RdoPdfFormRenderer {
                 top,
                 widths,
                 11f,
-                new String[] {
-                    "DESCRIÇÃO", "PREFIXO", "QTD.", "VÍNCULO",
-                    "DESCRIÇÃO", "PREFIXO", "QTD.", "VÍNCULO"
-                },
+                EQUIPMENT_COLUMNS,
                 bold,
                 5.1f
         );
@@ -494,7 +511,8 @@ final class RdoPdfFormRenderer {
                         equipmentOwnership(right)
                     },
                     regular,
-                    5f
+                    5f,
+                    EQUIPMENT_COLUMNS
             );
         }
         return top - 142f;
@@ -515,10 +533,7 @@ final class RdoPdfFormRenderer {
                 top,
                 widths,
                 11f,
-                new String[] {
-                    "INÍCIO", "FIM", "Nº", "COMP.", "LARG.", "ESP. m",
-                    "PISTA", "FAIXA", "OS", "ATIVIDADE / SERVIÇO"
-                },
+                WORKED_COLUMNS,
                 bold,
                 5.2f
         );
@@ -532,7 +547,8 @@ final class RdoPdfFormRenderer {
                     11f,
                     workedCells(value),
                     regular,
-                    5.2f
+                    5.2f,
+                    WORKED_COLUMNS
             );
         }
     }
@@ -556,11 +572,18 @@ final class RdoPdfFormRenderer {
          * 22,08 em — bem mais que o nome de material mais comprido da obra
          * ("CONCRETO USINADO FCK 30" gasta 14,22). A soma do bloco continua
          * exata, então o formulário não se desloca.
+         *
+         * <p>A nota fiscal veio junto, pela mesma medição: 28 pontos davam
+         * 6,20 em, e uma nota escrita como se escreve — com série ou ano,
+         * "NF 123456/2026" — gasta 7,4. O número puro cabia; o que a gente
+         * digita, não. Ela vai a 36 pontos (8,20 em) com mais 8 tirados da
+         * descrição, que mesmo assim fica com 20,08 em, ainda cinco em acima
+         * do maior nome de material real.
          */
         float[] widths = {
-            block - 88f, 30f, 30f, 28f,
-            block - 88f, 30f, 30f, 28f,
-            block - 88f, 30f, 30f, 28f
+            block - 96f, 30f, 30f, 36f,
+            block - 96f, 30f, 30f, 36f,
+            block - 96f, 30f, 30f, 36f
         };
         drawRow(
                 content,
@@ -568,11 +591,7 @@ final class RdoPdfFormRenderer {
                 top,
                 widths,
                 10f,
-                new String[] {
-                    "MATERIAL", "QTD.", "UN.", "NF",
-                    "MATERIAL", "QTD.", "UN.", "NF",
-                    "MATERIAL", "QTD.", "UN.", "NF"
-                },
+                MATERIAL_COLUMNS,
                 bold,
                 4.8f
         );
@@ -601,7 +620,8 @@ final class RdoPdfFormRenderer {
                         materialInvoice(third)
                     },
                     regular,
-                    4.7f
+                    4.7f,
+                    MATERIAL_COLUMNS
             );
         }
         return top - 103f;
@@ -723,6 +743,27 @@ final class RdoPdfFormRenderer {
             PDFont font,
             float maximumFontSize
     ) throws IOException {
+        drawRow(content, x, top, widths, height, values, font, maximumFontSize, null);
+    }
+
+    /**
+     * Desenha a linha sabendo o nome de cada coluna, para poder dizer qual
+     * delas não coube.
+     *
+     * <p>Os rótulos são os mesmos que já vão no cabeçalho da tabela — quem
+     * recebe a recusa lê a mesma palavra que enxerga na folha.
+     */
+    private void drawRow(
+            PDPageContentStream content,
+            float x,
+            float top,
+            float[] widths,
+            float height,
+            String[] values,
+            PDFont font,
+            float maximumFontSize,
+            String[] columnLabels
+    ) throws IOException {
         if (widths.length != values.length) {
             throw new IllegalArgumentException("Células e larguras incompatíveis.");
         }
@@ -737,7 +778,10 @@ final class RdoPdfFormRenderer {
                     cursor + CELL_PADDING,
                     top - height + 2f,
                     widths[index] - (2 * CELL_PADDING),
-                    values[index]
+                    values[index],
+                    columnLabels == null || index >= columnLabels.length
+                            ? null
+                            : columnLabels[index]
             );
             cursor += widths[index];
         }
@@ -752,6 +796,22 @@ final class RdoPdfFormRenderer {
             float availableWidth,
             String value
     ) throws IOException {
+        drawFittedRaw(
+                content, font, maximumFontSize, x, baseline, availableWidth,
+                value, null
+        );
+    }
+
+    private void drawFittedRaw(
+            PDPageContentStream content,
+            PDFont font,
+            float maximumFontSize,
+            float x,
+            float baseline,
+            float availableWidth,
+            String value,
+            String columnLabel
+    ) throws IOException {
         if (value == null || value.isBlank()) {
             return;
         }
@@ -762,10 +822,58 @@ final class RdoPdfFormRenderer {
         if (fontSize < MIN_READABLE_FONT_SIZE) {
             throw new ResponseStatusException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
-                    UNREADABLE_FITTED_TEXT_MESSAGE
+                    unreadableMessage(columnLabel, availableWidth, font, value)
             );
         }
         drawRawText(content, font, fontSize, x, baseline, value);
+    }
+
+    /**
+     * A recusa que diz o que fazer.
+     *
+     * <p>A mensagem antiga dizia só que "o conteúdo do RDO" não cabia, e quem
+     * lia ficava sem saber qual dos vinte e poucos campos encurtar — num
+     * documento com trinta linhas de trecho, procurar o culpado à mão é o
+     * trabalho todo. Quando a coluna se identifica, a frase passa a nomear a
+     * coluna e a dizer quantos caracteres daquele conteúdo cabem, que é a
+     * única informação capaz de resolver o problema de quem está no campo.
+     *
+     * <p>O conteúdo em si não entra na mensagem: ele é dado do RDO e a recusa
+     * viaja por log e por tela alheia.
+     */
+    private String unreadableMessage(
+            String columnLabel,
+            float availableWidth,
+            PDFont font,
+            String value
+    ) throws IOException {
+        if (columnLabel == null || columnLabel.isBlank()) {
+            return UNREADABLE_FITTED_TEXT_MESSAGE;
+        }
+        int fits = fittingCharacters(font, value, availableWidth);
+        return "O conteúdo da coluna " + columnLabel
+                + " não permanece legível na célula fixa do PDF (cabem "
+                + fits + " caracteres deste conteúdo, e foram informados "
+                + value.codePointCount(0, value.length())
+                + "); nenhum conteúdo foi truncado.";
+    }
+
+    /** Quantos caracteres do próprio conteúdo cabem, medidos e não estimados. */
+    private int fittingCharacters(PDFont font, String value, float availableWidth)
+            throws IOException {
+        int fits = 0;
+        for (int index = 1; index <= value.length(); index++) {
+            if (value.charAt(index - 1) >= Character.MIN_LOW_SURROGATE
+                    && value.charAt(index - 1) <= Character.MAX_LOW_SURROGATE) {
+                continue;
+            }
+            float units = font.getStringWidth(value.substring(0, index)) / 1000f;
+            if (units > 0f && availableWidth / units < MIN_READABLE_FONT_SIZE) {
+                break;
+            }
+            fits = value.codePointCount(0, index);
+        }
+        return fits;
     }
 
     private void drawRawText(

@@ -33,6 +33,29 @@ const MIN_READABLE_FONT_SIZE = 4;
 const UNREADABLE_FITTED_TEXT_MESSAGE =
   "O conteúdo do RDO não permanece legível na célula fixa do PDF; nenhum conteúdo foi truncado.";
 
+/*
+ * Os rótulos das colunas que recebem conteúdo do usuário. Servem duas vezes:
+ * desenham o cabeçalho da tabela e nomeiam a coluna quando o conteúdo não
+ * couber. Espelham as constantes do servidor.
+ */
+const WORKFORCE_COLUMNS = [
+  "FUNÇÃO", "PRÓPRIA", "SUBCONT.",
+  "FUNÇÃO", "PRÓPRIA", "SUBCONT.",
+] as const;
+const EQUIPMENT_COLUMNS = [
+  "DESCRIÇÃO", "PREFIXO", "QTD.", "VÍNCULO",
+  "DESCRIÇÃO", "PREFIXO", "QTD.", "VÍNCULO",
+] as const;
+const WORKED_COLUMNS = [
+  "INÍCIO", "FIM", "Nº", "COMP.", "LARG.", "ESP. m",
+  "PISTA", "FAIXA", "OS", "ATIVIDADE / SERVIÇO",
+] as const;
+const MATERIAL_COLUMNS = [
+  "MATERIAL", "QTD.", "UN.", "NF",
+  "MATERIAL", "QTD.", "UN.", "NF",
+  "MATERIAL", "QTD.", "UN.", "NF",
+] as const;
+
 type FontStyle = "normal" | "bold";
 type TextAlignment = "left" | "center" | "right";
 
@@ -111,6 +134,54 @@ function drawText(
   document.text(value, x, y, { align });
 }
 
+/**
+ * Quantos caracteres do próprio conteúdo cabem, medidos e não estimados.
+ *
+ * <p>O desenho encolhe a fonte até `maximumSize * (largura / medido)` e recusa
+ * abaixo do piso de legibilidade, então cabe o maior prefixo cujo texto medido
+ * na fonte cheia não passe de `largura * (maximumSize / piso)`.
+ */
+function fittingCharacters(
+  document: jsPDF,
+  value: string,
+  width: number,
+  style: FontStyle,
+  maximumSize: number,
+): number {
+  setFont(document, style, maximumSize);
+  const budget = width * (maximumSize / MIN_READABLE_FONT_SIZE);
+  const characters = [...value];
+  let fits = 0;
+  for (let index = 1; index <= characters.length; index += 1) {
+    if (document.getTextWidth(characters.slice(0, index).join("")) > budget) {
+      break;
+    }
+    fits = index;
+  }
+  return fits;
+}
+
+/**
+ * A recusa que diz o que fazer. Espelha o servidor: quando a coluna se
+ * identifica, a frase nomeia a coluna — pelo mesmo nome impresso no cabeçalho
+ * da tabela — e informa quantos caracteres daquele conteúdo cabem. O conteúdo
+ * em si fica de fora: ele é dado do RDO e a recusa aparece em tela alheia.
+ */
+function unreadableMessage(
+  document: jsPDF,
+  columnLabel: string | undefined,
+  value: string,
+  width: number,
+  style: FontStyle,
+  maximumSize: number,
+): string {
+  if (!columnLabel) return UNREADABLE_FITTED_TEXT_MESSAGE;
+  const fits = fittingCharacters(document, value, width, style, maximumSize);
+  return `O conteúdo da coluna ${columnLabel} não permanece legível na célula `
+    + `fixa do PDF (cabem ${fits} caracteres deste conteúdo, e foram `
+    + `informados ${[...value].length}); nenhum conteúdo foi truncado.`;
+}
+
 function drawFittedText(
   document: jsPDF,
   value: string,
@@ -119,6 +190,7 @@ function drawFittedText(
   width: number,
   style: FontStyle,
   maximumSize: number,
+  columnLabel?: string,
 ): void {
   if (!value.trim()) return;
   assertPdfRenderableText(value);
@@ -130,7 +202,7 @@ function drawFittedText(
   if (size < MIN_READABLE_FONT_SIZE) {
     throw new RdoWorkbookExportError(
       "RDO_EXPORT_PRINT_OVERFLOW",
-      UNREADABLE_FITTED_TEXT_MESSAGE,
+      unreadableMessage(document, columnLabel, value, width, style, maximumSize),
     );
   }
   drawText(document, value, x, baseline, style, size);
@@ -144,6 +216,7 @@ function drawRow(
   values: string[],
   style: FontStyle,
   maximumSize: number,
+  columnLabels?: readonly string[],
 ): number {
   if (widths.length !== values.length) {
     throw new Error("Células e larguras incompatíveis.");
@@ -161,6 +234,7 @@ function drawRow(
       widths[index] - (2 * CELL_PADDING),
       style,
       maximumSize,
+      columnLabels?.[index],
     );
     x += widths[index];
   }
@@ -385,14 +459,7 @@ function drawWorkforce(
     top,
     widths,
     4,
-    [
-      "FUNÇÃO",
-      "PRÓPRIA",
-      "SUBCONT.",
-      "FUNÇÃO",
-      "PRÓPRIA",
-      "SUBCONT.",
-    ],
+    [...WORKFORCE_COLUMNS],
     "bold",
     5.4,
   );
@@ -414,6 +481,7 @@ function drawWorkforce(
       ],
       "normal",
       5.2,
+      WORKFORCE_COLUMNS,
     );
   }
   return y + 2;
@@ -446,16 +514,7 @@ function drawEquipment(
     top,
     widths,
     4,
-    [
-      "DESCRIÇÃO",
-      "PREFIXO",
-      "QTD.",
-      "VÍNCULO",
-      "DESCRIÇÃO",
-      "PREFIXO",
-      "QTD.",
-      "VÍNCULO",
-    ],
+    [...EQUIPMENT_COLUMNS],
     "bold",
     5.1,
   );
@@ -471,6 +530,7 @@ function drawEquipment(
       ],
       "normal",
       5,
+      EQUIPMENT_COLUMNS,
     );
   }
   return y + 2;
@@ -509,18 +569,7 @@ function drawWorked(
     top,
     widths,
     4,
-    [
-      "INÍCIO",
-      "FIM",
-      "Nº",
-      "COMP.",
-      "LARG.",
-      "ESP. m",
-      "PISTA",
-      "FAIXA",
-      "OS",
-      "ATIVIDADE / SERVIÇO",
-    ],
+    [...WORKED_COLUMNS],
     "bold",
     5.2,
   );
@@ -533,6 +582,7 @@ function drawWorked(
       workedCells(projection, row),
       "normal",
       5.2,
+      WORKED_COLUMNS,
     );
   }
 }
@@ -568,22 +618,23 @@ function drawMaterials(
    * 6,80 disponíveis), e 2 da descrição, que passa a dar 22,4 em — mais que o
    * dobro do que um nome de material de obra ocupa na prática. A soma do bloco
    * continua 63,333 mm, então o formulário não se desloca.
+   *
+   * <p>A nota fiscal veio junto, pela mesma medição: 9,33 mm davam 5,62 em, e
+   * uma nota escrita como se escreve — com série ou ano, "NF 123456/2026" —
+   * gasta 7,4. Ela vai a 12 mm (7,51 em) com mais 2,67 tirados da descrição,
+   * que ainda fica com 20,5 em.
    */
   const widths = [
-    33, 11, 10, 9.333333,
-    33, 11, 10, 9.333333,
-    33, 11, 10, 9.333334,
+    30.333333, 11, 10, 12,
+    30.333333, 11, 10, 12,
+    30.333334, 11, 10, 12,
   ];
   let y = drawRow(
     document,
     top,
     widths,
     4,
-    [
-      "MATERIAL", "QTD.", "UN.", "NF",
-      "MATERIAL", "QTD.", "UN.", "NF",
-      "MATERIAL", "QTD.", "UN.", "NF",
-    ],
+    [...MATERIAL_COLUMNS],
     "bold",
     4.8,
   );
@@ -600,6 +651,7 @@ function drawMaterials(
       ],
       "normal",
       4.7,
+      MATERIAL_COLUMNS,
     );
   }
   return y + 2;

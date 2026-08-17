@@ -262,6 +262,58 @@ describe("local RDO PDF export", () => {
     expect(() => exportRdoPdf(value)).not.toThrow();
   });
 
+  /*
+   * A nota fiscal como se escreve, com série ou ano. Os 9,33 mm antigos davam
+   * 5,62 em e "NF 123456/2026" gasta 7,45: o número puro cabia, o que se
+   * digita não. Com 12 mm são 7,51 em. O limite de caracteres nunca barrou
+   * isso — 14 está longe de 24 —, então quem escrevia assim só descobria no
+   * desenho.
+   */
+  it("desenha a nota fiscal escrita com série ou ano", () => {
+    const value = snapshot();
+    value.rdo.materiais[0] = {
+      ...value.rdo.materiais[0],
+      notaFiscal: "NF 123456/2026",
+    };
+
+    expect(() => exportRdoPdf(value)).not.toThrow();
+    expect(pdfText(exportRdoPdf(value))).toContain("NF 123456/2026");
+  });
+
+  /*
+   * A recusa do desenho continua fail-closed, e agora diz onde doer. A frase
+   * antiga falava do "conteúdo do RDO" sem dizer qual campo, e num documento
+   * com dezenas de linhas procurar o culpado à mão era o trabalho todo. A
+   * coluna se identifica pelo nome que aparece impresso no cabeçalho, e a
+   * mensagem informa quantos caracteres daquele conteúdo cabem. Espelha o
+   * servidor, palavra por palavra.
+   */
+  it("nomeia a coluna e o quanto cabe quando o conteúdo não encolhe o bastante", () => {
+    const value = snapshot();
+    value.rdo.materiais[0] = {
+      ...value.rdo.materiais[0],
+      materialNome: "W".repeat(24),
+    };
+
+    let capturada = "";
+    try {
+      exportRdoPdf(value);
+    } catch (error) {
+      capturada = (error as Error).message;
+    }
+
+    /*
+     * O informado é 28, e não os 24 do nome: a coluna recebe a linha composta
+     * — "nome (qualificador)" —, que é o que o desenho de fato mede. A
+     * mensagem conta o que foi desenhado, não o que foi digitado num campo.
+     */
+    expect(capturada).toMatch(
+      /^O conteúdo da coluna MATERIAL não permanece legível na célula fixa do PDF \(cabem \d+ caracteres deste conteúdo, e foram informados 28\); nenhum conteúdo foi truncado\.$/,
+    );
+    // O conteúdo recusado não viaja na mensagem: é dado operacional do RDO.
+    expect(capturada).not.toContain("WWWW");
+  });
+
   it("embeds redacted observation text without the original secrets", () => {
     const value = snapshot();
     value.rdo.observacoes =

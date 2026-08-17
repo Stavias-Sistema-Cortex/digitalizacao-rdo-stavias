@@ -160,6 +160,42 @@ class RdoPdfExportServiceTest {
                 .startsWith("%PDF-".getBytes(StandardCharsets.US_ASCII));
     }
 
+    /**
+     * A nota fiscal como se escreve, com série ou ano.
+     *
+     * <p>Os 28 pontos antigos davam 6,20 em, e "NF 123456/2026" gasta 7,45: o
+     * número puro cabia, o que se digita não. Com 36 pontos são 8,20 em. O
+     * limite de caracteres nunca barrou isso — 14 está longe de 24 —, então
+     * quem escrevia assim só descobria no desenho, e sem saber qual campo.
+     */
+    @Test
+    void drawsAnInvoiceNumberWrittenWithSeriesOrYear() throws Exception {
+        String invoice = "NF 123456/2026";
+        when(queryService.buscarPorId("rdo-nota")).thenReturn(
+                withMaterialInvoice(populatedRdo("rdo-nota", "RDO-NOTA"), invoice)
+        );
+
+        RdoExportFile exported = service.export("rdo-nota");
+
+        try (PDDocument document = Loader.loadPDF(exported.content())) {
+            assertThat(new PDFTextStripper().getText(document))
+                    .contains(invoice);
+        }
+    }
+
+    private static RdoResponse withMaterialInvoice(
+            RdoResponse original,
+            String notaFiscal
+    ) {
+        RdoResponse.MaterialItem first = original.materiais().get(0);
+        return withMaterials(original, List.of(new RdoResponse.MaterialItem(
+                first.id(), first.materialNome(), first.unidade(),
+                first.quantidadePrevista(), first.quantidadeUsinada(),
+                first.quantidadeAplicada(), first.quantidadeSobra(),
+                notaFiscal, first.fornecedor(), first.observacoes()
+        )));
+    }
+
     private static RdoResponse withMaterialUnit(
             RdoResponse original,
             String unidade
@@ -422,8 +458,18 @@ class RdoPdfExportServiceTest {
         }
     }
 
+    /**
+     * A recusa do desenho continua fail-closed, e agora diz onde doer.
+     *
+     * <p>A frase antiga falava do "conteúdo do RDO" sem dizer qual campo, e
+     * num documento com dezenas de linhas de trecho e de material isso deixava
+     * quem está no campo procurando o culpado à mão. A coluna se identifica
+     * pelo mesmo nome que aparece impresso no cabeçalho da tabela, e a
+     * mensagem informa quantos caracteres daquele conteúdo cabem — que é o
+     * que resolve, porque diz quanto encurtar.
+     */
     @Test
-    void refusesToShrinkFixedCellTextBelowTheReadablePdfMinimum() {
+    void namesTheColumnAndTheFittingLengthWhenFixedCellTextCannotShrink() {
         RdoResponse rdo = copyRdoWithMaterials(
                 populatedRdo("rdo-minimum-font", "RDO-MINIMUM-FONT"),
                 List.of(new RdoResponse.MaterialItem(
@@ -439,10 +485,22 @@ class RdoPdfExportServiceTest {
         )).isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
             assertThat(exception.getStatusCode())
                     .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
-            assertThat(exception.getReason()).isEqualTo(
-                    "O conteúdo do RDO não permanece legível na célula fixa "
-                            + "do PDF; nenhum conteúdo foi truncado."
-            );
+            /*
+             * O informado é 28, e não os 24 do nome: a coluna recebe a linha
+             * composta — "nome (qualificador)" —, que é o que o desenho de
+             * fato mede. A mensagem conta o que foi desenhado, não o que foi
+             * digitado num campo.
+             */
+            assertThat(exception.getReason())
+                    .startsWith("O conteúdo da coluna MATERIAL não permanece "
+                            + "legível na célula fixa do PDF (cabem ")
+                    .contains("foram informados 28")
+                    .endsWith("); nenhum conteúdo foi truncado.");
+            /*
+             * O conteúdo recusado não viaja na mensagem: ela vai para log e
+             * para tela de terceiros, e o texto é dado operacional do RDO.
+             */
+            assertThat(exception.getReason()).doesNotContain("WWWW");
         });
         assertThat(generated).hasNullValue();
     }
