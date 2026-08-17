@@ -121,8 +121,11 @@ O cofre colaborativo usa:
 - sal aleatório e independente para a derivação da senha;
 - PBKDF2-HMAC-SHA-256 com pelo menos 600.000 iterações, executado pela Web
   Crypto API;
-- dados adicionais autenticados contendo versão do protocolo, chave aleatória
-  do registro e fingerprint do dono/escopo;
+- dados adicionais autenticados contendo somente campos públicos imutáveis
+  necessários antes da decriptação: versão do protocolo, chave aleatória do
+  registro, verificador protegido do CPF e fingerprint da chave do servidor;
+- dono, escopo e seu fingerprint permanecem dentro do ciphertext e são
+  conferidos contra o grant assinado depois da decriptação autenticada;
 - buffers temporários limpos assim que a API do navegador permitir.
 
 O Argon2id permanece obrigatório no servidor. O PBKDF2 local não substitui o
@@ -188,11 +191,13 @@ revogações relevantes incrementam essa época e revogam as sessões online.
 O formato colaborativo versão 2 contém o grant assinado em claro e não pode
 ser convertido com segurança sem a senha. A migração será progressiva:
 
-1. grants v2 existentes mantêm sua expiração original de no máximo 24 horas;
+1. grants v2 existentes permanecem fisicamente preservados com sua expiração
+   original de no máximo 24 horas para rollback, mas a interface v3 não os
+   apresenta como cofre por senha preparado;
 2. eles não são ampliados para sete dias nem renovados como v2;
 3. no próximo login online com senha, o frontend cria um cofre v3 e remove o
    v2 correspondente somente depois da persistência v3 ser confirmada;
-4. falha na migração preserva o v2 ainda válido e mostra que o acesso de sete
+4. falha na migração preserva o v2 para rollback e mostra que o acesso de sete
    dias não foi preparado;
 5. passkey vaults existentes não são modificados.
 
