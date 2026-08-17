@@ -209,6 +209,7 @@ runtime_env_tmp="$(mktemp "$runtime_dir/production.env.XXXXXX")"
   printf 'CORTEX_AUTH_OFFLINE_GRANT_KEY_ID=%s\n' "$CORTEX_AUTH_OFFLINE_GRANT_KEY_ID"
   printf 'CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE=%s\n' "$offline_private_secret"
   printf 'CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE=%s\n' "$offline_public_secret"
+  printf 'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS=604800\n'
   printf 'CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID=%s\n' "$CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID"
   printf 'CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE=%s\n' "$memory_cursor_secret"
   printf 'VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256=%s\n' "$public_fingerprint"

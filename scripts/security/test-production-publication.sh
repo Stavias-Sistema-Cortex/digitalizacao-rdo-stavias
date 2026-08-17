@@ -47,6 +47,10 @@ grep -Fq 'install_secret_file CORTEX_ACADEMY_DB_PASSWORD_FILE' \
   "$prepare_script"
 grep -Fq 'ensure_random_secret "$password_setup_hmac_secret"' \
   "$prepare_script"
+grep -Fq "printf 'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS=604800\\n'" \
+  "$prepare_script"
+grep -Fq 'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS: ${CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS:-604800}' \
+  "$compose_file"
 if [[ "$(grep -Fc 'ALTER ROLE %I WITH LOGIN PASSWORD %L' "$postgres_init_file")" -ne 2 ]]; then
   echo "local PostgreSQL role credentials are not reconciled for both roles" >&2
   exit 1

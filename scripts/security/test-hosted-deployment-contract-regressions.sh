@@ -25,7 +25,7 @@ assert_rejected() {
   fi
 }
 
-for case_name in branch profile readiness release-marker sse dev-admin provisioning jdbc-url postgres-password; do
+for case_name in branch profile readiness release-marker sse dev-admin provisioning offline-ttl jdbc-url postgres-password; do
   fixture="$fixture_dir/$case_name.yaml"
   cp "$repo_root/render.yaml" "$fixture"
   python3 - "$fixture" "$case_name" <<'PY'
@@ -64,6 +64,10 @@ replacements = {
     "provisioning": (
         'CORTEX_AUTH_PROVISIONING_ENABLED\n        value: "false"',
         'CORTEX_AUTH_PROVISIONING_ENABLED\n        value: "true"',
+    ),
+    "offline-ttl": (
+        'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS\n        value: "604800"',
+        'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS\n        value: "86400"',
     ),
     "jdbc-url": (
         "CORTEX_POSTGRES_URL\n        sync: false",

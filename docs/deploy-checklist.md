@@ -2,9 +2,9 @@
 
 Esta é a trava operacional do artefato atual: API Java 21, PWA, autenticação
 online direta por CPF canônico (passkey como alternativa), grants colaborativos
-offline e cofre por passkey PRF, Mensagens, armazenamento compartilhado, RDO,
-Financeiro orientado à receita, Memória e grafo ontológico. Marque um item
-somente com evidência da mesma revisão que será publicada.
+offline em cofre v3 por senha e cofre por passkey PRF, Mensagens, armazenamento
+compartilhado, RDO, Financeiro orientado à receita, Memória e grafo ontológico.
+Marque um item somente com evidência da mesma revisão que será publicada.
 
 ## 1. Banco e migrações
 
@@ -38,6 +38,8 @@ estado; `/api/health` mede somente o processo.
 - [ ] Cookies estão `Secure`; `SameSite` foi escolhido para a topologia real.
 - [ ] O par PEM do offline grant está montado e o fingerprint público usado no
   build da PWA corresponde exatamente a esse par.
+- [ ] `CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS=604800` está explícito e idêntico
+  na API, no Compose/VM e no ambiente hospedado aplicável.
 - [ ] O login por CPF normaliza o identificador, resolve somente a identidade
   Academy já espelhada em PostgreSQL e exige a senha individual verificada por
   Argon2id. Não depende de OTP/e-mail nem de perfil MySQL por pessoa; o rate
@@ -51,10 +53,15 @@ estado; `/api/health` mede somente o processo.
   perfil explícito `postgresql-activation`, com seu segredo próprio.
 - [ ] Login por passkey foi exercitado como alternativa online explícita; o
   RP ID e a origem WebAuthn correspondem exatamente à origem publicada.
-- [ ] Depois de login online, o grant colaborativo assinado permite reabertura
-  offline somente com o CPF correspondente; o cofre PRF continua disponível
-  apenas para uma passkey registrada explicitamente. E-mail, OTP e PIN não são
-  fallbacks offline; sem grant/passkey a identidade continua bloqueada.
+- [ ] Depois de login online por CPF e senha, o cofre colaborativo v3 permite
+  reabertura offline com o mesmo CPF e senha por até sete dias; o cofre PRF
+  continua disponível apenas para uma passkey registrada explicitamente.
+  E-mail, OTP e PIN não são fallbacks offline; sem cofre/passkey a identidade
+  continua bloqueada.
+- [ ] O registro colaborativo v3 não persiste em claro senha, hash Argon2id,
+  grant assinado, nome, papel, obra, `authEpoch`, fingerprint do escopo ou
+  horário confiável. Grants v2 de 24 horas foram preservados para rollback,
+  mas não aparecem como v3 pronto e não são renovados.
 
 ## 3. Secrets e providers
 

@@ -104,6 +104,7 @@ assert_production_compose_renders_from_documented_contract() {
     CORTEX_AUTH_OFFLINE_GRANT_KEY_ID='offline-contract-key' \
     CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE="$contract_secret_dir/offline_private" \
     CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE="$contract_secret_dir/offline_public" \
+    CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS='604800' \
     CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID='memory-contract-key' \
     CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE="$contract_secret_dir/memory_cursor_hmac" \
     VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256='contract-public-key-fingerprint' \
@@ -125,6 +126,7 @@ assert_production_compose_renders_from_documented_contract() {
   grep -Fq 'CORTEX_SYNC_ACADEMY_ENABLED: "false"' <<< "$rendered"
   grep -Fq 'CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS: "900000"' <<< "$rendered"
   grep -Fq 'CORTEX_SYNC_ZELADORIA_ENABLED: "false"' <<< "$rendered"
+  grep -Fq 'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS: "604800"' <<< "$rendered"
   grep -Fq 'target: CORTEX_ZELADORIA_DB_PASSWORD' <<< "$rendered"
   if grep -Eq 'CORTEX_AUTH_OTP_HMAC_KEY_FILE|cortex_otp_hmac|CORTEX_EMAIL_|CORTEX_SMTP_|cortex_smtp_password|CORTEX_FINANCE_EMAIL_' <<< "$rendered"; then
     echo "rendered normal production compose still contains activation OTP or legacy e-mail delivery" >&2
@@ -142,6 +144,8 @@ grep -Fq 'SPRING_PROFILES_ACTIVE: local,postgresql' "$compose_file"
 grep -Fq 'VITE_CORTEX_AUTH_MODE: postgresql' "$compose_file"
 grep -Fq 'target: CORTEX_POSTGRES_PASSWORD' "$compose_file"
 grep -Fq 'CORTEX_POSTGRES_RUNTIME_READY:' "$compose_file"
+grep -Fq 'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS: ${CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS:-604800}' \
+  "$compose_file"
 
 if grep -Eq 'cortex-mysql|jdbc:mysql|cortex_dev|CORTEX_DB_|VITE_CORTEX_AUTH_MODE: legacy' \
   "$compose_file"; then
@@ -184,6 +188,8 @@ grep -Fq 'CORTEX_ZELADORIA_DB_URL:' "$production_compose_file"
 grep -Fq 'CORTEX_ZELADORIA_DB_USER:' "$production_compose_file"
 grep -Fq 'target: CORTEX_ZELADORIA_DB_PASSWORD' "$production_compose_file"
 grep -Fq 'CORTEX_ZELADORIA_DB_PASSWORD_FILE' "$production_compose_file"
+grep -Fq 'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS: ${CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS:-604800}' \
+  "$production_compose_file"
 grep -Fq '"${CORTEX_WEB_BIND_ADDRESS:-127.0.0.1}:${CORTEX_WEB_PORT:-8080}:8080"' \
   "$production_compose_file"
 
@@ -197,6 +203,7 @@ for documented_variable in \
   CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE \
   CORTEX_AUTH_WEBAUTHN_RP_ID \
   CORTEX_AUTH_OFFLINE_GRANT_KEY_ID \
+  CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS \
   CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID \
   VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256 \
   CORTEX_ACADEMY_DB_URL \

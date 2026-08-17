@@ -59,10 +59,19 @@ segredos/orquestrador ao iniciar `start-postgres-activation.sh`; esse ambiente
 não pode ser compartilhado com `run-api.sh`, `run-compose.sh` ou
 `run-api-docker.sh`.
 
-O acesso offline é uma fronteira diferente. Um grant colaborativo assinado pode
-ser localizado e validado somente pelo CPF correspondente, enquanto o cofre PRF
-exige uma passkey previamente registrada. Nenhum dos dois cria autorização de
-API; PIN, e-mail e OTP não são fallbacks offline.
+O acesso offline é uma fronteira diferente. Enquanto o navegador alcança a VM
+pela LAN, ele usa o login online normal. Depois de um login online por CPF e
+senha, o perfil desse navegador recebe um cofre colaborativo v3 cifrado que o
+mesmo CPF e senha podem abrir sem alcançar a API por até sete dias
+(`CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS=604800`). A passkey/PRF permanece como
+alternativa independente. Nenhum dos dois cria autorização de API; PIN, e-mail
+e OTP não são fallbacks offline.
+
+A senha, o hash do servidor e o grant assinado não são persistidos em claro no
+registro v3. Grants v2 existentes, limitados a 24 horas, permanecem fisicamente
+preservados para rollback, mas não são apresentados como v3 pronto, ampliados
+ou renovados. O login online com senha confirma a gravação v3 antes de
+substituir o v2 correspondente.
 
 ## Preparação de chaves
 
@@ -97,11 +106,13 @@ API; PIN, e-mail e OTP não são fallbacks offline.
    `docker compose --env-file .env.production -f compose.production.example.yml config`.
    O primeiro comando usa arquivos temporários sem conteúdo real e verifica o
    contrato de secrets, fontes e porta loopback.
-6. Inicie com `CORTEX_SYNC_ACADEMY_ENABLED=false` e
+6. Confirme `CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS=604800` no runtime e inicie
+   com `CORTEX_SYNC_ACADEMY_ENABLED=false` e
    `CORTEX_SYNC_ZELADORIA_ENABLED=false`, aguarde `/api/readiness`, faça login
    por CPF e senha individual, valide a emissão e o consumo de um código
    temporário, valide a passkey como alternativa e exercite
-   separadamente o grant colaborativo e uma passkey PRF registrada.
+   separadamente o cofre colaborativo v3 por CPF e senha, inclusive fechamento
+   e reabertura sem API, e uma passkey PRF registrada.
 7. Inicie a PWA e execute `scripts/smoke-deploy.sh` na origem HTTPS final.
 8. Depois de configurar e validar explicitamente as URLs, usuários
    `SELECT`-only, arquivos de senha e uma importação QA, habilite somente a

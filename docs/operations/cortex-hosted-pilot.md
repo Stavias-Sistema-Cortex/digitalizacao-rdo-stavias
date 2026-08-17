@@ -36,6 +36,7 @@ valores de segredo, URL de conexão, identificador de conta ou endpoint.
   `CORTEX_AUTH_OFFLINE_GRANT_KEY_ID`,
   `CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE`,
   `CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE`,
+  `CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS=604800`,
   `CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID`,
   `CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE`,
   `CORTEX_AUTH_DEV_ADMIN_ENABLED`, `CORTEX_AUTH_PROVISIONING_ENABLED`.
@@ -277,6 +278,14 @@ O próprio wrapper repete health e readiness pela origem Pages e exige o mesmo
 SHA. Depois dele, confirme com uma sessão QA real login, autorização,
 upload/download autorizado em R2 e os fluxos offline. Falha de Neon, Render ou
 R2 é falha visível, não motivo para fallback.
+
+O primeiro uso offline de cada perfil de navegador exige login online por CPF
+e senha enquanto a API estiver alcançável. Esse login prepara o cofre
+colaborativo v3 cifrado; depois, o mesmo CPF e senha podem abrir somente os
+dados locais autorizados por até sete dias (`604800` segundos). Isso não cria
+autorização de API. A passkey/PRF continua como alternativa. Grants v2 de até
+24 horas permanecem fisicamente preservados para rollback, sem promoção ou
+renovação como v3.
 
 ## 8. Rollback
 

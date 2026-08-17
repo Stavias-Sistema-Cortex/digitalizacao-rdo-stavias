@@ -138,13 +138,14 @@ Acesse exatamente `http://localhost:$CORTEX_WEB_PORT` e valide
 cookie, CSRF e origem WebAuthn. Não reutilize uma aba aberta por outro checkout.
 
 No runtime normal `postgresql`, o CPF resolve somente a identidade canônica já
-persistida em `StaviasCortex` e emite a sessão opaca; passkey continua como
-alternativa. Por decisão da operação colaborativa, esse endpoint não aplica um
-rate limit da aplicação nem emite `429`; uma proteção de borda, se necessária,
-deve ser configurada fora do contrato de login. Não há consulta MySQL ao Academy
-ou à Zeladoria durante uma autenticação do navegador e não há requisito de
-segredo OTP. A ativação por e-mail/OTP continua uma transição separada e
-explícita por `start-postgres-activation.sh`.
+persistida em `StaviasCortex`, a senha individual é verificada por Argon2id e a
+API emite a sessão opaca; passkey continua como alternativa. Por decisão da
+operação colaborativa, esse endpoint não aplica um rate limit da aplicação nem
+emite `429`; uma proteção de borda, se necessária, deve ser configurada fora do
+contrato de login. Não há consulta MySQL ao Academy ou à Zeladoria durante uma
+autenticação do navegador e não há requisito de segredo OTP. A ativação por
+e-mail/OTP continua uma transição separada e explícita por
+`start-postgres-activation.sh`.
 
 ## Dados externos e importação
 
@@ -182,11 +183,19 @@ o banco local do operador.
 ## Offline e sincronização
 
 - IDs e `clientMutationId` permanecem estáveis no IndexedDB.
-- Recarregar offline não autoriza API; somente um grant assinado abre o cofre
-  local.
-- O CPF offline apenas localiza e valida o grant colaborativo assinado; ele não
-  autoriza API. PIN, e-mail e OTP não desbloqueiam o cache. Para o cofre PRF,
-  registre uma passkey enquanto houver conexão.
+- Um aparelho alcançando a VM pela LAN usa o login online normal. O primeiro
+  uso sem alcançar a API exige que esse perfil de navegador já tenha concluído
+  login online por CPF e senha.
+- O login online prepara um cofre colaborativo v3 cifrado por AES-GCM. CPF e
+  senha individual abrem os dados locais autorizados por até sete dias
+  (`CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS=604800`); não autorizam a API.
+- A senha, seu hash Argon2id, o grant assinado, identidade, papel, escopo e
+  horário confiável não ficam em claro no registro v3. PIN, e-mail e OTP não
+  desbloqueiam o cache. O cofre PRF por passkey continua como alternativa.
+- Grants v2 de até 24 horas permanecem fisicamente preservados para rollback,
+  mas a interface v3 não os considera preparados, não os amplia e não os
+  renova. Um login online com senha cria e confirma o v3 antes de substituir o
+  registro correspondente.
 - Com o app aberto, online e com sessão online ativa, o replay idempotente é
   solicitado após escrita local, abertura/montagem, reconexão, retorno da aba ao
   primeiro plano, mudança de sessão, intervalo e retry agendado. Falhas e
@@ -196,6 +205,9 @@ o banco local do operador.
   acima.
 - Para diagnosticar, confirme `/api/health`, `/api/readiness`, sessão,
   escopo/capability, rota, recibo idempotente e evento ontológico.
+- Mantenha os pulls de Academy/Zeladoria desativados até validar no ambiente
+  real as contas `SELECT`-only, TLS e mapeamentos. A indisponibilidade dessas
+  fontes não autoriza fallback nem muda o contrato do cofre offline.
 
 ## Financeiro
 

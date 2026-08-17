@@ -100,6 +100,7 @@ expected_env = {
   "CORTEX_AUTH_OFFLINE_GRANT_KEY_ID" => { "sync" => false },
   "CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE" => { "value" => "/etc/secrets/cortex-offline-private.pem" },
   "CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE" => { "value" => "/etc/secrets/cortex-offline-public.pem" },
+  "CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS" => { "value" => "604800" },
   "CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID" => { "sync" => false },
   "CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE" => { "value" => "/etc/secrets/cortex-memory-cursor-hmac" },
   "CORTEX_AUTH_DEV_ADMIN_ENABLED" => { "value" => "false" },
