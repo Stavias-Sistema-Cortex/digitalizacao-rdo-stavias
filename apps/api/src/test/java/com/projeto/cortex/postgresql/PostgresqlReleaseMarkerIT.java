@@ -1,5 +1,6 @@
 package com.projeto.cortex.postgresql;
 
+import com.projeto.cortex.config.PostgresqlSchemaVersion;
 import com.projeto.cortex.postgresql.migrate.PostgresqlMigrationApplication;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -183,10 +184,27 @@ class PostgresqlReleaseMarkerIT {
                     WHERE schemaname = 'pg_catalog'
                       AND tablename = 'flyway_schema_history'
                     """, Integer.class)).isZero();
-            assertThat(ownerJdbc.queryForObject(
-                    "SELECT MAX(version) FROM public.flyway_schema_history WHERE success",
-                    String.class
-            )).isEqualTo("85");
+            /*
+             * A última migração aplicada é lida pela ordem de aplicação, e não
+             * por MAX(version): a coluna é texto, e texto ordena "99" acima de
+             * "100" — o pino começaria a falhar sozinho na centésima migração,
+             * com uma mensagem que não diz nada sobre a causa.
+             *
+             * <p>E o que se compara é a versão que o runtime exige, não um
+             * literal repetido aqui. O literal obrigava a lembrar de dois
+             * lugares a cada migração nova, e esquecer o segundo só aparecia
+             * neste teste — que precisa de um PostgreSQL de verdade e por isso
+             * não roda no `mvn test`, só no CI, sete minutos depois.
+             * PostgresqlSchemaVersion é a fonte única, e o contrato de fundação
+             * já a prende à migração mais nova do diretório.
+             */
+            assertThat(ownerJdbc.queryForObject("""
+                    SELECT version
+                    FROM public.flyway_schema_history
+                    WHERE success AND type = 'SQL'
+                    ORDER BY installed_rank DESC
+                    LIMIT 1
+                    """, String.class)).isEqualTo(PostgresqlSchemaVersion.REQUIRED);
             assertThat(ownerJdbc.queryForObject(
                     """
                     SELECT marker
