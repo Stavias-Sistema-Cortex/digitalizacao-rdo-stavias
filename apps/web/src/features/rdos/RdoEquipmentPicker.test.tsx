@@ -211,3 +211,96 @@ describe("marcação de equipamentos do RDO", () => {
     expect(screen.getByText(/lançar a máquina à mão/)).toBeVisible();
   });
 });
+
+/**
+ * A lista passou a trazer o parque da empresa, e não só o que alguém marcou
+ * como desta obra — que era ninguém: o conector da Zeladoria escreve o cadastro
+ * e não o vínculo, então toda obra abria com a lista vazia e o apontador diante
+ * de um único caminho, cadastrar à mão o que já estava cadastrado.
+ */
+describe("o parque da empresa e o da obra na mesma lista", () => {
+  const PARQUE_MISTO: RdoContextEquipment[] = [
+    {
+      id: "asset-obra",
+      codigoExterno: "ROL-03",
+      nome: "Rolo Compactador",
+      categoria: "Pavimentação",
+      naObra: true,
+    },
+    {
+      id: "asset-empresa",
+      codigoExterno: "PA-09",
+      nome: "Pá Carregadeira",
+      categoria: "Terraplenagem",
+      naObra: false,
+    },
+  ];
+
+  function titulosNaOrdem(): string[] {
+    return within(lista())
+      .getAllByRole("listitem")
+      .map((item) => item.textContent ?? "");
+  }
+
+  it("mostra a máquina que não é da obra e diz de onde ela vem", () => {
+    render(
+      <RdoEquipmentPicker
+        parque={PARQUE_MISTO}
+        equipamentos={[]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("No parque da empresa")).toBeVisible();
+    expect(caixaDe(/Pá Carregadeira/)).toBeDefined();
+  });
+
+  it("põe quem já é da obra antes do resto do parque", () => {
+    render(
+      // Fora de ordem de propósito: quem ordena é a tela, não quem chamou.
+      <RdoEquipmentPicker
+        parque={[PARQUE_MISTO[1], PARQUE_MISTO[0]]}
+        equipamentos={[]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const titulos = titulosNaOrdem();
+    expect(titulos[0]).toContain("Rolo Compactador");
+    expect(titulos[1]).toContain("Pá Carregadeira");
+  });
+
+  it("marca a máquina do parque como qualquer outra", async () => {
+    const usuario = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RdoEquipmentPicker
+        parque={PARQUE_MISTO}
+        equipamentos={[]}
+        onChange={onChange}
+      />,
+    );
+
+    await usuario.click(caixaDe(/Pá Carregadeira/));
+
+    expect(onChange.mock.calls.at(-1)?.[0][0]).toMatchObject({
+      assetId: "asset-empresa",
+      prefixo: "PA-09",
+      descricao: "Pá Carregadeira",
+    });
+  });
+
+  /*
+   * Contexto guardado antes desta versão não tem `naObra`. Ler a ausência como
+   * "está na obra" preserva o significado que ele tinha: naquele contexto, toda
+   * máquina que aparecia estava mesmo vinculada. Lê-la como `false` mandaria o
+   * parque inteiro de quem está offline para debaixo do cabeçalho errado.
+   */
+  it("trata contexto antigo, sem a marca, como máquina da obra", () => {
+    render(
+      <RdoEquipmentPicker parque={PARQUE} equipamentos={[]} onChange={vi.fn()} />,
+    );
+
+    expect(screen.queryByText("No parque da empresa")).toBeNull();
+  });
+});

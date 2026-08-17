@@ -294,6 +294,17 @@ export interface RdoContextEquipment {
   codigoExterno: string | null;
   nome: string | null;
   categoria: string | null;
+  /**
+   * Se a máquina está ligada a esta obra.
+   *
+   * <p>Como em {@link RdoContextCollaborator.naObra}, deixou de decidir quem
+   * aparece e passou a decidir a ordem — o parque da empresa é da empresa.
+   *
+   * <p>Opcional de propósito: contexto guardado antes desta versão não tem o
+   * campo, e exigi-lo faria toda leitura em cache ser recusada como
+   * incompatível — quem está offline perderia o contexto que já tinha.
+   */
+  naObra?: boolean;
 }
 
 export interface RdoContextSchedule {
@@ -897,6 +908,7 @@ function legacyEquipment(values: unknown[]): RdoContextEquipment[] {
       codigoExterno: nullableText(value.codigoExterno),
       nome: nullableText(value.nome),
       categoria: nullableText(value.categoria),
+      naObra: typeof value.naObra === "boolean" ? value.naObra : undefined,
     };
   });
 }

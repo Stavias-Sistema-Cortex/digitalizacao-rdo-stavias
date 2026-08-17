@@ -169,8 +169,26 @@ public record RdoContextResponse(
             String id,
             String codigoExterno,
             String nome,
-            String categoria
+            String categoria,
+            /**
+             * Se a máquina está ligada a esta obra.
+             *
+             * <p>Como em {@link ColaboradorContexto#naObra()}, deixou de decidir
+             * quem aparece e passou a decidir a ordem: o parque da empresa é da
+             * empresa, e quem já está na obra vem primeiro.
+             */
+            boolean naObra
     ) {
+
+        /** Assinatura anterior à abertura da lista para o parque inteiro. */
+        public EquipamentoContexto(
+                String id,
+                String codigoExterno,
+                String nome,
+                String categoria
+        ) {
+            this(id, codigoExterno, nome, categoria, true);
+        }
     }
 
     public record ServiceCatalogContext(

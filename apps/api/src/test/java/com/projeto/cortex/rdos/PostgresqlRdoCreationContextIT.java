@@ -2,6 +2,7 @@ package com.projeto.cortex.rdos;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.equipamentos.EquipamentoTerceirizadoService;
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
@@ -263,9 +265,21 @@ class PostgresqlRdoCreationContextIT {
                 .filteredOn(RdoContextResponse.ColaboradorContexto::naObra)
                 .extracting(RdoContextResponse.ColaboradorContexto::id)
                 .containsExactly(vinculada);
+        /*
+         * A mesma virada valeu para as máquinas: a lista traz o parque da
+         * empresa e a elegibilidade virou marca. assetB só foi apontado num RDO
+         * da obra B — aparece aqui também, e desmarcado.
+         */
         assertThat(response.equipamentos())
                 .extracting(RdoContextResponse.EquipamentoContexto::id)
-                .containsExactly(assetA);
+                .contains(assetA, assetB);
+        assertThat(response.equipamentos())
+                .filteredOn(item -> item.id().equals(assetA) || item.id().equals(assetB))
+                .extracting(
+                        RdoContextResponse.EquipamentoContexto::id,
+                        RdoContextResponse.EquipamentoContexto::naObra
+                )
+                .containsExactly(tuple(assetA, true), tuple(assetB, false));
         assertThat(response.nextNumberSuggestion()).isEqualTo("RDO-1000");
         assertThat(response.provenance().sourceVersion()).isPositive();
         assertThat(response.provenance().receiptVersion()).isPositive();
@@ -351,7 +365,10 @@ class PostgresqlRdoCreationContextIT {
         assertThat(response.colaboradores())
                 .filteredOn(RdoContextResponse.ColaboradorContexto::naObra)
                 .hasSize(301);
-        assertThat(response.equipamentos()).hasSize(301);
+        assertThat(response.equipamentos())
+                .filteredOn(RdoContextResponse.EquipamentoContexto::naObra)
+                .hasSize(301);
+        assertThat(response.equipamentos().size()).isGreaterThanOrEqualTo(301);
         assertThat(response.coverage().colaboradores())
                 .extracting(
                         RdoContextResponse.CoverageSection::status,
@@ -1638,8 +1655,19 @@ class PostgresqlRdoCreationContextIT {
                 .hasMessageContaining("apontador");
     }
 
+    /**
+     * O parque da empresa atravessa as obras; a máquina alugada, não.
+     *
+     * <p>A elegibilidade decidia quem aparecia, e nada a populava para o que
+     * vem da Zeladoria: toda obra abria a lista de equipamentos vazia. Agora
+     * ela decide a ordem, como já decidia para a mão de obra.
+     *
+     * <p>A exceção que sobrou é a locação cadastrada por uma obra: ela não é
+     * patrimônio da empresa, e oferecê-la às outras encheria a lista de todo
+     * mundo com a máquina que uma frente alugou por três dias.
+     */
     @Test
-    void elegibilidadeDeAssetEAutoritativaNoSnapshotECriacaoSemPublicarOntologia()
+    void parqueDaEmpresaApareceEmTodaObraEALocacaoSoNaQueACadastrou()
             throws Exception {
         String obraA = id();
         String obraB = id();
@@ -1647,22 +1675,26 @@ class PostgresqlRdoCreationContextIT {
         inserirObra(obraB, "ASSET-B");
         String colaborador = inserirColaborador("Apontador", null, null);
         vincular(colaborador, obraA, "APONTADOR", "ATIVO");
-        String assetA = inserirAsset("EQ-AUTORITATIVO");
-        tornarAssetElegivel(assetA, obraA);
+        String daEmpresa = inserirAsset("EQ-AUTORITATIVO");
+        tornarAssetElegivel(daEmpresa, obraA);
+        String alugadaNaB = inserirAssetAlugado("EQ-ALUGADA-B", obraB);
 
         assertThat(new RdoContextService(jdbc).buscarContexto(obraA, SELECTED_DATE)
                 .equipamentos())
                 .extracting(RdoContextResponse.EquipamentoContexto::id)
-                .containsExactly(assetA);
+                .contains(daEmpresa)
+                .doesNotContain(alugadaNaB);
         assertThat(new RdoContextService(jdbc).buscarContexto(obraB, SELECTED_DATE)
-                .equipamentos()).isEmpty();
+                .equipamentos())
+                .extracting(RdoContextResponse.EquipamentoContexto::id)
+                .contains(daEmpresa, alugadaNaB);
 
         ObjectNode crossScopeJson = mapper.valueToTree(request(
                 id(), obraA, id(), 1L, null, colaborador, id(), null
         ));
         crossScopeJson.putArray("equipamentos").addObject()
-                .put("assetId", inserirAsset("EQ-SEM-VINCULO"))
-                .put("descricao", "Equipamento de outra obra");
+                .put("assetId", alugadaNaB)
+                .put("descricao", "Máquina alugada por outra obra");
         RdoCreateRequest crossScope = mapper.treeToValue(
                 crossScopeJson,
                 RdoCreateRequest.class
@@ -1680,6 +1712,57 @@ class PostgresqlRdoCreationContextIT {
                 crossScope.id()
         )).isZero();
         verify(memory, never()).registrarRdoCriado(any(), any(), any(), any(), any());
+    }
+
+    /**
+     * Apontar é o fato que liga a máquina à obra.
+     *
+     * <p>{@code rdo_equipamento} tem chave estrangeira composta para a
+     * elegibilidade, então oferecer o parque inteiro na tela sem criar a linha
+     * aqui trocaria a lista vazia por um erro de integridade na gravação — o
+     * mesmo impedimento, um passo mais tarde e menos legível.
+     */
+    @Test
+    void apontarMaquinaDoParqueAColoraNaObraParaOProximoRdo() throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "VINCULO-POR-APONTAMENTO");
+        String colaborador = inserirColaborador("Apontador", null, null);
+        vincular(colaborador, obraId, "APONTADOR", "ATIVO");
+        String doParque = inserirAsset("EQ-SEM-VINCULO");
+
+        assertThat(new RdoContextService(jdbc).buscarContexto(obraId, SELECTED_DATE)
+                .equipamentos())
+                .filteredOn(item -> item.id().equals(doParque))
+                .singleElement()
+                .extracting(RdoContextResponse.EquipamentoContexto::naObra)
+                .isEqualTo(false);
+
+        ObjectNode json = mapper.valueToTree(request(
+                id(), obraId, id(), 1L, null, colaborador, id(), null
+        ));
+        json.putArray("equipamentos").addObject()
+                .put("assetId", doParque)
+                .put("descricao", "Retroescavadeira do parque");
+        RdoCreateRequest criacao = mapper.treeToValue(json, RdoCreateRequest.class);
+
+        transactions.execute(status -> service(colaborador).criarRascunho(criacao));
+
+        assertThat(jdbc.queryForList(
+                """
+                SELECT origem
+                FROM asset_obra_eligibilidade
+                WHERE asset_id = ? AND obra_id = ? AND status = 'ATIVO'
+                """,
+                String.class,
+                doParque,
+                obraId
+        )).containsExactly("APONTAMENTO_RDO");
+        assertThat(new RdoContextService(jdbc).buscarContexto(obraId, SELECTED_DATE)
+                .equipamentos())
+                .filteredOn(item -> item.id().equals(doParque))
+                .singleElement()
+                .extracting(RdoContextResponse.EquipamentoContexto::naObra)
+                .isEqualTo(true);
     }
 
     @Test
@@ -1713,9 +1796,10 @@ class PostgresqlRdoCreationContextIT {
         String colaborador = inserirColaborador("Equipe", null, null);
         vincular(colaborador, obraA, "APONTADOR", "ATIVO");
         String assetA = inserirAsset("EQ-UPDATE-A");
-        String assetB = inserirAsset("EQ-UPDATE-B");
+        // Alugada pela obra B: o que a troca não pode alcançar depois que o
+        // parque da empresa passou a valer em qualquer frente.
+        String assetB = inserirAssetAlugado("EQ-UPDATE-B", obraB);
         tornarAssetElegivel(assetA, obraA);
-        tornarAssetElegivel(assetB, obraB);
         ObjectNode createJson = mapper.valueToTree(request(
                 id(), obraA, id(), 1L, null, colaborador, id(), null
         ));
@@ -2405,6 +2489,29 @@ class PostgresqlRdoCreationContextIT {
                     id, rdo_id, asset_id, prefixo, descricao
                 ) VALUES (?, ?, ?, 'EQ', 'Equipamento')
                 """, itemId, rdoId, assetId);
+    }
+
+    /**
+     * A máquina alugada por uma obra: mesmo par de origem do cadastro de
+     * terceirizados, que é como o RDO a distingue do parque da empresa.
+     */
+    private String inserirAssetAlugado(String code, String obraId) {
+        String assetId = id();
+        jdbc.update("""
+                INSERT INTO asset (
+                    id, source_database, source_table, source_pk,
+                    external_code, name, category
+                ) VALUES (?, ?, ?, ?, ?, ?, 'EQUIPAMENTO')
+                """,
+                assetId,
+                EquipamentoTerceirizadoService.SOURCE_DATABASE,
+                EquipamentoTerceirizadoService.SOURCE_TABLE,
+                assetId,
+                code,
+                "Equipamento " + code
+        );
+        tornarAssetElegivel(assetId, obraId);
+        return assetId;
     }
 
     private void tornarAssetElegivel(String assetId, String obraId) {

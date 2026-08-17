@@ -171,7 +171,7 @@ public class RdoDraftUpdateService {
                 request.apontadorColaboradorId(),
                 request.apontadorRdo()
         );
-        assetEligibilityService.requireEligible(
+        assetEligibilityService.garantirElegibilidade(
                 request.obraId(),
                 request.equipamentos()
         );

@@ -2,6 +2,7 @@ package com.projeto.cortex.rdos;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.equipamentos.EquipamentoTerceirizadoService;
 import com.projeto.cortex.obras.mapa.QuilometroDoEixo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -132,7 +133,7 @@ public class RdoContextService {
                 listarColaboradoresApontaveis(obraId);
 
         List<RdoContextResponse.EquipamentoContexto> equipamentos =
-                listarEquipamentosAtivosDaObra(obraId);
+                listarEquipamentosApontaveisNaObra(obraId);
 
         List<RdoContextResponse.EquipeContexto> equipes =
                 listarEquipesVigentesDaObra(obraId);
@@ -1013,17 +1014,22 @@ public class RdoContextService {
                             FROM asset_obra_eligibilidade
                             WHERE obra_id = ?
                             UNION ALL
+                            -- Pelo mesmo motivo do cadastro de pessoas: a lista
+                            -- de máquinas passou a ser o parque inteiro, então
+                            -- a versão do contexto precisa acompanhá-lo. Presa
+                            -- à elegibilidade desta obra, uma máquina recém
+                            -- importada da Zeladoria não mexia na versão, e o
+                            -- contexto em cache seguia servindo uma lista sem
+                            -- ela — sem nada que denunciasse a defasagem.
                             SELECT asset.updated_at
                             FROM asset
-                            JOIN asset_obra_eligibilidade eligibility
-                              ON eligibility.asset_id = asset.id
-                            WHERE eligibility.obra_id = ?
+                            WHERE asset.active = TRUE
+                              AND asset.deleted_at IS NULL
                         ) revisions
                     ), 1)
                 )
                 """,
                 Long.class,
-                obraId,
                 obraId,
                 obraId,
                 obraId,
@@ -1116,31 +1122,53 @@ public class RdoContextService {
         return value == null ? null : value.toLocalTime();
     }
 
-    private List<RdoContextResponse.EquipamentoContexto> listarEquipamentosAtivosDaObra(
+    /**
+     * O parque que a obra pode apontar, com quem já é da obra em cima.
+     *
+     * <p>A lista saía de {@code asset_obra_eligibilidade}, e nada popula essa
+     * tabela para o que vem da Zeladoria: o conector escreve em {@code asset} e
+     * para por aí. O resultado era a tela de equipamentos vazia em toda obra,
+     * com o apontador diante de um único botão — "adicionar equipamento de
+     * terceiro" — para uma máquina que já estava cadastrada.
+     *
+     * <p>É a mesma correção que a mão de obra recebeu: o vínculo deixou de
+     * decidir quem aparece e passou a decidir a ordem. Quem está ligado à obra
+     * vem primeiro, porque é quem o apontamento do dia quase sempre procura.
+     */
+    private List<RdoContextResponse.EquipamentoContexto> listarEquipamentosApontaveisNaObra(
             String obraId
     ) {
         return jdbcTemplate.query(
                 """
-                SELECT DISTINCT
+                SELECT
+                    asset.id,
+                    asset.external_code,
+                    asset.name,
+                    asset.category,
+                    bool_or(eligibility.asset_id IS NOT NULL) AS na_obra
+                FROM asset
+                LEFT JOIN asset_obra_eligibilidade eligibility
+                  ON eligibility.asset_id = asset.id
+                 AND eligibility.obra_id = ?
+                 AND eligibility.status = 'ATIVO'
+                WHERE %s
+                GROUP BY
                     asset.id,
                     asset.external_code,
                     asset.name,
                     asset.category
-                FROM asset_obra_eligibilidade eligibility
-                JOIN asset ON asset.id = eligibility.asset_id
-                WHERE eligibility.obra_id = ?
-                  AND eligibility.status = 'ATIVO'
-                  AND asset.active = TRUE
-                  AND asset.deleted_at IS NULL
-                ORDER BY asset.external_code, asset.name, asset.id
-                """,
+                ORDER BY na_obra DESC, asset.external_code, asset.name, asset.id
+                """.formatted(RdoAssetEligibilityService.APONTAVEL_NA_OBRA),
                 (rs, rowNum) -> new RdoContextResponse.EquipamentoContexto(
                         rs.getString("id"),
                         rs.getString("external_code"),
                         rs.getString("name"),
-                        rs.getString("category")
+                        rs.getString("category"),
+                        rs.getBoolean("na_obra")
                 ),
-                obraId
+                obraId,
+                EquipamentoTerceirizadoService.SOURCE_DATABASE,
+                EquipamentoTerceirizadoService.SOURCE_TABLE
         );
     }
 

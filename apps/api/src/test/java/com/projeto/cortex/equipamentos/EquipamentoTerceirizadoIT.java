@@ -119,7 +119,7 @@ class EquipamentoTerceirizadoIT {
 
         // E o portão que o RDO aplica ao salvar deixa passar.
         RdoAssetEligibilityService portao = new RdoAssetEligibilityService(jdbc);
-        portao.requireEligible(obraId, List.of(equipamentoDoRdo(criado.assetId())));
+        portao.garantirElegibilidade(obraId, List.of(equipamentoDoRdo(criado.assetId())));
     }
 
     /**
@@ -152,9 +152,9 @@ class EquipamentoTerceirizadoIT {
 
         assertThat(desativado.ativo()).isFalse();
         assertThatThrownBy(() -> new RdoAssetEligibilityService(jdbc)
-                .requireEligible(obraId, List.of(equipamentoDoRdo(criado.assetId()))))
+                .garantirElegibilidade(obraId, List.of(equipamentoDoRdo(criado.assetId()))))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("não está ativo e elegível");
+                .hasMessageContaining("não está no parque ativo");
 
         EquipamentoTerceirizadoResponse reativado = servico.atualizar(
                 obraId,
@@ -169,7 +169,7 @@ class EquipamentoTerceirizadoIT {
         assertThat(reativado.assetId()).isEqualTo(criado.assetId());
         assertThat(reativado.id()).isEqualTo(criado.id());
         new RdoAssetEligibilityService(jdbc)
-                .requireEligible(obraId, List.of(equipamentoDoRdo(criado.assetId())));
+                .garantirElegibilidade(obraId, List.of(equipamentoDoRdo(criado.assetId())));
     }
 
     /**

@@ -36,9 +36,16 @@ public class EquipamentoTerceirizadoService {
     /**
      * O par que mantém estas linhas fora do alcance do conector da Zeladoria,
      * que só reescreve as linhas do próprio par de origem dele.
+     *
+     * <p>Público porque o RDO precisa reconhecer estas linhas para não oferecer
+     * a máquina alugada por uma obra às outras: o parque importado é da empresa
+     * e aparece em toda frente, mas a locação nasceu de um contrato, de uma
+     * obra e de um mês. Comparar contra estas constantes acopla o RDO a este
+     * cadastro de propósito — mudar o par aqui e esquecer lá é justamente o que
+     * o compilador passa a impedir.
      */
-    static final String SOURCE_DATABASE = "cortex";
-    static final String SOURCE_TABLE = "equipamento_terceirizado";
+    public static final String SOURCE_DATABASE = "cortex";
+    public static final String SOURCE_TABLE = "equipamento_terceirizado";
 
     private static final String ORIGEM_ELEGIBILIDADE = "CADASTRO_TERCEIRIZADO";
 

@@ -45,6 +45,11 @@ function detalhe(partes: readonly (string | null | undefined)[]): string | null 
  * porque a máquina de terceiro não está no Zeladoria e o dia não pode esperar
  * pelo cadastro — mas ela é a exceção, e fica escondida até alguém pedir por
  * ela.
+ *
+ * <p>O "parque da obra" virou o parque da empresa. Ele era a lista de máquinas
+ * explicitamente marcadas como desta obra, e nada marcava: o conector da
+ * Zeladoria escreve o cadastro e não o vínculo. Toda obra abria com a lista
+ * vazia, e a exceção — cadastrar à mão — virava o caminho único.
  */
 export function RdoEquipmentPicker({
   parque,
@@ -78,6 +83,7 @@ export function RdoEquipmentPicker({
         item.prefixo.trim() ||
         "Equipamento sem identificação",
       detalhe: detalhe([item.prefixo, item.tipoEquipamento]),
+      grupo: "Neste RDO",
       marcado: true,
       aviso: avisoDeApontamentoRepetido(jaApontados?.get(item.assetId.trim())),
       // Tudo que está no RDO sai desmarcando: equipamento não guarda
@@ -86,17 +92,36 @@ export function RdoEquipmentPicker({
       removivel: false,
     }));
 
+    /*
+     * O parque da empresa inteiro, e não só o que alguém marcou como desta
+     * obra. Máquina se move entre frentes o tempo todo, e a lista fechada
+     * deixava o apontador diante de uma tela vazia com um único caminho:
+     * cadastrar à mão o que já estava cadastrado.
+     *
+     * <p>Quem está ligado à obra vem primeiro; o resto do parque vem depois,
+     * atrás de um cabeçalho que diz o que é.
+     *
+     * <p>Contexto guardado antes desta versão não tem `naObra`. Ler a ausência
+     * como "está na obra" preserva o significado antigo: naquele contexto, toda
+     * máquina que aparecia estava mesmo vinculada.
+     */
     const disponiveis = parque
       .filter((item) => !noRdo.has(item.id))
       .map((item) => ({
         id: `${PREFIXO_DO_PARQUE}${item.id}`,
         titulo: tituloDoCatalogo(item),
         detalhe: detalhe([item.codigoExterno, item.categoria]),
+        grupo:
+          item.naObra === false ? "No parque da empresa" : "Nesta obra",
         marcado: false,
         aviso: avisoDeApontamentoRepetido(jaApontados?.get(item.id)),
       }));
 
-    return [...lancados, ...disponiveis];
+    return [
+      ...lancados,
+      ...disponiveis.filter((item) => item.grupo === "Nesta obra"),
+      ...disponiveis.filter((item) => item.grupo !== "Nesta obra"),
+    ];
   }, [equipamentos, parque, noRdo, jaApontados]);
 
   function marcar(id: string, marcado: boolean) {
@@ -141,8 +166,8 @@ export function RdoEquipmentPicker({
         onMarcar={marcar}
         mensagemVazia={
           parque.length === 0
-            ? "O parque desta obra ainda não foi carregado. Use “Adicionar equipamento” para lançar a máquina à mão."
-            : "Nenhum equipamento nesta obra ainda."
+            ? "O parque da empresa ainda não foi carregado neste aparelho. Use “Adicionar equipamento de terceiro” para lançar a máquina à mão."
+            : "Nenhum equipamento neste RDO ainda."
         }
       />
 

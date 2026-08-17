@@ -115,7 +115,7 @@ public class RdoService {
 
         validarProveniencia(request, obraId);
         String apontadorNome = validarEquipeEApontador(request, obraId);
-        assetEligibilityService.requireEligible(obraId, request.equipamentos());
+        assetEligibilityService.garantirElegibilidade(obraId, request.equipamentos());
         NumberAllocation number = alocarNumero(obraId);
         String status = "RASCUNHO";
         String diaSemana = diaSemanaPt(request.dataRdo());
