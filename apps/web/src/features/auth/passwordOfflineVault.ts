@@ -250,6 +250,44 @@ export function hasLivePasswordVaultKey(
   return liveKeys.has(metadata.key);
 }
 
+export async function readLivePasswordVaultClaims(
+  metadataValue: OfflinePasswordVaultMetadata,
+  nowSource: () => number = Date.now,
+): Promise<CurrentOfflineGrantClaims | "PASSWORD_REQUIRED"> {
+  try {
+    const metadata = validatePasswordVaultMetadata(metadataValue);
+    const key = liveKeys.get(metadata.key);
+    if (!key) {
+      return "PASSWORD_REQUIRED";
+    }
+    const now = requireNow(nowSource());
+    const plaintext = await decrypt(metadata, key);
+    const verified = await verifySignedOfflineGrant(plaintext.signedGrant, {
+      allowedKeyFingerprints: [metadata.serverKeyFingerprint],
+      now: () => now,
+    });
+    const claims = requireCurrentClaims(verified.claims);
+    const expectedScope = await scopeFingerprint(
+      claims.colaboradorId,
+      offlineGrantScopeMaterial(claims),
+    );
+    const lastTrustedTime = Date.parse(plaintext.lastTrustedTime);
+    if (
+      verified.fingerprint !== metadata.serverKeyFingerprint ||
+      plaintext.ownerId !== claims.colaboradorId ||
+      plaintext.scopeFingerprint !== expectedScope ||
+      plaintext.authEpoch !== claims.authEpoch ||
+      !Number.isFinite(lastTrustedTime) ||
+      now + CLOCK_SKEW_MS < lastTrustedTime
+    ) {
+      return "PASSWORD_REQUIRED";
+    }
+    return claims;
+  } catch {
+    return "PASSWORD_REQUIRED";
+  }
+}
+
 export function clearPasswordVaultKeys(): void {
   liveKeys.clear();
 }

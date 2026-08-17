@@ -10,9 +10,10 @@ import {
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
-  hasCollaborativeOfflineGrantMetadata: vi.fn(),
+  hasCollaborativePasswordVaultMetadata: vi.fn(),
   initializeCortexDb: vi.fn(),
   loadOfflineVaultMetadata: vi.fn(),
+  renovarGrantOfflineSePreciso: vi.fn(),
 }));
 
 vi.mock("./features/auth/authSession", () => ({
@@ -24,9 +25,25 @@ vi.mock("./features/auth/authSession", () => ({
 }));
 
 vi.mock("./features/auth/offlineVaultRepository", () => ({
-  hasCollaborativeOfflineGrantMetadata:
-    mocks.hasCollaborativeOfflineGrantMetadata,
+  hasCollaborativePasswordVaultMetadata:
+    mocks.hasCollaborativePasswordVaultMetadata,
   loadOfflineVaultMetadata: mocks.loadOfflineVaultMetadata,
+}));
+
+vi.mock("./features/auth/renovacaoDoGrantOffline", () => ({
+  renovarGrantOfflineSePreciso: mocks.renovarGrantOfflineSePreciso,
+}));
+
+vi.mock("./features/auth/OfflineGrantRenewalPrompt", () => ({
+  OfflineGrantRenewalPrompt: ({
+    onSuccess,
+  }: {
+    onSuccess: () => void;
+  }) => (
+    <aside data-testid="renewal-prompt">
+      <button type="button" onClick={onSuccess}>Reauthenticated</button>
+    </aside>
+  ),
 }));
 
 vi.mock("./lib/db/cortexDb", () => ({
@@ -64,8 +81,10 @@ describe("App online authentication handoff", () => {
     sessionStorage.clear();
     activeSession = null;
     mocks.getSession.mockImplementation(() => activeSession);
+    mocks.initializeCortexDb.mockResolvedValue(undefined);
     mocks.loadOfflineVaultMetadata.mockResolvedValue(null);
-    mocks.hasCollaborativeOfflineGrantMetadata.mockResolvedValue(false);
+    mocks.hasCollaborativePasswordVaultMetadata.mockResolvedValue(false);
+    mocks.renovarGrantOfflineSePreciso.mockResolvedValue("AINDA_VALIDO");
   });
 
   afterEach(() => {
@@ -118,5 +137,15 @@ describe("App online authentication handoff", () => {
     expect(await screen.findByText(
       OFFLINE_GRANT_UNAVAILABLE_MESSAGE,
     )).toBeInTheDocument();
+  });
+
+  it("keeps online work open while asking for password before renewal", async () => {
+    activeSession = profile;
+    mocks.renovarGrantOfflineSePreciso.mockResolvedValue("SENHA_NECESSARIA");
+
+    render(<App />);
+
+    expect(await screen.findByTestId("renewal-prompt")).toBeInTheDocument();
+    expect(mocks.renovarGrantOfflineSePreciso).toHaveBeenCalled();
   });
 });

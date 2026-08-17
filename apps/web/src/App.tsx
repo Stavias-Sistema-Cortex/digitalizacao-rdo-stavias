@@ -21,6 +21,7 @@ import {
 import { LoginPage } from "./features/auth/LoginPage";
 import { DeviceSecurityPage } from "./features/auth/DeviceSecurityPage";
 import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
+import { OfflineGrantRenewalPrompt } from "./features/auth/OfflineGrantRenewalPrompt";
 import { retomarSessaoOnline } from "./features/auth/retomadaDaSessao";
 import { renovarGrantOfflineSePreciso } from "./features/auth/renovacaoDoGrantOffline";
 import {
@@ -164,6 +165,7 @@ function App({ initialAuthUnavailable = false }: AppProps) {
   const [authNotice, setAuthNotice] = useState(() =>
     session ? consumeAuthNotice() : null,
   );
+  const [renewalNeedsPassword, setRenewalNeedsPassword] = useState(false);
   const localDataReady = sessionScope !== null &&
     preparedSessionScope === sessionScope;
 
@@ -290,10 +292,15 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     if (!localDataReady) {
       return;
     }
-    function renovar() {
-      void renovarGrantOfflineSePreciso().catch(() => undefined);
+    async function renovar() {
+      const result = await renovarGrantOfflineSePreciso().catch(() => null);
+      if (result === "SENHA_NECESSARIA") {
+        setRenewalNeedsPassword(true);
+      } else if (result === "RENOVADO") {
+        setRenewalNeedsPassword(false);
+      }
     }
-    renovar();
+    void renovar();
     window.addEventListener(SYNC_COMPLETED_EVENT, renovar);
     return () => {
       window.removeEventListener(SYNC_COMPLETED_EVENT, renovar);
@@ -334,6 +341,12 @@ function App({ initialAuthUnavailable = false }: AppProps) {
 
   return (
     <BrowserRouter>
+      {renewalNeedsPassword ? (
+        <OfflineGrantRenewalPrompt
+          onSuccess={() => setRenewalNeedsPassword(false)}
+          onCancel={() => setRenewalNeedsPassword(false)}
+        />
+      ) : null}
       {authNotice ? (
         <aside
           className="auth-session-notice"

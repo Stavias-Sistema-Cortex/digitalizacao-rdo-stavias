@@ -1,124 +1,130 @@
-import { scopeFingerprint } from "../../lib/db/localDataNamespace";
 import { fetchOfflineGrant } from "./authApi";
-import { hasOnlineSession, getSession } from "./authSession";
-import { offlineGrantScopeMaterial, verifySignedOfflineGrant } from "./offlineVault";
-import type { OfflineCpfGrantMetadata } from "./offlineVault.types";
+import { getSession, hasOnlineSession } from "./authSession";
+import { verifySignedOfflineGrant } from "./offlineVault";
+import type { OfflinePasswordVaultMetadata } from "./offlineVault.types";
 import {
-  listCollaborativeOfflineGrantsForOwner,
-  saveCollaborativeOfflineGrantMetadata,
+  listCollaborativeOfflineMetadata,
+  replaceLegacyGrantAfterV3Save,
 } from "./offlineVaultRepository";
+import {
+  hasLivePasswordVaultKey,
+  isOfflinePasswordVaultMetadata,
+  readLivePasswordVaultClaims,
+  resealPasswordOfflineVault,
+} from "./passwordOfflineVault";
 
-/**
- * O grant offline precisa ser renovado enquanto há rede.
- *
- * <p>Ele nascia no login e morria em 24 horas, sem nunca ser reemitido. Passado
- * esse prazo o aparelho parava de abrir até os dados que já estavam nele:
- * "o grant offline expirou ou possui validade inválida", numa tela que existe
- * justamente para funcionar quando não há servidor a quem pedir outro. Quem
- * passou o dia em campo chegava no dia seguinte sem acesso ao próprio
- * trabalho.
- *
- * <p>Enquanto existe sessão online, pedir um grant novo é barato e não depende
- * de nada que a pessoa precise digitar. É o único momento em que dá para
- * fazer isso, e por isso é onde se faz.
- */
-
-/** Renova quando falta menos de um terço da validade. */
-const FRACAO_RESTANTE_PARA_RENOVAR = 1 / 3;
+/** Renova quando falta menos de um terço da validade assinada. */
+const REMAINING_FRACTION_TO_RENEW = 1 / 3;
 
 export type RenovacaoDoGrant =
-  /** Não havia grant guardado, ou não havia sessão online para pedir outro. */
   | "NAO_APLICAVEL"
-  /** Ainda há validade de sobra; nada foi pedido ao servidor. */
   | "AINDA_VALIDO"
   | "RENOVADO"
-  /** A rede não respondeu. O grant guardado continua valendo até vencer. */
-  | "SEM_REDE";
+  | "SEM_REDE"
+  | "SENHA_NECESSARIA";
 
-/**
- * Diz se este grant já está perto o suficiente do fim para ser trocado.
- *
- * <p>Um terço restante dá margem para vários dias de tentativa antes de
- * expirar, sem pedir um grant novo a cada abertura do aplicativo.
- */
 export async function precisaRenovar(
-  grant: OfflineCpfGrantMetadata,
+  vault: OfflinePasswordVaultMetadata,
   agora: number,
-): Promise<boolean> {
-  let claims;
-  try {
-    claims = (await verifySignedOfflineGrant(grant.signedGrant)).claims;
-  } catch {
-    // Já vencido, ou ilegível: é exatamente o estado que trancava o aparelho.
-    return true;
+): Promise<boolean | "PASSWORD_REQUIRED"> {
+  const claims = await readLivePasswordVaultClaims(vault, () => agora);
+  if (claims === "PASSWORD_REQUIRED") {
+    return claims;
   }
-  const emitidoEm = Date.parse(claims.emitidoEm);
-  const expiraEm = Date.parse(claims.expiraEm);
-  if (!Number.isFinite(emitidoEm) || !Number.isFinite(expiraEm)) {
-    return true;
+  return claimsNeedRenewal(claims.emitidoEm, claims.expiraEm, agora);
+}
+
+function claimsNeedRenewal(
+  emitidoEm: string,
+  expiraEm: string,
+  agora: number,
+): boolean | "PASSWORD_REQUIRED" {
+  const issuedAt = Date.parse(emitidoEm);
+  const expiresAt = Date.parse(expiraEm);
+  const duration = expiresAt - issuedAt;
+  if (
+    !Number.isFinite(issuedAt) ||
+    !Number.isFinite(expiresAt) ||
+    duration <= 0
+  ) {
+    return "PASSWORD_REQUIRED";
   }
-  const duracao = expiraEm - emitidoEm;
-  if (duracao <= 0) {
-    return true;
-  }
-  return expiraEm - agora <= duracao * FRACAO_RESTANTE_PARA_RENOVAR;
+  return expiresAt - agora <= duration * REMAINING_FRACTION_TO_RENEW;
 }
 
 export async function renovarGrantOfflineSePreciso(
   agora: number = Date.now(),
 ): Promise<RenovacaoDoGrant> {
-  const sessao = getSession();
-  if (!sessao || !hasOnlineSession()) {
+  const session = getSession();
+  if (!session || !hasOnlineSession()) {
     return "NAO_APLICAVEL";
   }
-  const guardados = await listCollaborativeOfflineGrantsForOwner(
-    sessao.colaboradorId,
-  ).catch(() => []);
-  if (guardados.length === 0) {
+  const stored = await listCollaborativeOfflineMetadata().catch(() => []);
+  const passwordVaults: OfflinePasswordVaultMetadata[] = [];
+  for (const record of stored) {
+    if (isOfflinePasswordVaultMetadata(record)) {
+      passwordVaults.push(record);
+    }
+  }
+  if (passwordVaults.length === 0) {
+    // Legacy v2 records stay untouched and keep their original signed expiry.
     return "NAO_APLICAVEL";
   }
-  const avaliados = await Promise.all(
-    guardados.map(async (grant) => ({
-      grant,
-      renovar: await precisaRenovar(grant, agora),
-    })),
+
+  const withLiveKey = passwordVaults.filter(hasLivePasswordVaultKey);
+  if (withLiveKey.length === 0) {
+    return "SENHA_NECESSARIA";
+  }
+
+  const evaluated = await Promise.all(withLiveKey.map(async (vault) => {
+    const claims = await readLivePasswordVaultClaims(vault, () => agora);
+    return {
+      vault,
+      claims,
+      renew: claims === "PASSWORD_REQUIRED"
+        ? claims
+        : claimsNeedRenewal(claims.emitidoEm, claims.expiraEm, agora),
+    };
+  }));
+  const currentOwner = evaluated.filter((item) =>
+    item.claims !== "PASSWORD_REQUIRED" &&
+    item.claims.colaboradorId === session.colaboradorId
   );
-  const vencendo = avaliados
-    .filter((item) => item.renovar)
-    .map((item) => item.grant);
-  if (vencendo.length === 0) {
+  if (currentOwner.length === 0) {
+    return "SENHA_NECESSARIA";
+  }
+  const expiring = currentOwner.filter((item) => item.renew === true);
+  if (expiring.length === 0) {
     return "AINDA_VALIDO";
   }
 
-  let assinado;
+  let signedGrant;
   try {
-    assinado = await fetchOfflineGrant();
+    signedGrant = await fetchOfflineGrant();
   } catch {
-    // Sem grant novo, o guardado segue valendo até vencer. Insistir agora não
-    // adianta; a próxima janela com rede tenta de novo.
     return "SEM_REDE";
   }
-
-  const verificado = await verifySignedOfflineGrant(assinado);
-  if (verificado.claims.colaboradorId !== sessao.colaboradorId) {
-    // O servidor devolveu o grant de outra identidade. Nada é gravado.
+  const verified = await verifySignedOfflineGrant(signedGrant, {
+    now: () => agora,
+  });
+  if (
+    verified.claims.versao !== 2 ||
+    verified.claims.colaboradorId !== session.colaboradorId
+  ) {
     return "NAO_APLICAVEL";
   }
-  const escopo = await scopeFingerprint(
-    verificado.claims.colaboradorId,
-    offlineGrantScopeMaterial(verificado.claims),
-  );
 
-  for (const grant of vencendo) {
-    // Chave aleatória, sal e verificador não mudam: renovar troca apenas o
-    // grant assinado e seu escopo, sem voltar a manipular o CPF.
-    await saveCollaborativeOfflineGrantMetadata({
-      ...grant,
-      signedGrant: assinado,
-      scopeFingerprint: escopo,
-      serverKeyFingerprint: verificado.fingerprint,
-      atualizadoEm: new Date(agora).toISOString(),
-    });
+  for (const item of expiring) {
+    const resealed = await resealPasswordOfflineVault(
+      item.vault,
+      signedGrant,
+      session.colaboradorId,
+      () => agora,
+    );
+    if (resealed === "PASSWORD_REQUIRED") {
+      return "SENHA_NECESSARIA";
+    }
+    await replaceLegacyGrantAfterV3Save(null, resealed);
   }
   return "RENOVADO";
 }
