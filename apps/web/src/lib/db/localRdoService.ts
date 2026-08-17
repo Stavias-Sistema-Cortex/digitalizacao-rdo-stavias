@@ -750,13 +750,35 @@ function buildAlocacaoLocalPayload(
   };
 }
 
+/**
+ * A linha em que ninguém escreveu nada — a que se clica por engano e se
+ * esquece, e que não custa nada ignorar.
+ *
+ * <p>O lugar entrou na conta junto com o serviço. A duplicação de uma frente
+ * traz o trecho, a pista, a faixa e as medidas e deixa o serviço em branco de
+ * propósito, porque trocá-lo é o motivo de duplicar. Sem esta metade, aquela
+ * linha se passava por vazia: não pedia o catálogo, não segurava o envio, subia
+ * e era descartada em silêncio pelo servidor — que também a lê como vazia. Na
+ * releitura seguinte ela sumia do aparelho, levando junto o trecho que alguém
+ * tinha acabado de copiar, sem nada que explicasse o desaparecimento.
+ *
+ * <p>Quem já disse onde o serviço aconteceu está a meio caminho de um
+ * apontamento, não diante de uma linha esquecida. Aí vale segurar e pedir o
+ * resto, que é visível e se resolve num toque, em vez de perder o trabalho.
+ */
 function isServicoExecutadoEmpty(
   item: ServicoExecutadoDraft,
 ): boolean {
   return (
     item.servicoNome.trim() === "" &&
     item.quantidadeExecutada === "" &&
-    item.itemContratualId.trim() === ""
+    item.itemContratualId.trim() === "" &&
+    item.trechoInicial.trim() === "" &&
+    item.trechoFinal.trim() === "" &&
+    item.pista.trim() === "" &&
+    item.faixa.trim() === "" &&
+    item.larguraM === "" &&
+    item.espessuraM === ""
   );
 }
 

@@ -33,15 +33,15 @@ vi.mock("../../lib/db/rdoRepository", () => ({
   getLocalRdo: mocks.getLocalRdo,
 }));
 
-vi.mock("../../lib/db/localRdoService", () => ({
+/*
+ * A regra de catálogo entra de verdade, e não copiada para dentro do mock.
+ * É ela que decide se a linha duplicada avisa e segura o envio, e uma cópia
+ * aqui envelheceria sozinha — o teste passaria contra a versão do teste
+ * enquanto o produto usasse outra.
+ */
+vi.mock("../../lib/db/localRdoService", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/db/localRdoService")>()),
   rascunhoDifereDoQueEstaGravado: vi.fn().mockResolvedValue(false),
-  servicoExecutadoNeedsCatalogSelection: (item: {
-    servicoNome: string;
-    serviceId: string;
-    unidade: string;
-  }) =>
-    item.servicoNome.trim() !== "" &&
-    (item.serviceId.trim() === "" || item.unidade.trim() === ""),
 }));
 
 vi.mock("./useRdoLocalPersistence", () => ({
@@ -225,5 +225,40 @@ describe("duplicar um serviço executado", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Duplicar" })[1]);
 
     expect(valores("Km inicial")).toEqual(["12+300", "20+000", "20+000"]);
+  });
+
+  /*
+   * A cópia sem serviço não pode subir calada. O servidor lê a linha sem
+   * serviço, sem nome e sem quantidade como vazia e a descarta — o RDO não
+   * quebra, mas a linha some do aparelho na releitura seguinte, levando o
+   * trecho que alguém acabou de copiar. O aviso é o que transforma o
+   * desaparecimento silencioso num pedido visível de um toque.
+   */
+  it("avisa que a cópia ainda espera um serviço do catálogo", () => {
+    renderizar();
+
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Duplicar" }));
+
+    expect(
+      screen.getByText(
+        /Selecione no catálogo um serviço com unidade válida/,
+      ),
+    ).toBeVisible();
+  });
+
+  /*
+   * Duplicar é edição de rascunho, e rascunho é do aparelho: acontece com o
+   * caminhão parado no acostamento, sem sinal. Nenhuma ida à rede pode estar
+   * escondida no caminho.
+   */
+  it("duplica sem tocar na rede", () => {
+    const rede = vi.spyOn(globalThis, "fetch");
+    renderizar();
+
+    fireEvent.click(screen.getByRole("button", { name: "Duplicar" }));
+
+    expect(rede).not.toHaveBeenCalled();
   });
 });

@@ -45,15 +45,11 @@ vi.mock("../../lib/db/rdoRepository", () => ({
   getLocalRdo: mocks.getLocalRdo,
 }));
 
-vi.mock("../../lib/db/localRdoService", () => ({
+// A regra de catálogo entra de verdade: copiada aqui dentro, ela envelheceria
+// sozinha e o teste passaria contra a sua própria versão.
+vi.mock("../../lib/db/localRdoService", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/db/localRdoService")>()),
   rascunhoDifereDoQueEstaGravado: mocks.rascunhoDiferente,
-  servicoExecutadoNeedsCatalogSelection: (item: {
-    servicoNome: string;
-    serviceId: string;
-    unidade: string;
-  }) => item.servicoNome.trim() !== "" && (
-    item.serviceId.trim() === "" || item.unidade.trim() === ""
-  ),
 }));
 
 vi.mock("./useRdoLocalPersistence", () => ({

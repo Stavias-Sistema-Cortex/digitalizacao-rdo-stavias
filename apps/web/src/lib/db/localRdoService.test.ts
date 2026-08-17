@@ -210,6 +210,92 @@ describe("buildRdoSyncPayload V48 boundary", () => {
       }],
     });
   });
+
+  /*
+   * A linha que a duplicação cria: traz o trecho e as medidas, e o serviço fica
+   * em branco de propósito porque trocá-lo é o motivo de duplicar.
+   *
+   * Sem contá-la como linha começada, ela se passava por vazia — não pedia o
+   * catálogo, não segurava o envio, subia, e o servidor a descartava em
+   * silêncio, porque ele também a lê como vazia. Na releitura seguinte ela
+   * sumia do aparelho levando o trecho que alguém tinha acabado de copiar.
+   */
+  it.each([
+    ["trechoInicial", { trechoInicial: "12+300" }],
+    ["trechoFinal", { trechoFinal: "12+400" }],
+    ["pista", { pista: "Sul" }],
+    ["faixa", { faixa: "2" }],
+    ["larguraM", { larguraM: 7 as const }],
+    ["espessuraM", { espessuraM: 0.09 as const }],
+  ])(
+    "segura a linha que já disse %s e ainda não tem serviço",
+    (_campo, lugar) => {
+      expect(
+        servicoExecutadoNeedsCatalogSelection({
+          ...createEmptyServicoExecutado(),
+          ...lugar,
+        }),
+      ).toBe(true);
+    },
+  );
+
+  /*
+   * E a linha em que ninguém escreveu nada continua passando: recusá-la
+   * custaria o RDO inteiro, e não há nada a perder nela.
+   */
+  it("deixa passar a linha em que ninguém escreveu nada", () => {
+    expect(
+      servicoExecutadoNeedsCatalogSelection(createEmptyServicoExecutado()),
+    ).toBe(false);
+  });
+
+  /*
+   * Duas frentes sobre o mesmo trecho é o caso normal de uma caixa de rodovia,
+   * e é o que a duplicação produz. O `id` que sobe é o localId da linha, o
+   * servidor exige que ele seja UUID e recusa o lote inteiro se dois itens
+   * repetirem o mesmo — uma recusa terminal, que a fila não reenvia. É a
+   * garantia de que a cópia precisa de identidade própria, e não só de uma
+   * posição diferente na lista.
+   */
+  it("sobe as duas frentes do mesmo trecho com identidade própria", () => {
+    const draft = validDraft();
+    const base = {
+      ...createEmptyServicoExecutado(),
+      trechoInicial: "12+300",
+      trechoFinal: "12+400",
+      unidade: "m3",
+      quantidadeExecutada: 63,
+    };
+    draft.servicosExecutados = [
+      {
+        ...base,
+        localId: "6f1a0d4e-2b3c-4d5e-8f90-a1b2c3d4e5f6",
+        serviceId: "service-catalog-fresagem",
+        servicoNome: "Fresagem",
+      },
+      {
+        ...base,
+        localId: "7a2b1e5f-3c4d-4e6f-9a01-b2c3d4e5f607",
+        serviceId: "service-catalog-cbuq",
+        servicoNome: "CBUQ",
+      },
+    ];
+
+    const payload = buildRdoSyncPayload(draft) as {
+      servicosExecutados: { id: string; trechoInicial: string }[];
+    };
+    const ids = payload.servicosExecutados.map((item) => item.id);
+
+    expect(new Set(ids).size).toBe(2);
+    for (const id of ids) {
+      expect(id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+    }
+    expect(
+      payload.servicosExecutados.map((item) => item.trechoInicial),
+    ).toEqual(["12+300", "12+300"]);
+  });
 });
 
 describe("RDO creation-context sync gate", () => {

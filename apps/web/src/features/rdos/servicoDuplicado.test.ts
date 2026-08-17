@@ -86,6 +86,18 @@ describe("servicoDuplicadoDe", () => {
   });
 
   /*
+   * O `localId` sobe como o `id` da execução, e o servidor recusa o que não for
+   * UUID — recusa terminal, que a fila não reenvia e que custaria o RDO
+   * inteiro. Sem gerador informado, a cópia tem que nascer no formato que o
+   * outro lado aceita.
+   */
+  it("nasce com identidade no formato que o servidor aceita", () => {
+    expect(servicoDuplicadoDe(fresagemNaCaixa()).localId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+  });
+
+  /*
    * Sem esta conferência, um campo acrescentado ao rascunho entraria na cópia
    * pelo espalhamento sem que ninguém decidisse se ele descreve o lugar ou o
    * serviço — e o caso ruim é silencioso: o campo novo viaja para a linha nova
