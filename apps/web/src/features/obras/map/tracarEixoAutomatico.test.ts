@@ -113,6 +113,63 @@ describe("a costura dos trechos", () => {
 
     expect(costura).toHaveLength(2);
   });
+
+  /*
+   * A pista dupla. Cada sentido é uma linha própria a poucas dezenas de metros
+   * da outra, e nas bordas do recorte as pontas das duas ficam dentro da
+   * tolerância de emenda. A costura descia uma pista e voltava pela outra —
+   * em Pirassununga, 64,7 km de linha para um vão real de 32,3 — e uma régua
+   * dobrada não calibra com marco nenhum: o quilômetro cresce na ida e
+   * "volta" na vinda.
+   */
+  it("não volta pela pista oposta da dupla", () => {
+    // Pista sul, sentido leste, em três pedaços; 0,0004° ≈ 44 m ao lado, a
+    // pista norte percorre o mesmo corredor.
+    const pistaSul: [number, number][][] = [
+      [[0, 0], [0, 0.004], [0, 0.008]],
+      [[0, 0.008], [0, 0.012], [0, 0.016]],
+      [[0, 0.016], [0, 0.02], [0, 0.024]],
+    ];
+    const pistaNorte: [number, number][][] = [
+      [[0.0004, 0.024], [0.0004, 0.016]],
+      [[0.0004, 0.016], [0.0004, 0.008]],
+      [[0.0004, 0.008], [0.0004, 0]],
+    ];
+    const costura = costurarTrechos(
+      [...pistaSul, ...pistaNorte].map((pedaco) =>
+        pedaco.map(([lat, lng]) => ({ lat, lng })),
+      ),
+    );
+
+    // Só a pista sul: nenhum ponto da volta, e o leste sempre crescendo.
+    expect(costura.every((ponto) => ponto.lat === 0)).toBe(true);
+    for (let i = 1; i < costura.length; i += 1) {
+      expect(costura[i].lng).toBeGreaterThan(costura[i - 1].lng);
+    }
+  });
+
+  /*
+   * O que a regra da volta NÃO pode comer: a serra. Depois do grampo, a
+   * continuação corre perto da costura por um instante e diverge no resto do
+   * corpo — só a pista oposta corre colada do começo ao fim.
+   */
+  it("aceita o zigue-zague da serra, que diverge depois do grampo", () => {
+    const subida = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 0.01 },
+      { lat: 0, lng: 0.02 },
+    ];
+    // Volta do grampo: nasce a 44 m da costura e abre até ~2 km.
+    const voltaDoGrampo = [
+      { lat: 0.0004, lng: 0.02 },
+      { lat: 0.005, lng: 0.012 },
+      { lat: 0.012, lng: 0.004 },
+      { lat: 0.02, lng: 0 },
+    ];
+    const costura = costurarTrechos([subida, voltaDoGrampo]);
+
+    expect(costura.some((ponto) => ponto.lat === 0.02)).toBe(true);
+  });
 });
 
 describe("a calibração pelos marcos", () => {
@@ -262,17 +319,91 @@ describe("a insistência entre os espelhos do mapa público", () => {
       ),
     ).rejects.toThrow(/não respondeu/);
   });
+
+  /*
+   * O 200 vazio de um espelho não é o mapa dizendo que a rodovia não existe —
+   * pode ser um espelho regional servindo outra parte do mundo. Foi um deles,
+   * respondendo vazio para qualquer caixa brasileira, que transformava
+   * "espelho ocupado" em "a rodovia não aparece mapeada" sobre uma rodovia
+   * inteiramente mapeada. O vazio só vale quando outro espelho o confirma.
+   */
+  it("pede segunda opinião quando o espelho responde vazio", async () => {
+    const espelhos: string[] = [];
+    const eixo = await tracarEixoPelaRodovia(
+      ENDERECO,
+      (async (entrada: string) => {
+        if (String(entrada).includes("nominatim")) return respostaJson(CIDADE);
+        espelhos.push(String(entrada));
+        if (espelhos.length === 1) return respostaJson({ elements: [] });
+        return respostaJson(MAPA);
+      }) as unknown as typeof fetch,
+    );
+
+    expect(eixo.marcosUsados).toBe(2);
+    expect(espelhos).toHaveLength(2);
+  });
+
+  /* Vazio confirmado por toda a lista é resposta: a rodovia não está lá. */
+  it("aceita o vazio quando todos os espelhos o confirmam", async () => {
+    const espelhos: string[] = [];
+    await expect(
+      tracarEixoPelaRodovia(
+        ENDERECO,
+        (async (entrada: string) => {
+          if (String(entrada).includes("nominatim")) return respostaJson(CIDADE);
+          espelhos.push(String(entrada));
+          return respostaJson({ elements: [] });
+        }) as unknown as typeof fetch,
+      ),
+    ).rejects.toThrow(/não aparece mapeada/);
+
+    expect(espelhos.length).toBeGreaterThan(1);
+  });
 });
 
 describe("a consulta ao mapa público", () => {
-  it("pede a rodovia pela referência e os marcos na caixa da cidade", () => {
+  it("pede a rodovia pela referência, em qualquer posição da lista", () => {
     const consulta = consultaOverpass("RR-101", [
       [-47.7, -22.5],
       [-47.3, -22.2],
     ]);
 
-    expect(consulta).toContain('ref"~"^RR[- ]?101($|;)"');
-    expect(consulta).toContain("-22.5,-47.7,-22.2,-47.3");
+    /*
+     * O (^|;) não é enfeite: a rodovia concorrida pode listar a outra
+     * primeiro — "BR-050;SP-330" —, e o regex ancorado no começo deixava a
+     * rodovia inteira fora da resposta para quem cadastrou o outro nome.
+     */
+    expect(consulta).toContain('ref"~"(^|;)RR[- ]?101($|;)"');
+  });
+
+  it("cresce a caixa da cidade para alcançar o marco vizinho", () => {
+    const consulta = consultaOverpass("RR-101", [
+      [-47.7, -22.5],
+      [-47.3, -22.2],
+    ]);
+
+    /*
+     * A caixa municipal raramente contém dois marcos com quilômetros
+     * distintos — na malha paulista eles vêm a cada 30–40 km. Sem a margem, a
+     * régua ficava com um km só e a calibração recusava uma rodovia
+     * perfeitamente mapeada.
+     */
+    expect(consulta).toContain("-22.8,-48,-21.9,-47");
+  });
+
+  it("busca os marcos colados na rodovia, não soltos na caixa", () => {
+    const consulta = consultaOverpass("RR-101", [
+      [-47.7, -22.5],
+      [-47.3, -22.2],
+    ]);
+
+    /*
+     * O marco solto na caixa podia ser de outra estrada cruzando a cidade —
+     * em Pirassununga, os km 104 da SP-201 entravam na resposta e os km 182 e
+     * 253 da própria rodovia, logo além da divisa, ficavam de fora.
+     */
+    expect(consulta).toContain("around.w.rodovia:250");
     expect(consulta).toContain('"highway"="milestone"');
+    expect(consulta).toContain('["distance"]');
   });
 });
