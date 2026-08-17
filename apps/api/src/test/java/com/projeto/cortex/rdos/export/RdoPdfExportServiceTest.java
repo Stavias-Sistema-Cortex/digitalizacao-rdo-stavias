@@ -115,6 +115,102 @@ class RdoPdfExportServiceTest {
         }
     }
 
+    /**
+     * A unidade escrita por extenso é o vocabulário real da obra.
+     *
+     * <p>Ela não passava por dois motivos somados: a contagem recusava
+     * qualquer coisa acima de cinco caracteres — inclusive "LITROS", que
+     * sempre coube — e a coluna de 21 pontos não comportava "TONELADA"
+     * (5,39 em contra 4,45 disponíveis no piso de legibilidade), de modo que
+     * afrouxar só o número trocaria uma recusa por outra. Com a coluna em 30
+     * pontos, o desenho encaixa e o RDO inteiro volta a exportar.
+     */
+    @Test
+    void drawsSpelledOutMaterialUnitInTheWidenedColumn() throws Exception {
+        for (String unidade : List.of("TONELADA", "UNIDADE", "LITROS")) {
+            when(queryService.buscarPorId("rdo-unidade")).thenReturn(
+                    withMaterialUnit(
+                            populatedRdo("rdo-unidade", "RDO-UNIDADE"), unidade)
+            );
+
+            RdoExportFile exported = service.export("rdo-unidade");
+
+            try (PDDocument document = Loader.loadPDF(exported.content())) {
+                assertThat(new PDFTextStripper().getText(document))
+                        .contains(unidade);
+            }
+        }
+    }
+
+    /**
+     * A quantidade cedeu espaço para a unidade e continua tendo de caber:
+     * um valor com separador de milhar e decimais gasta 5,84 em contra os
+     * 6,70 que restaram na coluna.
+     */
+    @Test
+    void keepsFullQuantityReadableAfterYieldingWidthToTheUnit() {
+        when(queryService.buscarPorId("rdo-quantidade")).thenReturn(
+                withMaterialQuantity(
+                        populatedRdo("rdo-quantidade", "RDO-QUANTIDADE"),
+                        new BigDecimal("1234567.89")
+                )
+        );
+
+        assertThat(service.export("rdo-quantidade").content())
+                .startsWith("%PDF-".getBytes(StandardCharsets.US_ASCII));
+    }
+
+    private static RdoResponse withMaterialUnit(
+            RdoResponse original,
+            String unidade
+    ) {
+        RdoResponse.MaterialItem first = original.materiais().get(0);
+        return withMaterials(original, List.of(new RdoResponse.MaterialItem(
+                first.id(), first.materialNome(), unidade,
+                first.quantidadePrevista(), first.quantidadeUsinada(),
+                first.quantidadeAplicada(), first.quantidadeSobra(),
+                first.notaFiscal(), first.fornecedor(), first.observacoes()
+        )));
+    }
+
+    private static RdoResponse withMaterialQuantity(
+            RdoResponse original,
+            BigDecimal quantidade
+    ) {
+        RdoResponse.MaterialItem first = original.materiais().get(0);
+        return withMaterials(original, List.of(new RdoResponse.MaterialItem(
+                first.id(), first.materialNome(), first.unidade(),
+                quantidade, quantidade, quantidade, quantidade,
+                first.notaFiscal(), first.fornecedor(), first.observacoes()
+        )));
+    }
+
+    private static RdoResponse withMaterials(
+            RdoResponse original,
+            List<RdoResponse.MaterialItem> materiais
+    ) {
+        return new RdoResponse(
+                original.id(), original.obraId(), original.programacaoId(),
+                original.numeroRdo(), original.dataRdo(),
+                original.previousRdoId(), original.creationContextVersion(),
+                original.clientMutationId(), original.versaoEntidade(),
+                original.apontadorColaboradorId(), original.diaSemana(),
+                original.cliente(), original.contrato(), original.rodovia(),
+                original.cidade(), original.uf(),
+                original.kmInicialProgramado(), original.kmFinalProgramado(),
+                original.kmInicialInterditado(), original.kmFinalInterditado(),
+                original.turno(), original.horaInicio(), original.horaFim(),
+                original.condicaoManha(), original.condicaoTarde(),
+                original.condicaoNoite(), original.pluviometriaMm(),
+                original.status(), original.observacoes(),
+                original.preenchidoPor(), original.apontadorRdo(),
+                original.encarregadoObra(), original.fiscalizacaoCampo(),
+                original.maoObra(), original.equipamentos(), materiais,
+                original.controlesGeometricos(), original.servicosExecutados(),
+                original.alocacoesColaboradores(), original.attachments()
+        );
+    }
+
     @Test
     void preservesAggregatePrintableLimitWithoutGeneratingPdf() {
         List<RdoResponse.ControleGeometricoItem> controls = new ArrayList<>();

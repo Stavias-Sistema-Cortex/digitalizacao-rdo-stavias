@@ -57,6 +57,27 @@ public class RdoExportAggregateFactory {
      * a fonte substituta de quem abre a planilha pode vir mais larga.
      */
     private static final int WORKFORCE_ROLE_LIMIT = 40;
+    /*
+     * A unidade do material, medida depois de a coluna caber nela.
+     *
+     * O 5 recusava unidade escrita por extenso, e recusava até o que caberia:
+     * "LITROS" tem 6 caracteres e ocupa 3,61 em, folgado na coluna antiga —
+     * a contagem de caracteres mente nos dois sentidos, porque cinco "W"
+     * (4,72 em) já não cabiam nos 4,45 em que aquela coluna dava. O aperto
+     * verdadeiro era a largura: 21 pontos aqui, 7 mm no aplicativo.
+     *
+     * Com a coluna em 30 pontos no servidor e 10 mm no aplicativo, o mais
+     * apertado dos dois oferece 6,09 em no piso de 4 pontos. Cabem
+     * "TONELADA" (5,39) e "UNIDADE" (4,50), que é o vocabulário real da obra,
+     * e seis "W" (5,66) no pior caso imaginável.
+     *
+     * O limite fica em 10 — acima do pior caso de propósito, como já é o caso
+     * da nota fiscal. Unidade não se escreve em "W": as reais são estreitas, e
+     * apertar a contagem para 6 voltaria a recusar "TONELADA", que cabe. O
+     * encolhimento fail-closed dos dois desenhistas continua sendo a rede,
+     * e recusa com mensagem própria o que porventura não couber.
+     */
+    private static final int MATERIAL_UNIT_LIMIT = 10;
     private static final Pattern UUID_TEXT = Pattern.compile(
             "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
             Pattern.CASE_INSENSITIVE
@@ -243,7 +264,7 @@ public class RdoExportAggregateFactory {
         }
         for (RdoResponse.MaterialItem item : copy(rdo.materiais())) {
             printable("material", item.materialNome(), 24);
-            printable("unidade do material", item.unidade(), 5);
+            printable("unidade do material", item.unidade(), MATERIAL_UNIT_LIMIT);
             printable("nota fiscal", item.notaFiscal(), 24);
         }
         for (MaterialRow row : materials) {

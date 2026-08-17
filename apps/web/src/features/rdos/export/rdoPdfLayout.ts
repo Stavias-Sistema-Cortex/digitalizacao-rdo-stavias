@@ -556,10 +556,23 @@ function drawMaterials(
   top: number,
   projection: RdoExportProjection,
 ): number {
+  /*
+   * A coluna da unidade nasceu com 7 mm, e 7 mm não comportam unidade escrita
+   * por extenso: descontado o respiro da célula sobram 5,6 mm, que no piso de
+   * legibilidade de 4 pontos valem 3,97 em — menos que "UNIDADE" (4,50) e bem
+   * menos que "TONELADA" (5,39). Aqui apertava ainda mais que no servidor.
+   * Não era o limite de caracteres: era a coluna.
+   *
+   * <p>Os 3 mm saem de quem tinha folga de sobra, e nenhuma coluna fica no
+   * fio: 1 da quantidade, que ainda desenha "1.234.567,89" (5,84 em contra
+   * 6,80 disponíveis), e 2 da descrição, que passa a dar 22,4 em — mais que o
+   * dobro do que um nome de material de obra ocupa na prática. A soma do bloco
+   * continua 63,333 mm, então o formulário não se desloca.
+   */
   const widths = [
-    35, 12, 7, 9.333333,
-    35, 12, 7, 9.333333,
-    35, 12, 7, 9.333334,
+    33, 11, 10, 9.333333,
+    33, 11, 10, 9.333333,
+    33, 11, 10, 9.333334,
   ];
   let y = drawRow(
     document,

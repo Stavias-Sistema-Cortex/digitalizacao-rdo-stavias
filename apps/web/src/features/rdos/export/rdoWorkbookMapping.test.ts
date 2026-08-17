@@ -330,6 +330,18 @@ const JAVA_PRINTABLE_BOUNDARIES: PrintableBoundaryCase[] = [
       };
     },
   },
+  /*
+   * 10 espelha MATERIAL_UNIT_LIMIT do servidor. O 5 anterior recusava unidade
+   * por extenso — e recusava até "LITROS", que sempre coube — porque a coluna
+   * é que era estreita: 7 mm aqui, 21 pontos lá.
+   */
+  {
+    label: "unidade do material",
+    limit: 10,
+    mutate: (value, text) => {
+      value.rdo.materiais[0] = { ...value.rdo.materiais[0], unidade: text };
+    },
+  },
   {
     label: "número do trecho",
     limit: 12,

@@ -543,10 +543,24 @@ final class RdoPdfFormRenderer {
             List<MaterialRow> materials
     ) throws IOException {
         float block = CONTENT_WIDTH / 3f;
+        /*
+         * A coluna da unidade nasceu com 21 pontos, e 21 pontos não comportam
+         * unidade escrita por extenso: descontado o respiro da célula, sobram
+         * 17,8 pontos, que no piso de legibilidade de 4 pontos valem 4,45 em —
+         * menos que "UNIDADE" (4,50) e bem menos que "TONELADA" (5,39). Não
+         * era o limite de caracteres que apertava: era a coluna.
+         *
+         * <p>Os 9 pontos saem de quem tinha folga de sobra, e nenhuma coluna
+         * fica no fio: 4 da quantidade, que ainda desenha "1.234.567,89"
+         * (5,84 em contra 6,70 disponíveis), e 5 da descrição, que passa a dar
+         * 22,08 em — bem mais que o nome de material mais comprido da obra
+         * ("CONCRETO USINADO FCK 30" gasta 14,22). A soma do bloco continua
+         * exata, então o formulário não se desloca.
+         */
         float[] widths = {
-            block - 83f, 34f, 21f, 28f,
-            block - 83f, 34f, 21f, 28f,
-            block - 83f, 34f, 21f, 28f
+            block - 88f, 30f, 30f, 28f,
+            block - 88f, 30f, 30f, 28f,
+            block - 88f, 30f, 30f, 28f
         };
         drawRow(
                 content,

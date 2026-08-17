@@ -438,7 +438,18 @@ function printableValidation(projection: RdoExportProjection): void {
    */
   for (const group of projection.workforce) assertPrintable("cargo", group.role, 40);
   for (const item of projection.equipment) { assertPrintable("descrição do equipamento", item.descricao, 24); assertPrintable("prefixo do equipamento", item.prefixo, 8); }
-  for (const item of rdo.materiais) { assertPrintable("material", item.materialNome, 24); assertPrintable("unidade do material", item.unidade, 5); assertPrintable("nota fiscal", item.notaFiscal, 24); }
+  /*
+   * 10 é a unidade medida depois de a coluna caber nela. O 5 recusava unidade
+   * por extenso e recusava até o que caberia — "LITROS" ocupa 3,61 em, folgado
+   * na coluna antiga —, enquanto cinco "W" (4,72 em) já não cabiam nos 3,97 em
+   * que os 7 mm davam aqui. O aperto era a largura, não a contagem: a coluna
+   * subiu para 10 mm (e 30 pontos no servidor), e o mais apertado dos dois
+   * passa a oferecer 6,09 em, onde "TONELADA" (5,39) e "UNIDADE" (4,50) cabem.
+   * Fica acima do pior caso em "W" de propósito, como a nota fiscal já fica:
+   * unidade real é estreita, e apertar para 6 recusaria "TONELADA", que cabe.
+   * Espelha MATERIAL_UNIT_LIMIT do servidor, com a mesma mensagem.
+   */
+  for (const item of rdo.materiais) { assertPrintable("material", item.materialNome, 24); assertPrintable("unidade do material", item.unidade, 10); assertPrintable("nota fiscal", item.notaFiscal, 24); }
   for (const row of projection.materials) assertPrintable("descrição da linha de material", row.description, 28);
   for (const item of projection.geometry) assertPrintable("subtrecho do controle geométrico", item.subtrecho, 32);
   for (const row of projection.worked) { assertPrintable("início do trecho", row.start, 20); assertPrintable("fim do trecho", row.end, 20); assertPrintable("número do trecho", row.itemNumber, 12); assertPrintable("pista", row.roadway, 16); assertPrintable("faixa", row.lane, 16); assertPrintable("ordem de serviço", row.serviceOrder, 30); assertPrintable("atividade executada", row.activity, 80); }

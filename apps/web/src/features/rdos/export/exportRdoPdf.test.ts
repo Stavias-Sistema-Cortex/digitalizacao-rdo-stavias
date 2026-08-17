@@ -230,6 +230,38 @@ describe("local RDO PDF export", () => {
     expect(rdoPdfFilename(value)).toBe("rdo-RDO-0042.pdf");
   });
 
+  /*
+   * A unidade escrita por extenso é o vocabulário real da obra, e a coluna de
+   * 7 mm não a comportava: "TONELADA" ocupa 5,39 em e ali só cabiam 3,97, de
+   * modo que nem o limite de caracteres nem o encolhimento salvavam. Com a
+   * coluna em 10 mm são 6,09 em, e o RDO inteiro passa a exportar.
+   */
+  it("desenha a unidade escrita por extenso na coluna alargada", () => {
+    for (const unidade of ["TONELADA", "UNIDADE", "LITROS"]) {
+      const value = snapshot();
+      value.rdo.materiais[0] = { ...value.rdo.materiais[0], unidade };
+
+      expect(() => exportRdoPdf(value)).not.toThrow();
+      expect(pdfText(exportRdoPdf(value))).toContain(unidade);
+    }
+  });
+
+  /*
+   * A quantidade cedeu 1 mm para a unidade, e o que ela precisa desenhar tem
+   * de continuar cabendo: um valor com separador de milhar e decimais gasta
+   * 5,84 em contra os 6,80 que restaram.
+   */
+  it("mantém a quantidade cheia legível depois de ceder espaço à unidade", () => {
+    const value = snapshot();
+    value.rdo.materiais[0] = {
+      ...value.rdo.materiais[0],
+      quantidadeUsinada: 1234567.89,
+      quantidadeAplicada: 1234567.89,
+    };
+
+    expect(() => exportRdoPdf(value)).not.toThrow();
+  });
+
   it("embeds redacted observation text without the original secrets", () => {
     const value = snapshot();
     value.rdo.observacoes =
