@@ -21,14 +21,15 @@ class OfflineGrantRedactionTest {
         String collaboratorId = "10000000-0000-0000-0000-000000000001";
         String worksiteId = "20000000-0000-0000-0000-000000000002";
         OfflineGrantClaims claims = new OfflineGrantClaims(
-                1,
+                2,
                 UUID.fromString(collaboratorId),
                 "Pessoa Sintética",
                 PapelAcesso.BETA,
                 false,
                 List.of(worksiteId),
                 Instant.parse("2030-01-02T03:04:05Z"),
-                Instant.parse("2030-01-03T03:04:05Z")
+                Instant.parse("2030-01-09T03:04:05Z"),
+                7L
         );
 
         assertThat(new OfflineGrantSigningKey(
@@ -43,7 +44,8 @@ class OfflineGrantRedactionTest {
                 .doesNotContain("Pessoa Sintética", collaboratorId, worksiteId);
         assertThat(new OfflineGrantSubject(
                 "Pessoa Sintética",
-                Instant.parse("2030-01-02T03:04:05Z")
+                Instant.parse("2030-01-02T03:04:05Z"),
+                7L
         ).toString())
                 .contains("[REDACTED]")
                 .doesNotContain("Pessoa Sintética");

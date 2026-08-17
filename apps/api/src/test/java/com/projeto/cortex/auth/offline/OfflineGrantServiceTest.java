@@ -1,6 +1,7 @@
 package com.projeto.cortex.auth.offline;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -49,7 +50,7 @@ class OfflineGrantServiceTest {
         generator.initialize(2048);
         keyPair = generator.generateKeyPair();
         when(subjects.findActive(COLLABORATOR_ID)).thenReturn(Optional.of(
-                new OfflineGrantSubject("Pessoa Sintética", DATABASE_NOW)
+                new OfflineGrantSubject("Pessoa Sintética", DATABASE_NOW, 7L)
         ));
     }
 
@@ -60,7 +61,7 @@ class OfflineGrantServiceTest {
                 .thenReturn(PapelAcesso.BETA);
         when(currentUsers.allowedObraIds(COLLABORATOR_ID.toString()))
                 .thenReturn(Optional.of(Set.of(OBRA_Z, OBRA_A)));
-        OfflineGrantService service = service(43_200);
+        OfflineGrantService service = service(604_800);
 
         OfflineGrant grant = service.issue(COLLABORATOR_ID);
 
@@ -77,9 +78,10 @@ class OfflineGrantServiceTest {
                 "escopoGlobal",
                 "obraIds",
                 "emitidoEm",
-                "expiraEm"
+                "expiraEm",
+                "authEpoch"
         );
-        assertThat(claims.path("versao").asInt()).isEqualTo(1);
+        assertThat(claims.path("versao").asInt()).isEqualTo(2);
         assertThat(claims.path("colaboradorId").asText())
                 .isEqualTo(COLLABORATOR_ID.toString());
         assertThat(claims.path("nome").asText()).isEqualTo("Pessoa Sintética");
@@ -91,7 +93,8 @@ class OfflineGrantServiceTest {
         assertThat(claims.path("emitidoEm").asText())
                 .isEqualTo("2030-01-02T03:04:05.123456Z");
         assertThat(claims.path("expiraEm").asText())
-                .isEqualTo("2030-01-02T15:04:05.123456Z");
+                .isEqualTo("2030-01-09T03:04:05.123456Z");
+        assertThat(claims.path("authEpoch").asLong()).isEqualTo(7L);
         assertThat(verifies(grant)).isTrue();
     }
 
@@ -102,7 +105,7 @@ class OfflineGrantServiceTest {
         when(currentUsers.allowedObraIds(COLLABORATOR_ID.toString()))
                 .thenReturn(Optional.empty());
 
-        OfflineGrant grant = service(86_400).issue(COLLABORATOR_ID);
+        OfflineGrant grant = service(604_800).issue(COLLABORATOR_ID);
 
         JsonNode claims = decodeClaims(grant.payload());
         assertThat(claims.path("papelAcesso").asText()).isEqualTo("ALFA");
@@ -134,10 +137,11 @@ class OfflineGrantServiceTest {
     }
 
     @Test
-    void rejectsTtlOutsideTheOneDaySecurityBoundary() {
-        assertThatThrownBy(() -> service(86_401))
+    void acceptsSevenDaysAndRejectsTtlAboveTheSecurityBoundary() {
+        assertThatCode(() -> service(604_800)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> service(604_801))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("86400");
+                .hasMessageContaining("604800");
         assertThatThrownBy(() -> service(0))
                 .isInstanceOf(IllegalStateException.class);
     }

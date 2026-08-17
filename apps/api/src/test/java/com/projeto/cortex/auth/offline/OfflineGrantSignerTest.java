@@ -31,14 +31,15 @@ class OfflineGrantSignerTest {
         Instant issuedAt = Instant.parse("2030-01-02T03:04:05Z");
 
         assertThatThrownBy(() -> signer.sign(new OfflineGrantClaims(
-                1,
+                2,
                 UUID.fromString("10000000-0000-0000-0000-000000000001"),
                 "Pessoa Sintética",
                 PapelAcesso.BETA,
                 false,
                 oversizedScope,
                 issuedAt,
-                issuedAt.plusSeconds(86_400)
+                issuedAt.plusSeconds(604_800),
+                7L
         ))).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("tamanho");
     }

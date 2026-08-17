@@ -19,11 +19,17 @@ class OfflineGrantSubjectRepository {
         return jdbcTemplate.query(
                 """
                 SELECT colaborador.nome,
+                       credential.auth_epoch,
                        CURRENT_TIMESTAMP(6) AS database_now
                 FROM colaborador
+                JOIN auth_identity identity
+                  ON identity.colaborador_id = colaborador.id
+                JOIN auth_password_credential credential
+                  ON credential.colaborador_id = colaborador.id
                 WHERE LOWER(colaborador.id) = LOWER(?)
                   AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
+                  AND identity.status = 'ATIVA'
                 LIMIT 1
                 """,
                 resultSet -> {
@@ -40,7 +46,8 @@ class OfflineGrantSubjectRepository {
                     }
                     return Optional.of(new OfflineGrantSubject(
                             resultSet.getString("nome"),
-                            databaseNow.toInstant()
+                            databaseNow.toInstant(),
+                            resultSet.getLong("auth_epoch")
                     ));
                 },
                 collaboratorId.toString()

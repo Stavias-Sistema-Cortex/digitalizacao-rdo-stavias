@@ -62,14 +62,15 @@ public class OfflineGrantService {
         Instant issuedAt = requireDatabaseTime(subject.databaseNow());
         try {
             return signer.sign(new OfflineGrantClaims(
-                    1,
+                    2,
                     colaboradorId,
                     name,
                     role,
                     scope.global(),
                     scope.worksiteIds(),
                     issuedAt,
-                    issuedAt.plusSeconds(ttlSeconds)
+                    issuedAt.plusSeconds(ttlSeconds),
+                    subject.authEpoch()
             ));
         } catch (OfflineGrantScopeTooLargeException exception) {
             throw scopeTooLarge();

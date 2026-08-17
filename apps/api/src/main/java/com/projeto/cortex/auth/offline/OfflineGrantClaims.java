@@ -13,8 +13,17 @@ record OfflineGrantClaims(
         boolean escopoGlobal,
         List<String> obraIds,
         Instant emitidoEm,
-        Instant expiraEm
+        Instant expiraEm,
+        long authEpoch
 ) {
+
+    OfflineGrantClaims {
+        if (authEpoch < 1) {
+            throw new IllegalArgumentException(
+                    "Época de autorização offline inválida."
+            );
+        }
+    }
 
     @Override
     public String toString() {

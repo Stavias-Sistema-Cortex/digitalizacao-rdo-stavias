@@ -64,6 +64,7 @@ final class OfflineGrantSigner {
             json.writeEndArray();
             json.writeStringField("emitidoEm", claims.emitidoEm().toString());
             json.writeStringField("expiraEm", claims.expiraEm().toString());
+            json.writeNumberField("authEpoch", claims.authEpoch());
             json.writeEndObject();
             json.close();
             return output.toByteArray();

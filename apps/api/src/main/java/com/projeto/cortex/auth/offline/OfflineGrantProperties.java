@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "cortex.auth.offline-grant")
 public class OfflineGrantProperties {
 
-    static final long MAX_TTL_SECONDS = 86_400;
+    static final long MAX_TTL_SECONDS = 604_800;
     static final int MAX_WORKSITES_HARD_LIMIT = 800;
 
     private String keyId = "";
@@ -60,7 +60,7 @@ public class OfflineGrantProperties {
         if (ttlSeconds <= 0 || ttlSeconds > MAX_TTL_SECONDS) {
             throw new IllegalStateException(
                     "cortex.auth.offline-grant.ttl-seconds deve estar entre "
-                            + "1 e 86400."
+                            + "1 e 604800."
             );
         }
         return ttlSeconds;

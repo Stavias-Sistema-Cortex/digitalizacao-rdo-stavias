@@ -33,6 +33,7 @@ class OfflineGrantSubjectRepositoryTest {
         when(resultSet.getString("nome")).thenReturn("Pessoa Sintética");
         when(resultSet.getTimestamp("database_now"))
                 .thenReturn(Timestamp.from(databaseNow));
+        when(resultSet.getLong("auth_epoch")).thenReturn(7L);
         when(jdbc.query(
                 anyString(),
                 any(ResultSetExtractor.class),
@@ -47,7 +48,8 @@ class OfflineGrantSubjectRepositoryTest {
 
         assertThat(result).contains(new OfflineGrantSubject(
                 "Pessoa Sintética",
-                databaseNow
+                databaseNow,
+                7L
         ));
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbc).query(
@@ -58,6 +60,10 @@ class OfflineGrantSubjectRepositoryTest {
         assertThat(sql.getValue().replaceAll("\\s+", " "))
                 .contains("CURRENT_TIMESTAMP(6) AS database_now")
                 .contains("colaborador.ativo = TRUE")
-                .contains("colaborador.deletado_em IS NULL");
+                .contains("colaborador.deletado_em IS NULL")
+                .contains("JOIN auth_identity")
+                .contains("identity.status = 'ATIVA'")
+                .contains("JOIN auth_password_credential")
+                .contains("credential.auth_epoch");
     }
 }
