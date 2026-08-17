@@ -34,8 +34,11 @@ export function OfflineUnlockPage({
   canRetryOnline,
 }: OfflineUnlockPageProps) {
   const cpfId = useId();
+  const passwordId = useId();
   const cpfRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const [cpf, setCpf] = useState("");
+  const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
   const [status, setStatus] = useState<
     "idle" | "cpf" | "passkey" | "unsupported" | "error"
@@ -51,10 +54,14 @@ export function OfflineUnlockPage({
       return;
     }
     setError("");
-    const nextErrors = validateLoginForm(cpf);
+    const nextErrors = validateLoginForm(cpf, password);
     setFieldErrors(nextErrors);
     if (nextErrors.cpf) {
       cpfRef.current?.focus();
+      return;
+    }
+    if (nextErrors.password) {
+      passwordRef.current?.focus();
       return;
     }
 
@@ -63,22 +70,22 @@ export function OfflineUnlockPage({
     try {
       const metadata = await loadCollaborativeOfflineGrant(canonicalCpf);
       if (!metadata) {
-        // O acesso offline nasce de um login online: é ali que o servidor
-        // assina o grant que fica guardado neste aparelho. Sem dizer isso, a
-        // pessoa fica tentando o mesmo CPF no meio da obra sem saber que o
-        // que falta aconteceu antes de sair da base.
-        throw new Error(
-          "Este CPF ainda não tem acesso offline neste aparelho. " +
-            "Faça um login com internet uma vez neste mesmo aparelho e " +
-            "depois ele passa a abrir sem sinal.",
-        );
+        throw new Error("Cofre offline indisponível.");
       }
-      await unlockCollaborativeOfflineGrant(canonicalCpf, metadata);
+      await unlockCollaborativeOfflineGrant(
+        canonicalCpf,
+        password,
+        metadata,
+      );
       await initializeCortexDb();
-    } catch (cause: unknown) {
+    } catch {
       setStatus("error");
-      setError(unlockErrorMessage(cause));
-      cpfRef.current?.focus();
+      setError(
+        "Não foi possível liberar o acesso offline neste aparelho.",
+      );
+      passwordRef.current?.focus();
+    } finally {
+      setPassword("");
     }
   }
 
@@ -121,7 +128,7 @@ export function OfflineUnlockPage({
         </h1>
         <p className="offline-unlock__copy">
           {hasCollaborativeCpfGrant
-            ? "Informe seu CPF para abrir somente os dados locais autorizados neste dispositivo."
+            ? "Este aparelho precisa de um primeiro login com conexão antes de funcionar offline."
             : "Confirme sua passkey para abrir somente os dados locais autorizados neste dispositivo."}
         </p>
 
@@ -175,14 +182,42 @@ export function OfflineUnlockPage({
                 {fieldErrors.cpf}
               </p>
             ) : null}
+            <label htmlFor={passwordId}>Senha</label>
+            <input
+              ref={passwordRef}
+              id={passwordId}
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                if (fieldErrors.password) {
+                  setFieldErrors({});
+                }
+                if (error) {
+                  setError("");
+                  setStatus("idle");
+                }
+              }}
+              aria-invalid={fieldErrors.password ? true : undefined}
+              aria-describedby={
+                fieldErrors.password ? `${passwordId}-error` : undefined
+              }
+              disabled={busy}
+            />
+            {fieldErrors.password ? (
+              <p id={`${passwordId}-error`} role="alert">
+                {fieldErrors.password}
+              </p>
+            ) : null}
             <button
               type="submit"
               className="offline-unlock__primary"
               disabled={busy}
             >
               {status === "cpf"
-                ? "Verificando CPF…"
-                : "Desbloquear com CPF"}
+                ? "Liberando acesso…"
+                : "Desbloquear acesso offline"}
             </button>
           </form>
         ) : null}

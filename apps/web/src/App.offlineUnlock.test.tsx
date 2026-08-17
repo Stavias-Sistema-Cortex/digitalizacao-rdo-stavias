@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // Vitest hoists mock factories. Keeping the spy in a hoisted container makes
 // the repository mock deterministic rather than depending on module order.
 const mocks = vi.hoisted(() => ({
-  hasCollaborativeOfflineGrantMetadata: vi.fn(),
+  hasCollaborativePasswordVaultMetadata: vi.fn(),
   initializeCortexDb: vi.fn(),
   loadCollaborativeOfflineGrant: vi.fn(),
   loadOfflineVaultMetadata: vi.fn(),
@@ -34,8 +34,8 @@ vi.mock("./features/auth/authSession", () => ({
 }));
 
 vi.mock("./features/auth/offlineVaultRepository", () => ({
-  hasCollaborativeOfflineGrantMetadata:
-    mocks.hasCollaborativeOfflineGrantMetadata,
+  hasCollaborativePasswordVaultMetadata:
+    mocks.hasCollaborativePasswordVaultMetadata,
   loadOfflineVaultMetadata: mocks.loadOfflineVaultMetadata,
 }));
 
@@ -79,22 +79,28 @@ afterEach(() => {
 describe("App offline authentication entry", () => {
   it("offers direct CPF unlock when only a collaborative grant exists offline", async () => {
     setNavigatorOnline(false);
-    mocks.hasCollaborativeOfflineGrantMetadata.mockResolvedValue(true);
+    mocks.hasCollaborativePasswordVaultMetadata.mockResolvedValue(true);
     mocks.loadOfflineVaultMetadata.mockResolvedValue(null);
 
     render(<App />);
 
     expect(await screen.findByRole("textbox", { name: "CPF" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Desbloquear com CPF" }))
+    expect(screen.getByLabelText("Senha")).toHaveAttribute("type", "password");
+    expect(screen.getByLabelText("Senha"))
+      .toHaveAttribute("autocomplete", "current-password");
+    expect(screen.getByRole("button", { name: "Desbloquear acesso offline" }))
       .toBeInTheDocument();
+    expect(screen.getByText(
+      "Este aparelho precisa de um primeiro login com conexão antes de funcionar offline.",
+    )).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Usar passkey" }))
       .not.toBeInTheDocument();
   });
 
   it("offers passkey unlock when only a PRF vault exists offline", async () => {
     setNavigatorOnline(false);
-    mocks.hasCollaborativeOfflineGrantMetadata.mockResolvedValue(false);
+    mocks.hasCollaborativePasswordVaultMetadata.mockResolvedValue(false);
     mocks.loadOfflineVaultMetadata.mockResolvedValue(passkeyVault);
 
     render(<App />);
@@ -107,14 +113,14 @@ describe("App offline authentication entry", () => {
 
   it("offers CPF and passkey unlock together when both records exist", async () => {
     setNavigatorOnline(false);
-    mocks.hasCollaborativeOfflineGrantMetadata.mockResolvedValue(true);
+    mocks.hasCollaborativePasswordVaultMetadata.mockResolvedValue(true);
     mocks.loadOfflineVaultMetadata.mockResolvedValue(passkeyVault);
 
     render(<App />);
 
     expect(await screen.findByRole("textbox", { name: "CPF" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Desbloquear com CPF" }))
+    expect(screen.getByRole("button", { name: "Desbloquear acesso offline" }))
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Usar passkey" }))
       .toBeInTheDocument();
@@ -122,7 +128,7 @@ describe("App offline authentication entry", () => {
 
   it("keeps a first-time offline device at the disabled online-login route", async () => {
     setNavigatorOnline(false);
-    mocks.hasCollaborativeOfflineGrantMetadata.mockResolvedValue(false);
+    mocks.hasCollaborativePasswordVaultMetadata.mockResolvedValue(false);
     mocks.loadOfflineVaultMetadata.mockResolvedValue(null);
 
     render(<App />);
@@ -135,7 +141,7 @@ describe("App offline authentication entry", () => {
 
   it("unlocks a matching CPF grant without exposing stored profile data", async () => {
     setNavigatorOnline(false);
-    mocks.hasCollaborativeOfflineGrantMetadata.mockResolvedValue(true);
+    mocks.hasCollaborativePasswordVaultMetadata.mockResolvedValue(true);
     mocks.loadOfflineVaultMetadata.mockResolvedValue(null);
     mocks.loadCollaborativeOfflineGrant.mockResolvedValue(cpfGrant);
     const user = userEvent.setup();
@@ -143,21 +149,26 @@ describe("App offline authentication entry", () => {
     render(<App />);
 
     await user.type(await screen.findByRole("textbox", { name: "CPF" }), "11144477735");
-    await user.click(screen.getByRole("button", { name: "Desbloquear com CPF" }));
+    await user.type(screen.getByLabelText("Senha"), "Senha individual forte 123!");
+    await user.click(screen.getByRole("button", { name: "Desbloquear acesso offline" }));
 
     await waitFor(() => {
       expect(mocks.loadCollaborativeOfflineGrant)
         .toHaveBeenCalledWith("11144477735");
       expect(mocks.unlockCollaborativeOfflineGrant)
-        .toHaveBeenCalledWith("11144477735", cpfGrant);
+        .toHaveBeenCalledWith(
+          "11144477735",
+          "Senha individual forte 123!",
+          cpfGrant,
+        );
       expect(mocks.initializeCortexDb).toHaveBeenCalled();
     });
-    expect(screen.queryByText(cpfGrant.ownerId)).not.toBeInTheDocument();
+    expect(screen.queryByText(cpfGrant.ciphertext)).not.toBeInTheDocument();
   });
 
   it("rejects a mismatching CPF without attempting a grant unlock", async () => {
     setNavigatorOnline(false);
-    mocks.hasCollaborativeOfflineGrantMetadata.mockResolvedValue(true);
+    mocks.hasCollaborativePasswordVaultMetadata.mockResolvedValue(true);
     mocks.loadOfflineVaultMetadata.mockResolvedValue(null);
     mocks.loadCollaborativeOfflineGrant.mockResolvedValue(null);
     const user = userEvent.setup();
@@ -165,24 +176,51 @@ describe("App offline authentication entry", () => {
     render(<App />);
 
     await user.type(await screen.findByRole("textbox", { name: "CPF" }), "52998224725");
-    await user.click(screen.getByRole("button", { name: "Desbloquear com CPF" }));
+    await user.type(screen.getByLabelText("Senha"), "Senha individual forte 123!");
+    await user.click(screen.getByRole("button", { name: "Desbloquear acesso offline" }));
 
-    // A recusa continua a mesma; o texto passou a dizer o que resolve, porque
-    // quem lê isso está sem sinal e precisa saber que o login online que
-    // habilita o offline acontece antes de sair da base.
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      /ainda não tem acesso offline neste aparelho/,
-    );
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /login com internet uma vez neste mesmo aparelho/,
+      "Não foi possível liberar o acesso offline neste aparelho.",
     );
     expect(mocks.unlockCollaborativeOfflineGrant).not.toHaveBeenCalled();
     expect(mocks.initializeCortexDb).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["wrong password", new Error("senha")],
+    ["tampered vault", new Error("ciphertext")],
+    ["expired grant", new Error("expirou")],
+  ])("collapses %s to the same offline unlock alert", async (_label, cause) => {
+    setNavigatorOnline(false);
+    mocks.hasCollaborativePasswordVaultMetadata.mockResolvedValue(true);
+    mocks.loadOfflineVaultMetadata.mockResolvedValue(null);
+    mocks.loadCollaborativeOfflineGrant.mockResolvedValue(cpfGrant);
+    mocks.unlockCollaborativeOfflineGrant.mockRejectedValue(cause);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.type(
+      await screen.findByRole("textbox", { name: "CPF" }),
+      "11144477735",
+    );
+    await user.type(
+      screen.getByLabelText("Senha"),
+      "Senha individual forte 123!",
+    );
+    await user.click(screen.getByRole("button", {
+      name: "Desbloquear acesso offline",
+    }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Não foi possível liberar o acesso offline neste aparelho.",
+    );
+    expect(mocks.initializeCortexDb).not.toHaveBeenCalled();
+  });
+
   it("keeps a valid passkey fallback functional", async () => {
     setNavigatorOnline(false);
-    mocks.hasCollaborativeOfflineGrantMetadata.mockResolvedValue(true);
+    mocks.hasCollaborativePasswordVaultMetadata.mockResolvedValue(true);
     mocks.loadOfflineVaultMetadata.mockResolvedValue(passkeyVault);
     mocks.unlockOfflineVault.mockResolvedValue("UNLOCKED");
     const user = userEvent.setup();
@@ -214,17 +252,19 @@ const passkeyVault = {
 
 const cpfGrant = {
   key: "20000000-0000-4000-8000-000000000001",
-  versao: 2,
+  versao: 3,
   cpfSalt: "s".repeat(22),
   cpfVerifier: "v".repeat(43),
-  ownerId: "00000000-0000-4000-8000-000000000001",
-  scopeFingerprint: "b".repeat(64),
-  signedGrant: {
-    keyId: "offline-test-v1",
-    payload: "payload",
-    signature: "signature",
-    publicKeySpki: "public-key",
-  },
+  passwordSalt: "p".repeat(22),
+  kdf: "PBKDF2-SHA256",
+  kdfIterations: 600_000,
+  iv: "i".repeat(16),
+  ciphertext: "ciphertext",
   serverKeyFingerprint: "c".repeat(43),
   atualizadoEm: "2026-07-26T00:00:00Z",
+  failedAttemptState: {
+    windowStartedAt: null,
+    failures: 0,
+    blockedUntil: null,
+  },
 };

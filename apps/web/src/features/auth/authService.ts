@@ -76,6 +76,7 @@ export async function autenticarPorCpf(
     const signedGrant = await fetchOfflineGrantAfterFreshCpfLogin();
     await saveCollaborativeOfflineGrant(
       canonicalCpf,
+      password,
       signedGrant,
       profile.colaboradorId,
     );

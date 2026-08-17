@@ -2,71 +2,130 @@ import "fake-indexeddb/auto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  clearSession,
-  getSession,
-  hasOfflineSession,
-  hasOnlineSession,
-  setOfflineSession,
-  setSession,
-} from "./authSession";
+import { scopeFingerprint } from "../../lib/db/localDataNamespace";
+import { clearSession, getSession, setSession } from "./authSession";
 import {
   loadCollaborativeOfflineGrant,
+  OfflineGrantOwnerMismatchError,
   saveCollaborativeOfflineGrant,
   unlockCollaborativeOfflineGrant,
 } from "./collaborativeOfflineGrant";
-import type { OfflineGrantClaims } from "./offlineVault.types";
+import type {
+  CurrentOfflineGrantClaims,
+  LegacyOfflineCpfGrantMetadata,
+  SignedOfflineGrant,
+} from "./offlineVault.types";
+import {
+  deleteCollaborativeOfflineGrantMetadata,
+  listCollaborativeOfflineGrantMetadata,
+  listCollaborativeOfflineMetadata,
+  saveCollaborativeOfflineGrantMetadata,
+} from "./offlineVaultRepository";
+import { clearPasswordVaultKeys } from "./passwordOfflineVault";
 import { toBase64Url } from "./webauthnCodec";
 
-const now = Date.parse("2026-07-14T12:00:00Z");
-const REMOTE_SESSION_ISOLATION_KEY = "cortex.auth.remote-session-isolation";
+const NOW = Date.parse("2026-07-14T12:00:00Z");
+const CPF = "11144477735";
+const PASSWORD = "Senha individual forte 123!";
+const OWNER_ID = "00000000-0000-4000-8000-000000000001";
+const OTHER_OWNER_ID = "00000000-0000-4000-8000-000000000003";
+const WORKSITE_ID = "00000000-0000-4000-8000-000000000002";
 const localValues = new Map<string, string>();
 
-vi.stubGlobal("localStorage", {
-  getItem: (key: string) => localValues.get(key) ?? null,
-  removeItem: (key: string) => localValues.delete(key),
-  setItem: (key: string, value: string) => localValues.set(key, value),
-});
-
-describe("grant colaborativo de CPF", () => {
-  beforeEach(() => {
+describe("grant colaborativo protegido por senha", () => {
+  beforeEach(async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(now);
-    localValues.clear();
+    vi.setSystemTime(NOW);
     clearSession();
+    clearPasswordVaultKeys();
+    localValues.clear();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => localValues.get(key) ?? null,
+      removeItem: (key: string) => localValues.delete(key),
+      setItem: (key: string, value: string) => localValues.set(key, value),
+    });
+    for (const record of await listCollaborativeOfflineMetadata()) {
+      await deleteCollaborativeOfflineGrantMetadata(record.key);
+    }
   });
 
   afterEach(() => {
     clearSession();
+    clearPasswordVaultKeys();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
-  it("protege o CPF com PBKDF2 e sal único antes de liberar seu escopo", async () => {
+  it("confirms v3 before deleting only the matching legacy v2", async () => {
     const fixture = await signedGrantFixture();
+    const matchingLegacy = await legacyGrant(CPF, OWNER_ID, fixture.grant);
+    const otherLegacy = await legacyGrant(
+      "52998224725",
+      OTHER_OWNER_ID,
+      fixture.grant,
+    );
+    await saveCollaborativeOfflineGrantMetadata(matchingLegacy);
+    await saveCollaborativeOfflineGrantMetadata(otherLegacy);
 
     const metadata = await saveCollaborativeOfflineGrant(
-      "111.444.777-35",
+      CPF,
+      PASSWORD,
       fixture.grant,
-      fixture.claims.colaboradorId,
+      OWNER_ID,
     );
-    const hardened = metadata as unknown as Record<string, unknown>;
-    const fastDigest = toBase64Url(await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode("11144477735"),
-    ));
 
-    expect(hardened).toMatchObject({ versao: 2 });
-    expect(hardened).not.toHaveProperty("cpfHash");
-    expect(hardened.cpfSalt).toMatch(/^[A-Za-z0-9_-]{22}$/);
-    expect(hardened.cpfVerifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(hardened.cpfVerifier).not.toBe(fastDigest);
-    expect(hardened.key).not.toBe(hardened.cpfVerifier);
-    expect(JSON.stringify(metadata)).not.toContain("11144477735");
+    expect(metadata.versao).toBe(3);
+    expect(await loadCollaborativeOfflineGrant(CPF)).toEqual(metadata);
+    const remainingLegacy = await listCollaborativeOfflineGrantMetadata();
+    expect(remainingLegacy.map((record) => record.key))
+      .not.toContain(matchingLegacy.key);
+    expect(remainingLegacy.map((record) => record.key))
+      .toContain(otherLegacy.key);
+    const persisted = JSON.stringify(metadata);
+    expect(persisted).not.toContain(PASSWORD);
+    expect(persisted).not.toContain(fixture.grant.payload);
+    expect(persisted).not.toContain(OWNER_ID);
+  });
 
-    await expect(
-      unlockCollaborativeOfflineGrant("11144477735", metadata),
-    ).resolves.toBeUndefined();
-    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+  it("fails closed when the returned grant belongs to another collaborator", async () => {
+    const fixture = await signedGrantFixture();
+
+    await expect(saveCollaborativeOfflineGrant(
+      CPF,
+      PASSWORD,
+      fixture.grant,
+      OTHER_OWNER_ID,
+    )).rejects.toBeInstanceOf(OfflineGrantOwnerMismatchError);
+
+    expect(await loadCollaborativeOfflineGrant(CPF)).toBeNull();
+  });
+
+  it("does not promote a legacy protocol-v1 grant into v3", async () => {
+    const legacy = await signedLegacyGrantFixture();
+
+    await expect(saveCollaborativeOfflineGrant(
+      CPF,
+      PASSWORD,
+      legacy,
+      OWNER_ID,
+    )).rejects.toThrow(
+      "Não foi possível liberar o acesso offline neste aparelho.",
+    );
+
+    expect(await loadCollaborativeOfflineGrant(CPF)).toBeNull();
+  });
+
+  it("opens v3 with CPF plus password and activates only the signed scope", async () => {
+    const fixture = await signedGrantFixture();
+    const metadata = await saveCollaborativeOfflineGrant(
+      CPF,
+      PASSWORD,
+      fixture.grant,
+      OWNER_ID,
+    );
+
+    await unlockCollaborativeOfflineGrant(CPF, PASSWORD, metadata);
+
     expect(getSession()).toEqual({
       colaboradorId: fixture.claims.colaboradorId,
       nome: fixture.claims.nome,
@@ -77,170 +136,40 @@ describe("grant colaborativo de CPF", () => {
     });
   });
 
-  it("does not cache a signed grant for CPF A when the returned owner is collaborator B", async () => {
-    const fixture = await signedGrantFixture();
-    const expectedOwnerId = "00000000-0000-4000-8000-000000000003";
-    const cpf = "00000000000";
-    await expect(
-      saveCollaborativeOfflineGrant(cpf, fixture.grant, expectedOwnerId),
-    ).rejects.toThrow("identidade autenticada");
-
-    await expect(loadCollaborativeOfflineGrant(cpf)).resolves.toBeNull();
-    expect(getSession()).toBeNull();
-  });
-
-  it("rejeita um CPF diferente sem criar uma sessão local", async () => {
+  it("collapses wrong CPF and password while clearing an existing session", async () => {
     const fixture = await signedGrantFixture();
     const metadata = await saveCollaborativeOfflineGrant(
-      "11144477735",
+      CPF,
+      PASSWORD,
       fixture.grant,
-      fixture.claims.colaboradorId,
-    );
-
-    await expect(
-      unlockCollaborativeOfflineGrant("11144477734", metadata),
-    ).rejects.toThrow("CPF não corresponde");
-
-    expect(getSession()).toBeNull();
-  });
-
-  it("limpa uma sessão online existente quando o CPF não corresponde", async () => {
-    const fixture = await signedGrantFixture();
-    const metadata = await saveCollaborativeOfflineGrant(
-      "11144477735",
-      fixture.grant,
-      fixture.claims.colaboradorId,
+      OWNER_ID,
     );
     setSession(existingProfile());
-    expect(hasOnlineSession()).toBe(true);
 
-    await expect(
-      unlockCollaborativeOfflineGrant("11144477734", metadata),
-    ).rejects.toThrow("CPF não corresponde");
-
-    expect(getSession()).toBeNull();
-  });
-
-  it("limpa uma sessão online existente quando a assinatura é alterada", async () => {
-    const fixture = await signedGrantFixture();
-    const metadata = await saveCollaborativeOfflineGrant(
-      "11144477735",
-      fixture.grant,
-      fixture.claims.colaboradorId,
+    await expect(unlockCollaborativeOfflineGrant(
+      "52998224725",
+      PASSWORD,
+      metadata,
+    )).rejects.toThrow(
+      "Não foi possível liberar o acesso offline neste aparelho.",
     );
-    const tampered = {
-      ...metadata,
-      signedGrant: {
-        ...metadata.signedGrant,
-        signature: `${metadata.signedGrant.signature[0] === "A" ? "B" : "A"}${metadata.signedGrant.signature.slice(1)}`,
-      },
-    };
-    setSession(existingProfile());
-    expect(hasOnlineSession()).toBe(true);
-
-    await expect(
-      unlockCollaborativeOfflineGrant("11144477735", tampered),
-    ).rejects.toThrow("assinatura");
-
     expect(getSession()).toBeNull();
-  });
 
-  it("limpa uma sessão offline existente quando a fingerprint é alterada", async () => {
-    const fixture = await signedGrantFixture();
-    const metadata = await saveCollaborativeOfflineGrant(
-      "11144477735",
-      fixture.grant,
-      fixture.claims.colaboradorId,
+    vi.setSystemTime(NOW + 1_000);
+    await expect(unlockCollaborativeOfflineGrant(
+      CPF,
+      "Outra senha forte 456!",
+      metadata,
+    )).rejects.toThrow(
+      "Não foi possível liberar o acesso offline neste aparelho.",
     );
-    const tampered = {
-      ...metadata,
-      serverKeyFingerprint: "x".repeat(43),
-    };
-    setOfflineSession(existingProfile());
-    expect(hasOfflineSession()).toBe(true);
-
-    await expect(
-      unlockCollaborativeOfflineGrant("11144477735", tampered),
-    ).rejects.toThrow("assinatura");
-
-    expect(getSession()).toBeNull();
-  });
-
-  it("limpa uma sessão offline existente quando o escopo é alterado", async () => {
-    const fixture = await signedGrantFixture();
-    const metadata = await saveCollaborativeOfflineGrant(
-      "11144477735",
-      fixture.grant,
-      fixture.claims.colaboradorId,
-    );
-    const tampered = {
-      ...metadata,
-      scopeFingerprint: "a".repeat(64),
-    };
-    setOfflineSession(existingProfile());
-    expect(hasOfflineSession()).toBe(true);
-
-    await expect(
-      unlockCollaborativeOfflineGrant("11144477735", tampered),
-    ).rejects.toThrow("escopo");
-
-    expect(getSession()).toBeNull();
-  });
-
-  it("limpa uma sessão online existente quando o fingerprint do escopo é malformado", async () => {
-    const fixture = await signedGrantFixture();
-    const metadata = await saveCollaborativeOfflineGrant(
-      "11144477735",
-      fixture.grant,
-      fixture.claims.colaboradorId,
-    );
-    const malformed = {
-      ...metadata,
-      scopeFingerprint: "fingerprint-malformado",
-    };
-    setSession(existingProfile());
-    expect(hasOnlineSession()).toBe(true);
-
-    await expect(
-      unlockCollaborativeOfflineGrant("11144477735", malformed),
-    ).rejects.toThrow("Metadados do grant offline inválidos.");
-
-    expect(getSession()).toBeNull();
-  });
-
-  it("rejeita grants adulterados ou expirados", async () => {
-    const fixture = await signedGrantFixture({
-      expiraEm: "2026-07-14T12:01:00Z",
-    });
-    const metadata = await saveCollaborativeOfflineGrant(
-      "11144477735",
-      fixture.grant,
-      fixture.claims.colaboradorId,
-    );
-    const tampered = {
-      ...metadata,
-      signedGrant: {
-        ...metadata.signedGrant,
-        signature: `${metadata.signedGrant.signature[0] === "A" ? "B" : "A"}${metadata.signedGrant.signature.slice(1)}`,
-      },
-    };
-
-    await expect(
-      unlockCollaborativeOfflineGrant("11144477735", tampered),
-    ).rejects.toThrow("assinatura");
-    expect(getSession()).toBeNull();
-
-    vi.setSystemTime(Date.parse("2026-07-14T12:02:00Z"));
-    await expect(
-      unlockCollaborativeOfflineGrant("11144477735", metadata),
-    ).rejects.toThrow("expirou");
     expect(getSession()).toBeNull();
   });
 });
 
 function existingProfile() {
   return {
-    colaboradorId: "00000000-0000-4000-8000-000000000003",
+    colaboradorId: OTHER_OWNER_ID,
     nome: "Sessão existente",
     papelAcesso: "BETA" as const,
     escopoGlobal: false,
@@ -249,23 +178,77 @@ function existingProfile() {
   };
 }
 
-async function signedGrantFixture(
-  overrides: Partial<OfflineGrantClaims> = {},
-): Promise<{
-  claims: OfflineGrantClaims;
+async function legacyGrant(
+  cpf: string,
+  ownerId: string,
+  signedGrant: SignedOfflineGrant,
+): Promise<LegacyOfflineCpfGrantMetadata> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(cpf),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const verifier = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      salt,
+      iterations: 600_000,
+    },
+    material,
+    256,
+  );
+  return {
+    key: crypto.randomUUID(),
+    versao: 2,
+    cpfSalt: toBase64Url(salt),
+    cpfVerifier: toBase64Url(verifier),
+    ownerId,
+    scopeFingerprint: await scopeFingerprint(
+      ownerId,
+      `BETA:${WORKSITE_ID}`,
+    ),
+    signedGrant,
+    serverKeyFingerprint: "f".repeat(43),
+    atualizadoEm: new Date(NOW).toISOString(),
+  };
+}
+
+async function signedGrantFixture(): Promise<{
+  claims: CurrentOfflineGrantClaims;
   grant: SignedOfflineGrant;
 }> {
-  const claims: OfflineGrantClaims = {
-    versao: 1,
-    colaboradorId: "00000000-0000-4000-8000-000000000001",
+  const claims: CurrentOfflineGrantClaims = {
+    versao: 2,
+    colaboradorId: OWNER_ID,
     nome: "Colaborador Sintético",
     papelAcesso: "BETA",
     escopoGlobal: false,
-    obraIds: ["00000000-0000-4000-8000-000000000002"],
-    emitidoEm: "2026-07-14T11:55:00Z",
-    expiraEm: "2026-07-14T20:00:00Z",
-    ...overrides,
+    obraIds: [WORKSITE_ID],
+    emitidoEm: "2026-07-14T12:00:00Z",
+    expiraEm: "2026-07-21T12:00:00Z",
+    authEpoch: 7,
   };
+  return { claims, grant: await signClaims(claims) };
+}
+
+async function signedLegacyGrantFixture(): Promise<SignedOfflineGrant> {
+  return signClaims({
+    versao: 1,
+    colaboradorId: OWNER_ID,
+    nome: "Colaborador Sintético",
+    papelAcesso: "BETA",
+    escopoGlobal: false,
+    obraIds: [WORKSITE_ID],
+    emitidoEm: "2026-07-14T12:00:00Z",
+    expiraEm: "2026-07-15T12:00:00Z",
+  });
+}
+
+async function signClaims(claims: object): Promise<SignedOfflineGrant> {
   const keyPair = await crypto.subtle.generateKey(
     {
       name: "RSASSA-PKCS1-v1_5",
@@ -284,12 +267,9 @@ async function signedGrantFixture(
   );
   const publicKeySpki = await crypto.subtle.exportKey("spki", keyPair.publicKey);
   return {
-    claims,
-    grant: {
-      keyId: "offline-test-v1",
-      payload: toBase64Url(payload),
-      signature: toBase64Url(signature),
-      publicKeySpki: toBase64Url(publicKeySpki),
-    },
+    keyId: "offline-test",
+    payload: toBase64Url(payload),
+    signature: toBase64Url(signature),
+    publicKeySpki: toBase64Url(publicKeySpki),
   };
 }

@@ -68,6 +68,7 @@ const REMOTE_SESSION_ISOLATION_KEY = "cortex.auth.remote-session-isolation";
 
 describe("authService", () => {
   const storage = new Map<string, string>();
+  const sessionStorageValues = new Map<string, string>();
   let rejectIsolationMarkerWrite = false;
 
   beforeEach(() => {
@@ -75,6 +76,7 @@ describe("authService", () => {
     mocks.logoutOnline.mockReset();
     mocks.logoutOnline.mockResolvedValue("revoked");
     storage.clear();
+    sessionStorageValues.clear();
     rejectIsolationMarkerWrite = false;
     vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
     vi.stubGlobal("localStorage", {
@@ -90,6 +92,14 @@ describe("authService", () => {
       },
       removeItem: (key: string) => storage.delete(key),
       clear: () => storage.clear(),
+    });
+    vi.stubGlobal("sessionStorage", {
+      getItem: (key: string) => sessionStorageValues.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        sessionStorageValues.set(key, value);
+      },
+      removeItem: (key: string) => sessionStorageValues.delete(key),
+      clear: () => sessionStorageValues.clear(),
     });
     localStorage.clear();
     clearSession();
@@ -134,9 +144,12 @@ describe("authService", () => {
     expect(mocks.loginWithCpf).toHaveBeenCalledWith("11144477735", PASSWORD);
     expect(mocks.saveCollaborativeOfflineGrant).toHaveBeenCalledWith(
       "11144477735",
+      PASSWORD,
       { signed: "grant" },
       profile.colaboradorId,
     );
+    expect(JSON.stringify([...storage, ...sessionStorageValues]))
+      .not.toContain(PASSWORD);
     expect(getSession()).toEqual(profile);
   });
 

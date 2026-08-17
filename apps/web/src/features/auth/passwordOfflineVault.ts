@@ -54,8 +54,11 @@ export type OpenPasswordOfflineVaultResult =
 const liveKeys = new Map<string, CryptoKey>();
 
 export class OfflinePasswordVaultUnlockError extends Error {
-  constructor() {
-    super("Não foi possível liberar o acesso offline neste aparelho.");
+  constructor(options?: ErrorOptions) {
+    super(
+      "Não foi possível liberar o acesso offline neste aparelho.",
+      options,
+    );
     this.name = "OfflinePasswordVaultUnlockError";
   }
 }
@@ -249,6 +252,27 @@ export function hasLivePasswordVaultKey(
 
 export function clearPasswordVaultKeys(): void {
   liveKeys.clear();
+}
+
+export async function matchesPasswordVaultCpf(
+  cpf: string,
+  metadataValue: OfflinePasswordVaultMetadata,
+): Promise<boolean> {
+  try {
+    const metadata = validatePasswordVaultMetadata(metadataValue);
+    const canonicalCpf = requireCanonicalCpf(cpf);
+    const actual = await deriveCpfVerifier(
+      canonicalCpf,
+      exactBytes(metadata.cpfSalt, SALT_BYTES),
+    );
+    try {
+      return bytesEqual(actual, exactBytes(metadata.cpfVerifier, 32));
+    } finally {
+      actual.fill(0);
+    }
+  } catch {
+    return false;
+  }
 }
 
 export function isOfflinePasswordVaultMetadata(

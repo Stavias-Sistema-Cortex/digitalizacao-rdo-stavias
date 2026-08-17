@@ -24,7 +24,7 @@ import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
 import { retomarSessaoOnline } from "./features/auth/retomadaDaSessao";
 import { renovarGrantOfflineSePreciso } from "./features/auth/renovacaoDoGrantOffline";
 import {
-  hasCollaborativeOfflineGrantMetadata,
+  hasCollaborativePasswordVaultMetadata,
   loadOfflineVaultMetadata,
 } from "./features/auth/offlineVaultRepository";
 import type { OfflineVaultMetadata } from "./features/auth/offlineVault.types";
@@ -226,7 +226,7 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     let cancelled = false;
     Promise.all([
       loadOfflineVaultMetadata().catch(() => null),
-      hasCollaborativeOfflineGrantMetadata().catch(() => false),
+      hasCollaborativePasswordVaultMetadata().catch(() => false),
     ])
       .then(([metadata, hasCpfGrant]) => {
         if (!cancelled) {
