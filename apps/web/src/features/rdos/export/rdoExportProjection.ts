@@ -427,7 +427,16 @@ function printableValidation(projection: RdoExportProjection): void {
   assertPrintable("nome do apontador", projection.apontadorName, 40);
   assertPrintable("nome do encarregado", rdo.encarregadoObra, 40);
   assertPrintable("nome da fiscalização", rdo.fiscalizacaoCampo, 40);
-  for (const group of projection.workforce) assertPrintable("cargo", group.role, 18);
+  /*
+   * 40 é a célula do cargo medida, não o chute de 18 que recusava cargos
+   * reais do Academy ("OPERADOR DE ROLO COMPACTADOR" tem 28). Os dois PDFs
+   * encaixam quarenta "W" acima do piso fail-closed de 4pt, e o XLSX escreve
+   * o cargo em fonte 16 com quebra — duas linhas de ~30 na altura que a
+   * linha do template já tem. Espelha WORKFORCE_ROLE_LIMIT do servidor, com
+   * a mesma mensagem: contador divergente é o que fazia a tela prometer e o
+   * servidor recusar.
+   */
+  for (const group of projection.workforce) assertPrintable("cargo", group.role, 40);
   for (const item of projection.equipment) { assertPrintable("descrição do equipamento", item.descricao, 24); assertPrintable("prefixo do equipamento", item.prefixo, 8); }
   for (const item of rdo.materiais) { assertPrintable("material", item.materialNome, 24); assertPrintable("unidade do material", item.unidade, 5); assertPrintable("nota fiscal", item.notaFiscal, 24); }
   for (const row of projection.materials) assertPrintable("descrição da linha de material", row.description, 28);

@@ -287,6 +287,15 @@ type PrintableBoundaryCase = {
 };
 
 const JAVA_PRINTABLE_BOUNDARIES: PrintableBoundaryCase[] = [
+  /*
+   * 40 espelha WORKFORCE_ROLE_LIMIT do servidor — a célula do cargo medida,
+   * não o chute de 18 que recusava "OPERADOR DE ROLO COMPACTADOR" (28).
+   */
+  {
+    label: "cargo",
+    limit: 40,
+    mutate: (value, text) => { value.rdo.maoObra[0].cargo = text; },
+  },
   {
     label: "km inicial programado",
     limit: 12,
@@ -483,6 +492,42 @@ describe("RDO workbook mapping", () => {
     expect(observationCell.value)
       .not.toContain("00000000-0000-0000-0000-000000000041");
     expect(observationCell.value).not.toContain("Continuidade da equipe");
+  });
+
+  /*
+   * O cargo mora numa célula mesclada, onde o encolher-para-caber do Excel é
+   * ignorado — era assim que o cargo comprido saía cortado da impressão. A
+   * variante troca para quebra de linha com a fonte reduzida a 16, e este
+   * teste lê o arquivo cru para provar que o estilo chegou lá.
+   */
+  it("dá ao cargo fonte 16 com quebra na célula mesclada", async () => {
+    const candidate = snapshot();
+    candidate.rdo.maoObra[0].cargo = "OPERADOR DE ROLO COMPACTADOR";
+
+    const bytes = await exportRdoWorkbook(candidate, {
+      templateBytes: await templateBytes(),
+    });
+    const files = unzipSync(bytes);
+    const decode = (value: Uint8Array) => new TextDecoder().decode(value);
+    const styles = decode(files["xl/styles.xml"]);
+    const front = decode(files["xl/worksheets/sheet1.xml"]);
+
+    const cellStyle = /<c\b(?=[^>]*\br="B16")[^>]*\bs="(\d+)"/.exec(front)?.[1];
+    expect(cellStyle).toBeDefined();
+    const xfs = styles.match(/<xf\b(?:[^>]*?\/>|[^>]*>[\s\S]*?<\/xf>)/g) ?? [];
+    // O primeiro bloco de xf é cellStyleXfs; o índice da célula aponta para
+    // cellXfs, que vem depois — recorta-se o bloco certo antes de indexar.
+    const cellXfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles)?.[1] ?? "";
+    const cellXfList = cellXfs.match(/<xf\b(?:[^>]*?\/>|[^>]*>[\s\S]*?<\/xf>)/g) ?? [];
+    void xfs;
+    const xf = cellXfList[Number(cellStyle)];
+    expect(xf).toBeDefined();
+    expect(xf).toContain('wrapText="1"');
+    const fontId = /\bfontId="(\d+)"/.exec(xf ?? "")?.[1];
+    expect(fontId).toBeDefined();
+    const fonts = /<fonts\b[^>]*>([\s\S]*?)<\/fonts>/.exec(styles)?.[1] ?? "";
+    const fontList = fonts.match(/<font\b(?:[^>]*\/>|[^>]*>[\s\S]*?<\/font>)/g) ?? [];
+    expect(fontList[Number(fontId)]).toContain('<sz val="16"/>');
   });
 
   it("preserves merged printable regions and both print areas", async () => {

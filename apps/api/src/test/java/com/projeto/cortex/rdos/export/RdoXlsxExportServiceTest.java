@@ -30,7 +30,9 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -617,10 +619,56 @@ class RdoXlsxExportServiceTest {
         }
     }
 
+    /**
+     * O cargo real do Academy sai inteiro, em fonte 16 com quebra.
+     *
+     * <p>"OPERADOR DE ROLO COMPACTADOR" tem 28 caracteres e era recusado pelo
+     * limite antigo de 18 — um chute sem medição. A célula mesclada do cargo
+     * ignora o encolher-para-caber do Excel, então o escritor troca para
+     * quebra de linha com a fonte reduzida: duas linhas de ~30 na altura que
+     * o template já dá, sem cortar nem inventar nada.
+     */
+    @Test
+    void writesRealWorldRoleWholeWithWrappedReducedFont() throws Exception {
+        RdoResponse base = emptyRdo("rdo-cargo", "RDO-CARGO");
+        RdoResponse rdo = copyRdo(
+                base,
+                null, null, null, null,
+                List.of(new RdoResponse.MaoObraItem(
+                        "mo-real", "col-real", "Nome",
+                        "OPERADOR DE ROLO COMPACTADOR", "CONTRATADO",
+                        BigDecimal.ONE, null, null, null, null
+                )),
+                List.of(), List.of(), List.of(), List.of()
+        );
+        when(queryService.buscarPorId("rdo-cargo")).thenReturn(rdo);
+
+        byte[] content = service.export("rdo-cargo").content();
+
+        try (Workbook workbook = WorkbookFactory.create(
+                new ByteArrayInputStream(content)
+        )) {
+            Sheet frente = workbook.getSheetAt(0);
+            assertThat(stringCell(frente, "B16"))
+                    .isEqualTo("OPERADOR DE ROLO COMPACTADOR");
+            CellStyle style = frente.getRow(15).getCell(1).getCellStyle();
+            assertThat(style.getWrapText()).isTrue();
+            assertThat(style.getShrinkToFit()).isFalse();
+            Font font = workbook.getFontAt(style.getFontIndex());
+            assertThat(font.getFontHeightInPoints()).isEqualTo((short) 16);
+        }
+    }
+
     @Test
     void rejectsTextThatCannotRemainLegibleInFixedPrintRegions() {
         RdoResponse base = emptyRdo("rdo-text", "RDO-TEXT");
         List<InvalidPrintCase> cases = List.of(
+                /*
+                 * 41 e não 19: a célula do cargo foi medida (fonte 16 com
+                 * quebra, duas linhas de ~30) e o limite subiu para 40 —
+                 * "OPERADOR DE ROLO COMPACTADOR" passou a caber. O que segue
+                 * recusado é o que nem a caixa medida comporta.
+                 */
                 new InvalidPrintCase(
                         "rdo-role-long",
                         copyRdo(
@@ -628,7 +676,7 @@ class RdoXlsxExportServiceTest {
                                 null, null, null, null,
                                 List.of(new RdoResponse.MaoObraItem(
                                         "mo-long", "col-long", "Nome",
-                                        "W".repeat(19), "CONTRATADO", BigDecimal.ONE,
+                                        "W".repeat(41), "CONTRATADO", BigDecimal.ONE,
                                         null, null, null, null
                                 )),
                                 List.of(), List.of(), List.of(), List.of()
@@ -862,11 +910,17 @@ class RdoXlsxExportServiceTest {
         try (Workbook workbook = WorkbookFactory.create(
                 new ByteArrayInputStream(exported.content())
         )) {
+            /*
+             * B16 é o cargo, e cargo não usa mais encolher-para-caber: o
+             * Excel o ignora em célula mesclada, e era assim que o texto
+             * comprido saía cortado da impressão. A célula agora quebra em
+             * fonte reduzida — o teste do cargo real fixa os detalhes.
+             */
             assertThat(workbook.getSheetAt(0)
                     .getRow(15)
                     .getCell(1)
                     .getCellStyle()
-                    .getShrinkToFit()).isTrue();
+                    .getWrapText()).isTrue();
             assertThat(workbook.getSheetAt(1)
                     .getRow(62)
                     .getCell(1)

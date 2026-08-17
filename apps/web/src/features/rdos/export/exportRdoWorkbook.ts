@@ -130,11 +130,13 @@ function baseStyleId(sheetXml: string, address: string): number {
   return match ? Number(match[1]) : 0;
 }
 
-type StyleVariant = "text" | "wrapped" | "number" | "date" | "time";
+type StyleVariant = "text" | "wrapped" | "funcao" | "number" | "date" | "time";
 
 function cellVariant(cell: RdoWorkbookCellValue): StyleVariant {
   if (cell.kind === "text") {
-    return cell.presentation === "wrapped" ? "wrapped" : "text";
+    if (cell.presentation === "wrapped") return "wrapped";
+    if (cell.presentation === "funcao") return "funcao";
+    return "text";
   }
   return cell.kind;
 }
@@ -166,7 +168,11 @@ function setAlignmentAttributes(
     : content + alignment;
 }
 
-function styleVariantXml(base: string, variant: StyleVariant): string {
+function styleVariantXml(
+  base: string,
+  variant: StyleVariant,
+  reducedFontId?: number,
+): string {
   const open = /^<xf\b([^>]*?)(\/?)>/.exec(base);
   if (!open) templateError("Estilo de célula inválido no template RDO v1.");
   let attributes = open[1];
@@ -188,7 +194,56 @@ function styleVariantXml(base: string, variant: StyleVariant): string {
         : { wrapText: "0", shrinkToFit: "1" },
     );
   }
+  /*
+   * O cargo mora numa célula mesclada, onde o encolher-para-caber do Excel é
+   * ignorado. A variante troca para quebra de linha com a fonte reduzida a 16
+   * — duas linhas de ~30 caracteres na altura que o template já dá à linha —
+   * para o cargo comprido sair inteiro em vez de cortado na impressão.
+   */
+  if (variant === "funcao") {
+    attributes = replaceAttribute(attributes, "applyAlignment", "1");
+    if (reducedFontId !== undefined) {
+      attributes = replaceAttribute(attributes, "fontId", String(reducedFontId));
+      attributes = replaceAttribute(attributes, "applyFont", "1");
+    }
+    content = setAlignmentAttributes(
+      content,
+      { vertical: "center", wrapText: "1", shrinkToFit: "0" },
+    );
+  }
   return `<xf${attributes}>${content}</xf>`;
+}
+
+/**
+ * Clona a fonte de um estilo com o tamanho reduzido para 16, devolvendo o id
+ * da fonte nova — criada uma vez por fonte de origem e reaproveitada.
+ */
+function reducedFontFor(
+  styles: string,
+  baseXfXml: string,
+  cache: Map<number, { styles: string; fontId: number }>,
+): { styles: string; fontId: number } {
+  const fontIdMatch = /\bfontId="(\d+)"/.exec(baseXfXml);
+  const baseFontId = fontIdMatch ? Number(fontIdMatch[1]) : 0;
+  const cached = cache.get(baseFontId);
+  if (cached) return { styles, fontId: cached.fontId };
+
+  const fontsMatch = /<fonts\b[^>]*count="(\d+)"[^>]*>([\s\S]*?)<\/fonts>/.exec(styles);
+  if (!fontsMatch) templateError("Fontes ausentes no template RDO v1.");
+  const fonts = fontsMatch[2].match(/<font\b(?:[^>]*\/>|[^>]*>[\s\S]*?<\/font>)/g) ?? [];
+  const baseFont = fonts[baseFontId];
+  if (!baseFont) templateError(`Fonte ${baseFontId} ausente no template RDO v1.`);
+
+  const reduced = /<sz\b[^>]*\/>/.test(baseFont)
+    ? baseFont.replace(/<sz\b[^>]*\/>/, '<sz val="16"/>')
+    : baseFont.replace(/(<font\b[^>]*>)/, '$1<sz val="16"/>');
+  const fontId = fonts.length;
+  const patched = styles.replace(
+    /<fonts\b([^>]*)count="\d+"([^>]*)>([\s\S]*?)<\/fonts>/,
+    `<fonts$1count="${fonts.length + 1}"$2>$3${reduced}</fonts>`,
+  );
+  cache.set(baseFontId, { styles: patched, fontId });
+  return { styles: patched, fontId };
 }
 
 function patchStyles(
@@ -215,6 +270,7 @@ function patchStyles(
 
   const variants = new Map<string, number>();
   const appended: string[] = [];
+  const reducedFonts = new Map<number, { styles: string; fontId: number }>();
   for (const write of mapping.writes) {
     const sheetXml = sheetXmlByName[write.sheet];
     const base = baseStyleId(sheetXml, write.address);
@@ -223,8 +279,14 @@ function patchStyles(
     if (variants.has(key)) continue;
     const baseXml = baseStyles[base];
     if (!baseXml) templateError(`Estilo ${base} ausente no template RDO v1.`);
+    let reducedFontId: number | undefined;
+    if (variant === "funcao") {
+      const reduced = reducedFontFor(styles, baseXml, reducedFonts);
+      styles = reduced.styles;
+      reducedFontId = reduced.fontId;
+    }
     variants.set(key, baseStyles.length + appended.length);
-    appended.push(styleVariantXml(baseXml, variant));
+    appended.push(styleVariantXml(baseXml, variant, reducedFontId));
   }
 
   styles = styles.replace(

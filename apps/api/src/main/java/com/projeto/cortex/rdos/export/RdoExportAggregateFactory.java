@@ -39,6 +39,24 @@ public class RdoExportAggregateFactory {
      */
     private static final int OBSERVATION_LINES = 8;
     private static final int OBSERVATION_LINE_WIDTH = 120;
+    /*
+     * A célula do cargo medida, e não o chute que a acompanhava.
+     *
+     * O 18 veio do commit de importação sem memória de cálculo, e recusava
+     * cargos reais do Academy — "OPERADOR DE ROLO COMPACTADOR" tem 28. As
+     * caixas comportam mais. No PDF do servidor a coluna FUNÇÃO tem ~181
+     * pontos com fonte 5,2 e encolhimento fail-closed até 4; no do aplicativo,
+     * 56 mm com a mesma regra: quarenta caracteres em "W" — o glifo mais
+     * largo — cabem nas duas acima do piso de legibilidade. No XLSX o cargo
+     * vai na célula mesclada B..F (43,9 unidades, linha de 42,6 pontos), que
+     * na fonte cheia de 20 segura ~24 caracteres: por isso os escritores
+     * passam a dar ao cargo fonte 16 com quebra — duas linhas de ~30 na mesma
+     * altura de linha, e o cargo comprido continua legível em vez de cortado.
+     *
+     * Fica-se abaixo do medido de propósito, pela mesma razão da observação:
+     * a fonte substituta de quem abre a planilha pode vir mais larga.
+     */
+    private static final int WORKFORCE_ROLE_LIMIT = 40;
     private static final Pattern UUID_TEXT = Pattern.compile(
             "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
             Pattern.CASE_INSENSITIVE
@@ -217,7 +235,7 @@ public class RdoExportAggregateFactory {
         printable("nome da fiscalização", rdo.fiscalizacaoCampo(), 40);
 
         for (WorkforceGroup group : workforce) {
-            printable("cargo", group.role(), 18);
+            printable("cargo", group.role(), WORKFORCE_ROLE_LIMIT);
         }
         for (RdoResponse.EquipamentoItem item : equipment) {
             printable("descrição do equipamento", item.descricao(), 24);

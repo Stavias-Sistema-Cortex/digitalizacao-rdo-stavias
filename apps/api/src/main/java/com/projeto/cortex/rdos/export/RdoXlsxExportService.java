@@ -23,8 +23,10 @@ import org.apache.poi.openxml4j.opc.PackageRelationshipTypes;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
@@ -341,11 +343,18 @@ public class RdoXlsxExportService {
     ) {
         BigDecimal ownTotal = BigDecimal.ZERO;
         BigDecimal subcontractedTotal = BigDecimal.ZERO;
+        CellStyle roleStyle = null;
         for (int index = 0; index < groups.size(); index++) {
             WorkforceGroup group = groups.get(index);
             boolean right = index % 2 == 1;
             int row = 16 + index / 2;
-            text(sheet, (right ? "M" : "B") + row, group.role());
+            roleStyle = roleText(
+                    workbook,
+                    sheet,
+                    (right ? "M" : "B") + row,
+                    group.role(),
+                    roleStyle
+            );
             String ownCell = (right ? "R" : "G") + row;
             String subcontractedCell = (right ? "U" : "J") + row;
             if (group.subcontracted()) {
@@ -583,6 +592,55 @@ public class RdoXlsxExportService {
         style.setShrinkToFit(true);
         style.setWrapText(false);
         target.setCellStyle(style);
+    }
+
+    /**
+     * Escreve o cargo com fonte 16 e quebra de linha, em vez do
+     * encolher-para-caber dos demais textos.
+     *
+     * <p>O encolher-para-caber não funciona em célula mesclada — o Excel o
+     * ignora ali —, e o cargo mora exatamente numa: B..F (ou M..Q). Na fonte
+     * cheia de 20, a célula segura ~24 caracteres e o resto era cortado na
+     * impressão. Na 16 com quebra cabem duas linhas de ~30 dentro dos mesmos
+     * 42,6 pontos de altura, e um cargo real do Academy — "OPERADOR DE ROLO
+     * COMPACTADOR" — sai inteiro e legível.
+     *
+     * <p>O estilo é criado uma vez e reaproveitado pelas 28 células: elas
+     * partem do mesmo estilo de template, e um clone por célula incharia a
+     * tabela de estilos do arquivo à toa.
+     */
+    private CellStyle roleText(
+            Workbook workbook,
+            Sheet sheet,
+            String address,
+            String value,
+            CellStyle reusableStyle
+    ) {
+        if (value == null || value.isBlank()) {
+            return reusableStyle;
+        }
+        Cell target = cell(sheet, address);
+        target.setCellValue(safeText(value));
+        CellStyle style = reusableStyle;
+        if (style == null) {
+            style = workbook.createCellStyle();
+            style.cloneStyleFrom(target.getCellStyle());
+            style.setWrapText(true);
+            style.setShrinkToFit(false);
+            style.setVerticalAlignment(VerticalAlignment.CENTER);
+            Font base = workbook.getFontAt(
+                    target.getCellStyle().getFontIndex()
+            );
+            Font reduced = workbook.createFont();
+            reduced.setFontName(base.getFontName());
+            reduced.setBold(base.getBold());
+            reduced.setItalic(base.getItalic());
+            reduced.setColor(base.getColor());
+            reduced.setFontHeightInPoints((short) 16);
+            style.setFont(reduced);
+        }
+        target.setCellStyle(style);
+        return style;
     }
 
     private void number(

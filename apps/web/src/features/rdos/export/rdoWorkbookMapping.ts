@@ -41,7 +41,7 @@ export const RDO_WORKBOOK_FIELDS = {
 export type RdoWorkbookField = keyof typeof RDO_WORKBOOK_FIELDS;
 
 export type RdoWorkbookCellValue =
-  | { kind: "text"; value: string; presentation?: "default" | "wrapped" }
+  | { kind: "text"; value: string; presentation?: "default" | "wrapped" | "funcao" }
   | { kind: "number"; value: number }
   | { kind: "date"; value: string }
   | { kind: "time"; value: string };
@@ -165,7 +165,9 @@ export function mapRdoWorkbook(snapshot: RdoWorkbookSnapshot): RdoWorkbookMappin
   workforce.forEach((group, index) => {
     const right = index % 2 === 1;
     const row = 16 + Math.floor(index / 2);
-    write(writes, "workforce.rows", RDO_FRONT_SHEET, `${right ? "M" : "B"}${row}`, { kind: "text", value: group.role });
+    // O cargo é a única célula mesclada com texto de gente: encolher-para-
+    // caber não funciona nela, então a variante troca para fonte 16 com quebra.
+    write(writes, "workforce.rows", RDO_FRONT_SHEET, `${right ? "M" : "B"}${row}`, { kind: "text", value: group.role, presentation: "funcao" });
     const quantityColumn = group.subcontracted ? (right ? "U" : "J") : (right ? "R" : "G");
     write(writes, "workforce.rows", RDO_FRONT_SHEET, `${quantityColumn}${row}`, { kind: "number", value: group.quantity });
     if (group.subcontracted) subcontractedWorkforce += group.quantity;
