@@ -1,3 +1,6 @@
+import "fake-indexeddb/auto";
+
+import { openDB } from "idb";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { scopeFingerprint } from "../../lib/db/localDataNamespace";
@@ -13,6 +16,10 @@ import {
   openPasswordOfflineVault,
   resealPasswordOfflineVault,
 } from "./passwordOfflineVault";
+import {
+  deleteCollaborativeOfflineGrantMetadata,
+  replaceLegacyGrantAfterV3Save,
+} from "./offlineVaultRepository";
 import { fromBase64Url, toBase64Url } from "./webauthnCodec";
 
 const NOW = Date.parse("2026-07-14T12:00:00Z");
@@ -88,6 +95,49 @@ describe("passwordOfflineVault", () => {
         },
       },
     });
+  });
+
+  it("writes the generated v3 envelope to IndexedDB without clear identity or grant", async () => {
+    const fixture = await signedGrantFixture();
+    const metadata = await createVault(fixture.grant);
+
+    await replaceLegacyGrantAfterV3Save(null, metadata);
+    const database = await openDB("cortex-auth-vaults");
+    const persistedRecord = await database.get("cpf_grants", metadata.key);
+    database.close();
+
+    expect(persistedRecord).toEqual(metadata);
+    expect(Object.keys(persistedRecord as object).sort()).toEqual([
+      "atualizadoEm",
+      "ciphertext",
+      "cpfSalt",
+      "cpfVerifier",
+      "failedAttemptState",
+      "iv",
+      "kdf",
+      "kdfIterations",
+      "key",
+      "passwordSalt",
+      "serverKeyFingerprint",
+      "versao",
+    ]);
+    const serializedRecord = JSON.stringify(persistedRecord);
+    for (const clearValue of [
+      CPF,
+      PASSWORD,
+      fixture.grant.payload,
+      fixture.claims.nome,
+      fixture.claims.papelAcesso,
+      OWNER_ID,
+      WORKSITE_ID,
+      fixture.claims.expiraEm,
+    ]) {
+      expect(serializedRecord).not.toContain(clearValue);
+    }
+    expect(serializedRecord).not.toContain('"authEpoch"');
+    expect(serializedRecord).not.toContain('"lastTrustedTime"');
+
+    await deleteCollaborativeOfflineGrantMetadata(metadata.key);
   });
 
   it("returns the same bounded rejection for wrong CPF and wrong password", async () => {
