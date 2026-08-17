@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 
 import { InstitutionalPageHeader } from "../../components/institutional/InstitutionalPageHeader";
@@ -329,17 +330,51 @@ function MedidasDoServicoCalculadas({
         }
       />
       {item.unidade && medida === null ? (
-        <p className="rdo-servico-medidas__aviso" role="status">
+        <NotaDeCampo rotulo="Por que não há quantidade nesta linha">
           Este serviço é medido em {item.unidade}, que não sai do trecho.
           Informe a quantidade pelo Financeiro.
-        </p>
+        </NotaDeCampo>
       ) : null}
       {medida !== null && quantidade === null ? (
-        <p className="rdo-servico-medidas__aviso" role="status">
+        <NotaDeCampo rotulo="O que falta para fechar a quantidade">
           Faltam medidas para fechar a quantidade em {item.unidade}.
-        </p>
+        </NotaDeCampo>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * O que falta na linha, atrás de um "i".
+ *
+ * <p>Estes textos são curtos e certeiros, e por isso mesmo não precisam gritar.
+ * Como blocos — um tarjado de vermelho ao lado do campo, outro atravessando a
+ * faixa das medidas — eles tomavam mais espaço na tela do que o serviço que
+ * estavam descrevendo, e um formulário com quatro frentes lançadas virava uma
+ * parede de avisos sobre coisas que se resolvem num toque.
+ *
+ * <p>O marcador fica; o texto se recolhe. Quem está apontando vê que aquela
+ * linha ainda quer alguma coisa e segue lançando as outras; quem quiser saber
+ * o quê, toca. É {@code <details>} nativo de propósito — abre no dedo, sem
+ * depender de passar o mouse, que no celular não existe, e sem estado para a
+ * tela administrar.
+ *
+ * <p>O texto continua no documento com {@code role="status"}: o leitor de tela
+ * o anuncia quando aparece, e recolhê-lo é decisão visual, não uma forma de
+ * esconder o que a linha precisa.
+ */
+function NotaDeCampo({
+  rotulo,
+  children,
+}: {
+  rotulo: string;
+  children: ReactNode;
+}) {
+  return (
+    <details className="nota-de-campo">
+      <summary aria-label={rotulo}>i</summary>
+      <p role="status">{children}</p>
+    </details>
   );
 }
 
@@ -1879,6 +1914,12 @@ export function RdoCreatePage({
               </div>
 
               <div className="form-grid">
+                {/*
+                  O "i" mora no canto do campo que ele descreve, na altura do
+                  rótulo. Solto numa célula do grid, seria um marcador sem dono
+                  a três colunas de distância do que está faltando.
+                */}
+                <div className="campo-com-nota">
                 <LookupField
                   label="Tipo de serviço"
                   value={item.servicoNome}
@@ -1928,10 +1969,12 @@ export function RdoCreatePage({
                 />
 
                 {servicoExecutadoNeedsCatalogSelection(item) ? (
-                  <p className="notice notice-error" role="alert">
-                    Selecione no catálogo um serviço com unidade válida antes de sincronizar esta linha.
-                  </p>
+                  <NotaDeCampo rotulo="O que falta neste serviço">
+                    Selecione no catálogo um serviço com unidade válida antes
+                    de sincronizar esta linha.
+                  </NotaDeCampo>
                 ) : null}
+                </div>
 
                 <label>
                   Pista

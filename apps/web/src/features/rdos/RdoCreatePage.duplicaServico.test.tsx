@@ -237,9 +237,24 @@ describe("duplicar um serviço executado", () => {
   it("avisa que a cópia ainda espera um serviço do catálogo", () => {
     renderizar();
 
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.queryByLabelText("O que falta neste serviço"),
+    ).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Duplicar" }));
+
+    // O marcador aparece na linha nova; o texto vem no toque. Recolhido é
+    // decisão visual, não sumiço: o texto continua no documento, e o leitor
+    // de tela o anuncia.
+    const marcador = screen.getByLabelText("O que falta neste serviço");
+    expect(marcador).toBeVisible();
+    expect(
+      screen.getByText(
+        /Selecione no catálogo um serviço com unidade válida/,
+      ),
+    ).not.toBeVisible();
+
+    fireEvent.click(marcador);
 
     expect(
       screen.getByText(

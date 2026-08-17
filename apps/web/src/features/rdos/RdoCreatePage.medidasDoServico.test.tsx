@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createEmptyRdo, createEmptyServicoExecutado } from "./createEmptyRdo";
@@ -195,6 +201,12 @@ describe("as medidas calculadas do serviço", () => {
     renderizarComUnidade("t");
 
     expect(screen.queryByText("quantidade")).toBeNull();
+
+    // O porquê fica atrás do "i", como todo aviso de linha.
+    fireEvent.click(
+      screen.getByLabelText("Por que não há quantidade nesta linha"),
+    );
+
     expect(
       screen.getByText(/Este serviço é medido em t, que não sai do trecho/),
     ).toBeVisible();

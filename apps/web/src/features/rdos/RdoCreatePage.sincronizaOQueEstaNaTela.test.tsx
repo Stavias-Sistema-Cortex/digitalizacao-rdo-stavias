@@ -208,6 +208,17 @@ async function selecionarFresagem() {
   }));
 }
 
+/*
+ * O aviso da linha vive recolhido atrás de um "i" — presente no documento, a um
+ * toque de quem olha. O teste lê o texto onde ele está, e não o estado da
+ * gaveta, porque o que ele guarda é o que a linha diz estar faltando.
+ */
+function avisoDaLinha(): HTMLElement {
+  const nota = document.querySelector(".nota-de-campo p");
+  if (!nota) throw new Error("A linha não trouxe aviso nenhum.");
+  return nota as HTMLElement;
+}
+
 function apertarSincronizar() {
   fireEvent.click(screen.getByRole("button", { name: "Sincronizar agora" }));
 }
@@ -306,7 +317,7 @@ describe("serviço sem catálogo", () => {
     expect(screen.getByRole("link", {
       name: /Serviços.*Seção pendente/i,
     })).toBeVisible();
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(avisoDaLinha()).toHaveTextContent(
       "Selecione no catálogo um serviço com unidade válida antes de sincronizar esta linha.",
     );
 
@@ -341,7 +352,7 @@ describe("unidade vinda do catálogo de preços", () => {
 
       await selecionarFresagem();
 
-      expect(screen.getByRole("alert")).toHaveTextContent(
+      expect(avisoDaLinha()).toHaveTextContent(
         "Selecione no catálogo um serviço com unidade válida antes de sincronizar esta linha.",
       );
       apertarSincronizar();

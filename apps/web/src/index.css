@@ -771,6 +771,82 @@ textarea:focus {
   content: "· ";
 }
 
+/* O aviso de linha, recolhido atrás de um "i".
+ *
+ * Como bloco tarjado ele tomava mais espaço na tela do que o serviço que
+ * estava descrevendo, e um formulário com quatro frentes virava uma parede de
+ * avisos sobre coisas que se resolvem num toque. O marcador fica; o texto se
+ * recolhe até alguém pedir por ele. */
+.campo-com-nota {
+  position: relative;
+}
+
+.campo-com-nota > .nota-de-campo {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.nota-de-campo {
+  position: relative;
+  align-self: center;
+}
+
+.nota-de-campo > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #c4d3cc;
+  border-radius: 50%;
+  color: var(--color-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  font-style: italic;
+  line-height: 1;
+  cursor: pointer;
+  /* Some o triângulo que o navegador põe antes do resumo; aqui o resumo é o
+   * próprio ícone. */
+  list-style: none;
+}
+
+.nota-de-campo > summary::-webkit-details-marker {
+  display: none;
+}
+
+.nota-de-campo[open] > summary {
+  border-color: var(--color-focus);
+  background: #eef5f3;
+  color: var(--color-focus);
+}
+
+/* Sobre o formulário, e não empurrando-o: abrir um aviso não pode remexer os
+ * campos que a pessoa está preenchendo. */
+.nota-de-campo > p {
+  position: absolute;
+  z-index: 5;
+  top: 26px;
+  right: 0;
+  width: max-content;
+  max-width: min(260px, 70vw);
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(24, 33, 31, 0.12);
+  color: var(--color-graphite);
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.rdo-servico-medidas > .nota-de-campo > p {
+  right: auto;
+  left: 0;
+}
+
 .row-title {
   display: flex;
   justify-content: space-between;
