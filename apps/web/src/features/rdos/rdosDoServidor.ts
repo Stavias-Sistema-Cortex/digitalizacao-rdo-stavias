@@ -8,6 +8,7 @@ import type { LocalRdoRecord } from "../../lib/db/db.types";
 import { buscarRdoAutoritativoPorId } from "./rdoLookupApi";
 import { listCachedAuthorizedRdoWorksites } from "./rdoCreationContextRepository";
 import { limparRastroLocalDoRdo } from "./rdoLifecycle";
+import { semearFichasDeAnexoDoServidor } from "./rdoPhotoSync";
 
 /**
  * Os RDOs que existem no servidor, trazidos para este aparelho.
@@ -349,6 +350,21 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
       updatedAt: remoto.atualizadoEm ?? agora,
       servidorAtualizadoEm: remoto.atualizadoEm ?? agora,
     } as LocalRdoRecord);
+    /*
+     * As fichas dos anexos descem junto com o conteúdo. Sem isto o aparelho
+     * que não fotografou ficava com a loja de anexos vazia: o RDO chegava com
+     * a lista de fotos dentro do payload e a tela, que lê a loja, não via
+     * nenhuma. A ficha nasce sem binário; o download preenche quando alguém
+     * abrir a foto.
+     */
+    try {
+      await semearFichasDeAnexoDoServidor(
+        remoto.id,
+        (autoritativo.rdo as Record<string, unknown>).attachments,
+      );
+    } catch {
+      // Ficha que não semeou fica para a próxima passagem; o RDO já desceu.
+    }
     resultado.detalhados += 1;
   }
 

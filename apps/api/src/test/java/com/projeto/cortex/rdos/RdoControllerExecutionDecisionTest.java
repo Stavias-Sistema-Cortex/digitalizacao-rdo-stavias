@@ -35,7 +35,8 @@ class RdoControllerExecutionDecisionTest {
             mock(RdoWorkflowService.class),
             mock(RdoDeletionService.class),
             currentUserService,
-            decisionService
+            decisionService,
+            mock(RdoAttachmentObjectService.class)
     );
 
     @Test

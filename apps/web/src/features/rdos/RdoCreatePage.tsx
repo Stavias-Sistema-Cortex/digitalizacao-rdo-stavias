@@ -19,6 +19,7 @@ import {
   putRdoAttachment,
 } from "../../lib/db/rdoAttachmentRepository";
 import { getLocalRdo } from "../../lib/db/rdoRepository";
+import { garantirArquivoDaFoto } from "./rdoPhotoSync";
 import {
   rascunhoDifereDoQueEstaGravado,
   servicoExecutadoNeedsCatalogSelection,
@@ -802,6 +803,24 @@ export function RdoCreatePage({
       const previews: Record<string, string> = {};
 
       for (const attachment of attachments) {
+        /*
+         * A ficha que veio de outro aparelho chega sem o binário: a foto mora
+         * no servidor até o primeiro download. O cartão aparece já — é o que
+         * diz que a foto existe — e o download preenche a imagem, gravando o
+         * blob de volta na ficha para as próximas aberturas serem offline.
+         */
+        if (!attachment.arquivo) {
+          void garantirArquivoDaFoto(attachment).then((blob) => {
+            if (cancelled || !blob) return;
+            const url = URL.createObjectURL(blob);
+            previewUrlsRef.current.add(url);
+            setPhotoPreviews((current) => ({
+              ...current,
+              [attachment.id]: url,
+            }));
+          });
+          continue;
+        }
         const url = URL.createObjectURL(attachment.arquivo);
         previewUrlsRef.current.add(url);
         previews[attachment.id] = url;

@@ -11,7 +11,8 @@ export interface ProcessRdoPhotoInput {
 }
 
 export interface ProcessRdoPhotoResult {
-  attachment: RdoAttachmentRecord;
+  /** A ficha recém-processada sempre carrega o binário: a foto acabou de sair da câmera deste aparelho. */
+  attachment: RdoAttachmentRecord & { arquivo: Blob };
   wasCompressed: boolean;
 }
 
@@ -29,7 +30,7 @@ export async function processRdoPhoto({
   const blob = compressed.blob;
   const wasCompressed = blob.size < file.size;
 
-  const attachment: RdoAttachmentRecord = {
+  const attachment: RdoAttachmentRecord & { arquivo: Blob } = {
     id: crypto.randomUUID(),
     rdoId,
     obraId,

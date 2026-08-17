@@ -656,7 +656,21 @@ export interface RdoAttachmentRecord {
   tamanhoOriginalBytes: number;
   tamanhoComprimidoBytes: number;
 
-  arquivo: Blob;
+  /**
+   * O binário da foto, ou null quando esta ficha veio de outro aparelho e o
+   * conteúdo ainda não foi baixado. O download preenche o campo — cache de
+   * volta — e a foto passa a existir offline aqui também.
+   */
+  arquivo: Blob | null;
+
+  /**
+   * O objeto onde o binário mora no servidor, gravado quando o upload deste
+   * aparelho amarrou, ou trazido pela hidratação quando outro aparelho subiu.
+   * Ausente (registros antigos) ou null = a foto ainda não tem morada remota.
+   */
+  storedObjectId?: string | null;
+  /** O hash do binário, calculado no upload para a integridade do vínculo. */
+  sha256?: string | null;
 
   syncStatus: AttachmentSyncStatus;
   ultimoErro: string | null;

@@ -199,7 +199,8 @@ public class RdoAttachmentService {
                     criado_em,
                     atualizado_em,
                     removido_em,
-                    metadata_json
+                    metadata_json,
+                    stored_object_id
                 FROM rdo_attachment
                 WHERE rdo_id = ?
                 ORDER BY criado_em, id
@@ -219,7 +220,8 @@ public class RdoAttachmentService {
                         toLocalDateTime(rs.getTimestamp("criado_em")),
                         toLocalDateTime(rs.getTimestamp("atualizado_em")),
                         toLocalDateTime(rs.getTimestamp("removido_em")),
-                        fromJson(rs.getString("metadata_json"))
+                        fromJson(rs.getString("metadata_json")),
+                        rs.getString("stored_object_id")
                 ),
                 rdoId
         );

@@ -79,7 +79,8 @@ class Cortex3ObjectAuthorizationTest {
                 mock(RdoWorkflowService.class),
                 mock(RdoDeletionService.class),
                 currentUser,
-                mock(com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService.class)
+                mock(com.projeto.cortex.financeiro.revenue.RdoExecutionDecisionService.class),
+                mock(com.projeto.cortex.rdos.RdoAttachmentObjectService.class)
         );
 
         assertThatThrownBy(() -> controller.atualizarRascunho(

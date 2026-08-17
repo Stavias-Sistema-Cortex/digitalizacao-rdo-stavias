@@ -1,4 +1,5 @@
 import { processObjectUploads } from "../../features/mensagens/objectUploadSync";
+import { processRdoPhotoUploads } from "../../features/rdos/rdoPhotoSync";
 import { refreshMessagingAfterPull } from "../../features/mensagens/mensagensHydration";
 import {
   hydrateBlockedRdoCreationContextsForSync,
@@ -149,6 +150,14 @@ async function executeSync(
     await assertSyncExecution(guard, lease);
     const uploadSummary = await processObjectUploads(20, guard);
     await assertSyncExecution(guard, lease);
+    /*
+     * As fotos de RDO sobem no mesmo ponto do ciclo em que os objetos de
+     * mensagem sobem, e pela mesma razão: é trabalho de binário, não de
+     * mutação. Uma foto que falha não derruba o ciclo — ela fica no aparelho
+     * e tenta de novo na próxima janela.
+     */
+    await reparoSemDerrubarOCiclo("fotos de RDO", () =>
+      processRdoPhotoUploads(guard));
     // Fora do portão da fila vazia de propósito: os uploads deste mesmo ciclo
     // podem ter acabado de criar as linhas que estes dois passos resolvem.
     await reparoSemDerrubarOCiclo("substituições de upload", () =>

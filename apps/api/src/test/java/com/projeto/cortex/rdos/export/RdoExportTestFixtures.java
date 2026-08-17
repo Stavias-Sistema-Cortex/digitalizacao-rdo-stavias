@@ -57,7 +57,8 @@ final class RdoExportTestFixtures {
                 List.of(new RdoResponse.AttachmentItem(
                         "att-1", id, "obra-7", "FOTO", "foto", "foto.jpg",
                         "image/jpeg", 10L, 8L, 8L, "SINCRONIZADO", null, null,
-                        null, Map.of("email", "must-not-be-exported@example.com")
+                        null, Map.of("email", "must-not-be-exported@example.com"),
+                        null
                 ))
         );
     }

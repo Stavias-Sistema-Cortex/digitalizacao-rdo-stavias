@@ -45,6 +45,7 @@ const mocks = vi.hoisted(() => ({
   podar: vi.fn(async () => 0),
   ensureDevice: vi.fn(async () => "device"),
   uploads: vi.fn(async () => ({ pushed: 0, applied: 0, errors: 0 })),
+  fotosRdo: vi.fn(async () => ({ enviadas: 0, falhas: 0 })),
   push: vi.fn(async () => ({
     pushed: 0,
     applied: 0,
@@ -116,6 +117,11 @@ vi.mock("./registerDevice", () => ({
 }));
 vi.mock("../../features/mensagens/objectUploadSync", () => ({
   processObjectUploads: mocks.uploads,
+}));
+vi.mock("../../features/rdos/rdoPhotoSync", () => ({
+  processRdoPhotoUploads: mocks.fotosRdo,
+  semearFichasDeAnexoDoServidor: vi.fn(async () => 0),
+  garantirArquivoDaFoto: vi.fn(async () => null),
 }));
 vi.mock("./pushOutbox", () => ({ pushOutbox: mocks.push }));
 vi.mock("./pullEvents", () => ({ pullEvents: mocks.pull }));

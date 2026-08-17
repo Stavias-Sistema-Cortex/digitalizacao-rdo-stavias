@@ -307,7 +307,13 @@ public record RdoResponse(
             LocalDateTime createdAt,
             LocalDateTime updatedAt,
             LocalDateTime removedAt,
-            Map<String, Object> metadata
+            Map<String, Object> metadata,
+            /**
+             * O objeto onde o binário da foto mora no servidor, ou null
+             * enquanto o upload não aconteceu. É o que diz aos outros
+             * aparelhos que a foto existe para ser baixada.
+             */
+            String storedObjectId
     ) {
     }
 }
