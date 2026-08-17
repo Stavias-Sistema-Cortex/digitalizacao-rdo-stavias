@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 @Profile("postgresql-common")
-public final class PostgresqlPasswordSetupStore
+public class PostgresqlPasswordSetupStore
         implements PasswordSetupStore {
 
     private final JdbcTemplate jdbcTemplate;

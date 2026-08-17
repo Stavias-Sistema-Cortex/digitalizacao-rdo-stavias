@@ -8,7 +8,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 @Profile("postgresql-common")
-public final class PostgresqlPasswordCredentialRepository
+public class PostgresqlPasswordCredentialRepository
         implements PasswordCredentialRepository {
 
     private final JdbcTemplate jdbcTemplate;

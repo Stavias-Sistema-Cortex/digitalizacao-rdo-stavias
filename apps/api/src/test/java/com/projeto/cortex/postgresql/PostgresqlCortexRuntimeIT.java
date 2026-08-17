@@ -80,6 +80,7 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
     private static final PostgreSQLContainer<?> DATABASE =
             database();
     private static final Path CPF_KEY_FILE = secretFile('b');
+    private static final Path PASSWORD_SETUP_KEY_FILE = secretFile('c');
     private static final Path MEMORY_CURSOR_KEY_FILE = secretFile('d');
     private static final OfflineKeyFiles OFFLINE_KEYS = offlineKeyFiles();
 
@@ -93,6 +94,10 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
         properties.add("cortex.postgresql.runtime-ready", () -> "true");
         properties.add("cortex.auth.cpf-hmac.current-key-id", () -> "runtime-it");
         properties.add("cortex.auth.cpf-hmac.current-key-file", CPF_KEY_FILE::toString);
+        properties.add(
+                "cortex.auth.password-setup.hmac-key-file",
+                PASSWORD_SETUP_KEY_FILE::toString
+        );
         properties.add("cortex.storage.provider", () -> "s3");
         properties.add("cortex.storage.s3.bucket", () -> "runtime-it");
         properties.add("cortex.storage.s3.region", () -> "us-east-1");

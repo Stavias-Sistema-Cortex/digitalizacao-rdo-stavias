@@ -17,7 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** First-access and reset state machine for individual passwords. */
 @Service
 @Profile("postgresql-common")
-public final class PasswordSetupService {
+public class PasswordSetupService {
 
     static final int TTL_SECONDS = 1800;
     static final int MAX_ATTEMPTS = 5;
