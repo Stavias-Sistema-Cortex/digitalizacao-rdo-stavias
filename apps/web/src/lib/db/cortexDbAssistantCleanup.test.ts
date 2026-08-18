@@ -127,4 +127,31 @@ describe("IndexedDB assistant cleanup", () => {
     ).toMatchObject({ id: "cache-preservado", value: 42 });
     await verification.done;
   });
+
+  it("releases its open connection when another tab needs a newer database version", async () => {
+    await getCortexDb();
+
+    let openedBeforeFallback = false;
+    const futureOpen = openDB(databaseName, CORTEX_DATABASE_VERSION + 1, {
+      upgrade(database) {
+        database.createObjectStore("future_upgrade_probe");
+      },
+    }).then((database) => {
+      openedBeforeFallback = true;
+      return database;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const releasedOnVersionChange = openedBeforeFallback;
+
+    // Keep the RED path bounded: old behavior only releases the upgrade once
+    // this explicit cleanup closes the connection held by getCortexDb().
+    if (!releasedOnVersionChange) {
+      await closeCortexDb();
+    }
+    const upgraded = await futureOpen;
+    upgraded.close();
+
+    expect(releasedOnVersionChange).toBe(true);
+  });
 });

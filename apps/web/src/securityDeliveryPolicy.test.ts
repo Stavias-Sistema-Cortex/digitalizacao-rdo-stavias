@@ -62,6 +62,20 @@ describe("frontend security delivery policy", () => {
       "RUN sh ./validate-docker-build-args.sh"
     );
   });
+
+  it("never serves the stable service-worker URL as an immutable asset", async () => {
+    const nginxConfig = await readFile(webFile("nginx.conf"), "utf8");
+    const serviceWorkerLocation = nginxConfig.indexOf("location = /sw.js");
+    const immutableAssetsLocation = nginxConfig.indexOf(
+      "location ~* \\.(?:js|css|svg|png|ico|webp|woff|woff2|ttf)$",
+    );
+
+    expect(serviceWorkerLocation).toBeGreaterThanOrEqual(0);
+    expect(serviceWorkerLocation).toBeLessThan(immutableAssetsLocation);
+    expect(
+      nginxConfig.slice(serviceWorkerLocation, immutableAssetsLocation),
+    ).toContain('add_header Cache-Control "no-cache";');
+  });
   /**
    * O `_headers` é o caminho por onde a PWA chega de verdade a quem usa: é o
    * Cloudflare Pages que serve produção. Nginx e o preview do Vite tinham

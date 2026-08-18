@@ -1015,9 +1015,13 @@ export async function getCortexDb(): Promise<
         );
       },
 
-      blocking() {
+      blocking(_currentVersion, _blockedVersion, event) {
+        const connection = event.target as IDBDatabase | null;
+        connection?.close();
+        databasePromises.delete(databaseName);
+
         console.warn(
-          "Esta aba está bloqueando uma nova versão do IndexedDB.",
+          "A conexão local antiga foi fechada para permitir a atualização do IndexedDB.",
         );
       },
 
