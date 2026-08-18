@@ -59,7 +59,12 @@
   font: inherit;
 }
 
-.gestao-obras button {
+/*
+ * Só os botões de ação são escuros. O seletor pegava todo <button> do
+ * módulo — inclusive a linha de obra da lista e o Revogar, que herdavam
+ * texto branco sobre fundo claro e sumiam da tela.
+ */
+.gestao-obras button:not(.gestao-obras-item):not(.gestao-obras-revogar) {
   border: none;
   border-radius: 8px;
   padding: 8px 14px;
@@ -96,7 +101,6 @@
 
 .gestao-obras-item.ativo {
   background: #f7f9f7;
-  box-shadow: inset 3px 0 0 var(--color-brand-yellow);
 }
 
 .gestao-obras-item.ativo:focus-visible {
@@ -189,10 +193,11 @@
 }
 
 .gestao-obras-revogar {
-  background: #fee2e2 !important;
+  border: 1px solid #dfc0bc;
+  background: #f9eceb;
   color: var(--color-danger);
   font-size: 0.78rem;
-  padding: 4px 10px !important;
+  padding: 4px 10px;
 }
 
 .gestao-papeis {
@@ -418,7 +423,7 @@
   box-shadow: none;
 }
 
-.gestao-obras button,
+.gestao-obras button:not(.gestao-obras-item):not(.gestao-obras-revogar),
 .gestao-papeis .gestao-papeis-salvar {
   border: 1px solid var(--color-ink);
   background: var(--color-ink);
@@ -431,10 +436,10 @@
   color: var(--color-ink);
 }
 
+/* Selecionada é a borda inteira no amarelo dos chips ativos, não uma barra. */
 .gestao-obras-item.ativo {
-  border-color: var(--color-border-strong);
+  border-color: #d6b000;
   background: var(--color-surface);
-  box-shadow: inset 1px 0 0 #f2c300;
 }
 
 .gestao-papeis-atual,
@@ -446,7 +451,7 @@
 
 .obras-detail-header {
   padding-top: 14px;
-  border-top: 1px solid #f2c300;
+  border-top: 1px solid var(--color-border);
 }
 
 .obras-detail-state,

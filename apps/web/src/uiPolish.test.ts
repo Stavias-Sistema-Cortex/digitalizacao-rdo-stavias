@@ -650,14 +650,17 @@ describe("polimento visual da plataforma autenticada", () => {
     );
     expect(nestedPdor).toContain("background: transparent;");
 
+    /*
+     * A tarja amarela no topo da célula principal saiu a pedido do dono do
+     * produto — barra de acento em card lia como enfeite de ferramenta, não
+     * como hierarquia. O destaque passou a ser a borda inteira mais firme.
+     */
     const pdorMain = lastRule(
       globalCss,
       ".obras-pdor-grid .obras-pdor-main",
     );
-    expect(pdorMain).toContain("border: 1px solid var(--color-border);");
-    expect(pdorMain).toContain(
-      "border-top: 3px solid var(--color-brand-yellow);",
-    );
+    expect(pdorMain).toContain("border: 1px solid var(--color-border-strong);");
+    expect(pdorMain).not.toContain("border-top: 3px");
 
     const active = rule(globalCss, ".obras-list-item.active");
     expect(active).toContain("border-color: var(--color-border);");
@@ -766,12 +769,21 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(column).toContain("background: var(--surface-glass-fallback);");
     expect(column).toContain("box-shadow: var(--glass-shadow);");
 
+    /*
+     * A barra lateral de seleção saiu junto com as demais tarjas de card: a
+     * obra selecionada agora fecha a borda inteira no amarelo dos chips
+     * ativos, e nenhum botão do módulo herda o escuro-com-branco dos botões
+     * de ação — era esse seletor guloso que deixava o nome da obra branco
+     * sobre cartão claro.
+     */
     const active = rule(gestaoObrasCss, ".gestao-obras-item.ativo");
     expect(active).toContain("background: #f7f9f7;");
-    expect(active).toContain(
-      "box-shadow: inset 3px 0 0 var(--color-brand-yellow);",
-    );
+    expect(active).not.toContain("box-shadow: inset");
     expect(active).not.toContain("outline: none;");
+    const activeLate = lastRule(gestaoObrasCss, ".gestao-obras-item.ativo");
+    expect(activeLate).toContain("border-color: #d6b000;");
+    expect(activeLate).not.toContain("box-shadow: inset");
+    expect(gestaoObrasCss).not.toMatch(/\.gestao-obras button\s*[,{]/);
 
     const activeFocus = rule(
       gestaoObrasCss,

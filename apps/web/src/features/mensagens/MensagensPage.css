@@ -345,7 +345,6 @@
 
 .mensagens-conversation-list > li > button.active {
   background: var(--color-canvas);
-  box-shadow: inset 3px 0 var(--color-brand-teal);
 }
 
 /* ---- Avatares ------------------------------------------------------------ */
@@ -1486,9 +1485,9 @@
     color var(--transition-functional);
 }
 
+/* A conversa aberta se marca por um fundo um passo mais firme que o hover. */
 .mensagens-conversation-list > li > button.active {
-  background: var(--color-surface);
-  box-shadow: inset 3px 0 var(--color-ink);
+  background: #e6ebe8;
 }
 
 /* O retrato tem tinta própria por conversa (ver "Tintas de canteiro"); aqui só

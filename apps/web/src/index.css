@@ -1714,7 +1714,6 @@ textarea:focus {
   gap: 14px;
   padding: 20px;
   border: 1px solid var(--color-border);
-  border-top: 2px solid var(--color-brand-teal);
   background: var(--color-surface);
 }
 
@@ -2567,7 +2566,7 @@ textarea:focus {
 }
 
 .obras-pdor-grid .obras-pdor-main {
-  border-top: 3px solid #fed203;
+  border-color: var(--color-border-strong);
 }
 
 .obras-pdor-grid dt {
@@ -2874,9 +2873,9 @@ textarea:focus {
   border: 1px solid rgb(197 159 24 / 34%);
 }
 
+/* A célula principal se destaca pela borda mais firme, não por uma tarja. */
 .obras-pdor-grid .obras-pdor-main {
-  border: 1px solid var(--color-border);
-  border-top: 3px solid var(--color-brand-yellow);
+  border: 1px solid var(--color-border-strong);
   background: var(--color-surface);
 }
 

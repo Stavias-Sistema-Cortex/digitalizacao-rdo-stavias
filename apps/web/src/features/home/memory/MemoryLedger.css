@@ -35,7 +35,7 @@
   justify-content: space-between;
   gap: 24px;
   padding: 18px 16px;
-  border-top: 4px solid var(--memory-asphalt);
+  border-top: 1px solid var(--color-border);
 }
 
 .memory-ledger__header h2 {
@@ -216,7 +216,6 @@
 
 .memory-query__search input {
   height: 38px;
-  border-left: 3px solid var(--memory-safety);
   font-size: 0.8rem;
 }
 
@@ -259,8 +258,9 @@
   color: var(--memory-survey);
 }
 
+/* O alerta é a borda inteira da caixa, não uma tarja lateral. */
 .memory-review {
-  border-left: 4px solid var(--memory-alert);
+  border: 1px solid var(--memory-alert);
 }
 
 .memory-review > header {
@@ -738,7 +738,7 @@
 
 /* Substituição por edição própria narra histórico: sem a borda de alarme. */
 .memory-review--substituicao {
-  border-left-color: var(--color-line);
+  border-color: var(--color-line);
 }
 
 .memory-review--substituicao h3 {
