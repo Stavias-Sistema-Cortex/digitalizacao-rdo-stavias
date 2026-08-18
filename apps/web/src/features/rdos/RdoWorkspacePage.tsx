@@ -142,18 +142,39 @@ export function RdoWorkspacePage() {
          * aqui, no banco deste aparelho. É o contrário do que um produto
          * offline-first promete: quem tem o dado mostra o dado.
          *
-         * <p>Agora a leitura local pinta a tela e encerra o carregamento; a
-         * reconciliação corre atrás e repinta quando trouxer novidade. O
-         * servidor continua entrando — ele é quem traz o RDO que outra pessoa
-         * apontou —, só deixou de ser pedágio para ver o que é nosso.
+         * <p>Agora a leitura local pinta imediatamente o que já existe, mas o
+         * estado vazio só é concluído depois da primeira hidratação remota.
+         * O servidor continua trazendo o RDO apontado por outra pessoa sem
+         * esconder o acervo local durante a espera.
          */
         await lerDoAparelho(generation, guard);
         if (generation !== loadGenerationRef.current) return;
-        setIsLoading(false);
 
-        await reconciliarRdosDoServidor().catch(() => undefined);
-        if (generation !== loadGenerationRef.current) return;
-        await lerDoAparelho(generation, guard);
+        /*
+         * O estado vazio não é publicado entre a leitura local e a
+         * hidratação remota. Se faltarem detalhes, a própria abertura repete
+         * a passagem; F5 deixou de ser parte do protocolo de carregamento.
+         */
+        let hidratacaoIncompleta = false;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const result = await reconciliarRdosDoServidor();
+          if (generation !== loadGenerationRef.current) return;
+          await lerDoAparelho(generation, guard);
+          hidratacaoIncompleta = result.pendentes > 0 || result.falhas > 0;
+          if (!hidratacaoIncompleta) break;
+          if (attempt < 2) {
+            await new Promise<void>((resolve) => {
+              window.setTimeout(resolve, 250 * (attempt + 1));
+            });
+          }
+        }
+        if (hidratacaoIncompleta) {
+          setLoadError(
+            "Não foi possível concluir a atualização dos RDOs. " +
+            "Os dados já salvos neste aparelho continuam disponíveis; " +
+            "o Córtex tentará novamente.",
+          );
+        }
       } catch (error: unknown) {
         if (generation !== loadGenerationRef.current) return;
         setLoadError(

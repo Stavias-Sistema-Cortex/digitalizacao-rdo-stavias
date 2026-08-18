@@ -12,7 +12,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
@@ -188,7 +187,7 @@ public class AcademySourceAdapter {
         this.localOrTestOnly = localOrTestOnly;
         this.syncEnabled = syncEnabled;
         this.connectionFactory = connectionFactory == null
-                ? () -> DriverManager.getConnection(
+                ? () -> MysqlSourceConnectionPolicy.open(
                         this.url,
                         this.username,
                         resolvePassword()
@@ -306,6 +305,10 @@ public class AcademySourceAdapter {
                     }
                 }
 
+                CompleteSourceSnapshotLimit.ensureCapacity(
+                        users.size(),
+                        page.size()
+                );
                 users.addAll(page);
                 if (page.size() < pageSize) {
                     return List.copyOf(users);
@@ -440,6 +443,7 @@ public class AcademySourceAdapter {
             throw new IllegalStateException(INCOMPLETE_CONFIGURATION);
         }
         validateProductionTls();
+        MysqlSourceConnectionPolicy.validateUrl(url);
         resolvePassword();
     }
 

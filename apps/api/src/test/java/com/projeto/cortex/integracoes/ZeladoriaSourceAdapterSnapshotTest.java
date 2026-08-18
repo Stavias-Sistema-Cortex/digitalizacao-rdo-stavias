@@ -3,9 +3,9 @@ package com.projeto.cortex.integracoes;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,14 +13,12 @@ import static org.mockito.Mockito.when;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
-import org.mockito.MockedStatic;
 
 class ZeladoriaSourceAdapterSnapshotTest {
 
@@ -42,17 +40,7 @@ class ZeladoriaSourceAdapterSnapshotTest {
         );
         when(statement.executeQuery()).thenReturn(firstPage, secondPage);
 
-        Object snapshot;
-        try (MockedStatic<DriverManager> driver = mockStatic(
-                DriverManager.class
-        )) {
-            driver.when(() -> DriverManager.getConnection(
-                    "jdbc:mysql://source.invalid/zeladoria",
-                    "reader",
-                    "secret"
-            )).thenReturn(connection);
-            snapshot = fetchCompleteSnapshot(adapter(), 2);
-        }
+        Object snapshot = fetchCompleteSnapshot(adapter(connection), 2);
 
         assertThat((boolean) invoke(snapshot, "complete")).isTrue();
         List<?> assets = (List<?>) invoke(snapshot, "assets");
@@ -91,33 +79,38 @@ class ZeladoriaSourceAdapterSnapshotTest {
                 "driver leaked source.invalid reader secret"
         ));
 
-        try (MockedStatic<DriverManager> driver = mockStatic(
-                DriverManager.class
-        )) {
-            driver.when(() -> DriverManager.getConnection(
-                    "jdbc:mysql://source.invalid/zeladoria",
-                    "reader",
-                    "secret"
-            )).thenReturn(connection);
-
-            assertThatThrownBy(() -> fetchCompleteSnapshot(adapter(), 2))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage(REDACTED_FAILURE)
-                    .hasMessageNotContaining("source.invalid")
-                    .hasMessageNotContaining("reader")
-                    .hasMessageNotContaining("secret")
-                    .hasNoCause();
-        }
+        assertThatThrownBy(() -> fetchCompleteSnapshot(
+                adapter(connection),
+                2
+        ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage(REDACTED_FAILURE)
+                .hasMessageNotContaining("source.invalid")
+                .hasMessageNotContaining("reader")
+                .hasMessageNotContaining("secret")
+                .hasNoCause();
 
         verify(connection).rollback();
         verify(connection, never()).commit();
     }
 
-    private ZeladoriaSourceAdapter adapter() {
+    @Test
+    void closesTheConnectionWhenReadOnlySetupFails() throws Exception {
+        Connection connection = mock(Connection.class);
+        doThrow(new IllegalStateException("sensitive driver detail"))
+                .when(connection).setReadOnly(true);
+
+        assertThat(adapter(connection).testConnection()).isFalse();
+
+        verify(connection).close();
+    }
+
+    private ZeladoriaSourceAdapter adapter(Connection connection) {
         return new ZeladoriaSourceAdapter(
                 "jdbc:mysql://source.invalid/zeladoria",
                 "reader",
-                "secret"
+                "secret",
+                () -> connection
         );
     }
 

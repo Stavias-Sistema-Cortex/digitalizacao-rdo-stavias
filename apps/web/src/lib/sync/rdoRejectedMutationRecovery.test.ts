@@ -19,6 +19,7 @@ import type {
 import { databaseNameForScope } from "../db/localDataNamespace";
 import { updateSyncState } from "../db/syncStateRepository";
 import {
+  RdoEquipmentContextUnverifiedError,
   RdoWorkforceContextUnverifiedError,
   recoverRejectedRdoMutationsForSync,
   rdoDraftFromLocalRecord,
@@ -54,6 +55,8 @@ const CORRECTED_WORKFORCE_EVENT_ID =
 const DEPENDENT_ID = "00000000-0000-4000-8000-000000000108";
 const VALID_WORKER_ID = "00000000-0000-4000-8000-000000000109";
 const INVALID_WORKER_ID = "00000000-0000-4000-8000-000000000110";
+const ACTIVE_ASSET_ID = "00000000-0000-4000-8000-000000000117";
+const REMOVED_ASSET_ID = "00000000-0000-4000-8000-000000000118";
 const DEPENDENT_RDO_ID = "00000000-0000-4000-8000-000000000120";
 const DEPENDENT_MUTATION_ID = "00000000-0000-4000-8000-000000000121";
 const DEPENDENT_EVENT_ID = "00000000-0000-4000-8000-000000000122";
@@ -535,6 +538,102 @@ afterEach(async () => {
 });
 
 describe("reparo canônico de RDO rejeitado", () => {
+  it("preserva como equipamento nominal o asset removido pela Zeladoria durante o período offline", async () => {
+    const payload = {
+      ...workforcePayload(),
+      apontadorColaboradorId: null,
+      alocacoesColaboradores: [],
+      maoObra: [],
+      equipamentos: [
+        {
+          id: "00000000-0000-4000-8000-000000000119",
+          assetId: ACTIVE_ASSET_ID,
+          prefixo: "ROLO-01",
+          descricao: "Rolo ativo",
+          tipoEquipamento: "Compactação",
+        },
+        {
+          id: "00000000-0000-4000-8000-000000000120",
+          assetId: REMOVED_ASSET_ID,
+          prefixo: "RETRO-07",
+          descricao: "Retroescavadeira usada no período offline",
+          tipoEquipamento: "Terraplenagem",
+        },
+      ],
+    };
+    await seedCanonicalUpdate(payload);
+    await rejectOriginal(
+      "VALIDATION_OR_AUTHORIZATION",
+      "O equipamento informado não está no parque ativo disponível para a obra do RDO.",
+    );
+
+    expect(
+      await recoverRejectedRdoMutationsForSync(
+        captureOnlineSyncSession(),
+        {
+          now: () => RECOVERED_AT,
+          clientMutationIdFactory: () => REPLACEMENT_ID,
+          ontologyEventIdFactory: () => REPLACEMENT_EVENT_ID,
+          loadAuthorizedEquipmentIds: async () =>
+            new Set([ACTIVE_ASSET_ID]),
+        },
+      ),
+    ).toBe(1);
+
+    const database = await getCortexDb();
+    expect(await database.get("outbox_mutations", REPLACEMENT_ID))
+      .toMatchObject({
+        status: "PENDING",
+        payload: {
+          equipamentos: [
+            expect.objectContaining({ assetId: ACTIVE_ASSET_ID }),
+            expect.objectContaining({
+              assetId: null,
+              prefixo: "RETRO-07",
+              descricao: "Retroescavadeira usada no período offline",
+            }),
+          ],
+        },
+      });
+  });
+
+  it("recupera o RDO quando o Academy desativa o colaborador durante o período offline", async () => {
+    const payload = workforcePayload();
+    await seedCanonicalUpdate(payload);
+    await rejectOriginal(
+      "VALIDATION_OR_AUTHORIZATION",
+      "Colaborador não encontrado ou inativo.",
+    );
+
+    expect(
+      await recoverRejectedRdoMutationsForSync(
+        captureOnlineSyncSession(),
+        {
+          now: () => RECOVERED_AT,
+          clientMutationIdFactory: () => REPLACEMENT_ID,
+          ontologyEventIdFactory: () => REPLACEMENT_EVENT_ID,
+          loadAuthorizedCollaboratorIds: async () =>
+            new Set([VALID_WORKER_ID]),
+        },
+      ),
+    ).toBe(1);
+
+    const database = await getCortexDb();
+    expect(await database.get("outbox_mutations", REPLACEMENT_ID))
+      .toMatchObject({
+        status: "PENDING",
+        payload: {
+          maoObra: [
+            expect.objectContaining({ colaboradorId: VALID_WORKER_ID }),
+            expect.objectContaining({
+              colaboradorId: null,
+              nomeColaborador: "Trabalhador nominal",
+            }),
+          ],
+        },
+      });
+  });
+
   it("recupera UPDATE rejeitado por vínculo no mesmo contrato canônico", async () => {
     const payload = workforcePayload();
     await seedCanonicalUpdate(payload);
@@ -3168,6 +3267,48 @@ describe("reparo canônico de RDO rejeitado", () => {
       });
     expect((await database.get("rdos", RDO_ID))?.payload.maoObra)
       .toEqual((workforcePayload().maoObra));
+  });
+
+  it("não interpreta contexto parcial como remoção de equipamento", async () => {
+    const payload = {
+      ...workforcePayload(),
+      apontadorColaboradorId: null,
+      alocacoesColaboradores: [],
+      maoObra: [],
+      equipamentos: [{
+        id: "00000000-0000-4000-8000-000000000119",
+        assetId: REMOVED_ASSET_ID,
+        prefixo: "RETRO-07",
+        descricao: "Retroescavadeira",
+        tipoEquipamento: "Terraplenagem",
+      }],
+    };
+    await seedCanonicalCreate(payload);
+    await rejectOriginal(
+      "VALIDATION_OR_AUTHORIZATION",
+      "O equipamento informado não está no parque ativo disponível para a obra do RDO.",
+    );
+    const mutationFactory = vi.fn(() => REPLACEMENT_ID);
+
+    expect(
+      await recoverRejectedRdoMutationsForSync(
+        captureOnlineSyncSession(),
+        {
+          clientMutationIdFactory: mutationFactory,
+          loadAuthorizedEquipmentIds: async () => {
+            throw new RdoEquipmentContextUnverifiedError();
+          },
+        },
+      ),
+    ).toBe(0);
+    expect(mutationFactory).not.toHaveBeenCalled();
+    const database = await getCortexDb();
+    expect(await database.get("outbox_mutations", ORIGINAL_ID))
+      .toMatchObject({
+        lastSafeCode: "EQUIPMENT_RECOVERY_CONTEXT_UNVERIFIED",
+      });
+    expect((await database.get("rdos", RDO_ID))?.payload.equipamentos)
+      .toEqual(payload.equipamentos);
   });
 
   it("deixa falha transitória do contexto para a próxima sincronização", async () => {

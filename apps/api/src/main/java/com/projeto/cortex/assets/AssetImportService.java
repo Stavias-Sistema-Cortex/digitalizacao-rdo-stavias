@@ -4,6 +4,7 @@ import com.projeto.cortex.integracoes.SourceImportRunLock;
 import com.projeto.cortex.integracoes.ZeladoriaAssetSnapshot;
 import com.projeto.cortex.integracoes.ZeladoriaSourceAdapter;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.memory.CortexOperationalMemoryService.EventoEmLote;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -14,9 +15,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.HexFormat;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -209,6 +211,7 @@ public class AssetImportService {
         int recordsInserted = 0;
         int recordsUpdated = 0;
         int recordsDeactivated = 0;
+        List<EventoEmLote> assetEvents = new ArrayList<>();
 
         String upsertSql = """
                 INSERT INTO asset (
@@ -277,7 +280,7 @@ public class AssetImportService {
                     tipo,
                     sourceHash
             );
-            registrarAtivoNaMemoria(
+            EventoEmLote event = registrarAtivoNaMemoria(
                     syncRunId,
                     assetId,
                     sourcePk,
@@ -289,6 +292,9 @@ public class AssetImportService {
                     inserted,
                     updated
             );
+            if (event != null) {
+                assetEvents.add(event);
+            }
         }
 
         for (Map.Entry<String, ExistingAsset> entry
@@ -311,13 +317,15 @@ public class AssetImportService {
                     """, existing.id());
             if (changed == 1) {
                 recordsDeactivated++;
-                registrarAtivoDesativadoNaMemoria(
+                assetEvents.add(registrarAtivoDesativadoNaMemoria(
                         syncRunId,
                         existing,
                         entry.getKey()
-                );
+                ));
             }
         }
+
+        memoryService.registrarEventosEmLote(assetEvents);
 
         finishSyncRunSuccess(
                 syncRunId,
@@ -578,7 +586,7 @@ public class AssetImportService {
         }
     }
 
-    private void registrarAtivoNaMemoria(
+    private EventoEmLote registrarAtivoNaMemoria(
             String syncRunId,
             String assetId,
             String sourcePk,
@@ -637,7 +645,7 @@ public class AssetImportService {
         );
 
         if (!inserted && !updated) {
-            return;
+            return null;
         }
 
         Map<String, Object> payload = new LinkedHashMap<>(metadata);
@@ -648,7 +656,7 @@ public class AssetImportService {
         payload.put("modelo", modelo);
         payload.put("nome", name);
 
-        memoryService.registrarEvento(
+        return new EventoEmLote(
                 "ATIVO",
                 assetId,
                 inserted
@@ -659,7 +667,7 @@ public class AssetImportService {
         );
     }
 
-    private void registrarAtivoDesativadoNaMemoria(
+    private EventoEmLote registrarAtivoDesativadoNaMemoria(
             String syncRunId,
             ExistingAsset existing,
             String sourcePk
@@ -693,7 +701,7 @@ public class AssetImportService {
                         "source_pk", sourcePk
                 )
         );
-        memoryService.registrarEvento(
+        return new EventoEmLote(
                 "ATIVO",
                 existing.id(),
                 "ATIVO_EXCLUIDO_DA_ORIGEM",

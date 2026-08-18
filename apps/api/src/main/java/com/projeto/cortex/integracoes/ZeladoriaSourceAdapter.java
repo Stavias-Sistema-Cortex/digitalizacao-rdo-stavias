@@ -9,7 +9,6 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
@@ -58,6 +57,7 @@ public class ZeladoriaSourceAdapter {
     private final String passwordFile;
     private final boolean localOrTestOnly;
     private final boolean syncEnabled;
+    private final ZeladoriaConnectionFactory connectionFactory;
 
     private static final class SnapshotReadException
             extends IllegalStateException {
@@ -84,7 +84,8 @@ public class ZeladoriaSourceAdapter {
                 password,
                 passwordFile,
                 SecurityRuntimeMode.isLocalOrTestOnly(environment),
-                syncEnabled
+                syncEnabled,
+                null
         );
     }
 
@@ -93,7 +94,24 @@ public class ZeladoriaSourceAdapter {
             String username,
             String password
     ) {
-        this(url, username, password, "", true, false);
+        this(url, username, password, "", true, false, null);
+    }
+
+    ZeladoriaSourceAdapter(
+            String url,
+            String username,
+            String password,
+            ZeladoriaConnectionFactory connectionFactory
+    ) {
+        this(
+                url,
+                username,
+                password,
+                "",
+                true,
+                false,
+                connectionFactory
+        );
     }
 
     private ZeladoriaSourceAdapter(
@@ -102,7 +120,8 @@ public class ZeladoriaSourceAdapter {
             String passwordInline,
             String passwordFile,
             boolean localOrTestOnly,
-            boolean syncEnabled
+            boolean syncEnabled,
+            ZeladoriaConnectionFactory connectionFactory
     ) {
         this.url = optionalValue(url);
         this.username = optionalValue(username);
@@ -110,6 +129,13 @@ public class ZeladoriaSourceAdapter {
         this.passwordFile = optionalValue(passwordFile);
         this.localOrTestOnly = localOrTestOnly;
         this.syncEnabled = syncEnabled;
+        this.connectionFactory = connectionFactory == null
+                ? () -> MysqlSourceConnectionPolicy.open(
+                        this.url,
+                        this.username,
+                        resolvePassword()
+                )
+                : connectionFactory;
         validateStartupConfiguration();
     }
 
@@ -123,12 +149,7 @@ public class ZeladoriaSourceAdapter {
         int safePageSize = safePageSize(pageSize);
 
         try (
-                Connection connection =
-                        DriverManager.getConnection(
-                                url,
-                                username,
-                                resolvePassword()
-                        )
+                Connection connection = connectionFactory.open()
         ) {
             try {
                 connection.setReadOnly(true);
@@ -181,6 +202,10 @@ public class ZeladoriaSourceAdapter {
                     }
                 }
 
+                CompleteSourceSnapshotLimit.ensureCapacity(
+                        assets.size(),
+                        page.size()
+                );
                 assets.addAll(page);
                 if (page.size() < pageSize) {
                     return List.copyOf(assets);
@@ -212,15 +237,18 @@ public class ZeladoriaSourceAdapter {
     private Connection openReadOnlyConnection() throws Exception {
         validateConfig();
 
-        Connection connection =
-                DriverManager.getConnection(
-                        url,
-                        username,
-                        resolvePassword()
-                );
-
-        connection.setReadOnly(true);
-        return connection;
+        Connection connection = connectionFactory.open();
+        try {
+            connection.setReadOnly(true);
+            return connection;
+        } catch (Exception exception) {
+            try {
+                connection.close();
+            } catch (Exception ignored) {
+                // The redacted connection result remains externally visible.
+            }
+            throw exception;
+        }
     }
 
     private void validateConfig() {
@@ -231,6 +259,7 @@ public class ZeladoriaSourceAdapter {
             throw new IllegalStateException(INCOMPLETE_CONFIGURATION);
         }
         validateProductionTls();
+        MysqlSourceConnectionPolicy.validateUrl(url);
         resolvePassword();
     }
 
@@ -315,5 +344,11 @@ public class ZeladoriaSourceAdapter {
             String tipo,
             String modelo
     ) {
+    }
+
+    @FunctionalInterface
+    interface ZeladoriaConnectionFactory {
+
+        Connection open() throws Exception;
     }
 }

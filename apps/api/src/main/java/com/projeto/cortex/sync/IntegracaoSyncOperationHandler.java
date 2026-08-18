@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.integracoes.IntegracaoActionResponse;
-import com.projeto.cortex.integracoes.IntegracaoAdminService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -30,20 +29,20 @@ public class IntegracaoSyncOperationHandler implements SyncOperationHandler {
     private static final Set<String> OPERATIONS =
             Set.of("SOLICITAR_INTEGRACAO");
 
-    private final IntegracaoAdminService service;
+    private final ExternalSourceManualSyncDispatcher dispatcher;
     private final CortexOperationalMemoryService memoryService;
     private final CurrentUserService currentUserService;
     private final ObjectMapper objectMapper;
     private final boolean importEnabled;
 
     public IntegracaoSyncOperationHandler(
-            IntegracaoAdminService service,
+            ExternalSourceManualSyncDispatcher dispatcher,
             CortexOperationalMemoryService memoryService,
             CurrentUserService currentUserService,
             ObjectMapper objectMapper,
             @Value("${cortex.import.enabled:false}") boolean importEnabled
     ) {
-        this.service = service;
+        this.dispatcher = dispatcher;
         this.memoryService = memoryService;
         this.currentUserService = currentUserService;
         this.objectMapper = objectMapper;
@@ -91,8 +90,8 @@ public class IntegracaoSyncOperationHandler implements SyncOperationHandler {
         IntegracaoActionResponse response;
         String eventType;
         if ("TESTAR".equals(action)) {
-            response = service.testConnection(integrationId);
-            eventType = "INTEGRACAO_TESTADA";
+            response = dispatcher.submit(integrationId, action);
+            eventType = "INTEGRACAO_TESTE_AGENDADO";
         } else {
             if (!importEnabled) {
                 response = new IntegracaoActionResponse(
@@ -101,9 +100,9 @@ public class IntegracaoSyncOperationHandler implements SyncOperationHandler {
                         "Sincronização manual desativada neste ambiente."
                 );
             } else {
-                response = service.startSync(integrationId);
+                response = dispatcher.submit(integrationId, action);
             }
-            eventType = "INTEGRACAO_SINCRONIZADA";
+            eventType = "INTEGRACAO_SINCRONIZACAO_AGENDADA";
         }
 
         ObjectNode result = objectMapper.createObjectNode()

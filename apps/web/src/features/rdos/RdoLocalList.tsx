@@ -1024,7 +1024,7 @@ export function RdoLocalList({
 
       <section className="rdo-main-grid">
         <div className="rdo-list-column">
-          {filteredRecords.length === 0 && !isLoading ? (
+          {filteredRecords.length === 0 && !isLoading && !error ? (
             <section className="form-card">
               <h2>Nenhum RDO encontrado</h2>
               <p>

@@ -51,17 +51,23 @@ vi.mock("./RdoLocalList", () => ({
     onImportRdoFile,
     records,
     error,
+    isLoading,
   }: {
     onCreate: () => void;
     onImportRdoFile: (file: File) => void;
     records: Array<{ id: string; numeroRdo: string }>;
     error: string;
+    isLoading: boolean;
   }) => (
     <>
       <output aria-label="RDOs carregados">
         {records.map((record) => record.numeroRdo).join(",")}
       </output>
       {error ? <div role="alert">{error}</div> : null}
+      {isLoading ? <div>Carregando RDOs locais...</div> : null}
+      {!isLoading && records.length === 0 && !error
+        ? <div>Nenhum RDO encontrado</div>
+        : null}
       <button type="button" onClick={onCreate}>
         Novo RDO
       </button>
@@ -126,6 +132,16 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function reconciliationResult() {
+  return {
+    descobertos: 0,
+    detalhados: 0,
+    pendentes: 0,
+    removidos: 0,
+    falhas: 0,
+  };
+}
+
 describe("RdoWorkspacePage: entrada do novo RDO", () => {
   beforeEach(() => {
     clearSession();
@@ -133,10 +149,12 @@ describe("RdoWorkspacePage: entrada do novo RDO", () => {
     listLocalRdos.mockReset();
     listOperationalEvents.mockReset();
     listAllRdoAttachments.mockReset();
+    reconciliar.mockReset();
     importarRdoArquivo.mockReset();
     listLocalRdos.mockResolvedValue([]);
     listOperationalEvents.mockResolvedValue([]);
     listAllRdoAttachments.mockResolvedValue([]);
+    reconciliar.mockResolvedValue(reconciliationResult());
     const imported = createEmptyRdo();
     imported.dataRdo = "2026-07-22";
     imported.contrato = "CTR-IMPORTADO-SEM-UUID";
@@ -242,7 +260,7 @@ describe("RdoWorkspacePage: entrada do novo RDO", () => {
     });
 
     expect(screen.queryByText("RDO-ANTIGO")).not.toBeInTheDocument();
-    await waitFor(() => expect(listLocalRdos).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(listLocalRdos).toHaveBeenCalledTimes(3));
   });
 
   /*
@@ -252,7 +270,7 @@ describe("RdoWorkspacePage: entrada do novo RDO", () => {
    * oposto do que um produto offline-first promete.
    */
   it("mostra o que o aparelho já tem sem esperar o servidor", async () => {
-    const rede = deferred<void>();
+    const rede = deferred<ReturnType<typeof reconciliationResult>>();
     reconciliar.mockReturnValue(rede.promise);
     listLocalRdos.mockResolvedValue([
       { id: "rdo-local", numeroRdo: "RDO-DO-APARELHO" },
@@ -265,10 +283,49 @@ describe("RdoWorkspacePage: entrada do novo RDO", () => {
     // A rede ainda não respondeu, e o RDO do aparelho já está na tela.
     expect(await screen.findByText("RDO-DO-APARELHO")).toBeInTheDocument();
 
-    rede.resolve();
+    rede.resolve(reconciliationResult());
     await waitFor(() => expect(reconciliar).toHaveBeenCalled());
     // E o servidor continua entrando: a leitura se repete para incorporar o
     // que ele trouxe.
     await waitFor(() => expect(listLocalRdos).toHaveBeenCalledTimes(2));
+  });
+
+  it("não publica uma lista vazia enquanto a hidratação inicial ainda busca os RDOs", async () => {
+    const rede = deferred<ReturnType<typeof reconciliationResult>>();
+    reconciliar.mockReturnValue(rede.promise);
+    listLocalRdos
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: "rdo-completo", numeroRdo: "RDO-COMPLETO" },
+      ]);
+
+    render(<RdoWorkspacePage />);
+    await waitFor(() => expect(reconciliar).toHaveBeenCalledOnce());
+
+    expect(screen.getByText("Carregando RDOs locais...")).toBeVisible();
+    expect(screen.queryByText("Nenhum RDO encontrado"))
+      .not.toBeInTheDocument();
+
+    rede.resolve(reconciliationResult());
+    expect(await screen.findByText("RDO-COMPLETO")).toBeVisible();
+    await waitFor(() => expect(
+      screen.queryByText("Carregando RDOs locais..."),
+    ).not.toBeInTheDocument());
+  });
+
+  it("não chama uma consulta incompleta de lista vazia", async () => {
+    reconciliar.mockResolvedValue({
+      ...reconciliationResult(),
+      falhas: 1,
+    });
+    listLocalRdos.mockResolvedValue([]);
+
+    render(<RdoWorkspacePage />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /não foi possível concluir a atualização dos RDOs/i,
+    );
+    expect(screen.queryByText("Nenhum RDO encontrado"))
+      .not.toBeInTheDocument();
   });
 });

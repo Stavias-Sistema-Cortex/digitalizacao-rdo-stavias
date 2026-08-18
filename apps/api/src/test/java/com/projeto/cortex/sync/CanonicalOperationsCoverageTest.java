@@ -51,7 +51,7 @@ class CanonicalOperationsCoverageTest {
                 );
         IntegracaoSyncOperationHandler integrations =
                 new IntegracaoSyncOperationHandler(
-                        mock(IntegracaoAdminService.class),
+                        mock(ExternalSourceManualSyncDispatcher.class),
                         mock(CortexOperationalMemoryService.class),
                         mock(CurrentUserService.class),
                         mapper,
@@ -88,11 +88,12 @@ class CanonicalOperationsCoverageTest {
 
     @Test
     void integrationHandlerRevalidatesAlfaThenExecutesTheRealProviderAndPublishesOutcome() {
-        IntegracaoAdminService service = mock(IntegracaoAdminService.class);
+        ExternalSourceManualSyncDispatcher dispatcher =
+                mock(ExternalSourceManualSyncDispatcher.class);
         CortexOperationalMemoryService memory =
                 mock(CortexOperationalMemoryService.class);
         CurrentUserService currentUser = mock(CurrentUserService.class);
-        when(service.testConnection("academy")).thenReturn(
+        when(dispatcher.submit("academy", "TESTAR")).thenReturn(
                 new IntegracaoActionResponse(
                         "academy",
                         "SUCCESS",
@@ -101,7 +102,7 @@ class CanonicalOperationsCoverageTest {
         );
         IntegracaoSyncOperationHandler handler =
                 new IntegracaoSyncOperationHandler(
-                        service,
+                        dispatcher,
                         memory,
                         currentUser,
                         mapper,
@@ -117,11 +118,11 @@ class CanonicalOperationsCoverageTest {
         );
 
         verify(currentUser).requireAdmin();
-        verify(service).testConnection("academy");
+        verify(dispatcher).submit("academy", "TESTAR");
         verify(memory).registrarEvento(
                 eq("SOLICITACAO_INTEGRACAO"),
                 eq(REQUEST_ID),
-                eq("INTEGRACAO_TESTADA"),
+                eq("INTEGRACAO_TESTE_AGENDADO"),
                 eq("SYNC"),
                 isNull(),
                 anyMap()
@@ -129,12 +130,13 @@ class CanonicalOperationsCoverageTest {
         assertThat(applied.result().path("estado").asText())
                 .isEqualTo("SUCCESS");
         assertThat(applied.authoritativeEvent().eventType())
-                .isEqualTo("INTEGRACAO_TESTADA");
+                .isEqualTo("INTEGRACAO_TESTE_AGENDADO");
     }
 
     @Test
     void revokedAlfaPermissionPreventsAnyExternalExecution() {
-        IntegracaoAdminService service = mock(IntegracaoAdminService.class);
+        ExternalSourceManualSyncDispatcher dispatcher =
+                mock(ExternalSourceManualSyncDispatcher.class);
         CurrentUserService currentUser = mock(CurrentUserService.class);
         org.mockito.Mockito.doThrow(new ResponseStatusException(
                 HttpStatus.FORBIDDEN,
@@ -142,7 +144,7 @@ class CanonicalOperationsCoverageTest {
         )).when(currentUser).requireAdmin();
         IntegracaoSyncOperationHandler handler =
                 new IntegracaoSyncOperationHandler(
-                        service,
+                        dispatcher,
                         mock(CortexOperationalMemoryService.class),
                         currentUser,
                         mapper,
@@ -157,13 +159,14 @@ class CanonicalOperationsCoverageTest {
                 )
         )).isInstanceOf(ResponseStatusException.class);
 
-        verify(service, never()).startSync("academy");
+        verify(dispatcher, never()).submit("academy", "SINCRONIZAR");
     }
 
     @Test
     void providerFailureDoesNotExposeConnectorDetailsInTheSyncResult() {
-        IntegracaoAdminService service = mock(IntegracaoAdminService.class);
-        when(service.startSync("academy")).thenReturn(
+        ExternalSourceManualSyncDispatcher dispatcher =
+                mock(ExternalSourceManualSyncDispatcher.class);
+        when(dispatcher.submit("academy", "SINCRONIZAR")).thenReturn(
                 new IntegracaoActionResponse(
                         "academy",
                         "FAILED",
@@ -172,7 +175,7 @@ class CanonicalOperationsCoverageTest {
         );
         IntegracaoSyncOperationHandler handler =
                 new IntegracaoSyncOperationHandler(
-                        service,
+                        dispatcher,
                         mock(CortexOperationalMemoryService.class),
                         mock(CurrentUserService.class),
                         mapper,

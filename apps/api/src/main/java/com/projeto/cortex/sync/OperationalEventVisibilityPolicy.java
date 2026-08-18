@@ -11,7 +11,7 @@ import java.util.TreeSet;
 public final class OperationalEventVisibilityPolicy {
 
     private static final List<String> GLOBAL_REFERENCE_TYPES =
-            List.of("ATIVO", "EQUIPAMENTO", "SERVICO");
+            List.of("ATIVO", "COLABORADOR", "EQUIPAMENTO", "SERVICO");
     private static final List<String> FINANCIAL_TYPES = List.of(
             "ITEM_CONTRATUAL", "PREVISAO_FINANCEIRA", "PDOR", "CENTRO_CUSTO",
             "FORNECEDOR", "SOLICITACAO_COMPRA", "COMPRA", "PEDIDO_COMPRA",

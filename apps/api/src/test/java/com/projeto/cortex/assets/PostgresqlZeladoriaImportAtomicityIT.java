@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 import com.projeto.cortex.integracoes.ZeladoriaAssetSnapshot;
 import com.projeto.cortex.integracoes.ZeladoriaSourceAdapter;
@@ -216,6 +217,35 @@ class PostgresqlZeladoriaImportAtomicityIT {
                 .containsEntry(
                         "last_error_message",
                         "Falha ao aplicar snapshot da Zeladoria."
+                );
+    }
+
+    @Test
+    void changedAssetEventsReserveOneLateBatchInsteadOfLockingPerAsset() {
+        seedAsset("asset-old", "1", true, null, 2L);
+        ZeladoriaSourceAdapter source = source(
+                ZeladoriaAssetSnapshot.complete(List.of(
+                        asset("2", "EQ-02", "ROLO", "Modelo B"),
+                        asset("3", "EQ-03", "TRATOR", "Modelo C")
+                ))
+        );
+        CortexOperationalMemoryService memory =
+                mock(CortexOperationalMemoryService.class);
+
+        AssetImportResult result = service(source, memory).importFromZldAtivos();
+
+        assertThat(result.status()).isEqualTo("SUCCESS");
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<List<CortexOperationalMemoryService.EventoEmLote>>
+                events = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(memory).registrarEventosEmLote(events.capture());
+        assertThat(events.getValue())
+                .hasSize(3)
+                .extracting(CortexOperationalMemoryService.EventoEmLote::tipoEvento)
+                .containsExactlyInAnyOrder(
+                        "ATIVO_IMPORTADO_DO_LEGADO",
+                        "ATIVO_IMPORTADO_DO_LEGADO",
+                        "ATIVO_EXCLUIDO_DA_ORIGEM"
                 );
     }
 

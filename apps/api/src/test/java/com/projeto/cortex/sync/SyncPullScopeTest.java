@@ -56,9 +56,15 @@ class SyncPullScopeTest {
                 .contains("cortex_evento_operacional.obra_id IN (?)")
                 .contains("tipo_entidade IN")
                 .contains("cortex_evento_operacional.obra_id IS NULL AND "
-                        + "cortex_evento_operacional.tipo_entidade IN (?,?,?)");
+                        + "cortex_evento_operacional.tipo_entidade IN (?,?,?,?)");
         assertThat(filtro.parametros())
-                .contains("obra-1", "ATIVO", "EQUIPAMENTO", "SERVICO")
+                .contains(
+                        "obra-1",
+                        "ATIVO",
+                        "COLABORADOR",
+                        "EQUIPAMENTO",
+                        "SERVICO"
+                )
                 .contains("ITEM_CONTRATUAL", "PREVISAO_FINANCEIRA", "PDOR")
                 .contains("SOLICITACAO_COMPRA", "COMPRA")
                 .contains(
@@ -98,9 +104,9 @@ class SyncPullScopeTest {
                 .doesNotContain("cortex_evento_operacional.obra_id IN (")
                 .doesNotContain(" OR (cortex_evento_operacional.tipo_entidade IN")
                 .contains("cortex_evento_operacional.obra_id IS NULL AND "
-                        + "cortex_evento_operacional.tipo_entidade IN (?,?,?)");
+                        + "cortex_evento_operacional.tipo_entidade IN (?,?,?,?)");
         assertThat(filtro.parametros())
-                .contains("ATIVO", "EQUIPAMENTO", "SERVICO")
+                .contains("ATIVO", "COLABORADOR", "EQUIPAMENTO", "SERVICO")
                 .contains("PERMISSAO_FINANCEIRA");
     }
 

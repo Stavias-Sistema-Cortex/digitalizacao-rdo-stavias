@@ -13,7 +13,6 @@ import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -22,8 +21,6 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
-import org.mockito.Mockito;
 
 class AcademySourceAdapterBootstrapTest {
 
@@ -228,30 +225,24 @@ class AcademySourceAdapterBootstrapTest {
     void lookupDoesNotExposeTheProtectedIdentifierThroughDriverFailures()
             throws Exception {
         String canonicalCpf = canonicalSyntheticCpf();
-        AcademySourceAdapter adapter = new AcademySourceAdapter(
-                JDBC_URL,
-                USERNAME,
-                CREDENTIAL
-        );
         SQLException driverFailure = new SQLException(
                 "driver detail: " + canonicalCpf
         );
+        AcademySourceAdapter adapter = new AcademySourceAdapter(
+                JDBC_URL,
+                USERNAME,
+                CREDENTIAL,
+                () -> {
+                    throw driverFailure;
+                }
+        );
 
-        try (MockedStatic<DriverManager> driverManager =
-                     Mockito.mockStatic(DriverManager.class)) {
-            driverManager.when(() -> DriverManager.getConnection(
-                    JDBC_URL,
-                    USERNAME,
-                    CREDENTIAL
-            )).thenThrow(driverFailure);
-
-            assertThatThrownBy(() ->
-                    adapter.findSingleActiveUserForBootstrap(canonicalCpf)
-            )
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("Falha ao consultar a fonte Academy para bootstrap.")
-                    .hasNoCause();
-        }
+        assertThatThrownBy(() ->
+                adapter.findSingleActiveUserForBootstrap(canonicalCpf)
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Falha ao consultar a fonte Academy para bootstrap.")
+                .hasNoCause();
     }
 
     @Test
@@ -265,24 +256,16 @@ class AcademySourceAdapterBootstrapTest {
         AcademySourceAdapter adapter = new AcademySourceAdapter(
                 JDBC_URL,
                 USERNAME,
-                CREDENTIAL
+                CREDENTIAL,
+                () -> connection
         );
 
-        try (MockedStatic<DriverManager> driverManager =
-                     Mockito.mockStatic(DriverManager.class)) {
-            driverManager.when(() -> DriverManager.getConnection(
-                    JDBC_URL,
-                    USERNAME,
-                    CREDENTIAL
-            )).thenReturn(connection);
-
-            assertThatThrownBy(() ->
-                    adapter.findSingleActiveUserForBootstrap(canonicalCpf)
-            )
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("Falha ao consultar a fonte Academy para bootstrap.")
-                    .hasNoCause();
-        }
+        assertThatThrownBy(() ->
+                adapter.findSingleActiveUserForBootstrap(canonicalCpf)
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Falha ao consultar a fonte Academy para bootstrap.")
+                .hasNoCause();
     }
 
     @Test
@@ -296,24 +279,16 @@ class AcademySourceAdapterBootstrapTest {
         AcademySourceAdapter adapter = new AcademySourceAdapter(
                 JDBC_URL,
                 USERNAME,
-                CREDENTIAL
+                CREDENTIAL,
+                () -> connection
         );
 
-        try (MockedStatic<DriverManager> driverManager =
-                     Mockito.mockStatic(DriverManager.class)) {
-            driverManager.when(() -> DriverManager.getConnection(
-                    JDBC_URL,
-                    USERNAME,
-                    CREDENTIAL
-            )).thenReturn(connection);
-
-            assertThatThrownBy(() ->
-                    adapter.findSingleActiveUserForBootstrap(canonicalCpf)
-            )
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("Falha ao consultar a fonte Academy para bootstrap.")
-                    .hasNoCause();
-        }
+        assertThatThrownBy(() ->
+                adapter.findSingleActiveUserForBootstrap(canonicalCpf)
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Falha ao consultar a fonte Academy para bootstrap.")
+                .hasNoCause();
 
         verify(connection).close();
     }
@@ -325,19 +300,10 @@ class AcademySourceAdapterBootstrapTest {
         AcademySourceAdapter adapter = new AcademySourceAdapter(
                 JDBC_URL,
                 USERNAME,
-                CREDENTIAL
+                CREDENTIAL,
+                () -> connection
         );
-
-        try (MockedStatic<DriverManager> driverManager =
-                     Mockito.mockStatic(DriverManager.class)) {
-            driverManager.when(() -> DriverManager.getConnection(
-                    JDBC_URL,
-                    USERNAME,
-                    CREDENTIAL
-            )).thenReturn(connection);
-
-            return adapter.findSingleActiveUserForBootstrap(canonicalCpf);
-        }
+        return adapter.findSingleActiveUserForBootstrap(canonicalCpf);
     }
 
     private AcademyUserSnapshot executeCompleteSnapshot(
@@ -347,27 +313,10 @@ class AcademySourceAdapterBootstrapTest {
         AcademySourceAdapter adapter = new AcademySourceAdapter(
                 JDBC_URL,
                 USERNAME,
-                CREDENTIAL
+                CREDENTIAL,
+                () -> connection
         );
-
-        try (MockedStatic<DriverManager> driverManager =
-                     Mockito.mockStatic(DriverManager.class)) {
-            driverManager.when(() -> DriverManager.getConnection(
-                    JDBC_URL,
-                    USERNAME,
-                    CREDENTIAL
-            )).thenReturn(connection);
-
-            try {
-                return adapter.fetchCompleteSnapshot(pageSize);
-            } finally {
-                driverManager.verify(() -> DriverManager.getConnection(
-                        JDBC_URL,
-                        USERNAME,
-                        CREDENTIAL
-                ), times(1));
-            }
-        }
+        return adapter.fetchCompleteSnapshot(pageSize);
     }
 
     private String snapshotSql() throws Exception {

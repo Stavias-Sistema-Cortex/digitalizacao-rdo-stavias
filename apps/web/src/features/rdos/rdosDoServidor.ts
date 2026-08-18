@@ -4,9 +4,17 @@ import {
   responseErrorMessage,
 } from "../../lib/api/apiClient";
 import { getCortexDb } from "../../lib/db/cortexDb";
-import type { LocalRdoRecord } from "../../lib/db/db.types";
+import type {
+  LocalRdoRecord,
+  ObraLocalRecord,
+} from "../../lib/db/db.types";
 import { buscarRdoAutoritativoPorId } from "./rdoLookupApi";
-import { listCachedAuthorizedRdoWorksites } from "./rdoCreationContextRepository";
+import {
+  assertContextSession,
+  captureContextSession,
+  listCachedAuthorizedRdoWorksites,
+  refreshAuthorizedRdoWorksites,
+} from "./rdoCreationContextRepository";
 import { limparRastroLocalDoRdo } from "./rdoLifecycle";
 import { semearFichasDeAnexoDoServidor } from "./rdoPhotoSync";
 
@@ -198,6 +206,8 @@ export interface ReconciliacaoDeRdos {
   pendentes: number;
   /** RDOs que o servidor confirmou não existirem mais, tirados do aparelho. */
   removidos: number;
+  /** Consultas que não terminaram; zero é o único vazio confirmado. */
+  falhas: number;
 }
 
 /**
@@ -208,13 +218,41 @@ export interface ReconciliacaoDeRdos {
  * offline — e a passagem seguinte tenta de novo.
  */
 export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> {
+  const sessionGuard = captureContextSession();
+  const database = await getCortexDb();
+  assertContextSession(sessionGuard);
   const resultado: ReconciliacaoDeRdos = {
     descobertos: 0,
     detalhados: 0,
     pendentes: 0,
     removidos: 0,
+    falhas: 0,
   };
-  const obras = await listCachedAuthorizedRdoWorksites().catch(() => []);
+  let obras: ObraLocalRecord[];
+  try {
+    obras = await listCachedAuthorizedRdoWorksites();
+    assertContextSession(sessionGuard);
+  } catch {
+    assertContextSession(sessionGuard);
+    resultado.falhas += 1;
+    obras = [];
+  }
+  if (obras.length === 0) {
+    /*
+     * O bootstrap das obras e a abertura da tela correm em paralelo. Tratar
+     * cache vazio como "nenhuma obra" tornava a primeira passagem um no-op;
+     * cada F5 avançava só mais uma etapa da hidratação. A própria tela agora
+     * fecha essa corrida consultando a fonte autorizada antes de desistir.
+     */
+    try {
+      obras = await refreshAuthorizedRdoWorksites();
+      assertContextSession(sessionGuard);
+    } catch {
+      assertContextSession(sessionGuard);
+      resultado.falhas += 1;
+      obras = [];
+    }
+  }
   if (obras.length === 0) return resultado;
 
   const agora = new Date().toISOString();
@@ -225,20 +263,19 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
     let remotos: RdoResumoRemoto[];
     try {
       remotos = await listarRdosDaObra(obra.id);
+      assertContextSession(sessionGuard);
     } catch {
+      assertContextSession(sessionGuard);
+      resultado.falhas += 1;
       // Obra que não respondeu não impede as outras: sem rede, ou sem acesso
       // que o servidor reconheça, o resto da varredura continua valendo.
       continue;
     }
 
-    const database = await getCortexDb();
     for (const remoto of remotos) {
+      assertContextSession(sessionGuard);
       const local = await database.get("rdos", remoto.id);
       if (!podeReceberDoServidor(local)) continue;
-      if (local === undefined) {
-        await database.put("rdos", registroDoCabecalho(remoto, agora));
-        resultado.descobertos += 1;
-      }
       /*
        * Falta conteúdo quando o registro nunca o teve, ou quando o servidor
        * diz que o documento mudou depois da última leitura deste aparelho.
@@ -290,6 +327,7 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
       confirmacoesRestantes -= 1;
       try {
         const autoritativo = await buscarRdoAutoritativoPorId(local.id);
+        assertContextSession(sessionGuard);
         if (autoritativo.kind !== "MISSING") continue;
         // Refeita de propósito: a confirmação é assíncrona, e alguém pode ter
         // começado a editar este RDO enquanto ela acontecia. Trabalho local
@@ -298,9 +336,13 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
         if (aindaLocal === undefined || aindaLocal.syncStatus !== "SYNCED") {
           continue;
         }
-        await limparRastroLocalDoRdo(local.id);
+        assertContextSession(sessionGuard);
+        await limparRastroLocalDoRdo(local.id, database);
+        assertContextSession(sessionGuard);
         resultado.removidos += 1;
       } catch {
+        assertContextSession(sessionGuard);
+        resultado.falhas += 1;
         // Sem confirmação não se apaga nada; fica para a próxima passagem.
       }
     }
@@ -315,22 +357,31 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
     let autoritativo;
     try {
       autoritativo = await buscarRdoAutoritativoPorId(remoto.id);
+      assertContextSession(sessionGuard);
     } catch {
+      assertContextSession(sessionGuard);
+      resultado.pendentes += 1;
+      resultado.falhas += 1;
       continue;
     }
-    if (autoritativo.kind !== "FOUND") continue;
+    if (autoritativo.kind !== "FOUND") {
+      resultado.pendentes += 1;
+      resultado.falhas += 1;
+      continue;
+    }
 
-    const database = await getCortexDb();
+    assertContextSession(sessionGuard);
     const local = await database.get("rdos", remoto.id);
     // A checagem é refeita aqui de propósito: a busca é assíncrona, e alguém
     // pode ter começado a editar o RDO enquanto ela acontecia. Escrever por
     // cima agora apagaria uma edição que nasceu depois da decisão.
     if (!podeReceberDoServidor(local)) continue;
+    const discoveredNow = local === undefined;
 
     const statusDetalhado = statusLocal(
       texto(autoritativo.rdo.status) || remoto.status,
     );
-    await database.put("rdos", {
+    const registroCompleto = {
       ...(local ?? registroDoCabecalho(remoto, agora)),
       id: remoto.id,
       obraId: remoto.obraId,
@@ -349,7 +400,7 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
       payload: autoritativo.rdo,
       updatedAt: remoto.atualizadoEm ?? agora,
       servidorAtualizadoEm: remoto.atualizadoEm ?? agora,
-    } as LocalRdoRecord);
+    } as LocalRdoRecord;
     /*
      * As fichas dos anexos descem junto com o conteúdo. Sem isto o aparelho
      * que não fotografou ficava com a loja de anexos vazia: o RDO chegava com
@@ -361,11 +412,21 @@ export async function reconciliarRdosDoServidor(): Promise<ReconciliacaoDeRdos> 
       await semearFichasDeAnexoDoServidor(
         remoto.id,
         (autoritativo.rdo as Record<string, unknown>).attachments,
+        database,
       );
+      assertContextSession(sessionGuard);
     } catch {
-      // Ficha que não semeou fica para a próxima passagem; o RDO já desceu.
+      assertContextSession(sessionGuard);
+      resultado.pendentes += 1;
+      resultado.falhas += 1;
+      // Sem as fichas o detalhe ainda está incompleto. Não publica um RDO
+      // parcial: a próxima passagem repete o conteúdo inteiro.
+      continue;
     }
+    assertContextSession(sessionGuard);
+    await database.put("rdos", registroCompleto);
     resultado.detalhados += 1;
+    if (discoveredNow) resultado.descobertos += 1;
   }
 
   return resultado;

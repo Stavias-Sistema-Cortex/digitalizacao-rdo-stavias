@@ -7,6 +7,7 @@ const api = vi.hoisted(() => ({
   fetch: vi.fn(),
   autoritativo: vi.fn(),
   obras: vi.fn(),
+  refreshObras: vi.fn(),
 }));
 
 vi.mock("../../lib/api/apiClient", async (importOriginal) => ({
@@ -16,8 +17,12 @@ vi.mock("../../lib/api/apiClient", async (importOriginal) => ({
 vi.mock("./rdoLookupApi", () => ({
   buscarRdoAutoritativoPorId: api.autoritativo,
 }));
-vi.mock("./rdoCreationContextRepository", () => ({
+vi.mock("./rdoCreationContextRepository", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("./rdoCreationContextRepository")
+  >()),
   listCachedAuthorizedRdoWorksites: api.obras,
+  refreshAuthorizedRdoWorksites: api.refreshObras,
 }));
 
 import { clearSession, setSession } from "../auth/authSession";
@@ -68,6 +73,14 @@ function respondeComLista(itens: unknown[]) {
   } as unknown as Response);
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 function rdoLocal(overrides: Partial<LocalRdoRecord> = {}): LocalRdoRecord {
   return {
     id: RDO_REMOTO,
@@ -99,7 +112,9 @@ beforeEach(async () => {
   api.fetch.mockReset();
   api.autoritativo.mockReset();
   api.obras.mockReset();
+  api.refreshObras.mockReset();
   api.obras.mockResolvedValue([{ id: OBRA_ID }]);
+  api.refreshObras.mockResolvedValue([{ id: OBRA_ID }]);
   api.autoritativo.mockResolvedValue({
     kind: "FOUND",
     version: 4,
@@ -149,6 +164,100 @@ describe("RDOs do servidor no aparelho de quem tem acesso", () => {
     expect(
       (guardado?.payload as Record<string, unknown>).servicosExecutados,
     ).toHaveLength(1);
+  });
+
+  it("não persiste um cabeçalho parcial enquanto o conteúdo ainda está em voo", async () => {
+    respondeComLista([resumo()]);
+    const detalhe = deferred<{
+      kind: "FOUND";
+      version: number;
+      rdo: Record<string, unknown>;
+    }>();
+    api.autoritativo.mockReturnValue(detalhe.promise);
+
+    const reconciliacao = reconciliarRdosDoServidor();
+    await vi.waitFor(async () => {
+      expect(api.autoritativo).toHaveBeenCalledOnce();
+    });
+    expect(await (await getCortexDb()).get("rdos", RDO_REMOTO))
+      .toBeUndefined();
+
+    detalhe.resolve({
+      kind: "FOUND",
+      version: 4,
+      rdo: {
+        id: RDO_REMOTO,
+        obraId: OBRA_ID,
+        numeroRdo: "RDO-0017",
+        dataRdo: "2026-08-09",
+        status: "ENVIADO",
+        servicosExecutados: [{ descricao: "CBUQ completo" }],
+      },
+    });
+    await reconciliacao;
+
+    expect(await (await getCortexDb()).get("rdos", RDO_REMOTO))
+      .toMatchObject({
+        versaoEntidade: 4,
+        payload: {
+          servicosExecutados: [{ descricao: "CBUQ completo" }],
+        },
+      });
+  });
+
+  it("atualiza as obras autorizadas quando o cache ainda não terminou de hidratar", async () => {
+    api.obras.mockResolvedValue([]);
+    api.refreshObras.mockResolvedValue([{ id: OBRA_ID }]);
+    respondeComLista([resumo()]);
+
+    const resultado = await reconciliarRdosDoServidor();
+
+    expect(api.refreshObras).toHaveBeenCalledOnce();
+    expect(api.fetch).toHaveBeenCalledOnce();
+    expect(resultado.detalhados).toBe(1);
+  });
+
+  it("não grava a resposta antiga no banco de outra sessão", async () => {
+    respondeComLista([resumo()]);
+    const detalhe = deferred<{
+      kind: "FOUND";
+      version: number;
+      rdo: Record<string, unknown>;
+    }>();
+    api.autoritativo.mockReturnValue(detalhe.promise);
+    const reconciliation = reconciliarRdosDoServidor();
+    await vi.waitFor(() => expect(api.autoritativo).toHaveBeenCalledOnce());
+
+    const otherUserId = crypto.randomUUID();
+    setSession({
+      colaboradorId: otherUserId,
+      nome: "Outra pessoa",
+      papelAcesso: "BETA",
+      escopoGlobal: false,
+      obraIds: [OBRA_ID],
+      expiraEm: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const otherDatabaseName = await databaseNameForScope(
+      otherUserId,
+      `BETA:${OBRA_ID}`,
+    );
+    detalhe.resolve({
+      kind: "FOUND",
+      version: 4,
+      rdo: {
+        id: RDO_REMOTO,
+        obraId: OBRA_ID,
+        numeroRdo: "RDO-0017",
+        dataRdo: "2026-08-09",
+        status: "ENVIADO",
+      },
+    });
+
+    await expect(reconciliation).rejects.toThrow(/sessão mudou/i);
+    expect(await (await getCortexDb()).get("rdos", RDO_REMOTO))
+      .toBeUndefined();
+    await closeCortexDb();
+    await deleteDB(otherDatabaseName);
   });
 
   /*
@@ -321,11 +430,13 @@ describe("RDOs do servidor no aparelho de quem tem acesso", () => {
     await expect(reconciliarRdosDoServidor()).resolves.toMatchObject({
       descobertos: 0,
       detalhados: 0,
+      falhas: 1,
     });
   });
 
   it("não busca nada quando a pessoa não alcança obra nenhuma", async () => {
     api.obras.mockResolvedValue([]);
+    api.refreshObras.mockResolvedValue([]);
 
     await reconciliarRdosDoServidor();
 

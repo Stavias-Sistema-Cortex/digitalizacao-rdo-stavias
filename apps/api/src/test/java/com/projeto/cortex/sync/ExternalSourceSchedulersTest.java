@@ -34,10 +34,10 @@ class ExternalSourceSchedulersTest {
             assertThat(context).hasNotFailed();
             assertThat(context).doesNotHaveBean(AcademySyncScheduler.class);
             assertThat(context).doesNotHaveBean(ZeladoriaSyncScheduler.class);
-            assertThat(context).doesNotHaveBean(
+            assertThat(context).hasBean(
                     ExternalSourceSchedulingConfiguration.ACADEMY_SCHEDULER
             );
-            assertThat(context).doesNotHaveBean(
+            assertThat(context).hasBean(
                     ExternalSourceSchedulingConfiguration.ZELADORIA_SCHEDULER
             );
 
@@ -86,7 +86,7 @@ class ExternalSourceSchedulersTest {
                             ExternalSourceSchedulingConfiguration
                                     .ACADEMY_SCHEDULER
                     );
-                    assertThat(context).doesNotHaveBean(
+                    assertThat(context).hasBean(
                             ExternalSourceSchedulingConfiguration
                                     .ZELADORIA_SCHEDULER
                     );
@@ -115,7 +115,7 @@ class ExternalSourceSchedulersTest {
                             .doesNotHaveBean(AcademySyncScheduler.class);
                     assertThat(context)
                             .hasSingleBean(ZeladoriaSyncScheduler.class);
-                    assertThat(context).doesNotHaveBean(
+                    assertThat(context).hasBean(
                             ExternalSourceSchedulingConfiguration
                                     .ACADEMY_SCHEDULER
                     );

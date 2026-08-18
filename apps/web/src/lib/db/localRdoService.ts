@@ -2523,6 +2523,12 @@ export async function repairRdoCreateMutationsForSync(
 
 const RDO_WORKFORCE_LINK_REJECTION =
   "colaborador nao esta ativo e vinculado a obra do rdo";
+const RDO_WORKFORCE_INACTIVE_REJECTION =
+  "colaborador nao encontrado ou inativo";
+const RDO_EQUIPMENT_INACTIVE_REJECTION =
+  "o equipamento informado nao esta no parque ativo disponivel para a obra do rdo";
+
+type RdoValidationRecoveryKind = "WORKFORCE" | "EQUIPMENT";
 
 export interface RdoRejectedMutationRecoveryOptions {
   now?: () => string;
@@ -2532,6 +2538,10 @@ export interface RdoRejectedMutationRecoveryOptions {
   recoveredReplacementIds?: Set<string>;
   recoveredReplacementByOriginalId?: Map<string, string>;
   loadAuthorizedCollaboratorIds?: (
+    obraId: string,
+    dataRdo: string,
+  ) => Promise<ReadonlySet<string>>;
+  loadAuthorizedEquipmentIds?: (
     obraId: string,
     dataRdo: string,
   ) => Promise<ReadonlySet<string>>;
@@ -2545,6 +2555,13 @@ export class RdoWorkforceContextUnverifiedError extends Error {
   constructor() {
     super("O contexto atual de colaboradores está parcial ou incompatível.");
     this.name = "RdoWorkforceContextUnverifiedError";
+  }
+}
+
+export class RdoEquipmentContextUnverifiedError extends Error {
+  constructor() {
+    super("O contexto atual de equipamentos está parcial ou incompatível.");
+    this.name = "RdoEquipmentContextUnverifiedError";
   }
 }
 
@@ -2585,11 +2602,20 @@ function isRecoverableRejectedRdoMutation(
     );
   if (!supportedRdoOperation) return false;
   return mutation.lastSafeCode === "IDEMPOTENCY_MISMATCH" ||
-    (
-      mutation.lastSafeCode === "VALIDATION_OR_AUTHORIZATION" &&
-      normalizedServerMessage(mutation.ultimoErro) ===
-        RDO_WORKFORCE_LINK_REJECTION
-    );
+    validationRecoveryKind(mutation) !== null;
+}
+
+function validationRecoveryKind(
+  mutation: OutboxMutationRecord,
+): RdoValidationRecoveryKind | null {
+  if (mutation.lastSafeCode !== "VALIDATION_OR_AUTHORIZATION") return null;
+  const message = normalizedServerMessage(mutation.ultimoErro);
+  if (
+    message === RDO_WORKFORCE_LINK_REJECTION ||
+    message === RDO_WORKFORCE_INACTIVE_REJECTION
+  ) return "WORKFORCE";
+  if (message === RDO_EQUIPMENT_INACTIVE_REJECTION) return "EQUIPMENT";
+  return null;
 }
 
 async function currentAuthorizedCollaboratorIds(
@@ -2608,6 +2634,29 @@ async function currentAuthorizedCollaboratorIds(
     throw new RdoWorkforceContextUnverifiedError();
   }
   return new Set(collaborators.ids);
+}
+
+async function currentAuthorizedEquipmentIds(
+  obraId: string,
+  dataRdo: string,
+): Promise<ReadonlySet<string>> {
+  let context: RdoCreationContextLookup;
+  try {
+    context = await buscarContextoDeCriacaoRdo(obraId, dataRdo);
+  } catch (error: unknown) {
+    if (error instanceof RdoLookupPayloadError) {
+      throw new RdoEquipmentContextUnverifiedError();
+    }
+    throw error;
+  }
+  if (!completeCoverage(context.coverage.equipamentos)) {
+    throw new RdoEquipmentContextUnverifiedError();
+  }
+  return new Set(
+    context.equipamentos
+      .map((item) => item.id.trim())
+      .filter(Boolean),
+  );
 }
 
 function repairInvalidWorkforceLinks(
@@ -2705,6 +2754,45 @@ function repairInvalidWorkforceLinks(
     unresolvedInvalidIds: [...unresolvedInvalidIds],
     invalidStructuredAllocationIds,
     repairedNominalWorkforceLinks,
+  };
+}
+
+function repairInvalidEquipmentLinks(
+  draft: RdoDraft,
+  authorizedIds: ReadonlySet<string>,
+): {
+  draft: RdoDraft;
+  changed: boolean;
+  hasInvalidIds: boolean;
+  unresolvedInvalidIds: string[];
+} {
+  const invalidIds = new Set(
+    draft.equipamentos
+      .map((item) => item.assetId.trim())
+      .filter((id) => id && !authorizedIds.has(id)),
+  );
+  const unresolvedInvalidIds = new Set<string>();
+  const equipamentos = draft.equipamentos.map((item) => {
+    const assetId = item.assetId.trim();
+    if (!assetId || !invalidIds.has(assetId)) return item;
+    if (
+      !item.prefixo.trim() &&
+      !item.descricao.trim() &&
+      !item.tipoEquipamento.trim()
+    ) {
+      unresolvedInvalidIds.add(assetId);
+      return item;
+    }
+    return { ...item, assetId: "" };
+  });
+  const changed = invalidIds.size > 0 &&
+    unresolvedInvalidIds.size === 0 &&
+    equipamentos.some((item, index) => item !== draft.equipamentos[index]);
+  return {
+    draft: changed ? { ...draft, equipamentos } : draft,
+    changed,
+    hasInvalidIds: invalidIds.size > 0,
+    unresolvedInvalidIds: [...unresolvedInvalidIds],
   };
 }
 
@@ -3745,6 +3833,8 @@ function recoveryAncestryState(
       ancestor.lastSafeCode ===
         "SUPERSEDED_BY_WORKFORCE_RECOVERY" ||
       ancestor.lastSafeCode ===
+        "SUPERSEDED_BY_EQUIPMENT_RECOVERY" ||
+      ancestor.lastSafeCode ===
         "SUPERSEDED_BY_DEPENDENCY_REWIRE"
     ) {
       return "RECOVERED";
@@ -3842,6 +3932,9 @@ export async function recoverRejectedRdoMutationsForSync(
   const loadAuthorizedIds =
     options.loadAuthorizedCollaboratorIds ??
       currentAuthorizedCollaboratorIds;
+  const loadAuthorizedEquipmentIds =
+    options.loadAuthorizedEquipmentIds ??
+      currentAuthorizedEquipmentIds;
   const lookupAuthoritativeRdo =
     options.lookupAuthoritativeRdo ??
       buscarRdoAutoritativoPorId;
@@ -4110,8 +4203,9 @@ export async function recoverRejectedRdoMutationsForSync(
       );
       continue;
     }
-    const workforceRecovery =
-      original.lastSafeCode === "VALIDATION_OR_AUTHORIZATION";
+    const validationRecovery = validationRecoveryKind(original);
+    const workforceRecovery = validationRecovery === "WORKFORCE";
+    const equipmentRecovery = validationRecovery === "EQUIPMENT";
     let repairedDraft = rdoDraftFromLocalRecord(rdo);
     let previousSnapshot = originalEvent.previousState;
     let nextPayload: Record<string, unknown>;
@@ -4255,6 +4349,64 @@ export async function recoverRejectedRdoMutationsForSync(
         operationalEvents:
           workforceOperationalEventRecovery.events,
       };
+    } else if (equipmentRecovery) {
+      let authorizedEquipmentIds: ReadonlySet<string>;
+      await assertRecoveryLease(options.executionLease);
+      try {
+        authorizedEquipmentIds = await loadAuthorizedEquipmentIds(
+          rdo.obraId,
+          rdo.dataRdo,
+        );
+      } catch (error: unknown) {
+        assertSyncSession(guard);
+        await assertRecoveryLease(options.executionLease);
+        if (
+          error instanceof RdoEquipmentContextUnverifiedError ||
+          isPermanentRecoveryLookupError(error)
+        ) {
+          await terminalizeRejectedRecovery(
+            database,
+            guard,
+            [snapshot],
+            "EQUIPMENT_RECOVERY_CONTEXT_UNVERIFIED",
+            "O contexto atual de equipamentos não pôde ser comprovado.",
+            options.executionLease,
+            recoveryDecisionSnapshot,
+          );
+        } else {
+          await deferRejectedRecovery(
+            database,
+            guard,
+            snapshot,
+            now(),
+            options.executionLease,
+          );
+        }
+        continue;
+      }
+      assertSyncSession(guard);
+      await assertRecoveryLease(options.executionLease);
+      const repaired = repairInvalidEquipmentLinks(
+        repairedDraft,
+        authorizedEquipmentIds,
+      );
+      if (repaired.hasInvalidIds && !repaired.changed) {
+        await terminalizeRejectedRecovery(
+          database,
+          guard,
+          [snapshot],
+          "EQUIPMENT_RECOVERY_REQUIRES_REVIEW",
+          repaired.unresolvedInvalidIds.length > 0
+            ? "Há equipamento removido sem descrição nominal para recuperação segura."
+            : "O contexto atual ainda autoriza todos os equipamentos locais.",
+          options.executionLease,
+          recoveryDecisionSnapshot,
+        );
+        continue;
+      }
+      repairedDraft = repaired.draft;
+      recoveryTimestamp = now();
+      nextPayload = buildRdoSyncPayload(repairedDraft);
     } else if (original.operation === "UPDATE") {
       nextPayload = original.payload as Record<string, unknown>;
     } else {
@@ -4541,7 +4693,9 @@ export async function recoverRejectedRdoMutationsForSync(
 
     const safeCode = workforceRecovery
       ? "SUPERSEDED_BY_WORKFORCE_RECOVERY"
-      : "SUPERSEDED_BY_IDEMPOTENCY_RECOVERY";
+      : equipmentRecovery
+        ? "SUPERSEDED_BY_EQUIPMENT_RECOVERY"
+        : "SUPERSEDED_BY_IDEMPOTENCY_RECOVERY";
     await assertRecoveryLeaseInTransaction(
       transaction,
       options.executionLease,

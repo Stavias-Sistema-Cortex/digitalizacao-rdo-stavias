@@ -197,9 +197,10 @@ export async function processRdoPhotoUploads(
 export async function semearFichasDeAnexoDoServidor(
   rdoId: string,
   attachments: unknown,
+  databaseOverride?: Awaited<ReturnType<typeof getCortexDb>>,
 ): Promise<number> {
   if (!Array.isArray(attachments) || attachments.length === 0) return 0;
-  const database = await getCortexDb();
+  const database = databaseOverride ?? await getCortexDb();
   let semeadas = 0;
 
   for (const bruto of attachments) {

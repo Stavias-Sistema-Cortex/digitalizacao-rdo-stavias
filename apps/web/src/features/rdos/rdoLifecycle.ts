@@ -260,8 +260,11 @@ export async function descartarRdoLocalNaoSincronizado(
  * envio em curso deixaria a resposta do servidor chegando para um RDO que já
  * não existe aqui.
  */
-export async function limparRastroLocalDoRdo(rdoId: string): Promise<void> {
-  const database = await getCortexDb();
+export async function limparRastroLocalDoRdo(
+  rdoId: string,
+  databaseOverride?: Awaited<ReturnType<typeof getCortexDb>>,
+): Promise<void> {
+  const database = databaseOverride ?? await getCortexDb();
   const transaction = database.transaction(
     [
       "rdos",

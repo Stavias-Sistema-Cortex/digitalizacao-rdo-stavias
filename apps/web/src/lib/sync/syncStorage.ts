@@ -17,6 +17,7 @@ import type {
   OperationalEventRecord,
   OutboxMutationRecord,
   ProcessedEventRecord,
+  RdoCreationContextCacheRecord,
   RdoAttachmentRecord,
   ServiceCatalogLocalRecord,
   ServicePriceVersionLocalRecord,
@@ -5382,6 +5383,158 @@ function nullableTextValue(value: unknown): string | null {
   return text || null;
 }
 
+function sourceText(
+  payload: Record<string, unknown>,
+  field: string,
+  fallback: string | null,
+): string | null {
+  const value = payload[field];
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : fallback;
+}
+
+function catalogCoverage(
+  coverage: Record<string, unknown>,
+  sectionName: "colaboradores" | "equipamentos",
+  count: number,
+): Record<string, unknown> {
+  return {
+    ...coverage,
+    [sectionName]: {
+      ...objectValue(coverage[sectionName]),
+      total: count,
+      returned: count,
+      complete: true,
+      status: "COMPLETE",
+    },
+  };
+}
+
+function replaceCatalogItem(
+  current: Array<Record<string, unknown>>,
+  id: string,
+  replacement: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const index = current.findIndex((item) => textValue(item.id) === id);
+  if (index < 0) return [...current, replacement];
+  return current.map((item, itemIndex) =>
+    itemIndex === index ? replacement : item
+  );
+}
+
+/**
+ * Converges the already-authorized offline selector before the pull cursor is
+ * advanced. The source event is a compact delta over a complete server-issued
+ * context: existing worksite ordering is preserved and only the authoritative
+ * corporate fields are replaced. A source deletion removes the selectable ID
+ * but never edits RDOs already created from the older receipt.
+ */
+function applySourceCatalogEvent(
+  record: RdoCreationContextCacheRecord,
+  event: SyncPullEvent,
+): RdoCreationContextCacheRecord | null {
+  const payload = objectValue(event.payload);
+  const context = structuredClone(record.context);
+
+  if (event.entidadeTipo === "ATIVO") {
+    const assetId = textValue(payload.assetId) || textValue(event.entidadeId);
+    if (!assetId) return null;
+    const current = Array.isArray(context.equipamentos)
+      ? context.equipamentos as Array<Record<string, unknown>>
+      : [];
+    const existing = current.find((item) => textValue(item.id) === assetId);
+    const removed = payload.active === false ||
+      event.tipoEvento === "ATIVO_EXCLUIDO_DA_ORIGEM";
+    const next = removed
+      ? current.filter((item) => textValue(item.id) !== assetId)
+      : replaceCatalogItem(current, assetId, {
+            id: assetId,
+            codigoExterno: sourceText(
+              payload,
+              "prefixo",
+              sourceText(existing ?? {}, "codigoExterno", null),
+            ),
+            nome: sourceText(
+              payload,
+              "nome",
+              sourceText(existing ?? {}, "nome", null),
+            ),
+            categoria: sourceText(
+              payload,
+              "tipo",
+              sourceText(existing ?? {}, "categoria", null),
+            ),
+            naObra: existing?.naObra === true,
+          });
+    const coverage = catalogCoverage(
+      objectValue(context.coverage),
+      "equipamentos",
+      next.length,
+    );
+    context.equipamentos = next;
+    context.coverage = coverage;
+    return {
+      ...record,
+      cachedAt: nowUtc(),
+      coverage,
+      context,
+    };
+  }
+
+  if (event.entidadeTipo === "COLABORADOR") {
+    const collaboratorId = textValue(payload.colaboradorId) ||
+      textValue(event.entidadeId);
+    if (!collaboratorId) return null;
+    const current = Array.isArray(context.colaboradores)
+      ? context.colaboradores as Array<Record<string, unknown>>
+      : [];
+    const existing = current.find(
+      (item) => textValue(item.id) === collaboratorId,
+    );
+    const next = payload.ativo === false
+      ? current.filter((item) => textValue(item.id) !== collaboratorId)
+      : replaceCatalogItem(current, collaboratorId, {
+            id: collaboratorId,
+            codigoColaborador: sourceText(
+              payload,
+              "codigoColaborador",
+              sourceText(existing ?? {}, "codigoColaborador", null),
+            ),
+            nome: sourceText(
+              payload,
+              "nome",
+              sourceText(existing ?? {}, "nome", null),
+            ),
+            papelNaObra: existing?.papelNaObra ?? null,
+            nomePerfil: existing?.nomePerfil ?? null,
+            // A origem sem funcao significa "não informou". O valor manual
+            // existente continua sendo a fonte de fallback do RDO/rateio.
+            funcao: sourceText(
+              payload,
+              "funcao",
+              sourceText(existing ?? {}, "funcao", null),
+            ),
+            naObra: existing?.naObra === true,
+          });
+    const coverage = catalogCoverage(
+      objectValue(context.coverage),
+      "colaboradores",
+      next.length,
+    );
+    context.colaboradores = next;
+    context.coverage = coverage;
+    return {
+      ...record,
+      cachedAt: nowUtc(),
+      coverage,
+      context,
+    };
+  }
+
+  return null;
+}
+
 function taskPriorityFromPayload(
   value: unknown,
 ): TarefaRecord["prioridade"] | null {
@@ -5477,6 +5630,7 @@ export async function applyPulledEventsAtomically(
         "sync_state",
         "obras",
         "previsao_snapshots",
+        "rdo_creation_contexts",
       ],
       "readwrite",
     ),
@@ -5516,6 +5670,8 @@ export async function applyPulledEventsAtomically(
    * aparelho, que é quem pagaria a conta.
    */
   const processadosNestaJanela = new Set<number>();
+  let sourceContexts: RdoCreationContextCacheRecord[] | null = null;
+  const changedSourceContextIndexes = new Set<number>();
 
   for (const event of orderedEvents) {
     if (!Number.isSafeInteger(event.commitSeq)) {
@@ -5666,6 +5822,24 @@ export async function applyPulledEventsAtomically(
       }
     }
 
+    if (
+      (event.entidadeTipo === "ATIVO" ||
+        event.entidadeTipo === "COLABORADOR") &&
+      event.payload
+    ) {
+      const contextStore = transaction.objectStore(
+        "rdo_creation_contexts",
+      );
+      sourceContexts ??= await contextStore.getAll();
+      for (let index = 0; index < sourceContexts.length; index += 1) {
+        const updated = applySourceCatalogEvent(sourceContexts[index], event);
+        if (updated) {
+          sourceContexts[index] = updated;
+          changedSourceContextIndexes.add(index);
+        }
+      }
+    }
+
     const processedRecord: ProcessedEventRecord = {
       commitSeq: event.commitSeq,
       eventoId: event.eventoId,
@@ -5681,6 +5855,13 @@ export async function applyPulledEventsAtomically(
       highestAppliedCommitSeq,
       event.commitSeq,
     );
+  }
+
+  if (sourceContexts) {
+    const contextStore = transaction.objectStore("rdo_creation_contexts");
+    for (const index of changedSourceContextIndexes) {
+      await contextStore.put(sourceContexts[index]);
+    }
   }
 
   if (
