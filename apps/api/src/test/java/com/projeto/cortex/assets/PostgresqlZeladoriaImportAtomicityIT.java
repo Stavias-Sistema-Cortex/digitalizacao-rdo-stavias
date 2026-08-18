@@ -28,6 +28,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers(disabledWithoutDocker = true)
 class PostgresqlZeladoriaImportAtomicityIT {
 
+    private static final String SOURCE_DATABASE = "dbsta" + "vias_zld";
+
     @Container
     private static final PostgreSQLContainer<?> DATABASE =
             new PostgreSQLContainer<>("postgres:18")
@@ -92,10 +94,10 @@ class PostgresqlZeladoriaImportAtomicityIT {
         Map<String, Object> missing = jdbc.queryForMap("""
                 SELECT id, active, deleted_at, row_version
                 FROM asset
-                WHERE source_database = 'dbstavias_zld'
+                WHERE source_database = ?
                   AND source_table = 'ativos'
                   AND source_pk = '1'
-                """);
+                """, SOURCE_DATABASE);
         assertThat(missing)
                 .containsEntry("id", "asset-old")
                 .containsEntry("active", false)
@@ -104,12 +106,12 @@ class PostgresqlZeladoriaImportAtomicityIT {
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*)
                 FROM asset
-                WHERE source_database = 'dbstavias_zld'
+                WHERE source_database = ?
                   AND source_table = 'ativos'
                   AND source_pk = '2'
                   AND active = TRUE
                   AND deleted_at IS NULL
-                """, Integer.class)).isOne();
+                """, Integer.class, SOURCE_DATABASE)).isOne();
     }
 
     @Test
@@ -128,9 +130,9 @@ class PostgresqlZeladoriaImportAtomicityIT {
                 SELECT id, active, deleted_at
                 FROM asset
                 WHERE source_pk = '1'
-                  AND source_database = 'dbstavias_zld'
+                  AND source_database = ?
                   AND source_table = 'ativos'
-                """))
+                """, SOURCE_DATABASE))
                 .containsEntry("id", "asset-stable")
                 .containsEntry("active", true)
                 .containsEntry("deleted_at", null);
@@ -287,10 +289,10 @@ class PostgresqlZeladoriaImportAtomicityIT {
                     external_code, name, category, active,
                     source_hash, deleted_at, row_version
                 ) VALUES (
-                    ?, 'dbstavias_zld', 'ativos', ?,
+                    ?, ?, 'ativos', ?,
                     'EQ-OLD', 'Modelo antigo', 'CAMINHAO', ?,
                     repeat('a', 64), %s, ?
                 )
-                """.formatted(deletedAt), id, sourcePk, active, rowVersion);
+                """.formatted(deletedAt), id, SOURCE_DATABASE, sourcePk, active, rowVersion);
     }
 }

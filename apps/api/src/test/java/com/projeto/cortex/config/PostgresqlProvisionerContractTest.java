@@ -57,14 +57,29 @@ class PostgresqlProvisionerContractTest {
         assertTrue(template.contains(
                 "CORTEX_ACADEMY_DB_URL=jdbc:mysql://"
                         + "<ACADEMY_HOST>:3306/<ACADEMY_DATABASE>"
-                        + "?sslMode=VERIFY_IDENTITY"
+                        + "?sslMode=VERIFY_CA"
         ));
-        assertTrue(template.contains("CORTEX_ZELADORIA_DB_URL=<ZELADORIA_READ_ONLY_JDBC_URL>"));
+        assertTrue(template.contains(
+                "CORTEX_ACADEMY_TRUSTSTORE_FILE="
+                        + "<ABSOLUTE_PATH_TO_ACADEMY_PKCS12_TRUSTSTORE>"
+        ));
+        assertTrue(template.contains(
+                "CORTEX_ZELADORIA_DB_URL=jdbc:mysql://"
+                        + "<ZELADORIA_HOST>:3306/<ZELADORIA_DATABASE>"
+                        + "?sslMode=VERIFY_CA"
+        ));
+        assertTrue(template.contains(
+                "CORTEX_ZELADORIA_TRUSTSTORE_FILE="
+                        + "<ABSOLUTE_PATH_TO_ZELADORIA_PKCS12_TRUSTSTORE>"
+        ));
         assertTrue(template.contains("CORTEX_SYNC_ACADEMY_ENABLED=false"));
         assertTrue(template.contains(
                 "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS=900000"
         ));
         assertTrue(template.contains("CORTEX_SYNC_ZELADORIA_ENABLED=false"));
+        assertTrue(template.contains(
+                "CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS=900000"
+        ));
         assertFalse(template.contains("CORTEX_SYNC_ENABLED="));
         assertFalse(template.contains("joaolucas"),
                 "the example must not embed a local operator identity");

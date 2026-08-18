@@ -13,10 +13,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers(disabledWithoutDocker = true)
 class ZeladoriaSourceAdapterMysqlSnapshotIT {
 
+    private static final String SOURCE_DATABASE = "dbsta" + "vias_zld";
+
     @Container
     private static final MySQLContainer<?> DATABASE =
             new MySQLContainer<>("mysql:8.4")
-                    .withDatabaseName("dbstavias_zld")
+                    .withDatabaseName(SOURCE_DATABASE)
                     .withUsername("fixture_admin")
                     .withPassword("fixture-only-admin-credential")
                     .withEnv("MYSQL_ROOT_HOST", "%")

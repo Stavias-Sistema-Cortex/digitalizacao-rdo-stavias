@@ -352,8 +352,7 @@ class StaviaRuntimeBoundaryTest {
             sourceReference(
                     "apps/api/src/main/java/com/projeto/cortex/assets/AssetImportService.java",
                     "dbstavias_zld",
-                    "SOURCE_DATABASE = \"dbstavias_zld\"",
-                    "Failed to import assets from dbstavias_zld.ativos"),
+                    "SOURCE_DATABASE = \"dbstavias_zld\""),
             sourceReference(
                     "apps/api/src/main/java/com/projeto/cortex/integracoes/"
                             + "IntegracaoAdminService.java",
@@ -418,7 +417,7 @@ class StaviaRuntimeBoundaryTest {
                     "dbstavias_acad", 1, "PostgresqlRuntimeReadinessGuard.java"),
             compiledReference(
                     "target/classes/com/projeto/cortex/assets/AssetImportService.class",
-                    "dbstavias_zld", 3, "AssetImportService.java"),
+                    "dbstavias_zld", 2, "AssetImportService.java"),
             compiledReference(
                     "target/classes/com/projeto/cortex/integracoes/"
                             + "IntegracaoAdminService.class",
