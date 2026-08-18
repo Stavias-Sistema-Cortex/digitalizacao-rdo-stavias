@@ -125,20 +125,21 @@ describe("polimento visual da plataforma autenticada", () => {
       ".integracoes-table-card,\n.integracoes-report",
     );
     const managementColumn = rule(gestaoObrasCss, ".gestao-obras-coluna");
-    const workspaceRail = rule(
-      operationalWorkspaceCss,
-      ".workspace-status-rail",
-    );
 
     for (const surface of [
       institutionalFrame,
       documentSurface,
       integrationCard,
       managementColumn,
-      workspaceRail,
     ]) {
       expect(surface).toContain("background: var(--surface-glass-fallback);");
     }
+    // O trilho de estado deixou de ser superfície na linguagem nova: virou
+    // faixa transparente com fio embaixo, como a linha de sincronização da
+    // Home — pedido do dono do produto de espalhar essa gramática às abas.
+    expect(rule(operationalWorkspaceCss, ".workspace-status-rail")).toContain(
+      "background: transparent;",
+    );
     // O Financeiro saiu do sistema de vidro no redesign: a barra de escopo é
     // superfície sólida da marca, sem fallback translúcido.
     expect(rule(financeiroCss, ".finance-scope-bar")).toContain(

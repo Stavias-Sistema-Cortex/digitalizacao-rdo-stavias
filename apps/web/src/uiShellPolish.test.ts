@@ -155,8 +155,10 @@ describe("shell e superfícies operacionais", () => {
     expect(rule(operationalWorkspaceCss, ".workspace-status-rail")).toContain(
       "box-shadow: none;",
     );
+    // Virou faixa sobre um fio (linguagem nova): o padding lateral saiu
+    // porque o texto agora se alinha à margem da página, não a uma caixa.
     expect(rule(operationalWorkspaceCss, ".workspace-status-rail")).toContain(
-      "padding: 6px 12px;",
+      "padding: 6px 0 10px;",
     );
     expect(rule(financeiroCss, ".finance-scope-bar")).toContain(
       "box-shadow: none;",

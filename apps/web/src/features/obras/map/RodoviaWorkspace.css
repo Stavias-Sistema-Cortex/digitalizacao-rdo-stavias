@@ -1,5 +1,7 @@
+/* A moldura é a da casa: 2px de tinta faziam do mapa o retângulo mais
+   pesado do produto, gritando mais que o próprio conteúdo. */
 .rodovia-workspace {
-  border: 2px solid var(--color-ink);
+  border: 1px solid var(--color-border-strong);
   border-radius: 4px;
   background: var(--color-surface);
   padding: 14px;
@@ -314,7 +316,7 @@
 
 .rodovia-workspace-filtros__camadas button {
   border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: transparent;
   padding: 3px 10px;
   font: inherit;

@@ -56,40 +56,50 @@
   gap: 8px;
 }
 
+/*
+ * Abas de área na gramática da casa: texto sobre um fio, com a escolha
+ * sublinhada de amarelo — a mesma voz dos períodos da Home e dos módulos do
+ * Financeiro. A caixa segmentada com a aba ativa em bloco preto era a última
+ * sobrevivente da linguagem velha no esqueleto compartilhado.
+ */
 .workspace-tabs {
   min-inline-size: 0;
   display: flex;
-  gap: 2px;
+  gap: 18px;
   margin: 12px var(--workspace-gutter) 0;
   overflow-x: auto;
-  border: 1px solid #cfd3d1;
-  background: #f2f4f3;
+  border-block-end: 1px solid var(--color-border);
+  background: transparent;
 }
 
 .workspace-tabs button {
   min-block-size: 36px;
-  padding: 8px 12px;
+  padding: 8px 2px;
   border: 0;
-  border-inline-end: 1px solid #cfd3d1;
   border-radius: 0;
-  color: #313634;
+  color: var(--color-muted);
   background: transparent;
   font: inherit;
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
 }
 
+.workspace-tabs button:hover:not(:disabled) {
+  color: var(--color-ink);
+}
+
 .workspace-tabs button.is-active {
-  color: #fff;
-  background: #101112;
+  color: var(--color-ink);
+  font-weight: 600;
+  box-shadow: 0 2px 0 0 var(--color-brand-yellow);
 }
 
 .workspace-tabs button:focus-visible,
 .workspace-header__actions :is(button, a):focus-visible,
 .workspace-status-rail__actions :is(button, a):focus-visible {
-  outline: 2px solid #101112;
+  outline: 2px solid var(--color-focus, #2f6f68);
   outline-offset: 2px;
 }
 
@@ -98,6 +108,11 @@
   cursor: not-allowed;
 }
 
+/*
+ * O trilho de estado é faixa, não painel: o ponto colorido e o texto sobre um
+ * fio, como a linha de sincronização da Home. A caixa com borda e fundo
+ * próprios dava peso de card a algo que só relata.
+ */
 .workspace-status-rail {
   min-inline-size: 0;
   min-block-size: 36px;
@@ -106,11 +121,11 @@
   justify-content: space-between;
   gap: 12px;
   margin: 10px var(--workspace-gutter) 0;
-  padding: 6px 12px;
-  border: 1px solid #d7dad8;
-  border-radius: var(--radius-control);
-  background: var(--surface-glass-fallback);
-  background: var(--surface-glass-active);
+  padding: 6px 0 10px;
+  border: 0;
+  border-block-end: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
 }
 

@@ -357,10 +357,14 @@ async function verifyScenario({ viewport, sidebar }, protocol) {
         `at viewport ${viewport}px/sidebar ${sidebar}px.`,
     );
   }
-  if (measurements.status.edgeGap < 12) {
+  // O trilho de estado virou faixa sem caixa (linguagem tipográfica nova):
+  // o texto deve alinhar rente à margem do trilho, sem recuo de painel. Um
+  // recuo que reaparecer aqui significa que alguém devolveu padding de caixa
+  // a algo que hoje se alinha ao miolo da página.
+  if (measurements.status.leftInset > 2) {
     throw new Error(
-      `Operational status is ${measurements.status.edgeGap}px from its surface edge ` +
-      `at viewport ${viewport}px/sidebar ${sidebar}px.`,
+      `Operational status is inset ${measurements.status.leftInset}px from the rail edge ` +
+      `at viewport ${viewport}px/sidebar ${sidebar}px; the rail is a band, not a box.`,
     );
   }
   if (measurements.status.whiteSpace === "nowrap") {
@@ -607,10 +611,7 @@ function pageFixture(sidebar) {
       borderBottomWidth: Number.parseFloat(getComputedStyle(header).borderBottomWidth)
     };
     measurements.status = {
-      edgeGap: Math.min(
-        status.left - statusSurface.left,
-        statusSurface.right - status.right
-      ),
+      leftInset: status.left - statusSurface.left,
       overflowWrap: statusTextStyle.overflowWrap,
       whiteSpace: statusTextStyle.whiteSpace
     };

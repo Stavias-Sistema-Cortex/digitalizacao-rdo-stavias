@@ -217,7 +217,16 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-.mensagens-pane-heading strong { font-size: 0.82rem; }
+/* O título do painel fala na voz de rótulo da casa, como toda faixa que só
+   se apresenta. */
+.mensagens-pane-heading strong {
+  color: var(--color-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
 .mensagens-pane-heading span { color: var(--color-muted); font-size: 0.65rem; }
 
 /* Busca declarada: rótulo visível e botão nomeado, no lugar da pílula com lupa.
@@ -296,7 +305,7 @@
 
 .mensagens-search-results header button {
   border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 8px 14px;
   background: var(--color-surface);
   color: var(--color-brand-teal);
@@ -1254,7 +1263,7 @@
 .mensagens-dialog form > footer > button:first-child {
   padding: 9px 14px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-brand-teal);
   font-weight: 500;
@@ -1433,9 +1442,12 @@
 }
 
 /* Cortex 2.1 · correspondência operacional */
+
+/* O fio da faixa é o da casa: o traço de tinta pesava mais que o conteúdo e
+   era o único da tela nessa cor. */
 .mensagens-header {
   padding-bottom: 16px;
-  border-bottom: 1px solid var(--color-ink);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .mensagens-header h1,

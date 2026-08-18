@@ -326,17 +326,20 @@
   font-weight: 600;
 }
 
+/*
+ * A prioridade fala sem moldura: a bandeira colorida já é o sinal, e a
+ * cápsula em volta só repetia em cinza o que a cor acabou de dizer. Palavra
+ * apagada ao lado da bandeira, no mesmo tom das outras notas da linha.
+ */
 .tarefa-prio {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 7px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-canvas);
   color: var(--color-muted);
   font-size: 0.68rem;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 /* Bandeiras por grau: P1 azul, P2 amarela, P3 vermelha. */

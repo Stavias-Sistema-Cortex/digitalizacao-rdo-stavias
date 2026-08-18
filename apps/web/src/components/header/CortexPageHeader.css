@@ -94,8 +94,52 @@
   color: #fff;
 }
 
+/*
+ * Os filtros que as páginas injetam aqui chegam como selects comuns, e o
+ * estilo global os pinta de branco — duas pastilhas claras boiando no teal,
+ * sem parentesco com o resto da faixa. Dentro do cabeçalho eles vestem o
+ * chrome: fundo do próprio teal, fio branco discreto, texto branco.
+ */
+.cortex-page-header .cortex-page-header__actions select {
+  border: 1px solid rgb(255 255 255 / 32%);
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: rgb(255 255 255 / 7%);
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+.cortex-page-header .cortex-page-header__actions select:hover {
+  border-color: rgb(255 255 255 / 56%);
+  background: rgb(255 255 255 / 12%);
+}
+
+/* As opções abrem num painel claro do sistema; sem cor própria, herdariam o
+ * branco do select e sumiriam. */
+.cortex-page-header .cortex-page-header__actions option {
+  color: var(--color-ink, #18211f);
+  background: #fff;
+}
+
+/* O "Filtrar por:" fala na voz de rótulo da casa, e numa linha só. */
+.cortex-page-header .cortex-page-header__actions .home-uf-filter > span {
+  color: rgb(255 255 255 / 62%);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/*
+ * O par do canto — sincronização e perfil — é redondo de propósito: são os
+ * únicos controles de identidade da faixa, e o círculo os separa dos filtros
+ * retangulares sem pedir mais peso visual.
+ */
 .cortex-page-header__global-controls :is(.sync-chip__button, .avatar-button) {
   border-color: rgb(255 255 255 / 38%);
+  border-radius: 999px;
   background: rgb(255 255 255 / 8%);
   color: #fff;
   box-shadow: none;
@@ -105,6 +149,14 @@
   border-color: rgb(255 255 255 / 64%);
   background: rgb(255 255 255 / 14%);
   color: #fff;
+}
+
+/* O anel do ponto de estado recorta contra o teal do cabeçalho, não contra o
+ * branco de uma página que não está atrás dele. */
+.cortex-page-header__global-controls .sync-chip__dot {
+  right: 0;
+  top: 0;
+  border-color: var(--cortex-shell-chrome-surface, #0c2623);
 }
 
 .cortex-page-header :is(button, a):focus-visible {
