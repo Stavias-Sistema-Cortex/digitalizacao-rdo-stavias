@@ -26,8 +26,9 @@ negócio válida que o Córtex deve consumir.
   contêiner. Elas são montadas como arquivos secretos somente leitura.
 - Os dois MySQL usam TLS com validação do certificado apresentado. Como os
   certificados atuais não possuem hostname compatível, o modo permitido é
-  `VERIFY_CA` com um truststore PKCS12 contendo exatamente o certificado folha
-  observado e aprovado para cada fonte. `VERIFY_IDENTITY` continua permitido
+  `VERIFY_CA` com um truststore PKCS12 contendo exatamente uma âncora X.509
+  observada e aprovada para cada fonte: a folha ou a CA privada da cadeia
+  legada. `VERIFY_IDENTITY` continua permitido
   quando o certificado do servidor passar a cobrir o hostname.
 - Falhas de fonte não derrubam a API, RDO, mapa, mensagens ou financeiro. Elas
   aparecem no estado da integração e nos registros de execução.

@@ -198,8 +198,7 @@ final class PinnedMysqlSourceTlsPolicy {
             throw failure();
         }
         Certificate certificate = trustStore.getCertificate(alias);
-        if (!(certificate instanceof X509Certificate x509Certificate)
-                || x509Certificate.getBasicConstraints() != -1) {
+        if (!(certificate instanceof X509Certificate)) {
             throw failure();
         }
     }

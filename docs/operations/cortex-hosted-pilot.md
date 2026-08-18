@@ -103,9 +103,9 @@ acesso/redefinição e não é a senha de nenhum colaborador.
 `sslMode=VERIFY_IDENTITY` é o padrão preferido da Academy. Somente quando o
 servidor legado não fornecer identidade de hostname, adicione também o secret
 file binário `/etc/secrets/cortex-academy-truststore.p12`. Ele deve ser PKCS12
-e conter exatamente uma entrada confiável com o certificado folha não-CA
-apresentado pela Academy; não inclua cadeia, CA, chave privada ou segunda
-entrada. A URL usa exatamente `sslMode=VERIFY_CA`,
+e conter exatamente uma entrada confiável: o certificado folha apresentado
+pela Academy ou a CA privada que assina a cadeia legada observada. Não inclua
+a cadeia inteira, chave privada ou segunda entrada. A URL usa exatamente `sslMode=VERIFY_CA`,
 `trustCertificateKeyStoreUrl=file:/etc/secrets/cortex-academy-truststore.p12`,
 `trustCertificateKeyStoreType=PKCS12` e
 `fallbackToSystemTrustStore=false`. A senha opcional do PKCS12 pode permanecer
@@ -114,9 +114,9 @@ na URL protegida `CORTEX_ACADEMY_DB_URL`; nunca a imprima.
 A Zeladoria segue o mesmo contrato com o secret file
 `/etc/secrets/cortex-zeladoria-truststore.p12` e a URL fixa
 `trustCertificateKeyStoreUrl=file:/etc/secrets/cortex-zeladoria-truststore.p12`.
-Cada truststore tem uma entrada confiável, o certificado folha não-CA, nenhuma
-chave privada e `fallbackToSystemTrustStore=false`. Academy e Zeladoria nunca
-compartilham truststore ou senha.
+Cada truststore tem uma única entrada confiável, a âncora X.509 específica da
+fonte, nenhuma chave privada e `fallbackToSystemTrustStore=false`. Academy e
+Zeladoria nunca compartilham truststore ou senha.
 
 A imagem executa como usuário não-root membro do GID 1000, exigido para ler os
 secret files montados pelo Render. O gate de release testa a imagem publicada
@@ -321,7 +321,7 @@ Mantenha `CORTEX_SYNC_ACADEMY_ENABLED=false` e
 Render, configure a Academy com usuário `SELECT`-only,
 `CORTEX_ACADEMY_DB_PASSWORD_FILE=/etc/secrets/cortex-academy-password` e URL
 JDBC MySQL contendo preferencialmente `sslMode=VERIFY_IDENTITY`. A exceção
-`VERIFY_CA` só é válida com o leaf pin PKCS12 exato descrito na seção 3. A
+`VERIFY_CA` só é válida com a âncora X.509 PKCS12 exata descrita na seção 3. A
 Zeladoria usa `CORTEX_ZELADORIA_DB_PASSWORD_FILE` e seu próprio pin. Os arquivos
 secretos são criados no dashboard do Render ou no host local e nunca são
 copiados para variáveis de ambiente.

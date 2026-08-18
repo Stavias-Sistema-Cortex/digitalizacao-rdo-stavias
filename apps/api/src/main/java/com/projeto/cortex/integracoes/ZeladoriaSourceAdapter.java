@@ -38,7 +38,7 @@ public class ZeladoriaSourceAdapter {
     private static final String PRODUCTION_TLS_REQUIRED =
             "Zeladoria em produção exige JDBC MySQL com "
                     + "sslMode=VERIFY_IDENTITY ou sslMode=VERIFY_CA com "
-                    + "pin PKCS12 de um único certificado folha.";
+                    + "pin PKCS12 de um único certificado X.509 confiável.";
 
     private static final String SQL_SELECT_ATIVOS = """
             SELECT

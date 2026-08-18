@@ -147,7 +147,8 @@ As flags separadas controlam somente os pulls programados e não substituem as
 credenciais read-only verificadas. A Academy exige senha montada em arquivo e,
 em produção, URL JDBC MySQL com `sslMode=VERIFY_IDENTITY`. Para o servidor
 legado sem identidade de hostname, a única exceção é `VERIFY_CA` com o PKCS12
-de um único certificado folha montado exatamente em
+de uma única âncora X.509 aprovada — o certificado folha ou, quando o servidor
+envia uma cadeia legada, a CA privada que a assina — montado exatamente em
 `/etc/secrets/cortex-academy-truststore.p12`, tipo `PKCS12` e fallback ao
 truststore do sistema desativado. As flags não desligam o replay da outbox
 offline da PWA. Esse replay é solicitado em escrita local,

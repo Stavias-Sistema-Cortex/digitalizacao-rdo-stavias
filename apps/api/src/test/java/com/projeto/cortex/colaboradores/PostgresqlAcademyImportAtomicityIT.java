@@ -625,6 +625,52 @@ class PostgresqlAcademyImportAtomicityIT {
     }
 
     @Test
+    void emailAusenteNoAcademyNaoApagaPreenchimentoExistenteNoCortex() {
+        int sourceId = 920_224;
+        AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
+        when(academy.fetchCompleteSnapshot(anyInt())).thenReturn(
+                AcademyUserSnapshot.complete(List.of(
+                        academyUserWithFunction(
+                                sourceId,
+                                FIRST_CPF,
+                                "origem.academy@example.invalid",
+                                "APONTADOR"
+                        )
+                )),
+                AcademyUserSnapshot.complete(List.of(
+                        academyUserWithFunction(
+                                sourceId,
+                                FIRST_CPF,
+                                null,
+                                "APONTADOR"
+                        )
+                ))
+        );
+        ColaboradorImportService service = service(
+                jdbc,
+                academy,
+                identities(jdbc),
+                24
+        );
+
+        service.importarUsuariosDaAcademy();
+        jdbc.update(
+                "UPDATE colaborador "
+                        + "SET email = 'manual.cortex@example.invalid' "
+                        + "WHERE pk_origem = ?",
+                String.valueOf(sourceId)
+        );
+
+        service.importarUsuariosDaAcademy();
+
+        assertThat(jdbc.queryForObject(
+                "SELECT email FROM colaborador WHERE pk_origem = ?",
+                String.class,
+                String.valueOf(sourceId)
+        )).isEqualTo("manual.cortex@example.invalid");
+    }
+
+    @Test
     void crossReplicaLockRejectsOverlapBeforeSourceReadAndPreservesOrder()
             throws Exception {
         CountDownLatch oldSnapshotStarted = new CountDownLatch(1);

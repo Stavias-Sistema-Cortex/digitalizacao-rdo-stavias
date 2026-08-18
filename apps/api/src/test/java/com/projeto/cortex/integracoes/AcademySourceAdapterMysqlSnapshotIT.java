@@ -175,6 +175,32 @@ class AcademySourceAdapterMysqlSnapshotIT {
     }
 
     @Test
+    void semAColunaDeEmailOSnapshotRealContinuaCompleto() throws Exception {
+        try (Connection admin = adminConnection();
+             Statement statement = admin.createStatement()) {
+            statement.execute("ALTER TABLE usuarios DROP COLUMN email");
+            statement.executeUpdate(
+                    "UPDATE usuarios SET funcao = 'ENCARREGADO' "
+                            + "WHERE id_usuario = 10"
+            );
+        }
+
+        AcademyUserSnapshot snapshot = new AcademySourceAdapter(
+                jdbcUrl(), READER_USER, READER_PASSWORD
+        ).fetchCompleteSnapshot(2);
+
+        assertThat(snapshot.complete()).isTrue();
+        assertThat(snapshot.users()).hasSize(3);
+        assertThat(snapshot.users())
+                .allSatisfy(usuario -> assertThat(usuario.email()).isNull());
+        assertThat(snapshot.users())
+                .filteredOn(usuario -> usuario.idUsuario() == 10L)
+                .singleElement()
+                .satisfies(usuario ->
+                        assertThat(usuario.funcao()).isEqualTo("ENCARREGADO"));
+    }
+
+    @Test
     void readOnlyUserAndRepeatableReadKeepAllPagesOnOneSnapshot()
             throws Exception {
         assertReaderCannotMutateSource();

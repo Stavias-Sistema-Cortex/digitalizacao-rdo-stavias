@@ -130,7 +130,7 @@ class ProductionSecurityContractTest {
                 "trustCertificateKeyStoreType=PKCS12",
                 "fallbackToSystemTrustStore=false",
                 "uma entrada confiável",
-                "certificado folha não-CA"
+                "âncora X.509"
         );
         assertThat(runbook).contains(
                 "cortex-zeladoria-truststore.p12"

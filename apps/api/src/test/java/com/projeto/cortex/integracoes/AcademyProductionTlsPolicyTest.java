@@ -255,16 +255,23 @@ class AcademyProductionTlsPolicyTest {
     }
 
     @Test
-    void verifyCaRejectsKeyEntriesAndCaCertificates() throws Exception {
+    void verifyCaRejectsKeyEntries() throws Exception {
         writeOpaqueRegularFile(trustStorePath);
         KeyStore keyEntryStore = singleEntryStore(false, null);
         policy = policyWithStore(keyEntryStore, null);
         assertRedactedFailure(verifyCaUrl(""));
+    }
 
+    @Test
+    void verifyCaAcceptsSinglePinnedCertificateAuthorityForLegacyServer()
+            throws Exception {
+        writeOpaqueRegularFile(trustStorePath);
         X509Certificate ca = mock(X509Certificate.class);
         when(ca.getBasicConstraints()).thenReturn(0);
         policy = policyWithStore(singleEntryStore(true, ca), null);
-        assertRedactedFailure(verifyCaUrl(""));
+
+        assertThatCode(() -> policy.validate(verifyCaUrl("")))
+                .doesNotThrowAnyException();
     }
 
     @Test

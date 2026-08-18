@@ -490,7 +490,7 @@ public class ColaboradorImportService {
                     END,
                     nome = EXCLUDED.nome,
                     funcao = COALESCE(EXCLUDED.funcao, colaborador.funcao),
-                    email = EXCLUDED.email,
+                    email = COALESCE(EXCLUDED.email, colaborador.email),
                     id_grupo_origem = EXCLUDED.id_grupo_origem,
                     nome_grupo = EXCLUDED.nome_grupo,
                     id_perfil_origem = EXCLUDED.id_perfil_origem,

@@ -34,7 +34,7 @@
    - rejects inline password even when its scheduler is disabled;
    - requires a readable password file when enabled;
    - accepts `VERIFY_IDENTITY` without a custom truststore;
-   - accepts `VERIFY_CA` only with the exact fixed Zeladoria PKCS12 path, one trusted leaf, and no system fallback;
+   - accepts `VERIFY_CA` only with the exact fixed Zeladoria PKCS12 path, one trusted X.509 anchor, and no system fallback;
    - redacts URL, username, password and file paths from every public failure.
 2. Run the focused tests and record the expected RED caused by the current inline-only Zeladoria adapter.
 3. Extract the already-tested Academy TLS parser/store validator into `PinnedMysqlSourceTlsPolicy`, parameterized only by safe connector label and exact fixed path.
@@ -183,7 +183,7 @@ This task has an explicit human confirmation boundary before reading the saved c
 
 1. Confirm the server still runs the expected pre-rollout SHA and both schedulers are false.
 2. Ask for action-time confirmation to unlock the two existing Workbench credentials. If macOS presents an authorization prompt, hand control to the user. Never show the values.
-3. Install password files and one-leaf PKCS12 truststores with owner-only permissions.
+3. Install password files and one-anchor PKCS12 truststores with owner-only permissions.
 4. Deploy the exact merged image with both schedulers still false.
 5. Validate `testConnection`/equivalent read-only probes and confirm source counts are observed, not hardcoded.
 6. Run one manual Academy sync and one manual Zeladoria sync.

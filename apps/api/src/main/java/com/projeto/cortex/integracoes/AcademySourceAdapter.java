@@ -45,7 +45,7 @@ public class AcademySourceAdapter {
     private static final String PRODUCTION_TLS_REQUIRED =
             "Academy em produção exige JDBC MySQL com sslMode=VERIFY_IDENTITY "
                     + "ou sslMode=VERIFY_CA com pin PKCS12 de um único "
-                    + "certificado folha.";
+                    + "certificado X.509 confiável.";
 
     private static final class AmbiguousBootstrapSourceException
             extends IllegalStateException {
@@ -55,19 +55,16 @@ public class AcademySourceAdapter {
         }
     }
 
-    /**
-     * A função é opcional na fonte, mas é aproveitada quando estiver presente.
-     * A aplicação preserva eventual preenchimento manual quando a origem não
-     * fornecer esse campo.
-     */
+    /** Campos opcionais da fonte, aproveitados quando estiverem presentes. */
     private static final String COLUNA_FUNCAO = "funcao";
+    private static final String COLUNA_EMAIL = "email";
 
     private static final String SQL_SELECT_USUARIOS = """
             SELECT
                 u.id_usuario,
                 u.cpf,
                 u.nome,
-                %1$su.funcao,%2$s
+                u.funcao,
                 u.email,
                 u.ativo,
                 u.id_grupo,
@@ -80,8 +77,8 @@ public class AcademySourceAdapter {
                     source.id_usuario,
                     source.cpf,
                     source.nome,
-                    %1$ssource.funcao,%2$s
-                    source.email,
+                    %1$s AS funcao,
+                    %2$s AS email,
                     source.ativo,
                     source.id_grupo,
                     source.id_perfil,
@@ -102,7 +99,7 @@ public class AcademySourceAdapter {
             SELECT
                 u.id_usuario,
                 u.nome,
-                u.email,
+                %1$s AS email,
                 u.ativo,
                 u.id_grupo,
                 g.nome AS nome_grupo,
@@ -233,34 +230,49 @@ public class AcademySourceAdapter {
         }
     }
 
-    /** A consulta com ou sem a coluna opcional de função. */
-    private static String sqlSelectUsuarios(boolean comFuncao) {
-        return comFuncao
-                ? SQL_SELECT_USUARIOS.formatted("", "")
-                : SQL_SELECT_USUARIOS.formatted("-- ", "");
+    /** A consulta sempre expõe aliases estáveis para os campos opcionais. */
+    private static String sqlSelectUsuarios(
+            boolean comFuncao,
+            boolean comEmail
+    ) {
+        return SQL_SELECT_USUARIOS.formatted(
+                comFuncao ? "source.funcao" : "NULL",
+                comEmail ? "source.email" : "NULL"
+        );
     }
 
     private boolean origemTemFuncao(Connection connection) {
+        return origemTemColuna(connection, COLUNA_FUNCAO);
+    }
+
+    private boolean origemTemEmail(Connection connection) {
+        return origemTemColuna(connection, COLUNA_EMAIL);
+    }
+
+    private boolean origemTemColuna(
+            Connection connection,
+            String coluna
+    ) {
         try (ResultSet colunas = connection.getMetaData().getColumns(
                 connection.getCatalog(),
                 null,
                 "usuarios",
-                COLUNA_FUNCAO
+                coluna
         )) {
             if (colunas != null && colunas.next()) {
                 return true;
             }
             LOGGER.warn(
-                    "Academy sem a coluna 'usuarios.{}': o sync segue sem a "
-                            + "função do colaborador.",
-                    COLUNA_FUNCAO
+                    "Academy sem a coluna 'usuarios.{}': o sync segue sem "
+                            + "esse campo opcional.",
+                    coluna
             );
             return false;
         } catch (Exception ignored) {
             LOGGER.warn(
                     "Não foi possível conferir a coluna 'usuarios.{}' na "
-                            + "Academy; o sync segue sem a função.",
-                    COLUNA_FUNCAO
+                            + "Academy; o sync segue sem esse campo opcional.",
+                    coluna
             );
             return false;
         }
@@ -271,12 +283,13 @@ public class AcademySourceAdapter {
             int pageSize
     ) throws Exception {
         boolean comFuncao = origemTemFuncao(connection);
+        boolean comEmail = origemTemEmail(connection);
         List<UsuarioAcademyRecord> users = new ArrayList<>();
         long lastSourceId = 0L;
 
         try (
                 PreparedStatement statement = connection.prepareStatement(
-                        sqlSelectUsuarios(comFuncao)
+                        sqlSelectUsuarios(comFuncao, comEmail)
                 )
         ) {
             statement.setQueryTimeout(DEFAULT_QUERY_TIMEOUT_SECONDS);
@@ -289,7 +302,7 @@ public class AcademySourceAdapter {
                 List<UsuarioAcademyRecord> page = new ArrayList<>(pageSize);
                 try (ResultSet resultSet = statement.executeQuery()) {
                     while (resultSet.next()) {
-                        page.add(readUser(resultSet, comFuncao));
+                        page.add(readUser(resultSet));
                     }
                 }
 
@@ -319,26 +332,29 @@ public class AcademySourceAdapter {
     ) {
         validateConfig();
 
-        try (
-                Connection connection = openReadOnlyConnection();
-                PreparedStatement statement = connection.prepareStatement(
-                        SQL_SELECT_BOOTSTRAP_USER
-                )
-        ) {
-            statement.setQueryTimeout(DEFAULT_QUERY_TIMEOUT_SECONDS);
-            statement.setMaxRows(2);
-            statement.setString(1, canonicalCpf);
+        try (Connection connection = openReadOnlyConnection()) {
+            boolean comEmail = origemTemEmail(connection);
+            String sql = SQL_SELECT_BOOTSTRAP_USER.formatted(
+                    comEmail ? "u.email" : "NULL"
+            );
+            try (
+                    PreparedStatement statement = connection.prepareStatement(sql)
+            ) {
+                statement.setQueryTimeout(DEFAULT_QUERY_TIMEOUT_SECONDS);
+                statement.setMaxRows(2);
+                statement.setString(1, canonicalCpf);
 
-            try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next()) {
-                    return Optional.empty();
-                }
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
 
-                AcademyBootstrapUser user = readBootstrapUser(resultSet);
-                if (resultSet.next()) {
-                    throw new AmbiguousBootstrapSourceException();
+                    AcademyBootstrapUser user = readBootstrapUser(resultSet);
+                    if (resultSet.next()) {
+                        throw new AmbiguousBootstrapSourceException();
+                    }
+                    return Optional.of(user);
                 }
-                return Optional.of(user);
             }
         } catch (AmbiguousBootstrapSourceException exception) {
             throw exception;
@@ -378,10 +394,7 @@ public class AcademySourceAdapter {
         }
     }
 
-    private UsuarioAcademyRecord readUser(
-            ResultSet resultSet,
-            boolean comFuncao
-    ) throws Exception {
+    private UsuarioAcademyRecord readUser(ResultSet resultSet) throws Exception {
         Timestamp criadoEm =
                 resultSet.getTimestamp("criado_em");
 
@@ -389,8 +402,8 @@ public class AcademySourceAdapter {
                 resultSet.getLong("id_usuario"),
                 resultSet.getString("cpf"),
                 resultSet.getString("nome"),
-                comFuncao ? resultSet.getString(COLUNA_FUNCAO) : null,
-                resultSet.getString("email"),
+                resultSet.getString(COLUNA_FUNCAO),
+                resultSet.getString(COLUNA_EMAIL),
                 resultSet.getBoolean("ativo"),
                 nullableString(resultSet, "id_grupo"),
                 resultSet.getString("nome_grupo"),

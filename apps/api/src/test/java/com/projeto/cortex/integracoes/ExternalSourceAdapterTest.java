@@ -151,7 +151,7 @@ class ExternalSourceAdapterTest {
                     .rootCause()
                     .hasMessageContaining("VERIFY_IDENTITY")
                     .hasMessageContaining("VERIFY_CA")
-                    .hasMessageContaining("certificado folha")
+                    .hasMessageContaining("certificado X.509 confiável")
                     .hasMessageNotContaining(REDACTED_URL)
                     .hasMessageNotContaining(REDACTED_USER)
                     .hasMessageNotContaining(INLINE_SECRET);
