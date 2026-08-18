@@ -67,6 +67,8 @@ assert_production_compose_renders_from_documented_contract() {
         postgres \
         academy \
         zeladoria \
+        academy_truststore \
+        zeladoria_truststore \
         cpf_hmac \
         password_setup_hmac \
         offline_private \
@@ -83,6 +85,8 @@ assert_production_compose_renders_from_documented_contract() {
     postgres \
     academy \
     zeladoria \
+    academy_truststore \
+    zeladoria_truststore \
     cpf_hmac \
     password_setup_hmac \
     offline_private \
@@ -111,9 +115,11 @@ assert_production_compose_renders_from_documented_contract() {
     CORTEX_ACADEMY_DB_URL='jdbc:mysql://academy.contract.internal:3306/academy?sslMode=VERIFY_IDENTITY' \
     CORTEX_ACADEMY_DB_USER='academy_readonly' \
     CORTEX_ACADEMY_DB_PASSWORD_FILE="$contract_secret_dir/academy" \
+    CORTEX_ACADEMY_TRUSTSTORE_FILE="$contract_secret_dir/academy_truststore" \
     CORTEX_ZELADORIA_DB_URL='jdbc:mysql://zeladoria.contract.internal:3306/zeladoria' \
     CORTEX_ZELADORIA_DB_USER='zeladoria_readonly' \
     CORTEX_ZELADORIA_DB_PASSWORD_FILE="$contract_secret_dir/zeladoria" \
+    CORTEX_ZELADORIA_TRUSTSTORE_FILE="$contract_secret_dir/zeladoria_truststore" \
     docker compose -f "$production_compose_file" config 2>&1)"; then
     printf '%s\n' "$rendered" >&2
     exit 1
@@ -126,8 +132,12 @@ assert_production_compose_renders_from_documented_contract() {
   grep -Fq 'CORTEX_SYNC_ACADEMY_ENABLED: "false"' <<< "$rendered"
   grep -Fq 'CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS: "900000"' <<< "$rendered"
   grep -Fq 'CORTEX_SYNC_ZELADORIA_ENABLED: "false"' <<< "$rendered"
+  grep -Fq 'CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS: "900000"' <<< "$rendered"
   grep -Fq 'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS: "604800"' <<< "$rendered"
-  grep -Fq 'target: CORTEX_ZELADORIA_DB_PASSWORD' <<< "$rendered"
+  grep -Fq 'CORTEX_ZELADORIA_DB_PASSWORD_FILE: /run/secrets/cortex_zeladoria_password' <<< "$rendered"
+  grep -Fq 'target: cortex_zeladoria_password' <<< "$rendered"
+  grep -Fq 'target: /etc/secrets/cortex-academy-truststore.p12' <<< "$rendered"
+  grep -Fq 'target: /etc/secrets/cortex-zeladoria-truststore.p12' <<< "$rendered"
   if grep -Eq 'CORTEX_AUTH_OTP_HMAC_KEY_FILE|cortex_otp_hmac|CORTEX_EMAIL_|CORTEX_SMTP_|cortex_smtp_password|CORTEX_FINANCE_EMAIL_' <<< "$rendered"; then
     echo "rendered normal production compose still contains activation OTP or legacy e-mail delivery" >&2
     exit 1
@@ -184,9 +194,17 @@ grep -Fq 'CORTEX_SYNC_ACADEMY_ENABLED:' "$production_compose_file"
 grep -Fq 'CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS:' \
   "$production_compose_file"
 grep -Fq 'CORTEX_SYNC_ZELADORIA_ENABLED:' "$production_compose_file"
+grep -Fq 'CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS:' \
+  "$production_compose_file"
 grep -Fq 'CORTEX_ZELADORIA_DB_URL:' "$production_compose_file"
 grep -Fq 'CORTEX_ZELADORIA_DB_USER:' "$production_compose_file"
-grep -Fq 'target: CORTEX_ZELADORIA_DB_PASSWORD' "$production_compose_file"
+grep -Fq 'CORTEX_ZELADORIA_DB_PASSWORD_FILE: /run/secrets/cortex_zeladoria_password' \
+  "$production_compose_file"
+grep -Fq 'target: cortex_zeladoria_password' "$production_compose_file"
+grep -Fq '/etc/secrets/cortex-academy-truststore.p12:ro' \
+  "$production_compose_file"
+grep -Fq '/etc/secrets/cortex-zeladoria-truststore.p12:ro' \
+  "$production_compose_file"
 grep -Fq 'CORTEX_ZELADORIA_DB_PASSWORD_FILE' "$production_compose_file"
 grep -Fq 'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS: ${CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS:-604800}' \
   "$production_compose_file"
@@ -212,9 +230,12 @@ for documented_variable in \
   CORTEX_SYNC_ACADEMY_ENABLED \
   CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS \
   CORTEX_SYNC_ZELADORIA_ENABLED \
+  CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS \
   CORTEX_ZELADORIA_DB_URL \
   CORTEX_ZELADORIA_DB_USER \
-  CORTEX_ZELADORIA_DB_PASSWORD_FILE; do
+  CORTEX_ZELADORIA_DB_PASSWORD_FILE \
+  CORTEX_ACADEMY_TRUSTSTORE_FILE \
+  CORTEX_ZELADORIA_TRUSTSTORE_FILE; do
   grep -Eq "^${documented_variable}=" "$postgresql_env_template" || {
     echo "missing ${documented_variable} from .env.postgresql.example" >&2
     exit 1

@@ -86,7 +86,7 @@ segredo não são argumentos de shell, logs, outputs ou artefatos.
 
 ## 3. Arquivos secretos do Render
 
-Configure estes seis arquivos secretos exatamente sob `/etc/secrets`:
+Configure estes sete arquivos secretos exatamente sob `/etc/secrets`:
 
 - `/etc/secrets/cortex-cpf-hmac`
 - `/etc/secrets/cortex-password-setup-hmac`
@@ -94,6 +94,7 @@ Configure estes seis arquivos secretos exatamente sob `/etc/secrets`:
 - `/etc/secrets/cortex-offline-public.pem`
 - `/etc/secrets/cortex-memory-cursor-hmac`
 - `/etc/secrets/cortex-academy-password`
+- `/etc/secrets/cortex-zeladoria-password`
 
 O arquivo `cortex-password-setup-hmac` deve conter pelo menos 32 bytes
 aleatórios e independentes. Ele assina os códigos temporários de primeiro
@@ -109,6 +110,13 @@ entrada. A URL usa exatamente `sslMode=VERIFY_CA`,
 `trustCertificateKeyStoreType=PKCS12` e
 `fallbackToSystemTrustStore=false`. A senha opcional do PKCS12 pode permanecer
 na URL protegida `CORTEX_ACADEMY_DB_URL`; nunca a imprima.
+
+A Zeladoria segue o mesmo contrato com o secret file
+`/etc/secrets/cortex-zeladoria-truststore.p12` e a URL fixa
+`trustCertificateKeyStoreUrl=file:/etc/secrets/cortex-zeladoria-truststore.p12`.
+Cada truststore tem uma entrada confiável, o certificado folha não-CA, nenhuma
+chave privada e `fallbackToSystemTrustStore=false`. Academy e Zeladoria nunca
+compartilham truststore ou senha.
 
 A imagem executa como usuário não-root membro do GID 1000, exigido para ler os
 secret files montados pelo Render. O gate de release testa a imagem publicada
@@ -313,9 +321,10 @@ Mantenha `CORTEX_SYNC_ACADEMY_ENABLED=false` e
 Render, configure a Academy com usuário `SELECT`-only,
 `CORTEX_ACADEMY_DB_PASSWORD_FILE=/etc/secrets/cortex-academy-password` e URL
 JDBC MySQL contendo preferencialmente `sslMode=VERIFY_IDENTITY`. A exceção
-`VERIFY_CA` só é válida com o leaf pin PKCS12 exato descrito na seção 3. Os
-arquivos secretos são criados no dashboard do Render e nunca são copiados para
-variáveis de ambiente.
+`VERIFY_CA` só é válida com o leaf pin PKCS12 exato descrito na seção 3. A
+Zeladoria usa `CORTEX_ZELADORIA_DB_PASSWORD_FILE` e seu próprio pin. Os arquivos
+secretos são criados no dashboard do Render ou no host local e nunca são
+copiados para variáveis de ambiente.
 
 A role Academy deve ter `SELECT` somente em `usuarios`, `grupos` e `perfil`.
 Antes de habilitar, teste a conexão e compare somente contagens agregadas,
@@ -325,6 +334,13 @@ finalizado há no máximo `CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS` (padrão
 `900000`). Esse gate é exigido somente enquanto
 `CORTEX_SYNC_ACADEMY_ENABLED=true`. Não habilite importação ou sync para
 compensar indisponibilidade da Academy ou da Zeladoria.
+
+O contrato funcional também é distinto por fonte: no Academy, apenas o campo
+explícito `usuarios.ativo` invalida um CPF; ausência no snapshot não desativa a
+pessoa. Na Zeladoria, alteração e exclusão de asset na origem são refletidas no
+PostgreSQL canônico por atualização e inativação lógica, preservando histórico;
+um asset que reaparece é reativado com a mesma identidade. As conexões MySQL
+são estritamente `SELECT`-only.
 
 Na raiz do checkout, o gate QA opt-in é:
 

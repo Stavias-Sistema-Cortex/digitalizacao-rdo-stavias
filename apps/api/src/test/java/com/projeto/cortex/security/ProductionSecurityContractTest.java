@@ -42,10 +42,14 @@ class ProductionSecurityContractTest {
                 "CORTEX_SYNC_ACADEMY_ENABLED:",
                 "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS:",
                 "CORTEX_SYNC_ZELADORIA_ENABLED:",
+                "CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS:",
                 "CORTEX_ZELADORIA_DB_URL:",
                 "CORTEX_ZELADORIA_DB_USER:",
-                "target: CORTEX_ZELADORIA_DB_PASSWORD",
+                "CORTEX_ZELADORIA_DB_PASSWORD_FILE: /run/secrets/cortex_zeladoria_password",
+                "target: cortex_zeladoria_password",
                 "CORTEX_ZELADORIA_DB_PASSWORD_FILE:",
+                "/etc/secrets/cortex-academy-truststore.p12:ro",
+                "/etc/secrets/cortex-zeladoria-truststore.p12:ro",
                 "${CORTEX_WEB_BIND_ADDRESS:-127.0.0.1}:${CORTEX_WEB_PORT:-8080}:8080",
                 "VITE_CORTEX_AUTH_MODE: postgresql",
                 "subnet: 172.30.0.0/24"
@@ -84,9 +88,12 @@ class ProductionSecurityContractTest {
                 "CORTEX_SYNC_ACADEMY_ENABLED=false",
                 "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS=900000",
                 "CORTEX_SYNC_ZELADORIA_ENABLED=false",
+                "CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS=900000",
                 "CORTEX_ZELADORIA_DB_URL=",
                 "CORTEX_ZELADORIA_DB_USER=",
-                "CORTEX_ZELADORIA_DB_PASSWORD_FILE="
+                "CORTEX_ZELADORIA_DB_PASSWORD_FILE=",
+                "CORTEX_ACADEMY_TRUSTSTORE_FILE=",
+                "CORTEX_ZELADORIA_TRUSTSTORE_FILE="
         ).doesNotContain(
                 "CORTEX_DB_PASSWORD=",
                 "CORTEX_POSTGRES_PASSWORD_SECRET_FILE=",
@@ -95,7 +102,7 @@ class ProductionSecurityContractTest {
     }
 
     @Test
-    void academyLeafPinIsAHostMountedUntrackedRenderSecret() throws Exception {
+    void sourceLeafPinsAreHostMountedUntrackedSecrets() throws Exception {
         String gitignore = Files.readString(REPOSITORY_ROOT.resolve(".gitignore"));
         String render = Files.readString(REPOSITORY_ROOT.resolve("render.yaml"));
         String runbook = Files.readString(
@@ -108,6 +115,13 @@ class ProductionSecurityContractTest {
         assertThat(render).contains(
                 "/etc/secrets/cortex-academy-truststore.p12"
         );
+        String productionCompose = Files.readString(
+                REPOSITORY_ROOT.resolve("compose.production.example.yml")
+        );
+        assertThat(productionCompose).contains(
+                "/etc/secrets/cortex-academy-truststore.p12:ro",
+                "/etc/secrets/cortex-zeladoria-truststore.p12:ro"
+        );
         assertThat(runbook).contains(
                 "sslMode=VERIFY_IDENTITY",
                 "sslMode=VERIFY_CA",
@@ -117,6 +131,9 @@ class ProductionSecurityContractTest {
                 "fallbackToSystemTrustStore=false",
                 "uma entrada confiável",
                 "certificado folha não-CA"
+        );
+        assertThat(runbook).contains(
+                "cortex-zeladoria-truststore.p12"
         );
     }
 

@@ -84,11 +84,22 @@ install_secret_file() {
   local destination="$2"
   local configured_path="${!variable_name:-}"
   local source_path
+  local source_mode
 
   require_text "$variable_name"
   source_path="$(resolve_source_file "$configured_path")"
-  if [[ ! -f "$source_path" || -L "$source_path" || ! -r "$source_path" ]]; then
-    echo "$variable_name must name a readable regular secret file." >&2
+  if [[ ! -s "$source_path" || -L "$source_path" || ! -r "$source_path" ]]; then
+    echo "$variable_name must name a non-empty readable regular secret file." >&2
+    exit 1
+  fi
+  source_mode="$(stat -f '%Lp' "$source_path" 2>/dev/null || stat -c '%a' "$source_path")"
+  if [[ ! "$source_mode" =~ ^[0-7]{3,4}$ ]] ||
+    (( (8#$source_mode & 077) != 0 )); then
+    echo "$variable_name must not be readable or writable by group or others." >&2
+    exit 1
+  fi
+  if [[ -L "$destination" ]]; then
+    echo "Refusing to replace a symbolic-link destination for $variable_name." >&2
     exit 1
   fi
   install -m 600 "$source_path" "$destination"
@@ -123,6 +134,8 @@ offline_public_secret="$secret_dir/offline-public.pem"
 memory_cursor_secret="$secret_dir/memory-cursor-hmac"
 academy_secret="$secret_dir/academy-password"
 zeladoria_secret="$secret_dir/zeladoria-password"
+academy_truststore="$secret_dir/academy-truststore.p12"
+zeladoria_truststore="$secret_dir/zeladoria-truststore.p12"
 
 ensure_random_secret "$postgres_admin_secret"
 ensure_random_secret "$postgres_migrator_secret"
@@ -139,7 +152,10 @@ install_secret_file CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE "$offline_public_s
 install_secret_file CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE "$memory_cursor_secret"
 install_secret_file CORTEX_ACADEMY_DB_PASSWORD_FILE "$academy_secret"
 unset CORTEX_ACADEMY_DB_PASSWORD ACAD_DB_PASSWORD
-write_secret_value CORTEX_ZELADORIA_DB_PASSWORD "$zeladoria_secret"
+install_secret_file CORTEX_ZELADORIA_DB_PASSWORD_FILE "$zeladoria_secret"
+unset CORTEX_ZELADORIA_DB_PASSWORD ZEL_DB_PASSWORD
+install_secret_file CORTEX_ACADEMY_TRUSTSTORE_FILE "$academy_truststore"
+install_secret_file CORTEX_ZELADORIA_TRUSTSTORE_FILE "$zeladoria_truststore"
 
 for key_file in "$cpf_hmac_secret" "$password_setup_hmac_secret" "$memory_cursor_secret"; do
   if (( $(wc -c < "$key_file") < 32 )); then
@@ -216,11 +232,15 @@ runtime_env_tmp="$(mktemp "$runtime_dir/production.env.XXXXXX")"
   printf 'CORTEX_ACADEMY_DB_URL=%s\n' "$CORTEX_ACADEMY_DB_URL"
   printf 'CORTEX_ACADEMY_DB_USER=%s\n' "$CORTEX_ACADEMY_DB_USER"
   printf 'CORTEX_ACADEMY_DB_PASSWORD_FILE=%s\n' "$academy_secret"
+  printf 'CORTEX_ACADEMY_TRUSTSTORE_FILE=%s\n' "$academy_truststore"
   printf 'CORTEX_ZELADORIA_DB_URL=%s\n' "$CORTEX_ZELADORIA_DB_URL"
   printf 'CORTEX_ZELADORIA_DB_USER=%s\n' "$CORTEX_ZELADORIA_DB_USER"
   printf 'CORTEX_ZELADORIA_DB_PASSWORD_FILE=%s\n' "$zeladoria_secret"
+  printf 'CORTEX_ZELADORIA_TRUSTSTORE_FILE=%s\n' "$zeladoria_truststore"
   printf 'CORTEX_SYNC_ACADEMY_ENABLED=false\n'
+  printf 'CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS=900000\n'
   printf 'CORTEX_SYNC_ZELADORIA_ENABLED=false\n'
+  printf 'CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS=900000\n'
 } > "$runtime_env_tmp"
 chmod 600 "$runtime_env_tmp"
 mv "$runtime_env_tmp" "$runtime_env"
@@ -293,12 +313,16 @@ unset \
   CORTEX_ACADEMY_DB_USER \
   CORTEX_ACADEMY_DB_PASSWORD \
   CORTEX_ACADEMY_DB_PASSWORD_FILE \
+  CORTEX_ACADEMY_TRUSTSTORE_FILE \
   CORTEX_ZELADORIA_DB_URL \
   CORTEX_ZELADORIA_DB_USER \
   CORTEX_ZELADORIA_DB_PASSWORD \
   CORTEX_ZELADORIA_DB_PASSWORD_FILE \
+  CORTEX_ZELADORIA_TRUSTSTORE_FILE \
   CORTEX_SYNC_ACADEMY_ENABLED \
-  CORTEX_SYNC_ZELADORIA_ENABLED
+  CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS \
+  CORTEX_SYNC_ZELADORIA_ENABLED \
+  CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS
 
 "${compose[@]}" up -d cortex-postgres
 postgres_container="$("${compose[@]}" ps -q cortex-postgres)"

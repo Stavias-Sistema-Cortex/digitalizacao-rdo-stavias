@@ -114,18 +114,20 @@ services:
       CORTEX_SYNC_ACADEMY_ENABLED: ${CORTEX_SYNC_ACADEMY_ENABLED:-false}
       CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS: ${CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS:-900000}
       CORTEX_SYNC_ZELADORIA_ENABLED: ${CORTEX_SYNC_ZELADORIA_ENABLED:-false}
+      CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS: ${CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS:-900000}
       CORTEX_ACADEMY_DB_URL: ${CORTEX_ACADEMY_DB_URL:?Set the Academy read-only JDBC URL}
       CORTEX_ACADEMY_DB_USER: ${CORTEX_ACADEMY_DB_USER:?Set the Academy read-only database user}
       CORTEX_ACADEMY_DB_PASSWORD_FILE: /run/secrets/cortex_academy_password
       CORTEX_ZELADORIA_DB_URL: ${CORTEX_ZELADORIA_DB_URL:?Set the Zeladoria read-only JDBC URL}
       CORTEX_ZELADORIA_DB_USER: ${CORTEX_ZELADORIA_DB_USER:?Set the Zeladoria read-only database user}
+      CORTEX_ZELADORIA_DB_PASSWORD_FILE: /run/secrets/cortex_zeladoria_password
     secrets:
       - source: cortex_postgres_runtime_password
         target: CORTEX_POSTGRES_PASSWORD
       - source: cortex_academy_password
         target: cortex_academy_password
       - source: cortex_zeladoria_password
-        target: CORTEX_ZELADORIA_DB_PASSWORD
+        target: cortex_zeladoria_password
       - cortex_cpf_hmac
       - cortex_password_setup_hmac
       - cortex_offline_private
@@ -133,6 +135,8 @@ services:
       - cortex_memory_cursor_hmac
     volumes:
       - cortex_object_data:/var/lib/cortex/objects
+      - ${CORTEX_ACADEMY_TRUSTSTORE_FILE:?Point to the Academy PKCS12 truststore}:/etc/secrets/cortex-academy-truststore.p12:ro
+      - ${CORTEX_ZELADORIA_TRUSTSTORE_FILE:?Point to the Zeladoria PKCS12 truststore}:/etc/secrets/cortex-zeladoria-truststore.p12:ro
     depends_on:
       cortex-postgres:
         condition: service_healthy

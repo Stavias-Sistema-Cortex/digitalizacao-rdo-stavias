@@ -74,22 +74,32 @@ contrato que esse host deve executar.
 `CORTEX_SYNC_ZELADORIA_ENABLED=false` permanecem como padrão. Isso não desliga
 a outbox offline da PWA. Habilite uma fonte por vez, somente depois de validar
 o usuário MySQL `SELECT`-only e uma importação QA registrada em
-`source_sync_run`. A Academy usa senha montada em arquivo e JDBC MySQL com
-`sslMode=VERIFY_IDENTITY`.
+`source_sync_run`. As duas fontes usam senhas montadas em arquivos separados;
+o Córtex nunca executa `INSERT`, `UPDATE` ou `DELETE` nesses bancos.
 
-Com o agendador ligado, `CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS` (padrão
-`900000`) define quando o último `acad_colaborador_import` bem-sucedido passa a
-ser relatado como `ATRASADA` em Administração → Integrações. **Não** derruba a
-readiness do runtime: a Academy é um MySQL legado externo, e uma
-indisponibilidade dela não pode levar junto RDO, mapa, mensagens e financeiro,
-que não dependem dela. O que a readiness ainda exige é estrutural — ao menos
+No Academy, somente `usuarios.ativo=false` invalida o CPF e revoga o acesso.
+Uma pessoa ausente de um snapshot não é desativada por inferência. Na
+Zeladoria, o snapshot completo representa o cadastro atual de assets: uma
+alteração atualiza a mesma identidade estável; uma exclusão na origem torna o
+asset inativo no Córtex sem apagar seu histórico; o reaparecimento o reativa.
+
+Com o agendador ligado, `CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS` e
+`CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS` (ambos `900000` por padrão)
+definem quando a última leitura bem-sucedida passa a ser relatada como
+`ATRASADA` em Administração → Integrações. Isso não derruba a readiness do
+runtime: uma fonte MySQL legada indisponível não pode levar junto RDO, mapa,
+mensagens e financeiro. O que a readiness ainda exige é estrutural — ao menos
 uma identidade Academy ativa com HMAC atual de CPF, isto é, que exista alguém
 capaz de entrar.
 
-No Render, o único fallback para um servidor sem identidade de hostname é
-`sslMode=VERIFY_CA` com `/etc/secrets/cortex-academy-truststore.p12`: PKCS12,
-uma única entrada confiável de certificado folha não-CA e
-`fallbackToSystemTrustStore=false`. O arquivo não faz parte do repositório.
+Na produção local, os certificados legados sem identidade de hostname são
+fixados separadamente com `sslMode=VERIFY_CA`,
+`/etc/secrets/cortex-academy-truststore.p12` e
+`/etc/secrets/cortex-zeladoria-truststore.p12`. Cada PKCS12 contém exatamente
+uma entrada confiável de certificado folha não-CA, sem chave privada, e a URL
+inclui `trustCertificateKeyStoreType=PKCS12` e
+`fallbackToSystemTrustStore=false`. Os arquivos não fazem parte do repositório
+e são montados somente leitura.
 
 Para inspecionar sem revelar segredos:
 

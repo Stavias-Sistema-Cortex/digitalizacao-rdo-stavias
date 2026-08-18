@@ -45,6 +45,12 @@ bash -n "$prepare_script"
 grep -Fq 'A PostgreSQL 18 pg_dump client is required' "$prepare_script"
 grep -Fq 'install_secret_file CORTEX_ACADEMY_DB_PASSWORD_FILE' \
   "$prepare_script"
+grep -Fq 'install_secret_file CORTEX_ZELADORIA_DB_PASSWORD_FILE' \
+  "$prepare_script"
+grep -Fq 'install_secret_file CORTEX_ACADEMY_TRUSTSTORE_FILE' \
+  "$prepare_script"
+grep -Fq 'install_secret_file CORTEX_ZELADORIA_TRUSTSTORE_FILE' \
+  "$prepare_script"
 grep -Fq 'ensure_random_secret "$password_setup_hmac_secret"' \
   "$prepare_script"
 grep -Fq "printf 'CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS=604800\\n'" \
@@ -80,6 +86,11 @@ fi
 if grep -Fq 'write_secret_value CORTEX_ACADEMY_DB_PASSWORD ' \
   "$prepare_script"; then
   echo "production preparation still accepts an inline Academy password" >&2
+  exit 1
+fi
+if grep -Fq 'write_secret_value CORTEX_ZELADORIA_DB_PASSWORD ' \
+  "$prepare_script"; then
+  echo "production preparation still accepts an inline Zeladoria password" >&2
   exit 1
 fi
 
@@ -129,6 +140,8 @@ for secret_name in \
   postgres_runtime \
   academy \
   zeladoria \
+  academy_truststore \
+  zeladoria_truststore \
   cpf_hmac \
   password_setup_hmac \
   offline_private \
@@ -163,9 +176,11 @@ env \
   CORTEX_ACADEMY_DB_URL='jdbc:mysql://academy.contract.internal:3306/academy?sslMode=VERIFY_IDENTITY' \
   CORTEX_ACADEMY_DB_USER='academy_readonly' \
   CORTEX_ACADEMY_DB_PASSWORD_FILE="$contract_dir/academy" \
+  CORTEX_ACADEMY_TRUSTSTORE_FILE="$contract_dir/academy_truststore" \
   CORTEX_ZELADORIA_DB_URL='jdbc:mysql://zeladoria.contract.internal:3306/zeladoria' \
   CORTEX_ZELADORIA_DB_USER='zeladoria_readonly' \
   CORTEX_ZELADORIA_DB_PASSWORD_FILE="$contract_dir/zeladoria" \
+  CORTEX_ZELADORIA_TRUSTSTORE_FILE="$contract_dir/zeladoria_truststore" \
   docker compose -f "$compose_file" config --format json > "$rendered_file"
 
 python3 - "$rendered_file" <<'PY'
@@ -223,6 +238,10 @@ assert api_environment["CORTEX_ACADEMY_DB_PASSWORD_FILE"] == (
 assert api_environment["CORTEX_SYNC_ACADEMY_ENABLED"] == "false"
 assert api_environment["CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS"] == "900000"
 assert api_environment["CORTEX_SYNC_ZELADORIA_ENABLED"] == "false"
+assert api_environment["CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS"] == "900000"
+assert api_environment["CORTEX_ZELADORIA_DB_PASSWORD_FILE"] == (
+    "/run/secrets/cortex_zeladoria_password"
+)
 assert "CORTEX_SYNC_ENABLED" not in api_environment
 assert api_environment["CORTEX_CORS_ALLOWED_ORIGINS"] == "https://cortex.localhost:18443"
 assert api_environment["CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS"] == "https://cortex.localhost:18443"
@@ -238,6 +257,23 @@ assert any(
     and secret.get("target") == "cortex_academy_password"
     for secret in api_secrets
 ), "Academy password must be mounted at the explicit file-backed path"
+assert any(
+    secret.get("source") == "cortex_zeladoria_password"
+    and secret.get("target") == "cortex_zeladoria_password"
+    for secret in api_secrets
+), "Zeladoria password must be mounted at the explicit file-backed path"
+
+api_mounts = services["cortex-api"].get("volumes", [])
+assert any(
+    mount.get("target") == "/etc/secrets/cortex-academy-truststore.p12"
+    and mount.get("read_only") is True
+    for mount in api_mounts
+), "Academy truststore must be mounted read-only at the fixed path"
+assert any(
+    mount.get("target") == "/etc/secrets/cortex-zeladoria-truststore.p12"
+    and mount.get("read_only") is True
+    for mount in api_mounts
+), "Zeladoria truststore must be mounted read-only at the fixed path"
 assert any(
     secret.get("source") == "cortex_password_setup_hmac"
     and secret.get("target") == "/run/secrets/cortex_password_setup_hmac"
