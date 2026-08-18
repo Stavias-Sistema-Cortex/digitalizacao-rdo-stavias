@@ -64,7 +64,18 @@ docker run --detach \
   postgres:18-alpine \
   postgres >/dev/null
 
+postgres_ready=false
+role_count=""
 for _ in $(seq 1 60); do
+  if [[ "$(docker logs "$container_name" 2>&1)" != \
+      *"PostgreSQL init process complete; ready for start up."* ]] ||
+    ! docker exec "$container_name" pg_isready \
+      --username=cortex_admin \
+      --dbname=cortex_contract >/dev/null 2>&1; then
+    sleep 1
+    continue
+  fi
+
   role_count="$(
     docker exec "$container_name" psql \
       --username=cortex_admin \
@@ -78,12 +89,13 @@ for _ in $(seq 1 60); do
       " 2>/dev/null || true
   )"
   if [[ "$role_count" == "2" ]]; then
+    postgres_ready=true
     break
   fi
   sleep 1
 done
 
-if [[ "${role_count:-}" != "2" ]]; then
+if [[ "$postgres_ready" != "true" ]]; then
   echo "PostgreSQL role initialization did not complete." >&2
   emit_sanitized_container_logs
   exit 1

@@ -2,6 +2,15 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
+postgres_role_contract="$repo_root/scripts/security/test-postgres-role-reconciliation.sh"
+
+# The official PostgreSQL entrypoint exposes the initialized roles while its
+# temporary bootstrap server is still running. The contract must wait for the
+# final server, otherwise CI can enter the shutdown window between both.
+grep -Fq 'PostgreSQL init process complete; ready for start up.' \
+  "$postgres_role_contract"
+grep -Fq 'pg_isready' "$postgres_role_contract"
+
 bash "$repo_root/scripts/security/test-hosted-deployment-contract.sh"
 bash "$repo_root/scripts/security/test-hosted-deployment-contract-regressions.sh"
 bash "$repo_root/scripts/security/test-production-workflow-contract.sh"
@@ -12,7 +21,7 @@ bash "$repo_root/scripts/security/test-docker-base-image-pinning.sh"
 bash "$repo_root/scripts/security/test-neon-migration-contract.sh"
 bash "$repo_root/scripts/security/test-neon-ownership-reconciliation.sh"
 bash "$repo_root/scripts/security/test-scan-cortex-secrets.sh"
-bash "$repo_root/scripts/security/test-postgres-role-reconciliation.sh"
+bash "$postgres_role_contract"
 bash "$repo_root/scripts/deploy/test-run-neon-flyway.sh"
 bash "$repo_root/scripts/deploy/test-capture-render-instance-fingerprint.sh"
 bash "$repo_root/scripts/deploy/test-trigger-and-wait-render.sh"
