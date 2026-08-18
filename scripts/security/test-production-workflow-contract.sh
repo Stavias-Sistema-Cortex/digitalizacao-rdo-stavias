@@ -105,8 +105,10 @@ fail_contract("#{check_name} must be immediately before the first mutation") unl
 
 api = by_name.fetch("Build and publish API")
 api_with = api.fetch("with")
-fail_contract("API publication must expose the immutable digest output as id api") unless \
-  api["id"] == "api"
+fail_contract("API publication must expose the first attempt as id api_publish") unless \
+  api["id"] == "api_publish"
+fail_contract("API publication must allow the controlled retry gate to run") unless \
+  api["continue-on-error"] == true
 fail_contract("API publication must use the reviewed Docker build action") unless \
   api["uses"] == "docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8"
 fail_contract("API publication context must be apps/api") unless \
@@ -114,6 +116,44 @@ fail_contract("API publication context must be apps/api") unless \
 fail_contract("API publication must build both supported Linux architectures") unless \
   api_with["platforms"] == "linux/amd64,linux/arm64"
 fail_contract("API publication must push the image") unless api_with["push"] == true
+
+api_wait = by_name.fetch("Wait before retrying API publication")
+fail_contract("API publication retry must only wait after a failed first attempt") unless \
+  api_wait["if"] == "steps.api_publish.outcome == 'failure'"
+fail_contract("API publication retry must respect the registry cooldown") unless \
+  api_wait.fetch("run") == "sleep 120"
+
+api_retry = by_name.fetch("Retry API publication")
+api_retry_with = api_retry.fetch("with")
+fail_contract("API publication retry must expose its result") unless \
+  api_retry["id"] == "api_publish_retry"
+fail_contract("API publication retry must be conditional") unless \
+  api_retry["if"] == "steps.api_publish.outcome == 'failure'"
+fail_contract("API publication retry must fail through the explicit gate") unless \
+  api_retry["continue-on-error"] == true
+fail_contract("API publication retry must use the reviewed Docker build action") unless \
+  api_retry["uses"] == api["uses"]
+for key in ["context", "platforms", "push", "tags", "labels", "cache-from", "cache-to"]
+  fail_contract("API publication retry changed #{key}") unless \
+    api_retry_with[key] == api_with[key]
+end
+
+api_gate = by_name.fetch("Require published API image")
+fail_contract("API publication gate must preserve the canonical digest output") unless \
+  api_gate["id"] == "api"
+fail_contract("API publication gate must run after a failed action outcome") unless \
+  api_gate["if"] == "always()"
+api_gate_env = api_gate.fetch("env")
+fail_contract("API publication gate must receive the first outcome and digest") unless \
+  api_gate_env["PRIMARY_OUTCOME"] == "${{ steps.api_publish.outcome }}" &&
+    api_gate_env["PRIMARY_DIGEST"] == "${{ steps.api_publish.outputs.digest }}"
+fail_contract("API publication gate must receive the retry outcome and digest") unless \
+  api_gate_env["RETRY_OUTCOME"] == "${{ steps.api_publish_retry.outcome }}" &&
+    api_gate_env["RETRY_DIGEST"] == "${{ steps.api_publish_retry.outputs.digest }}"
+api_gate_run = api_gate.fetch("run")
+fail_contract("API publication gate must validate an immutable digest") unless \
+  api_gate_run.include?('^sha256:[0-9a-f]{64}$') &&
+    api_gate_run.include?('echo "digest=$digest" >> "$GITHUB_OUTPUT"')
 
 secret_access = by_name.fetch("Verify Render secret-file access")
 fail_contract("secret-file access gate must use the published API digest") unless \
@@ -126,6 +166,56 @@ fail_contract("secret-file access gate must pull and test the published image") 
     'docker pull "$CORTEX_API_IMAGE_DIGEST"',
     "bash scripts/security/test-api-docker-secret-file-access.sh"
   ]
+
+web = by_name.fetch("Build and publish PWA")
+web_with = web.fetch("with")
+fail_contract("PWA publication must expose the first attempt as id web_publish") unless \
+  web["id"] == "web_publish"
+fail_contract("PWA publication must allow the controlled retry gate to run") unless \
+  web["continue-on-error"] == true
+fail_contract("PWA publication must use the reviewed Docker build action") unless \
+  web["uses"] == "docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8"
+fail_contract("PWA publication must build both supported Linux architectures") unless \
+  web_with["platforms"] == "linux/amd64,linux/arm64"
+fail_contract("PWA publication must push the image") unless web_with["push"] == true
+
+web_wait = by_name.fetch("Wait before retrying PWA publication")
+fail_contract("PWA publication retry must only wait after a failed first attempt") unless \
+  web_wait["if"] == "steps.web_publish.outcome == 'failure'"
+fail_contract("PWA publication retry must respect the registry cooldown") unless \
+  web_wait.fetch("run") == "sleep 120"
+
+web_retry = by_name.fetch("Retry PWA publication")
+web_retry_with = web_retry.fetch("with")
+fail_contract("PWA publication retry must expose its result") unless \
+  web_retry["id"] == "web_publish_retry"
+fail_contract("PWA publication retry must be conditional") unless \
+  web_retry["if"] == "steps.web_publish.outcome == 'failure'"
+fail_contract("PWA publication retry must fail through the explicit gate") unless \
+  web_retry["continue-on-error"] == true
+fail_contract("PWA publication retry must use the reviewed Docker build action") unless \
+  web_retry["uses"] == web["uses"]
+for key in ["context", "platforms", "push", "build-args", "tags", "labels", "cache-from", "cache-to"]
+  fail_contract("PWA publication retry changed #{key}") unless \
+    web_retry_with[key] == web_with[key]
+end
+
+web_gate = by_name.fetch("Require published PWA image")
+fail_contract("PWA publication gate must preserve the canonical digest output") unless \
+  web_gate["id"] == "web"
+fail_contract("PWA publication gate must run after a failed action outcome") unless \
+  web_gate["if"] == "always()"
+web_gate_env = web_gate.fetch("env")
+fail_contract("PWA publication gate must receive the first outcome and digest") unless \
+  web_gate_env["PRIMARY_OUTCOME"] == "${{ steps.web_publish.outcome }}" &&
+    web_gate_env["PRIMARY_DIGEST"] == "${{ steps.web_publish.outputs.digest }}"
+fail_contract("PWA publication gate must receive the retry outcome and digest") unless \
+  web_gate_env["RETRY_OUTCOME"] == "${{ steps.web_publish_retry.outcome }}" &&
+    web_gate_env["RETRY_DIGEST"] == "${{ steps.web_publish_retry.outputs.digest }}"
+web_gate_run = web_gate.fetch("run")
+fail_contract("PWA publication gate must validate an immutable digest") unless \
+  web_gate_run.include?('^sha256:[0-9a-f]{64}$') &&
+    web_gate_run.include?('echo "digest=$digest" >> "$GITHUB_OUTPUT"')
 
 binding = by_name.fetch("Bind release to checked-out develop revision")
 fail_contract("release shell must require the develop branch ref") unless \

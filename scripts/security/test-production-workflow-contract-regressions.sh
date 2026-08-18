@@ -53,6 +53,10 @@ replacements = {
         "id: api",
         "id: mutable-api",
     ),
+    "api-retry-id": (
+        "id: api_publish_retry",
+        "id: missing_api_publish_retry",
+    ),
     "api-action": (
         "uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6",
         "uses: docker/build-push-action@main",
@@ -72,6 +76,10 @@ replacements = {
     "api-push": (
         "push: true",
         "push: false",
+    ),
+    "web-retry-id": (
+        "id: web_publish_retry",
+        "id: missing_web_publish_retry",
     ),
     "secret-file-command": (
         "bash scripts/security/test-api-docker-secret-file-access.sh",
@@ -214,11 +222,13 @@ for case_name in \
   mutable-image \
   render-sha \
   api-id \
+  api-retry-id \
   api-action \
   unreviewed-action-sha \
   api-context \
   api-platforms \
   api-push \
+  web-retry-id \
   secret-file-command \
   secret-file-digest \
   migration-command \

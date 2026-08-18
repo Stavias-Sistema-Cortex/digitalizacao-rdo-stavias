@@ -175,7 +175,8 @@ jobs:
           )"
           test "$remote_sha" = "$GITHUB_SHA"
       - name: Build and publish API
-        id: api
+        id: api_publish
+        continue-on-error: true
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: apps/api
@@ -189,6 +190,49 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=cortex-api
           cache-to: type=gha,mode=max,scope=cortex-api
+      - name: Wait before retrying API publication
+        if: steps.api_publish.outcome == 'failure'
+        shell: bash
+        run: sleep 120
+      - name: Retry API publication
+        id: api_publish_retry
+        if: steps.api_publish.outcome == 'failure'
+        continue-on-error: true
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: apps/api
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.release.outputs.api_image }}:production
+            ${{ steps.release.outputs.api_image }}:${{ steps.release.outputs.sha_tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=cortex-api
+          cache-to: type=gha,mode=max,scope=cortex-api
+      - name: Require published API image
+        id: api
+        if: always()
+        shell: bash
+        env:
+          PRIMARY_OUTCOME: ${{ steps.api_publish.outcome }}
+          PRIMARY_DIGEST: ${{ steps.api_publish.outputs.digest }}
+          RETRY_OUTCOME: ${{ steps.api_publish_retry.outcome }}
+          RETRY_DIGEST: ${{ steps.api_publish_retry.outputs.digest }}
+        run: |
+          set -euo pipefail
+          digest=""
+          if [[ "$PRIMARY_OUTCOME" == "success" ]]; then
+            digest="$PRIMARY_DIGEST"
+          elif [[ "$RETRY_OUTCOME" == "success" ]]; then
+            digest="$RETRY_DIGEST"
+          fi
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "API image publication failed after the controlled retry." >&2
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       # A atestação já derrubou uma release inteira por uma recusa passageira do
       # registry: o ghcr respondeu 403 ao envio do manifesto de atestação, e o
       # que se perdeu foi a entrega do que de fato tinha mudado. Não era
@@ -257,7 +301,8 @@ jobs:
           docker pull "$CORTEX_API_IMAGE_DIGEST"
           bash scripts/security/test-api-docker-secret-file-access.sh
       - name: Build and publish PWA
-        id: web
+        id: web_publish
+        continue-on-error: true
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: apps/web
@@ -276,6 +321,54 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=cortex-web
           cache-to: type=gha,mode=max,scope=cortex-web
+      - name: Wait before retrying PWA publication
+        if: steps.web_publish.outcome == 'failure'
+        shell: bash
+        run: sleep 120
+      - name: Retry PWA publication
+        id: web_publish_retry
+        if: steps.web_publish.outcome == 'failure'
+        continue-on-error: true
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: apps/web
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VITE_CORTEX_API_BASE_URL=/api
+            VITE_CORTEX_AUTH_MODE=postgresql
+            VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256=${{ steps.release.outputs.offline_public_key_fingerprint }}
+            VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES=26214400
+          tags: |
+            ${{ steps.release.outputs.web_image }}:production
+            ${{ steps.release.outputs.web_image }}:${{ steps.release.outputs.sha_tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=cortex-web
+          cache-to: type=gha,mode=max,scope=cortex-web
+      - name: Require published PWA image
+        id: web
+        if: always()
+        shell: bash
+        env:
+          PRIMARY_OUTCOME: ${{ steps.web_publish.outcome }}
+          PRIMARY_DIGEST: ${{ steps.web_publish.outputs.digest }}
+          RETRY_OUTCOME: ${{ steps.web_publish_retry.outcome }}
+          RETRY_DIGEST: ${{ steps.web_publish_retry.outputs.digest }}
+        run: |
+          set -euo pipefail
+          digest=""
+          if [[ "$PRIMARY_OUTCOME" == "success" ]]; then
+            digest="$PRIMARY_DIGEST"
+          elif [[ "$RETRY_OUTCOME" == "success" ]]; then
+            digest="$RETRY_DIGEST"
+          fi
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "PWA image publication failed after the controlled retry." >&2
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       # Mesmas três tentativas da API, pela mesma razão: a recusa do registry é
       # passageira e some ao tentar de novo.
       - name: Attest PWA provenance
