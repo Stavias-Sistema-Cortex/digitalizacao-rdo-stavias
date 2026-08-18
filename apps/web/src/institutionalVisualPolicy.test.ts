@@ -302,12 +302,16 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(financeTitle).toContain("color: #fff;");
     expect(financeCss).not.toContain(".finance-page > .workspace-header");
     expect(financeNavigation).toContain("overflow-x: auto;");
+    /*
+     * Os módulos passaram a falar o vocabulário das abas da Home — pedido do
+     * dono do produto ao espalhar a linguagem tipográfica: página corrente é
+     * texto firme com sublinhado amarelo, e não botão preenchido de teal. O
+     * aria-current continua sendo o sinal semântico.
+     */
     expect(financeNavigationActive).toContain(
-      "background: var(--color-brand-teal);",
+      "box-shadow: 0 2px 0 0 var(--color-brand-yellow);",
     );
-    expect(financeNavigationActive).toContain(
-      "color: var(--color-brand-yellow);",
-    );
+    expect(financeNavigationActive).toContain("color: var(--color-ink);");
     expect(financeNavigationLabel).toContain("display: none;");
     expect(financeScopeLabel).toContain("color: var(--color-muted);");
     expect(financeContent).toContain("gap: 12px;");
@@ -319,8 +323,9 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(financeCss).not.toMatch(/var\(--finance-/);
     expect(financeCss).not.toContain(".finance-unit-grid");
     expect(financeCss).not.toContain(".finance-command-context");
-    expect(moduleButton).toContain("border: 1px solid var(--color-border);");
-    expect(moduleButton).toContain("background: var(--color-surface);");
+    // Aba de texto, como na Home: sem caixa própria, o sublinhado decide.
+    expect(moduleButton).toContain("border: 0;");
+    expect(moduleButton).toContain("background: transparent;");
   });
 
   it("applies the same restrained controls to RDO, Financeiro and Tarefas", () => {
@@ -343,9 +348,9 @@ describe("Cortex 3 institutional visual policy", () => {
     );
 
     expect(rdoPrimary).toContain("background: var(--color-ink);");
-    expect(financeModuleButton).toContain(
-      "border-radius: var(--radius-control);",
-    );
+    // O módulo virou aba de texto (sem caixa): o raio compartilhado passa a
+    // ser cobrado só nos controles que continuam sendo caixas.
+    expect(financeModuleButton).toContain("border: 0;");
     expect(financeScopeSelect).toContain(
       "border-radius: var(--radius-control);",
     );

@@ -489,8 +489,8 @@
 }
 
 .memory-entry__commit strong {
-  color: var(--memory-survey);
-  font-size: 0.72rem;
+  color: var(--color-ink);
+  font-size: 0.76rem;
   font-weight: 600;
 }
 
@@ -515,31 +515,37 @@
 .memory-entry__title h4 {
   min-width: 0;
   margin: 0;
-  font-size: 0.86rem;
+  font-size: 0.9rem;
   font-weight: 600;
 }
 
+/* O estado do evento é palavra, não pílula: caixa alta miúda na cor do
+   estado, alinhada ao ponto do trilho que já conta a mesma história. */
 .memory-entry__title > span {
   flex: 0 0 auto;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
-  padding: 4px 10px;
   color: var(--memory-survey);
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   font-weight: 600;
+  letter-spacing: 0.1em;
   line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.memory-entry[data-status="LOCAL_PENDING"] .memory-entry__title > span,
+.memory-entry[data-status="SYNC_FAILED"] .memory-entry__title > span,
+.memory-entry[data-status="SYNCING"] .memory-entry__title > span {
+  color: color-mix(in srgb, var(--color-brand-yellow) 55%, var(--color-ink));
 }
 
 .memory-entry[data-status="CONFLICT"] .memory-entry__title > span,
 .memory-entry[data-status="REJECTED"] .memory-entry__title > span {
-  border-color: color-mix(in srgb, var(--color-danger) 30%, var(--color-surface));
   color: var(--memory-alert);
 }
 
 .memory-entry__body > p {
-  margin: 5px 0 0;
+  margin: 6px 0 0;
   color: var(--color-muted);
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   overflow-wrap: anywhere;
 }
 
@@ -548,35 +554,48 @@
   font-weight: 600;
 }
 
+/*
+ * A evidência do evento era uma linha corrida de pares "chave valor" em
+ * monoespaçada miúda — a parte da ontologia que mais se lê e a que pior se
+ * lia. Vira grade: cada fato em coluna própria, o rótulo na voz de rótulo da
+ * casa e só o valor em monoespaçada, porque valor aqui é identificador.
+ */
 .memory-entry__evidence {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
-  margin: 9px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 10px 20px;
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
 }
 
 .memory-entry__evidence div {
-  display: flex;
+  display: grid;
   max-width: 100%;
   min-width: 0;
-  gap: 5px;
+  gap: 3px;
 }
 
 .memory-entry__evidence dt,
 .memory-entry__evidence dd {
   margin: 0;
-  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  font-size: 0.61rem;
   overflow-wrap: anywhere;
 }
 
 .memory-entry__evidence dt {
   color: var(--color-muted);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .memory-entry__evidence dd {
   color: var(--color-graphite);
   min-width: 0;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.66rem;
+  line-height: 1.45;
   word-break: break-word;
 }
 

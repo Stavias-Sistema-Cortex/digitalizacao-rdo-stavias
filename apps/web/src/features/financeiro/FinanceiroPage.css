@@ -43,13 +43,15 @@
 .finance-module-index {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 18px;
   overflow-x: auto;
+  padding-bottom: 1px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .finance-module-index__group {
   display: flex;
-  gap: 6px;
+  gap: 18px;
 }
 
 /*
@@ -61,27 +63,32 @@
   display: none;
 }
 
+/*
+ * Os módulos falam o vocabulário das abas da Home: texto, e o sublinhado
+ * amarelo marca onde se está. O botão-pílula com fundo teal era um segundo
+ * jeito de dizer "selecionado" no mesmo produto.
+ */
 .finance-module-index button {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-ink);
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 600;
-  padding: 7px 14px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 6px 2px 9px;
   cursor: pointer;
   white-space: nowrap;
+  transition: color var(--transition-functional);
 }
 
 .finance-module-index button:hover {
-  border-color: var(--color-border-strong);
+  color: var(--color-ink);
 }
 
 .finance-module-index button[aria-current="page"] {
-  background: var(--color-brand-teal);
-  border-color: var(--color-brand-teal);
-  color: var(--color-brand-yellow);
+  color: var(--color-ink);
+  font-weight: 600;
+  box-shadow: 0 2px 0 0 var(--color-brand-yellow);
 }
 
 /* ----------------------------------------------------------------- escopo */

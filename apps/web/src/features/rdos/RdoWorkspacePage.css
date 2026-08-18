@@ -99,7 +99,7 @@
   padding: 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: #fff;
 }
 
 .rdo-filter-grid label {
@@ -129,15 +129,18 @@
   margin-bottom: 18px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: #fff;
 }
 
+/* O título do resumo fala a voz de rótulo da Home: apresenta, não compete. */
 .rdo-register-summary h2 {
   margin: 0;
   padding: 11px 14px;
   border-bottom: 1px solid var(--color-border);
-  font-size: 0.8rem;
-  letter-spacing: 0.07em;
+  color: var(--color-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -626,8 +629,8 @@
 
 .rdo-grupo-obra__cabecalho h2 {
   margin: 0;
-  font-size: 0.86rem;
-  font-weight: 700;
+  font-size: 0.9rem;
+  font-weight: 600;
   letter-spacing: 0.01em;
   min-width: 0;
   overflow-wrap: anywhere;
