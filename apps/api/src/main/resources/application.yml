@@ -210,6 +210,7 @@ cortex:
       url: ${CORTEX_ZELADORIA_DB_URL:${ZLD_DB_URL:}}
       username: ${CORTEX_ZELADORIA_DB_USER:${ZLD_DB_USER:}}
       password: ${CORTEX_ZELADORIA_DB_PASSWORD:${ZLD_DB_PASSWORD:}}
+      password-file: ${CORTEX_ZELADORIA_DB_PASSWORD_FILE:}
 
     academy:
       url: ${CORTEX_ACADEMY_DB_URL:${ACAD_DB_URL:}}
