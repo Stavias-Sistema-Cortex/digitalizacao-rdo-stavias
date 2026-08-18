@@ -46,9 +46,9 @@ public class DesenhoDoTrechoNoMapa {
         int cederam = jdbcTemplate.update(
                 """
                 UPDATE obra_geometria
-                SET valido_ate = CURRENT_TIMESTAMP(6),
+                SET valido_ate = GREATEST(CURRENT_TIMESTAMP(6), valido_desde),
                     status = 'ENCERRADA',
-                    atualizado_em = CURRENT_TIMESTAMP(6)
+                    atualizado_em = GREATEST(CURRENT_TIMESTAMP(6), valido_desde)
                 WHERE categoria = 'TRECHO'
                   AND objeto_tipo = 'RDO'
                   AND objeto_id = ?
