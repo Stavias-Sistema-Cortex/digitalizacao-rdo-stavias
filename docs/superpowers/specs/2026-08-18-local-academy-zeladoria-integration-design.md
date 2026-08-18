@@ -80,9 +80,9 @@ Depois da validação, uma única transação PostgreSQL:
 1. insere novos colaboradores;
 2. atualiza nome, e-mail, grupo, perfil, papel e demais dados alterados;
 3. desativa imediatamente linhas explicitamente inativas na fonte;
-4. desativa colaboradores ausentes do snapshot completo após a carência
-   configurada; no servidor local desta entrega, a carência será zero para que
-   o estado atual seja refletido já no primeiro ciclo;
+4. preserva colaboradores ausentes do snapshot: ausência não equivale a
+   desligamento e somente o campo explícito `usuarios.ativo` mantido no Academy
+   pode desativar uma pessoa;
 5. revoga a identidade de login Academy de quem ficou inelegível, sem liberar
    CPF para uma identidade errada;
 6. preserva o colaborador histórico, suas relações, RDOs e evidências; não há
@@ -105,14 +105,16 @@ O adaptador da Zeladoria passa a oferecer o mesmo nível de confiança:
   simultâneas;
 - aplicação integral em uma única transação PostgreSQL;
 - upsert de ativos presentes;
-- desativação lógica de ativos que não aparecem no snapshot completo atual;
-- reativação segura se o ativo voltar a aparecer;
+- desativação lógica de ativos que não aparecem no snapshot completo atual,
+  refletindo uma exclusão feita pelo responsável na tabela `ativos`;
+- reativação segura de uma linha histórica já inativa se o mesmo ativo estiver
+  presente no snapshot atual;
 - manutenção de `deleted_at`, `last_seen_at`, `source_hash` e `row_version`;
 - preservação da linha e de todas as referências históricas de RDO.
 
-Ativo ausente não é apagado. Ele fica `active=false` e deixa de ser oferecido
-para novos apontamentos, mas continua resolvível em RDOs históricos, exportação,
-sincronização offline e auditoria.
+Ativo ausente do snapshot completo é tratado como excluído na origem e fica
+`active=false` no Córtex. Ele não é apagado fisicamente: RDOs históricos,
+exportação, sincronização offline e auditoria permanecem resolvíveis.
 
 ## Concorrência e atomicidade
 
@@ -192,8 +194,8 @@ disponibilidade momentânea dessas fontes.
 - snapshot incompleto ou ambíguo produz zero alteração de domínio;
 - desativações atuais do Academy são refletidas com revogação de login;
 - login de usuário ativo continua funcionando;
-- ativos ausentes da Zeladoria ficam inativos, mas RDOs históricos continuam
-  íntegros;
+- ativos excluídos da Zeladoria ficam inativos no Córtex, e RDOs históricos
+  continuam íntegros;
 - falha tardia reverte integralmente a aplicação do snapshot;
 - duas execuções concorrentes do mesmo conector não aplicam em paralelo;
 - ambos os estados podem ficar `ATRASADA` sem derrubar a readiness da API;

@@ -87,8 +87,8 @@
 4. Prepare the entire Zeladoria snapshot before applying it. Reject ambiguity before the PostgreSQL transaction.
 5. Apply all upserts, soft-deactivations, memory evidence, checkpoint and successful run completion in one `REQUIRES_NEW` transaction.
 6. Persist a safe FAILED run separately after rollback.
-7. Deactivation sets `active=false`, `deleted_at=CURRENT_TIMESTAMP(6)` and increments `row_version` only on a real active-to-inactive transition. It never deletes the asset row.
-8. Reactivation clears `deleted_at`, sets `active=true`, updates `last_seen_at`, and preserves the stable `id`.
+7. A row absent from the complete Zeladoria snapshot is an upstream deletion: set `active=false`, set `deleted_at=CURRENT_TIMESTAMP(6)` and increment `row_version` only on a real active-to-inactive transition. Never delete the Córtex row.
+8. A present row clears a historical `deleted_at`, sets `active=true`, updates `last_seen_at`, and preserves the stable `id`.
 9. Run focused tests GREEN, including existing Academy atomicity ITs.
 10. Commit: `feat(integrations): atomically reconcile Zeladoria assets`.
 
@@ -100,10 +100,10 @@
 - Modify: `apps/api/src/test/java/com/projeto/cortex/auth/PostgresqlAcademyCpfLoginIT.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/rdos/PostgresqlRdoCreationContextIT.java`
 
-1. Add a RED/characterization journey with two snapshots: initial active workforce, then current source with explicit inactive and missing people.
-2. Prove the current complete snapshot with zero missing-grace:
-   - deactivates the missing row;
-   - revokes Academy CPF login for both inactive and missing rows;
+1. Add a RED/characterization journey with two snapshots: initial active workforce, then current source with one explicitly inactive and one missing person.
+2. Prove the current complete snapshot contract:
+   - preserves the missing row and its login eligibility;
+   - deactivates the explicitly inactive row and revokes only that Academy CPF login;
    - keeps the collaborator and prior RDO references;
    - keeps an active person's password/passkey identity usable;
    - does not assign a released CPF to the wrong person.
@@ -142,7 +142,7 @@
    - both passwords are mounted as files under `/run/secrets`;
    - both truststores are mounted read-only under fixed paths;
    - no raw source password appears in rendered environment;
-   - Academy local config sets missing grace to zero;
+   - Academy local config disables inference of deactivation from missing rows;
    - both local schedules default false;
    - hosted configuration keeps both schedules false.
 2. Update compose and preparation scripts to copy secret files without printing contents and to reject symlinks, empty files and permissive modes.
@@ -187,7 +187,7 @@ This task has an explicit human confirmation boundary before reading the saved c
    - historical RDOs referring to old collaborators/assets still render/export;
    - offline RDO creation and later replay still work;
    - PDOR/revenue behavior is unchanged by source refresh alone.
-8. Set local Academy missing grace to zero and enable both schedules at five minutes.
+8. Keep Academy missing-row deactivation disabled and enable both schedules at five minutes.
 9. Observe at least two automatic cycles, with no overlapping run, no spurious updates and no secret-bearing error.
 10. Keep Render/hosted schedules false and record the rollback image/SHA.
 

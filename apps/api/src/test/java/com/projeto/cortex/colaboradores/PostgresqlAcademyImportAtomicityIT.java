@@ -221,7 +221,7 @@ class PostgresqlAcademyImportAtomicityIT {
     }
 
     @Test
-    void completeSnapshotHonorsMissingGraceAndExplicitInactiveImmediately() {
+    void completeSnapshotPreservesMissingAndHonorsExplicitInactiveImmediately() {
         LocalDateTime now = LocalDateTime.now();
         seedCollaborator(920_201, now.minusHours(23));
         seedCollaborator(920_202, now.minusHours(25));
@@ -258,20 +258,20 @@ class PostgresqlAcademyImportAtomicityIT {
         assertThat(result.status()).isEqualTo("SUCCESS");
         assertThat(result.registrosDesativados()).isOne();
         assertCollaboratorState(920_201, true, false);
-        assertCollaboratorState(920_202, false, true);
+        assertCollaboratorState(920_202, true, false);
         assertCollaboratorState(920_203, false, false);
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*)
                 FROM auth_identity
                 WHERE colaborador_id = ?
-                  AND status = 'PENDENTE'
-                  AND cpf_lookup_hmac IS NULL
-                  AND cpf_lookup_key_id IS NULL
-                  AND email_autenticacao IS NULL
+                  AND status = 'ATIVA'
+                  AND cpf_lookup_hmac IS NOT NULL
+                  AND cpf_lookup_key_id IS NOT NULL
+                  AND email_autenticacao IS NOT NULL
                 """, Integer.class,
                 AcademyCollaboratorIdentity.fromAcademyUserId(920_202)
         )).isOne();
-        assertThat(identities.findActiveAcademyByCpf(SECOND_CPF)).isEmpty();
+        assertThat(identities.findActiveAcademyByCpf(SECOND_CPF)).isPresent();
         assertThat(jdbc.queryForObject("""
                 SELECT records_deactivated
                 FROM source_sync_run
@@ -481,7 +481,7 @@ class PostgresqlAcademyImportAtomicityIT {
     }
 
     @Test
-    void staleMissingAcademyOwnerReleasesCpfAfterGrace() {
+    void missingAcademyOwnerNeverReleasesCpfWithoutExplicitInactive() {
         int oldSourceId = 920_221;
         int newSourceId = 920_222;
         AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
@@ -522,13 +522,16 @@ class PostgresqlAcademyImportAtomicityIT {
                         oldSourceId
                 )
         );
-        ColaboradorImportResult transfer =
-                service.importarUsuariosDaAcademy();
-
-        assertThat(transfer.status()).isEqualTo("SUCCESS");
-        assertThat(transfer.registrosDesativados()).isOne();
-        assertCollaboratorState(oldSourceId, false, true);
-        assertCollaboratorState(newSourceId, true, false);
+        assertThatThrownBy(service::importarUsuariosDaAcademy)
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Falha ao importar colaboradores da Academy.")
+                .hasNoCause();
+        assertCollaboratorState(oldSourceId, true, false);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM colaborador
+                WHERE pk_origem = ?
+                """, Integer.class, String.valueOf(newSourceId))).isZero();
         assertThat(identities.findActiveByCpf(SECOND_CPF))
                 .get()
                 .extracting(
@@ -537,7 +540,7 @@ class PostgresqlAcademyImportAtomicityIT {
                 )
                 .isEqualTo(
                         AcademyCollaboratorIdentity.fromAcademyUserId(
-                                newSourceId
+                                oldSourceId
                         )
                 );
     }
@@ -1299,8 +1302,7 @@ class PostgresqlAcademyImportAtomicityIT {
                 identities,
                 new TransactionTemplate(
                         new DataSourceTransactionManager(dataSource)
-                ),
-                graceHours
+                )
         );
     }
 

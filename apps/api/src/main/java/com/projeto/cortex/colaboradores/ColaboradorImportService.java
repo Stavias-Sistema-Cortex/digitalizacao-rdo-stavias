@@ -20,7 +20,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Service;
@@ -35,7 +34,6 @@ public class ColaboradorImportService {
     private static final String BANCO_ORIGEM = "dbstavias_acad";
     private static final String TABELA_ORIGEM = "usuarios";
     private static final int SNAPSHOT_PAGE_SIZE = 500;
-    private static final long DEFAULT_MISSING_GRACE_HOURS = 24;
     private static final String SOURCE_FAILURE_MESSAGE =
             "Falha ao ler snapshot completo da Academy.";
     private static final String APPLY_FAILURE_MESSAGE =
@@ -46,7 +44,6 @@ public class ColaboradorImportService {
     private final CortexOperationalMemoryService memoryService;
     private final AuthIdentityRepository authIdentityRepository;
     private final TransactionTemplate requiresNewTransactions;
-    private final long missingGraceHours;
     private final AcademyImportRunLock runLock;
 
     @Autowired
@@ -55,9 +52,7 @@ public class ColaboradorImportService {
             AcademySourceAdapter academySourceAdapter,
             CortexOperationalMemoryService memoryService,
             AuthIdentityRepository authIdentityRepository,
-            PlatformTransactionManager transactionManager,
-            @Value("${cortex.sync.academy.missing-grace-hours:24}")
-            long missingGraceHours
+            PlatformTransactionManager transactionManager
     ) {
         this(
                 jdbcTemplate,
@@ -65,7 +60,6 @@ public class ColaboradorImportService {
                 memoryService,
                 authIdentityRepository,
                 requiresNewTransactionTemplate(transactionManager),
-                missingGraceHours,
                 postgresqlRunLock(jdbcTemplate)
         );
     }
@@ -86,7 +80,6 @@ public class ColaboradorImportService {
                 memoryService,
                 authIdentityRepository,
                 transactionTemplateFor(jdbcTemplate),
-                DEFAULT_MISSING_GRACE_HOURS,
                 postgresqlRunLock(jdbcTemplate)
         );
     }
@@ -96,8 +89,7 @@ public class ColaboradorImportService {
             AcademySourceAdapter academySourceAdapter,
             CortexOperationalMemoryService memoryService,
             AuthIdentityRepository authIdentityRepository,
-            TransactionTemplate applyTransactions,
-            long missingGraceHours
+            TransactionTemplate applyTransactions
     ) {
         this(
                 jdbcTemplate,
@@ -105,7 +97,6 @@ public class ColaboradorImportService {
                 memoryService,
                 authIdentityRepository,
                 applyTransactions,
-                missingGraceHours,
                 postgresqlRunLock(jdbcTemplate)
         );
     }
@@ -116,7 +107,6 @@ public class ColaboradorImportService {
             CortexOperationalMemoryService memoryService,
             AuthIdentityRepository authIdentityRepository,
             TransactionTemplate applyTransactions,
-            long missingGraceHours,
             AcademyImportRunLock runLock
     ) {
         this.jdbcTemplate = jdbcTemplate;
@@ -128,12 +118,6 @@ public class ColaboradorImportService {
                 TransactionDefinition.PROPAGATION_REQUIRES_NEW
         );
         this.runLock = runLock;
-        if (missingGraceHours < 0) {
-            throw new IllegalArgumentException(
-                    "A carencia de ausentes Academy nao pode ser negativa."
-            );
-        }
-        this.missingGraceHours = missingGraceHours;
     }
 
     public ColaboradorImportResult importarUsuariosDaAcademy() {
@@ -171,7 +155,6 @@ public class ColaboradorImportService {
             ImportApplicationResult applied = Objects.requireNonNull(
                     requiresNewTransactions.execute(status -> aplicarSnapshot(
                             syncRunId,
-                            iniciadoEm,
                             preparedSnapshot
                     )),
                     "resultado da transacao de importacao"
@@ -207,20 +190,13 @@ public class ColaboradorImportService {
 
     private ImportApplicationResult aplicarSnapshot(
             String syncRunId,
-            LocalDateTime iniciadoEm,
             PreparedSnapshot snapshot
     ) {
-        LocalDateTime missingCutoff = iniciadoEm.minusHours(
-                missingGraceHours
-        );
-        List<ColaboradorAusente> staleMissing =
-                buscarColaboradoresAusentes(missingCutoff);
+        Set<String> activeSourcePksBefore =
+                buscarPksAcademyAtivos();
         Set<String> releasedIdentityOwners = new LinkedHashSet<>(
                 buscarIdentidadesAcademyJaInelegiveis()
         );
-        staleMissing.stream()
-                .map(ColaboradorAusente::id)
-                .forEach(releasedIdentityOwners::add);
         snapshot.users().stream()
                 .filter(user ->
                         !user.ativo()
@@ -240,6 +216,7 @@ public class ColaboradorImportService {
 
         int registrosInseridos = 0;
         int registrosAtualizados = 0;
+        int registrosDesativados = 0;
 
         for (UsuarioAcademy usuario : snapshot.users()) {
             String hashOrigem = gerarHash(usuario);
@@ -251,6 +228,12 @@ public class ColaboradorImportService {
                 registrosInseridos++;
             } else if (!hashExistente.equals(hashOrigem)) {
                 registrosAtualizados++;
+            }
+            if (!usuario.ativo()
+                    && activeSourcePksBefore.contains(
+                            usuario.pkOrigem()
+                    )) {
+                registrosDesativados++;
             }
 
             salvarOuAtualizar(usuario, hashOrigem);
@@ -276,11 +259,6 @@ public class ColaboradorImportService {
             );
         }
 
-        int registrosDesativados = desativarAusentes(
-                missingCutoff,
-                staleMissing
-        );
-
         finalizarExecucaoComSucesso(
                 syncRunId,
                 snapshot.users().size(),
@@ -304,6 +282,23 @@ public class ColaboradorImportService {
                 registrosAtualizados,
                 registrosDesativados
         );
+    }
+
+    private Set<String> buscarPksAcademyAtivos() {
+        return new LinkedHashSet<>(jdbcTemplate.query(
+                """
+                SELECT pk_origem
+                FROM colaborador
+                WHERE banco_origem = ?
+                  AND tabela_origem = ?
+                  AND ativo = TRUE
+                  AND deletado_em IS NULL
+                """,
+                (resultSet, rowNumber) ->
+                        resultSet.getString("pk_origem"),
+                BANCO_ORIGEM,
+                TABELA_ORIGEM
+        ));
     }
 
     private PreparedSnapshot validarEPrepararSnapshot(
@@ -595,57 +590,6 @@ public class ColaboradorImportService {
         return hashes.isEmpty() ? null : hashes.get(0);
     }
 
-    private int desativarAusentes(
-            LocalDateTime missingCutoff,
-            List<ColaboradorAusente> ausentes
-    ) {
-        int total = jdbcTemplate.update("""
-                UPDATE colaborador
-                SET
-                    ativo = FALSE,
-                    deletado_em = COALESCE(deletado_em, CURRENT_TIMESTAMP(6)),
-                    cpf_hash = CASE
-                        WHEN EXISTS (
-                            SELECT 1
-                            FROM auth_identity protected_identity
-                            WHERE protected_identity.colaborador_id =
-                                      colaborador.id
-                              AND protected_identity.status = 'BLOQUEADA'
-                        )
-                            THEN colaborador.cpf_hash
-                        ELSE NULL
-                    END,
-                    cpf_mascarado = CASE
-                        WHEN EXISTS (
-                            SELECT 1
-                            FROM auth_identity protected_identity
-                            WHERE protected_identity.colaborador_id =
-                                      colaborador.id
-                              AND protected_identity.status = 'BLOQUEADA'
-                        )
-                            THEN colaborador.cpf_mascarado
-                        ELSE NULL
-                    END,
-                    atualizado_em = CURRENT_TIMESTAMP(6),
-                    versao_linha = versao_linha + 1
-                WHERE banco_origem = ?
-                  AND tabela_origem = ?
-                  AND visto_por_ultimo_em < ?
-                  AND ativo = TRUE
-                  AND deletado_em IS NULL
-                """,
-                BANCO_ORIGEM,
-                TABELA_ORIGEM,
-                missingCutoff
-        );
-
-        for (ColaboradorAusente ausente : ausentes) {
-            registrarColaboradorAusenteNaMemoria(ausente);
-        }
-
-        return total;
-    }
-
     private List<String> buscarIdentidadesAcademyJaInelegiveis() {
         return jdbcTemplate.query("""
                 SELECT id
@@ -690,40 +634,6 @@ public class ColaboradorImportService {
                 """,
                 BANCO_ORIGEM,
                 TABELA_ORIGEM
-        );
-    }
-
-    private List<ColaboradorAusente> buscarColaboradoresAusentes(
-            LocalDateTime missingCutoff
-    ) {
-        return jdbcTemplate.query(
-                """
-                SELECT
-                    id,
-                    pk_origem,
-                    codigo_colaborador,
-                    nome,
-                    hash_origem
-                FROM colaborador
-                WHERE banco_origem = ?
-                  AND tabela_origem = ?
-                  AND visto_por_ultimo_em < ?
-                  AND ativo = TRUE
-                  AND deletado_em IS NULL
-                """,
-                (resultSet, rowNumber) ->
-                        new ColaboradorAusente(
-                                resultSet.getString("id"),
-                                resultSet.getString("pk_origem"),
-                                resultSet.getString(
-                                        "codigo_colaborador"
-                                ),
-                                resultSet.getString("nome"),
-                                resultSet.getString("hash_origem")
-                        ),
-                BANCO_ORIGEM,
-                TABELA_ORIGEM,
-                missingCutoff
         );
     }
 
@@ -980,46 +890,6 @@ public class ColaboradorImportService {
         );
     }
 
-    private void registrarColaboradorAusenteNaMemoria(
-            ColaboradorAusente ausente
-    ) {
-        Map<String, Object> metadata = metadataLegado(
-                null,
-                ausente.pkOrigem(),
-                ausente.hashOrigem()
-        );
-
-        memoryService.registrarObjeto(
-                "COLABORADOR",
-                ausente.id(),
-                ausente.codigoColaborador(),
-                ausente.nome(),
-                "INATIVO",
-                "IMPORTACAO_LEGADO",
-                "colaborador",
-                metadata
-        );
-
-        memoryService.registrarEvidencia(
-                "COLABORADOR",
-                ausente.id(),
-                "ativo",
-                false,
-                "BOOLEANO",
-                "IMPORTACAO_LEGADO",
-                java.math.BigDecimal.ONE,
-                metadata
-        );
-
-        memoryService.registrarEvento(
-                "COLABORADOR",
-                ausente.id(),
-                "COLABORADOR_AUSENTE_NO_LEGADO",
-                "IMPORTACAO_LEGADO",
-                metadata
-        );
-    }
-
     private void registrarImportacaoNaMemoria(
             String syncRunId,
             String status,
@@ -1197,11 +1067,4 @@ public class ColaboradorImportService {
             LocalDateTime criadoEmOrigem
     ) {}
 
-    private record ColaboradorAusente(
-            String id,
-            String pkOrigem,
-            String codigoColaborador,
-            String nome,
-            String hashOrigem
-    ) {}
 }

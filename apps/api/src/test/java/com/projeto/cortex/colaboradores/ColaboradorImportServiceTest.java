@@ -414,7 +414,6 @@ class ColaboradorImportServiceTest {
                 memory,
                 authIdentities,
                 transactions,
-                24,
                 AcademyImportRunLock.noOp()
         );
 
@@ -451,7 +450,6 @@ class ColaboradorImportServiceTest {
                 memory,
                 authIdentities,
                 transactions,
-                24,
                 AcademyImportRunLock.noOp()
         );
 
@@ -487,7 +485,6 @@ class ColaboradorImportServiceTest {
                 memory,
                 authIdentities,
                 immediateTransactions(),
-                24,
                 AcademyImportRunLock.noOp()
         );
 
@@ -521,7 +518,6 @@ class ColaboradorImportServiceTest {
                 memory,
                 authIdentities,
                 transactions,
-                24,
                 AcademyImportRunLock.noOp()
         );
 
@@ -567,7 +563,6 @@ class ColaboradorImportServiceTest {
                 memory,
                 authIdentities,
                 immediateTransactions(),
-                24,
                 AcademyImportRunLock.noOp()
         );
     }
