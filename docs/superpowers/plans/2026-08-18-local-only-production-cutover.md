@@ -248,17 +248,17 @@ git commit -m "ops: add atomic local production cutover"
 - Consumes: local PostgreSQL and object volumes plus a root-owned off-host destination.
 - Produces: encrypted database dump, object archive, redacted manifest, retention metadata, and a restore-drill result.
 
-- [ ] **Step 1: Write RED backup contracts**
+- [x] **Step 1: Write RED backup contracts**
 
 Reject a backup destination on the same Docker volume/device, a world-readable destination, missing encryption recipient, partial archives, count/hash mismatches, and stale backups. Prove temporary plaintext is removed on success and failure.
 
-- [ ] **Step 2: Confirm RED**
+- [x] **Step 2: Confirm RED**
 
 ```bash
 bash scripts/deploy/test-local-production-backup.sh
 ```
 
-- [ ] **Step 3: Implement backup and validation**
+- [x] **Step 3: Implement backup and validation**
 
 Use PostgreSQL 18 custom-format dump, a deterministic object manifest, streaming authenticated encryption to the off-host destination, atomic final rename, and retention that never removes the last known-good backup. Do not back up live secret values into CI or Git; use the host secret escrow procedure.
 

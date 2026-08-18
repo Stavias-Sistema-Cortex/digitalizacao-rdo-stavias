@@ -65,6 +65,60 @@ manifestos de contagem usam modo `600`.
 Volumes de banco, objetos e certificados são persistentes. O script não apaga
 nem sobrescreve um banco de destino que já contenha dados.
 
+## Backup externo criptografado
+
+Antes de tornar o servidor local canônico, monte um destino realmente externo
+(NFS/SSHFS corporativo ou mídia removível guardada fora do servidor) em um
+diretório root-only. O script recusa o mesmo device dos volumes Docker. Gere a
+identidade `age` fora do servidor, mantenha somente o recipient público no host
+e coloque a identidade privada no cofre operacional.
+
+```bash
+sudo env \
+  CORTEX_REMOTE_RETENTION=preserve \
+  CORTEX_EXPECTED_RELEASE_SHA="$(git rev-parse HEAD)" \
+  CORTEX_BACKUP_DESTINATION=/mnt/cortex-offhost \
+  CORTEX_BACKUP_AGE_RECIPIENT_FILE=/etc/cortex-backup/recipient.txt \
+  CORTEX_COMPOSE_FILE="$PWD/deploy/production/compose.yml" \
+  CORTEX_COMPOSE_ENV_FILE=/srv/cortex/runtime/production.env \
+  CORTEX_COMPOSE_PROJECT_NAME=cortex-production \
+  CORTEX_DOCKER_BIN=/usr/bin/docker \
+  CORTEX_AGE_BIN=/usr/bin/age \
+  CORTEX_STAT_BIN=/usr/bin/stat \
+  CORTEX_BACKUP_RETENTION_COUNT=14 \
+  bash scripts/deploy/backup-local-production.sh
+```
+
+O dump PostgreSQL custom-format, o tar de objetos e o manifesto detalhado de
+SHA-256 são cifrados separadamente com `age`. O manifesto visível contém apenas
+totais, tamanhos, digests, revisão e IDs imutáveis das imagens. Artefatos só
+ganham o nome final depois que todos terminam; falha remove plaintext e
+parciais, sem tocar no último backup completo.
+
+Ao menos uma vez por mês, disponibilize temporariamente a identidade privada e
+execute um restore descartável. O verificador recusa backup com mais de 26
+horas por padrão, revalida todos os hashes, restaura PostgreSQL em container e
+volume temporários sem rede, grava evidência redigida e remove apenas esses
+recursos descartáveis:
+
+```bash
+sudo env \
+  CORTEX_REMOTE_RETENTION=preserve \
+  CORTEX_EXPECTED_RELEASE_SHA="$(git rev-parse HEAD)" \
+  CORTEX_BACKUP_AGE_IDENTITY_FILE=/run/cortex-restore/identity.txt \
+  CORTEX_RESTORE_SCRATCH_ROOT=/srv/cortex/restore-scratch \
+  CORTEX_DOCKER_BIN=/usr/bin/docker \
+  CORTEX_AGE_BIN=/usr/bin/age \
+  CORTEX_BACKUP_MAX_AGE_SECONDS=93600 \
+  bash scripts/deploy/verify-local-production-backup.sh \
+    /mnt/cortex-offhost/cortex-AAAA.manifest.json
+```
+
+Automatize o primeiro comando com um timer `systemd` diário usando um
+`EnvironmentFile` root-only. A unidade deve exigir que `/mnt/cortex-offhost`
+esteja montado (`RequiresMountsFor=`) e nunca carregar a identidade privada de
+restore no job diário.
+
 ## Publicação no GitHub
 
 O Environment pode ser recriado de forma idempotente por um administrador:

@@ -295,6 +295,35 @@ Ele restaura o alvo exato anterior, exige `configtest`, recarrega o Apache e
 para os containers sem `down` e sem `-v`. O estado e as evidências não carregam
 URL JDBC, nomes de objeto ou segredos.
 
+### Backup diário e restore drill
+
+Não aceite o disco do próprio Docker como backup. O destino deve estar montado
+em outro device e protegido por modo `700`; o script compara o device do
+destino com os mountpoints reais dos volumes PostgreSQL e de objetos. O job
+diário recebe apenas o recipient público de uma identidade `age` guardada fora
+do servidor.
+
+`backup-local-production.sh` descobre os nomes e image IDs pelos containers em
+execução, exige API saudável na revisão informada e cria:
+
+- dump PostgreSQL custom-format cifrado;
+- tar integral do volume de objetos cifrado;
+- manifesto detalhado de SHA-256 cifrado;
+- manifesto redigido `600`, gravado por último.
+
+A retenção mínima é dois e só roda depois de o novo conjunto estar completo.
+Nunca inclui arquivos secretos nem executa remoção em Neon, Render, Cloudflare
+ou R2. Configure o comando e o timer conforme
+`deploy/production/README.md`.
+
+O restore drill é parte do aceite, não mera inspeção do tar. Com a identidade
+privada temporariamente presente, `verify-local-production-backup.sh` confere a
+autenticação `age`, os hashes e a composição exata do arquivo, sobe a mesma
+imagem PostgreSQL em `--network none`, restaura o dump, calcula um digest das
+contagens de todas as tabelas públicas e apaga somente o container, o volume e
+o plaintext descartáveis. Preserve o `.restore.json` junto ao backup e remova a
+identidade do servidor ao terminar.
+
 ## Incidentes
 
 ### Banco indisponível
