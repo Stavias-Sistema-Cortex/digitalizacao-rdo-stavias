@@ -60,8 +60,12 @@ class IntegracaoAdminServiceTest {
 
         assertThat(response.status()).isEqualTo("FAILED");
         assertThat(response.mensagem())
-                .contains("Sincronizacao Zeladoria falhou")
-                .contains("Configuracao Zeladoria incompleta");
+                .isEqualTo(
+                        "Sincronizacao Zeladoria falhou. "
+                                + "Consulte o relatório da integração "
+                                + "para detalhes."
+                )
+                .doesNotContain("Configuracao Zeladoria incompleta");
     }
 
     @Test
@@ -81,6 +85,19 @@ class IntegracaoAdminServiceTest {
                 .doesNotContain("11144477735")
                 .doesNotContain("owner@example.invalid")
                 .doesNotContain("SQL exception");
+
+        assertThat(IntegracaoAdminService.safeStatusError(
+                "zeladoria",
+                historical
+        ))
+                .isEqualTo(
+                        "Sincronizacao Zeladoria falhou. "
+                                + "Consulte o relatório da integração "
+                                + "para detalhes."
+                )
+                .doesNotContain("11144477735")
+                .doesNotContain("owner@example.invalid")
+                .doesNotContain("SQL exception");
     }
 
     /*
@@ -94,7 +111,6 @@ class IntegracaoAdminServiceTest {
         LocalDateTime agora = LocalDateTime.of(2026, 8, 5, 12, 0);
 
         assertThat(IntegracaoAdminService.estadoComAtraso(
-                "academy",
                 "SUCCESS",
                 agora.minusMinutes(16),
                 true,
@@ -103,7 +119,6 @@ class IntegracaoAdminServiceTest {
         )).isEqualTo("ATRASADA");
 
         assertThat(IntegracaoAdminService.estadoComAtraso(
-                "academy",
                 "SUCCESS",
                 agora.minusMinutes(5),
                 true,
@@ -120,7 +135,6 @@ class IntegracaoAdminServiceTest {
         // um Alfa. Chamar de atrasado o que não tem hora marcada inventaria um
         // defeito, e é justamente a configuração de produção hoje.
         assertThat(IntegracaoAdminService.estadoComAtraso(
-                "academy",
                 "SUCCESS",
                 agora.minusDays(30),
                 false,
@@ -136,7 +150,6 @@ class IntegracaoAdminServiceTest {
         // FAILED e SEM_SINCRONIZACAO são mais informativos que "atrasada";
         // trocá-los apagaria a razão real.
         assertThat(IntegracaoAdminService.estadoComAtraso(
-                "academy",
                 "FAILED",
                 null,
                 true,
@@ -145,7 +158,6 @@ class IntegracaoAdminServiceTest {
         )).isEqualTo("FAILED");
 
         assertThat(IntegracaoAdminService.estadoComAtraso(
-                "academy",
                 "SEM_SINCRONIZACAO",
                 null,
                 true,
@@ -155,13 +167,20 @@ class IntegracaoAdminServiceTest {
     }
 
     @Test
-    void aJanelaDaAcademyNaoSeAplicaAZeladoria() {
+    void zeladoriaHabilitadaUsaSuaPropriaJanelaDeAtualizacao() {
         LocalDateTime agora = LocalDateTime.of(2026, 8, 5, 12, 0);
 
         assertThat(IntegracaoAdminService.estadoComAtraso(
-                "zeladoria",
                 "SUCCESS",
                 agora.minusDays(2),
+                true,
+                900_000L,
+                agora
+        )).isEqualTo("ATRASADA");
+
+        assertThat(IntegracaoAdminService.estadoComAtraso(
+                "SUCCESS",
+                agora.minusMinutes(5),
                 true,
                 900_000L,
                 agora
@@ -173,7 +192,6 @@ class IntegracaoAdminServiceTest {
         LocalDateTime agora = LocalDateTime.of(2026, 8, 5, 12, 0);
 
         assertThat(IntegracaoAdminService.estadoComAtraso(
-                "academy",
                 "SUCCESS",
                 null,
                 true,

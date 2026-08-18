@@ -204,6 +204,7 @@ cortex:
       enabled: ${CORTEX_SYNC_ZELADORIA_ENABLED:false}
       initial-delay-ms: ${CORTEX_SYNC_ZELADORIA_INITIAL_DELAY_MS:60000}
       fixed-delay-ms: ${CORTEX_SYNC_ZELADORIA_FIXED_DELAY_MS:300000}
+      readiness-max-age-ms: ${CORTEX_SYNC_ZELADORIA_READINESS_MAX_AGE_MS:900000}
 
   sources:
     zeladoria:

@@ -20,9 +20,13 @@ import java.util.Objects;
 public class IntegracaoAdminService {
 
     private static final long DEFAULT_ACADEMY_MAX_AGE_MS = 900_000L;
+    private static final long DEFAULT_ZELADORIA_MAX_AGE_MS = 900_000L;
 
     private static final String ACADEMY_STATUS_FAILURE =
             "Sincronizacao Academy falhou. "
+                    + "Consulte o relatório da integração para detalhes.";
+    private static final String ZELADORIA_STATUS_FAILURE =
+            "Sincronizacao Zeladoria falhou. "
                     + "Consulte o relatório da integração para detalhes.";
 
     private final JdbcTemplate jdbcTemplate;
@@ -32,6 +36,8 @@ public class IntegracaoAdminService {
     private final AssetImportService assetImportService;
     private final boolean academySyncEnabled;
     private final long academyMaxAgeMs;
+    private final boolean zeladoriaSyncEnabled;
+    private final long zeladoriaMaxAgeMs;
 
     public IntegracaoAdminService(
             JdbcTemplate jdbcTemplate,
@@ -47,7 +53,9 @@ public class IntegracaoAdminService {
                 colaboradorImportService,
                 assetImportService,
                 false,
-                DEFAULT_ACADEMY_MAX_AGE_MS
+                DEFAULT_ACADEMY_MAX_AGE_MS,
+                false,
+                DEFAULT_ZELADORIA_MAX_AGE_MS
         );
     }
 
@@ -61,7 +69,11 @@ public class IntegracaoAdminService {
             @Value("${cortex.sync.academy.enabled:false}")
             boolean academySyncEnabled,
             @Value("${cortex.sync.academy.readiness-max-age-ms:900000}")
-            long academyMaxAgeMs
+            long academyMaxAgeMs,
+            @Value("${cortex.sync.zeladoria.enabled:false}")
+            boolean zeladoriaSyncEnabled,
+            @Value("${cortex.sync.zeladoria.readiness-max-age-ms:900000}")
+            long zeladoriaMaxAgeMs
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.academySourceAdapter = academySourceAdapter;
@@ -70,6 +82,8 @@ public class IntegracaoAdminService {
         this.assetImportService = assetImportService;
         this.academySyncEnabled = academySyncEnabled;
         this.academyMaxAgeMs = academyMaxAgeMs;
+        this.zeladoriaSyncEnabled = zeladoriaSyncEnabled;
+        this.zeladoriaMaxAgeMs = zeladoriaMaxAgeMs;
     }
 
     public List<IntegracaoStatusResponse> listStatus() {
@@ -148,11 +162,10 @@ public class IntegracaoAdminService {
                                     result.errorMessage()
                             )
                     );
-                } catch (Exception exception) {
+                } catch (Exception ignored) {
                     yield failedAction(
                             integrationId,
-                            "Sincronizacao Zeladoria",
-                            exception
+                            ZELADORIA_STATUS_FAILURE
                     );
                 }
             }
@@ -164,13 +177,12 @@ public class IntegracaoAdminService {
 
     private IntegracaoActionResponse failedAction(
             String integrationId,
-            String label,
-            Exception exception
+            String safeMessage
     ) {
         return new IntegracaoActionResponse(
                 integrationId,
                 "FAILED",
-                label + " falhou. " + rootCauseMessage(exception)
+                safeMessage
         );
     }
 
@@ -188,22 +200,6 @@ public class IntegracaoAdminService {
                 + (errorMessage == null || errorMessage.isBlank()
                         ? "Consulte o relatório da integração para detalhes."
                         : errorMessage);
-    }
-
-    private String rootCauseMessage(Throwable throwable) {
-        Throwable current = throwable;
-
-        while (current.getCause() != null) {
-            current = current.getCause();
-        }
-
-        String message = current.getMessage();
-
-        if (message == null || message.isBlank()) {
-            return "Erro interno ao executar a integração.";
-        }
-
-        return message;
     }
 
     private IntegracaoStatusResponse status(
@@ -229,11 +225,10 @@ public class IntegracaoAdminService {
                         ? "SEM_SINCRONIZACAO"
                         : latestRun.status();
         state = estadoComAtraso(
-                id,
                 state,
                 lastSuccess,
-                academySyncEnabled,
-                academyMaxAgeMs,
+                syncEnabled(id),
+                maxAgeMs(id),
                 LocalDateTime.now()
         );
 
@@ -262,7 +257,7 @@ public class IntegracaoAdminService {
     }
 
     /**
-     * Marca como ATRASADA a Academy que responde bem, mas há tempo demais.
+     * Marca como ATRASADA uma fonte que responde bem, mas há tempo demais.
      *
      * Esta é a metade útil da verificação que antes vivia na readiness do
      * runtime: lá, passar da janela deixava a API inteira indisponível, o que
@@ -275,16 +270,14 @@ public class IntegracaoAdminService {
      * seria inventar um defeito.
      */
     static String estadoComAtraso(
-            String integrationId,
             String state,
             LocalDateTime lastSuccess,
-            boolean academySyncEnabled,
-            long academyMaxAgeMs,
+            boolean syncEnabled,
+            long maxAgeMs,
             LocalDateTime now
     ) {
-        if (!"academy".equals(integrationId)
-                || !academySyncEnabled
-                || academyMaxAgeMs <= 0
+        if (!syncEnabled
+                || maxAgeMs <= 0
                 || !"SUCCESS".equals(state)) {
             return state;
         }
@@ -292,7 +285,7 @@ public class IntegracaoAdminService {
             return "ATRASADA";
         }
         LocalDateTime cutoff = now.minus(
-                academyMaxAgeMs,
+                maxAgeMs,
                 ChronoUnit.MILLIS
         );
         return lastSuccess.isBefore(cutoff) ? "ATRASADA" : state;
@@ -305,9 +298,28 @@ public class IntegracaoAdminService {
         if (persistedError == null || persistedError.isBlank()) {
             return null;
         }
-        return "academy".equals(integrationId)
-                ? ACADEMY_STATUS_FAILURE
-                : persistedError;
+        return switch (integrationId) {
+            case "academy" -> ACADEMY_STATUS_FAILURE;
+            case "zeladoria" -> ZELADORIA_STATUS_FAILURE;
+            default -> "Sincronizacao da fonte falhou. "
+                    + "Consulte o relatório da integração para detalhes.";
+        };
+    }
+
+    private boolean syncEnabled(String integrationId) {
+        return switch (integrationId) {
+            case "academy" -> academySyncEnabled;
+            case "zeladoria" -> zeladoriaSyncEnabled;
+            default -> false;
+        };
+    }
+
+    private long maxAgeMs(String integrationId) {
+        return switch (integrationId) {
+            case "academy" -> academyMaxAgeMs;
+            case "zeladoria" -> zeladoriaMaxAgeMs;
+            default -> 0L;
+        };
     }
 
     private SyncRun latestRun(String connector) {
