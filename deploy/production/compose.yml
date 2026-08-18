@@ -159,6 +159,52 @@ services:
       retries: 12
       start_period: 60s
 
+  cortex-object-migrate:
+    profiles:
+      - object-migration
+    image: ${CORTEX_API_IMAGE:?Set the immutable API image digest}
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    environment:
+      CORTEX_MAIN_CLASS: com.projeto.cortex.storage.migrate.ObjectStorageMigrationApplication
+      CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/${CORTEX_POSTGRES_DB:-StaviasCortex}
+      CORTEX_POSTGRES_USER: ${CORTEX_POSTGRES_USER:-cortex_runtime}
+      CORTEX_POSTGRES_PASSWORD_FILE: /run/secrets/CORTEX_POSTGRES_PASSWORD
+      AWS_ACCESS_KEY_ID_FILE: /run/secrets/AWS_ACCESS_KEY_ID
+      AWS_SECRET_ACCESS_KEY_FILE: /run/secrets/AWS_SECRET_ACCESS_KEY
+      CORTEX_OBJECT_MIGRATION_SOURCE_S3_BUCKET: ${CORTEX_OBJECT_MIGRATION_SOURCE_S3_BUCKET:?Set the read-only source bucket}
+      CORTEX_OBJECT_MIGRATION_SOURCE_S3_REGION: ${CORTEX_OBJECT_MIGRATION_SOURCE_S3_REGION:?Set the source region}
+      CORTEX_OBJECT_MIGRATION_SOURCE_S3_ENDPOINT: ${CORTEX_OBJECT_MIGRATION_SOURCE_S3_ENDPOINT:-}
+      CORTEX_OBJECT_MIGRATION_SOURCE_S3_PREFIX: ${CORTEX_OBJECT_MIGRATION_SOURCE_S3_PREFIX:-}
+      CORTEX_OBJECT_MIGRATION_SOURCE_S3_PATH_STYLE: ${CORTEX_OBJECT_MIGRATION_SOURCE_S3_PATH_STYLE:-false}
+      CORTEX_OBJECT_MIGRATION_TARGET_LOCAL_ROOT: /var/lib/cortex/objects
+      CORTEX_OBJECT_MIGRATION_EVIDENCE_FILE: /var/lib/cortex/migration/object-storage-result.json
+      CORTEX_OBJECT_MIGRATION_PAGE_SIZE: ${CORTEX_OBJECT_MIGRATION_PAGE_SIZE:-250}
+    secrets:
+      - source: cortex_postgres_runtime_password
+        target: CORTEX_POSTGRES_PASSWORD
+      - source: cortex_storage_source_access_key_id
+        target: AWS_ACCESS_KEY_ID
+      - source: cortex_storage_source_secret_access_key
+        target: AWS_SECRET_ACCESS_KEY
+    volumes:
+      - cortex_object_data:/var/lib/cortex/objects
+      - ${CORTEX_OBJECT_MIGRATION_EVIDENCE_DIR:?Set the private evidence directory}:/var/lib/cortex/migration
+    depends_on:
+      cortex-postgres:
+        condition: service_healthy
+      cortex-migrate:
+        condition: service_completed_successfully
+    networks:
+      - cortex_private
+      - cortex_source_egress
+
   cortex-web:
     image: ${CORTEX_WEB_IMAGE:-cortex-web:production}
     build:
@@ -240,6 +286,10 @@ secrets:
     file: ${CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE:?Point to the public PEM}
   cortex_memory_cursor_hmac:
     file: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE:?Point to the memory cursor HMAC secret file}
+  cortex_storage_source_access_key_id:
+    file: ${CORTEX_STORAGE_SOURCE_ACCESS_KEY_ID_FILE:?Point to the source object access key file}
+  cortex_storage_source_secret_access_key:
+    file: ${CORTEX_STORAGE_SOURCE_SECRET_ACCESS_KEY_FILE:?Point to the source object secret key file}
 
 volumes:
   cortex_postgres_data:

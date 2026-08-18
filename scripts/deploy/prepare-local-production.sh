@@ -43,6 +43,7 @@ release_rp_id="$CORTEX_AUTH_WEBAUTHN_RP_ID"
 runtime_dir="${CORTEX_PRODUCTION_RUNTIME_DIR:-$default_runtime_dir}"
 secret_dir="$runtime_dir/secrets"
 backup_dir="$runtime_dir/backups"
+evidence_dir="$runtime_dir/evidence"
 runtime_env="$runtime_dir/production.env"
 source_snapshot_pid=""
 source_snapshot_dir=""
@@ -134,8 +135,8 @@ if [[ -z "$pg_dump_bin" || ! -x "$pg_dump_bin" ]] ||
   exit 1
 fi
 
-mkdir -p "$secret_dir" "$backup_dir"
-chmod 700 "$runtime_dir" "$secret_dir" "$backup_dir"
+mkdir -p "$secret_dir" "$backup_dir" "$evidence_dir"
+chmod 700 "$runtime_dir" "$secret_dir" "$backup_dir" "$evidence_dir"
 
 require_text() {
   local variable_name="$1"
@@ -212,6 +213,8 @@ academy_secret="$secret_dir/academy-password"
 zeladoria_secret="$secret_dir/zeladoria-password"
 academy_truststore="$secret_dir/academy-truststore.p12"
 zeladoria_truststore="$secret_dir/zeladoria-truststore.p12"
+storage_access_key_secret="$secret_dir/storage-source-access-key-id"
+storage_secret_key_secret="$secret_dir/storage-source-secret-access-key"
 
 ensure_random_secret "$postgres_admin_secret"
 ensure_random_secret "$postgres_migrator_secret"
@@ -232,6 +235,17 @@ install_secret_file CORTEX_ZELADORIA_DB_PASSWORD_FILE "$zeladoria_secret"
 unset CORTEX_ZELADORIA_DB_PASSWORD ZEL_DB_PASSWORD
 install_secret_file CORTEX_ACADEMY_TRUSTSTORE_FILE "$academy_truststore"
 install_secret_file CORTEX_ZELADORIA_TRUSTSTORE_FILE "$zeladoria_truststore"
+if [[ -n "${AWS_ACCESS_KEY_ID_FILE:-}" ]]; then
+  install_secret_file AWS_ACCESS_KEY_ID_FILE "$storage_access_key_secret"
+else
+  write_secret_value AWS_ACCESS_KEY_ID "$storage_access_key_secret"
+fi
+if [[ -n "${AWS_SECRET_ACCESS_KEY_FILE:-}" ]]; then
+  install_secret_file AWS_SECRET_ACCESS_KEY_FILE "$storage_secret_key_secret"
+else
+  write_secret_value AWS_SECRET_ACCESS_KEY "$storage_secret_key_secret"
+fi
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 
 for key_file in "$cpf_hmac_secret" "$password_setup_hmac_secret" "$memory_cursor_secret"; do
   if (( $(wc -c < "$key_file") < 32 )); then
@@ -268,7 +282,9 @@ for variable_name in \
   CORTEX_ACADEMY_DB_URL \
   CORTEX_ACADEMY_DB_USER \
   CORTEX_ZELADORIA_DB_URL \
-  CORTEX_ZELADORIA_DB_USER; do
+  CORTEX_ZELADORIA_DB_USER \
+  CORTEX_STORAGE_S3_BUCKET \
+  CORTEX_STORAGE_S3_REGION; do
   require_text "$variable_name"
 done
 
@@ -444,6 +460,15 @@ runtime_env_tmp="$(mktemp "$runtime_dir/production.env.XXXXXX")"
   printf 'CORTEX_ZELADORIA_DB_USER=%s\n' "$CORTEX_ZELADORIA_DB_USER"
   printf 'CORTEX_ZELADORIA_DB_PASSWORD_FILE=%s\n' "$zeladoria_secret"
   printf 'CORTEX_ZELADORIA_TRUSTSTORE_FILE=%s\n' "$zeladoria_truststore"
+  printf 'CORTEX_STORAGE_SOURCE_ACCESS_KEY_ID_FILE=%s\n' "$storage_access_key_secret"
+  printf 'CORTEX_STORAGE_SOURCE_SECRET_ACCESS_KEY_FILE=%s\n' "$storage_secret_key_secret"
+  printf 'CORTEX_OBJECT_MIGRATION_SOURCE_S3_BUCKET=%s\n' "$CORTEX_STORAGE_S3_BUCKET"
+  printf 'CORTEX_OBJECT_MIGRATION_SOURCE_S3_REGION=%s\n' "$CORTEX_STORAGE_S3_REGION"
+  printf 'CORTEX_OBJECT_MIGRATION_SOURCE_S3_ENDPOINT=%s\n' "${CORTEX_STORAGE_S3_ENDPOINT:-}"
+  printf 'CORTEX_OBJECT_MIGRATION_SOURCE_S3_PREFIX=%s\n' "${CORTEX_STORAGE_S3_PREFIX:-}"
+  printf 'CORTEX_OBJECT_MIGRATION_SOURCE_S3_PATH_STYLE=%s\n' "${CORTEX_STORAGE_S3_PATH_STYLE:-false}"
+  printf 'CORTEX_OBJECT_MIGRATION_EVIDENCE_DIR=%s\n' "$evidence_dir"
+  printf 'CORTEX_OBJECT_MIGRATION_PAGE_SIZE=250\n'
   printf 'CORTEX_SYNC_ACADEMY_ENABLED=false\n'
   printf 'CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS=900000\n'
   printf 'CORTEX_SYNC_ZELADORIA_ENABLED=false\n'
@@ -537,6 +562,20 @@ unset \
   CORTEX_ZELADORIA_DB_PASSWORD \
   CORTEX_ZELADORIA_DB_PASSWORD_FILE \
   CORTEX_ZELADORIA_TRUSTSTORE_FILE \
+  CORTEX_STORAGE_SOURCE_ACCESS_KEY_ID_FILE \
+  CORTEX_STORAGE_SOURCE_SECRET_ACCESS_KEY_FILE \
+  CORTEX_STORAGE_S3_BUCKET \
+  CORTEX_STORAGE_S3_REGION \
+  CORTEX_STORAGE_S3_ENDPOINT \
+  CORTEX_STORAGE_S3_PREFIX \
+  CORTEX_STORAGE_S3_PATH_STYLE \
+  CORTEX_OBJECT_MIGRATION_SOURCE_S3_BUCKET \
+  CORTEX_OBJECT_MIGRATION_SOURCE_S3_REGION \
+  CORTEX_OBJECT_MIGRATION_SOURCE_S3_ENDPOINT \
+  CORTEX_OBJECT_MIGRATION_SOURCE_S3_PREFIX \
+  CORTEX_OBJECT_MIGRATION_SOURCE_S3_PATH_STYLE \
+  CORTEX_OBJECT_MIGRATION_EVIDENCE_DIR \
+  CORTEX_OBJECT_MIGRATION_PAGE_SIZE \
   CORTEX_SYNC_ACADEMY_ENABLED \
   CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS \
   CORTEX_SYNC_ZELADORIA_ENABLED \

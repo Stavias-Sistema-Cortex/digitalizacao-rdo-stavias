@@ -144,6 +144,7 @@ contract_dir="$(mktemp -d "${TMPDIR:-/tmp}/cortex-production-contract.XXXXXX")"
 cleanup() {
   if [[ -n "${contract_dir:-}" ]]; then
     find "$contract_dir" -type f -delete 2>/dev/null || true
+    rmdir "$contract_dir/evidence" 2>/dev/null || true
     rmdir "$contract_dir" 2>/dev/null || true
   fi
 }
@@ -164,6 +165,11 @@ for secret_name in \
   memory_cursor_hmac; do
   printf 'contract-only' > "$contract_dir/$secret_name"
 done
+
+printf 'contract-only' > "$contract_dir/storage_access_key"
+printf 'contract-only' > "$contract_dir/storage_secret_key"
+mkdir "$contract_dir/evidence"
+chmod 700 "$contract_dir/evidence"
 
 rendered_file="$contract_dir/rendered.json"
 env \
@@ -198,7 +204,16 @@ env \
   CORTEX_ZELADORIA_DB_USER='zeladoria_readonly' \
   CORTEX_ZELADORIA_DB_PASSWORD_FILE="$contract_dir/zeladoria" \
   CORTEX_ZELADORIA_TRUSTSTORE_FILE="$contract_dir/zeladoria_truststore" \
-  docker compose -f "$compose_file" config --format json > "$rendered_file"
+  CORTEX_STORAGE_SOURCE_ACCESS_KEY_ID_FILE="$contract_dir/storage_access_key" \
+  CORTEX_STORAGE_SOURCE_SECRET_ACCESS_KEY_FILE="$contract_dir/storage_secret_key" \
+  CORTEX_OBJECT_MIGRATION_SOURCE_S3_BUCKET='cortex-contract-source' \
+  CORTEX_OBJECT_MIGRATION_SOURCE_S3_REGION='auto' \
+  CORTEX_OBJECT_MIGRATION_SOURCE_S3_ENDPOINT='https://objects.contract.invalid' \
+  CORTEX_OBJECT_MIGRATION_SOURCE_S3_PREFIX='production' \
+  CORTEX_OBJECT_MIGRATION_SOURCE_S3_PATH_STYLE='true' \
+  CORTEX_OBJECT_MIGRATION_EVIDENCE_DIR="$contract_dir/evidence" \
+  docker compose --profile object-migration -f "$compose_file" \
+    config --format json > "$rendered_file"
 
 python3 - "$rendered_file" <<'PY'
 import json
@@ -211,6 +226,7 @@ required = {
     "cortex-api",
     "cortex-edge",
     "cortex-migrate",
+    "cortex-object-migrate",
     "cortex-postgres",
     "cortex-web",
 }
@@ -237,6 +253,25 @@ for private_service in ("cortex-api", "cortex-web"):
     assert not services[private_service].get("ports"), (
         f"{private_service} must be reachable only through the HTTPS edge"
     )
+
+object_migrate = services["cortex-object-migrate"]
+assert not object_migrate.get("ports"), "object migration must not publish a port"
+assert object_migrate["read_only"] is True
+assert object_migrate["cap_drop"] == ["ALL"]
+assert object_migrate["restart"] == "no"
+assert object_migrate["profiles"] == ["object-migration"]
+assert object_migrate["environment"]["CORTEX_MAIN_CLASS"].endswith(
+    ".ObjectStorageMigrationApplication"
+)
+assert object_migrate["environment"]["CORTEX_POSTGRES_USER"] == "cortex_runtime"
+assert object_migrate["environment"]["AWS_ACCESS_KEY_ID_FILE"] == (
+    "/run/secrets/AWS_ACCESS_KEY_ID"
+)
+assert object_migrate["environment"]["AWS_SECRET_ACCESS_KEY_FILE"] == (
+    "/run/secrets/AWS_SECRET_ACCESS_KEY"
+)
+assert "cortex_source_egress" in object_migrate["networks"]
+assert "cortex_host_edge" not in object_migrate["networks"]
 
 edge_ports = services["cortex-edge"].get("ports", [])
 assert len(edge_ports) == 1, edge_ports

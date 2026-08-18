@@ -141,16 +141,18 @@ git commit -m "ops: rehearse immutable local production"
 - Create: `apps/api/src/test/java/com/projeto/cortex/storage/migrate/PostgresqlObjectStorageMigrationIT.java`
 - Modify: `deploy/production/compose.yml`
 - Modify: `docs/production-runbook.md`
+- Modify: `scripts/deploy/prepare-local-production.sh`
+- Modify: `scripts/security/test-production-publication.sh`
 
 **Interfaces:**
 - Consumes: read-only PostgreSQL metadata, R2 source credentials, private bucket/prefix, local target root, and a mode-600 evidence destination.
 - Produces: an idempotent copy-only result with totals for selected, copied, already verified, missing, mismatched, failed, bytes, and a manifest SHA-256.
 
-- [ ] **Step 1: Write RED unit tests**
+- [x] **Step 1: Write RED unit tests**
 
 Cover an empty catalog; one available S3 object; an already matching local object; source 404; source size mismatch; SHA-256 mismatch; unsafe storage key; target write failure; rerun idempotency; and proof that the source delete method is never invoked.
 
-- [ ] **Step 2: Confirm RED**
+- [x] **Step 2: Confirm RED**
 
 ```bash
 (cd apps/api && ./mvnw -q -Dtest=ObjectStorageMigrationRunnerTest test)
@@ -158,11 +160,11 @@ Cover an empty catalog; one available S3 object; an already matching local objec
 
 Expected: compilation failure because the migration classes do not exist.
 
-- [ ] **Step 3: Implement copy-only migration**
+- [x] **Step 3: Implement copy-only migration**
 
 Read `stored_object` rows in bounded keyset pages where `status='DISPONIVEL'`. For every row, stream from S3/R2, enforce the database byte count, calculate SHA-256 while copying, write through `LocalObjectStorage`, reopen the local object, and verify bytes, media type, and SHA-256. Never update source metadata and never call source delete.
 
-- [ ] **Step 4: Write and run PostgreSQL integration coverage**
+- [x] **Step 4: Write and run PostgreSQL integration coverage**
 
 The IT must prove paging, mixed `LOCAL`/`S3` metadata, rollback on a failed object, no database mutation, idempotent rerun, and that the manifest contains no names, owners, CPFs, storage keys, endpoints, or credentials.
 
@@ -170,18 +172,20 @@ The IT must prove paging, mixed `LOCAL`/`S3` metadata, rollback on a failed obje
 (cd apps/api && ./mvnw -q -Dtest=ObjectStorageMigrationRunnerTest,PostgresqlObjectStorageMigrationIT test)
 ```
 
-- [ ] **Step 5: Add the one-shot Compose service**
+- [x] **Step 5: Add the one-shot Compose service**
 
 Create `cortex-object-migrate` with `restart: "no"`, read-only root filesystem, dropped capabilities, source credentials through mounted files, local object volume mounted read-write, and no public port. It must not be a dependency of the live API.
 
-- [ ] **Step 6: Run GREEN and commit**
+- [x] **Step 6: Run GREEN and commit**
 
 ```bash
 (cd apps/api && ./mvnw -q -Dtest=ObjectStorageMigrationRunnerTest,PostgresqlObjectStorageMigrationIT test)
 bash scripts/security/test-local-compose-security.sh
 git add apps/api/src/main/java/com/projeto/cortex/storage/migrate \
   apps/api/src/test/java/com/projeto/cortex/storage/migrate \
-  deploy/production/compose.yml docs/production-runbook.md
+  deploy/production/compose.yml docs/production-runbook.md \
+  scripts/deploy/prepare-local-production.sh \
+  scripts/security/test-production-publication.sh
 git commit -m "ops: migrate R2 objects to local storage"
 ```
 

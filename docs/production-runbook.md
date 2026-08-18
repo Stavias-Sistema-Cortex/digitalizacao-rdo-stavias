@@ -194,6 +194,39 @@ hostname, usuário, senha e demais variáveis do container nunca entram no
 arquivo. Uma revisão diferente ou readiness incompleta interrompe o processo;
 não se deve contornar esse bloqueio para prosseguir com a migração.
 
+### Cópia verificada de R2 para o volume local
+
+A migração de objetos é uma execução isolada e copy-only. A credencial da
+origem deve ter somente as permissões equivalentes a listar/ler o bucket e
+nunca permissão de exclusão. O código recebe a origem por uma interface que só
+expõe leitura: não existe operação de escrita ou remoção de R2 no processo.
+
+Depois de preparar o ensaio e antes de qualquer troca do Apache, execute:
+
+```bash
+docker compose \
+  --env-file .runtime/production-rehearsal/production.env \
+  -f deploy/production/compose.yml \
+  --profile object-migration \
+  up --abort-on-container-exit \
+  --exit-code-from cortex-object-migrate \
+  cortex-object-migrate
+```
+
+O serviço não publica porta, usa o PostgreSQL apenas para `SELECT`, lê R2 em
+páginas, grava no volume `cortex_object_data` e reabre cada objeto para
+conferir tamanho, media type e SHA-256. Objetos `LOCAL` já catalogados são
+somente verificados no destino. Repetir o comando é seguro: um objeto já
+íntegro não é regravado.
+
+O resultado agregado fica em
+`.runtime/production-rehearsal/evidence/object-storage-result.json`, modo
+`600`, com contagens, bytes e digest do manifesto. Ele deliberadamente não
+contém storage key, nome, CPF, proprietário, obra, endpoint ou credencial.
+Qualquer `missing`, `mismatched` ou `failed` torna o processo não-zero e impede
+o cutover. Não corrija a pendência apagando a origem; R2 continua intacto como
+rollback até uma aprovação posterior e separada.
+
 ## Incidentes
 
 ### Banco indisponível
