@@ -227,6 +227,74 @@ Qualquer `missing`, `mismatched` ou `failed` torna o processo não-zero e impede
 o cutover. Não corrija a pendência apagando a origem; R2 continua intacto como
 rollback até uma aprovação posterior e separada.
 
+### Corte atômico do Apache e rollback local
+
+O VirtualHost HTTPS deve carregar um único include por symlink, por exemplo
+`/etc/apache2/cortex-runtime.conf`. Guarde os alvos reais em um diretório
+root-only (`700`) e os arquivos em modo `600`. O alvo atual continua apontando
+para o canário até a execução aprovada. O servidor deve resolver apenas
+localmente `cortex.portalstavias.com.br` para `127.0.0.1`; isso permite que o
+Apache valide o certificado interno do Caddy no upstream `:18443` sem desligar
+verificação TLS e não altera o DNS público.
+
+O include de manutenção deve produzir HTTP 503 com `Retry-After`, sem redirecionar
+para Render ou Cloudflare. O include candidato deve usar `SSLProxyVerify require`,
+`SSLProxyCheckPeerName on`, a CA privada gerada em
+`.runtime/production/caddy-local-root.crt`, `ProxyPreserveHost On` e
+`ProxyPass`/`ProxyPassReverse` para
+`https://cortex.portalstavias.com.br:18443/`. Execute `apache2ctl configtest`
+depois de criar cada arquivo e antes do corte.
+
+Com os arquivos protegidos prontos, a chamada é deliberadamente explícita:
+
+```bash
+sudo env \
+  CORTEX_CUTOVER_APPROVED=true \
+  CORTEX_REMOTE_RETENTION=preserve \
+  CORTEX_EXPECTED_RELEASE_SHA="$(git rev-parse HEAD)" \
+  CORTEX_PRE_CUTOVER_EVIDENCE_FILE=/srv/cortex/evidence/pre-cutover.json \
+  CORTEX_DATABASE_COPY_EVIDENCE_FILE=/srv/cortex/runtime/evidence/database-copy-result.json \
+  CORTEX_OBJECT_COPY_EVIDENCE_FILE=/srv/cortex/runtime/evidence/object-storage-result.json \
+  CORTEX_CUTOVER_EVIDENCE_FILE=/srv/cortex/evidence/cutover.json \
+  CORTEX_ROLLBACK_EVIDENCE_FILE=/srv/cortex/evidence/rollback.json \
+  CORTEX_APACHE_CONFIG_LINK=/etc/apache2/cortex-runtime.conf \
+  CORTEX_APACHE_MAINTENANCE_CONFIG=/srv/cortex/apache/maintenance.conf \
+  CORTEX_APACHE_CANDIDATE_CONFIG=/srv/cortex/apache/local-production.conf \
+  CORTEX_APACHE_BACKUP_DIR=/srv/cortex/apache/backups \
+  CORTEX_CANDIDATE_BASE_URL=https://cortex.portalstavias.com.br:18443 \
+  CORTEX_PUBLIC_BASE_URL=https://cortex.portalstavias.com.br \
+  CORTEX_PREPARE_LOCAL_PRODUCTION_BIN="$PWD/scripts/deploy/prepare-local-production.sh" \
+  CORTEX_APACHECTL_BIN=/usr/sbin/apache2ctl \
+  CORTEX_DOCKER_BIN=/usr/bin/docker \
+  CORTEX_CURL_BIN=/usr/bin/curl \
+  CORTEX_COMPOSE_FILE="$PWD/deploy/production/compose.yml" \
+  CORTEX_COMPOSE_ENV_FILE=/srv/cortex/runtime/production.env \
+  CORTEX_COMPOSE_PROJECT_NAME=cortex-production \
+  CORTEX_PRODUCTION_RUNTIME_DIR=/srv/cortex/runtime \
+  bash scripts/deploy/cutover-local-production.sh
+```
+
+O comando muda primeiro para manutenção, tira o dump final sob snapshot,
+restaura e confere todas as contagens, copia o delta de objetos, exige zero
+pendências de hash, valida o candidato diretamente em loopback, troca o symlink
+atomicamente e só então valida a origem pública. Qualquer falha após a
+manutenção restaura e recarrega o include anterior e apenas executa `compose
+stop`; volumes locais, Neon, Render, Cloudflare Pages e R2 permanecem intactos.
+
+O rollback manual usa o estado root-only criado pelo corte e é idempotente:
+
+```bash
+sudo --preserve-env=CORTEX_REMOTE_RETENTION,CORTEX_EXPECTED_RELEASE_SHA,\
+CORTEX_ROLLBACK_EVIDENCE_FILE,CORTEX_APACHE_CONFIG_LINK,\
+CORTEX_APACHE_BACKUP_DIR,CORTEX_APACHECTL_BIN,CORTEX_DOCKER_BIN,\
+CORTEX_COMPOSE_FILE,CORTEX_COMPOSE_ENV_FILE,CORTEX_COMPOSE_PROJECT_NAME \
+  bash scripts/deploy/rollback-local-production.sh
+```
+
+Ele restaura o alvo exato anterior, exige `configtest`, recarrega o Apache e
+para os containers sem `down` e sem `-v`. O estado e as evidências não carregam
+URL JDBC, nomes de objeto ou segredos.
+
 ## Incidentes
 
 ### Banco indisponível

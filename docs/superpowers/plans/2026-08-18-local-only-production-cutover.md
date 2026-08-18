@@ -195,38 +195,43 @@ git commit -m "ops: migrate R2 objects to local storage"
 - Create: `scripts/deploy/cutover-local-production.sh`
 - Create: `scripts/deploy/rollback-local-production.sh`
 - Create: `scripts/deploy/test-local-production-cutover.sh`
+- Modify: `scripts/deploy/prepare-local-production.sh`
+- Modify: `scripts/deploy/test-prepare-local-production.sh`
 - Modify: `docs/production-runbook.md`
 
 **Interfaces:**
 - Consumes: exact rehearsal evidence, final dump/object manifest, Apache site path, previous upstream, candidate upstream, and expected full SHA.
 - Produces: one timestamped root-owned backup of Apache configuration, an atomic symlink/config switch, `apachectl configtest`, bounded health verification, and automatic rollback on failure.
 
-- [ ] **Step 1: Write RED shell tests**
+- [x] **Step 1: Write RED shell tests**
 
 Cover invalid SHA, missing final evidence, mismatched database/object manifest, failed `configtest`, candidate timeout, rollback restoration, symlink target rejection, and successful exact-revision switch.
 
-- [ ] **Step 2: Confirm RED**
+- [x] **Step 2: Confirm RED**
 
 ```bash
 bash scripts/deploy/test-local-production-cutover.sh
 ```
 
-- [ ] **Step 3: Implement fail-closed cutover**
+- [x] **Step 3: Implement fail-closed cutover**
 
 Require an explicit `CORTEX_CUTOVER_APPROVED=true`, verify no remote-deletion executable is present, freeze writes through the local maintenance response, take the final database dump and object delta, start candidate services, validate direct API/PWA, atomically switch Apache, reload it, and validate the public origin. Any failure restores Apache first and leaves both remote platforms untouched.
 
-- [ ] **Step 4: Implement rollback**
+- [x] **Step 4: Implement rollback**
 
 Rollback must be safe to rerun, restore the exact prior Apache configuration, reload Apache only after `configtest`, keep the candidate database and object volumes stopped but intact, and emit redacted mode-600 evidence.
 
-- [ ] **Step 5: Run GREEN and commit**
+- [x] **Step 5: Run GREEN and commit**
 
 ```bash
 bash scripts/deploy/test-local-production-cutover.sh
 bash scripts/security/scan-cortex-secrets.sh
 git add scripts/deploy/cutover-local-production.sh \
   scripts/deploy/rollback-local-production.sh \
-  scripts/deploy/test-local-production-cutover.sh docs/production-runbook.md
+  scripts/deploy/test-local-production-cutover.sh \
+  scripts/deploy/prepare-local-production.sh \
+  scripts/deploy/test-prepare-local-production.sh \
+  docs/production-runbook.md
 git commit -m "ops: add atomic local production cutover"
 ```
 

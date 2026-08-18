@@ -25,7 +25,11 @@ for required in \
   '--snapshot="$source_snapshot"' \
   'source-table-counts.tsv' \
   'target-table-counts.tsv' \
-  'cmp -s "$source_count_manifest" "$target_count_manifest"'; do
+  'cmp -s "$source_count_manifest" "$target_count_manifest"' \
+  'database-copy-result.json' \
+  '"expectedRevision": revision' \
+  '"matched": source_sha == target_sha' \
+  'chmod 600 "$database_evidence_temp"'; do
   grep -Fq -- "$required" "$prepare_script" || {
     echo "missing immutable rehearsal contract: $required" >&2
     exit 1

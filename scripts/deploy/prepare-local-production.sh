@@ -625,6 +625,34 @@ if ! cmp -s "$source_count_manifest" "$target_count_manifest"; then
   exit 1
 fi
 
+database_evidence="$evidence_dir/database-copy-result.json"
+database_evidence_temp="$(mktemp "$evidence_dir/.database-copy-result.XXXXXX")"
+source_manifest_sha="$(openssl dgst -sha256 "$source_count_manifest" | awk '{print $NF}')"
+target_manifest_sha="$(openssl dgst -sha256 "$target_count_manifest" | awk '{print $NF}')"
+table_count="$(wc -l < "$source_count_manifest" | tr -d '[:space:]')"
+python3 - \
+  "$database_evidence_temp" \
+  "$release_sha" \
+  "$source_manifest_sha" \
+  "$target_manifest_sha" \
+  "$table_count" <<'PY'
+import json
+import pathlib
+import sys
+
+path, revision, source_sha, target_sha, table_count = sys.argv[1:]
+pathlib.Path(path).write_text(json.dumps({
+    "version": 1,
+    "expectedRevision": revision,
+    "sourceManifestSha256": source_sha,
+    "targetManifestSha256": target_sha,
+    "tableCount": int(table_count),
+    "matched": source_sha == target_sha,
+}, sort_keys=True, separators=(",", ":")) + "\n")
+PY
+chmod 600 "$database_evidence_temp"
+mv -f "$database_evidence_temp" "$database_evidence"
+
 "${compose[@]}" up --force-recreate cortex-migrate
 "${compose[@]}" up -d --force-recreate cortex-api cortex-web cortex-edge
 
