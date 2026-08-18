@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -220,10 +221,12 @@ public class ColaboradorImportService {
         int registrosAtualizados = 0;
         int registrosDesativados = 0;
         List<EventoEmLote> eventosDeColaborador = new ArrayList<>();
+        Map<String, String> hashesMaterializados =
+                buscarHashesAcademyMaterializados();
 
         for (UsuarioAcademy usuario : snapshot.users()) {
             String hashOrigem = gerarHash(usuario);
-            String hashExistente = buscarHashExistente(
+            String hashExistente = hashesMaterializados.get(
                     usuario.pkOrigem()
             );
 
@@ -237,6 +240,10 @@ public class ColaboradorImportService {
                             usuario.pkOrigem()
                     )) {
                 registrosDesativados++;
+            }
+
+            if (hashOrigem.equals(hashExistente)) {
+                continue;
             }
 
             salvarOuAtualizar(usuario, hashOrigem);
@@ -265,6 +272,7 @@ public class ColaboradorImportService {
             }
         }
 
+        atualizarVistosNoSnapshot(snapshot.users());
         memoryService.registrarEventosEmLote(eventosDeColaborador);
 
         finalizarExecucaoComSucesso(
@@ -584,22 +592,84 @@ public class ColaboradorImportService {
         return value == null || value.isBlank() ? null : value.strip();
     }
 
-    private String buscarHashExistente(String pkOrigem) {
-        List<String> hashes = jdbcTemplate.query(
+    private Map<String, String> buscarHashesAcademyMaterializados() {
+        List<Map.Entry<String, String>> hashes = jdbcTemplate.query(
                 """
-                SELECT hash_origem
-                FROM colaborador
+                SELECT pk_origem, hash_origem
+                FROM colaborador existing_collaborator
                 WHERE banco_origem = ?
                   AND tabela_origem = ?
-                  AND pk_origem = ?
+                  AND deletado_em IS NULL
+                  AND hash_origem IS NOT NULL
+                  AND (
+                      ativo = FALSE
+                      OR cpf_hash IS NULL
+                      OR EXISTS (
+                          SELECT 1
+                          FROM auth_identity existing_identity
+                          WHERE existing_identity.colaborador_id =
+                                    existing_collaborator.id
+                      )
+                  )
+                  AND EXISTS (
+                      SELECT 1
+                      FROM cortex_objeto existing_object
+                      WHERE existing_object.tipo_entidade = 'COLABORADOR'
+                        AND existing_object.entidade_id =
+                                  existing_collaborator.id
+                  )
+                  AND EXISTS (
+                      SELECT 1
+                      FROM cortex_mapeamento_legado existing_mapping
+                      WHERE existing_mapping.tipo_entidade = 'COLABORADOR'
+                        AND existing_mapping.entidade_id =
+                                  existing_collaborator.id
+                        AND existing_mapping.sistema_legado = ?
+                        AND existing_mapping.tabela_legado = ?
+                        AND existing_mapping.ativo = TRUE
+                  )
                 """,
-                (resultSet, rowNumber) -> resultSet.getString("hash_origem"),
+                (resultSet, rowNumber) -> Map.entry(
+                        resultSet.getString("pk_origem"),
+                        resultSet.getString("hash_origem")
+                ),
                 BANCO_ORIGEM,
                 TABELA_ORIGEM,
-                pkOrigem
+                BANCO_ORIGEM,
+                TABELA_ORIGEM
         );
 
-        return hashes.isEmpty() ? null : hashes.get(0);
+        Map<String, String> bySourcePk = new HashMap<>();
+        for (Map.Entry<String, String> hash : hashes) {
+            if (hash.getKey() != null && hash.getValue() != null) {
+                bySourcePk.put(hash.getKey(), hash.getValue());
+            }
+        }
+        return bySourcePk;
+    }
+
+    private void atualizarVistosNoSnapshot(List<UsuarioAcademy> users) {
+        if (users == null || users.isEmpty()) {
+            return;
+        }
+        String placeholders = String.join(
+                ", ",
+                Collections.nCopies(users.size(), "?")
+        );
+        List<Object> parameters = new ArrayList<>(users.size() + 2);
+        parameters.add(BANCO_ORIGEM);
+        parameters.add(TABELA_ORIGEM);
+        users.stream()
+                .map(UsuarioAcademy::pkOrigem)
+                .forEach(parameters::add);
+
+        jdbcTemplate.update("""
+                UPDATE colaborador
+                SET visto_por_ultimo_em = CURRENT_TIMESTAMP(6)
+                WHERE banco_origem = ?
+                  AND tabela_origem = ?
+                  AND pk_origem IN (
+                """ + placeholders + ")", parameters.toArray());
     }
 
     private List<String> buscarIdentidadesAcademyJaInelegiveis() {

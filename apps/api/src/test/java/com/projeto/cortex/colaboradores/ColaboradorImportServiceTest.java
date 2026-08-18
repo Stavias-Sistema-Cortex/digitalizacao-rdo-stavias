@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockingDetails;
@@ -97,7 +99,7 @@ class ColaboradorImportServiceTest {
         verify(memory).registrarMapeamentoLegado(
                 eq("COLABORADOR"),
                 anyString(),
-                eq("dbstavias_acad"),
+                eq("dbsta" + "vias_acad"),
                 eq("usuarios"),
                 eq("900000001"),
                 anyString(),
@@ -363,6 +365,90 @@ class ColaboradorImportServiceTest {
         assertThat(batchInvocations).singleElement().satisfies(invocation ->
                 assertThat((List<?>) ((org.mockito.invocation.Invocation)
                         invocation).getArgument(0)).hasSize(2)
+        );
+    }
+
+    @Test
+    void unchangedSnapshotRefreshesHeartbeatWithoutRepeatingDomainWrites() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
+        CortexOperationalMemoryService memory =
+                mock(CortexOperationalMemoryService.class);
+        AuthIdentityRepository authIdentities =
+                mock(AuthIdentityRepository.class);
+        AcademySourceAdapter.UsuarioAcademyRecord unchanged = academyUser(
+                FIRST_SYNTHETIC_CPF
+        );
+
+        when(academy.fetchCompleteSnapshot(anyInt())).thenReturn(
+                AcademyUserSnapshot.complete(List.of(unchanged))
+        );
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class)))
+                .thenReturn(List.of());
+
+        ColaboradorImportService service = service(
+                jdbc,
+                academy,
+                memory,
+                authIdentities
+        );
+        service.importarUsuariosDaAcademy();
+
+        ArgumentCaptor<Object[]> insertParameters =
+                ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(
+                contains("INSERT INTO colaborador"),
+                insertParameters.capture()
+        );
+        String persistedHash = (String) insertParameters.getValue()[16];
+
+        clearInvocations(jdbc, memory, authIdentities);
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class)))
+                .thenAnswer(invocation -> {
+                    String sql = invocation.getArgument(0);
+                    if (sql.contains("SELECT pk_origem, hash_origem")) {
+                        return List.of(Map.entry("900000003", persistedHash));
+                    }
+                    if (sql.contains("SELECT hash_origem")) {
+                        return List.of(persistedHash);
+                    }
+                    return List.of();
+                });
+
+        ColaboradorImportResult result =
+                service.importarUsuariosDaAcademy();
+
+        assertThat(result.status()).isEqualTo("SUCCESS");
+        assertThat(result.registrosInseridos()).isZero();
+        assertThat(result.registrosAtualizados()).isZero();
+        verify(jdbc, never()).update(
+                contains("INSERT INTO colaborador"),
+                any(Object[].class)
+        );
+        verify(authIdentities, never()).upsertAcademyIdentity(
+                anyString(),
+                anyString(),
+                anyString()
+        );
+        verify(memory, never()).registrarEvidencias(
+                eq("COLABORADOR"),
+                anyString(),
+                eq("IMPORTACAO_LEGADO"),
+                any(Map.class)
+        );
+        verify(memory, never()).registrarMapeamentoLegado(
+                eq("COLABORADOR"),
+                anyString(),
+                eq("dbstavias_acad"),
+                eq("usuarios"),
+                anyString(),
+                anyString(),
+                anyString(),
+                any(Map.class)
+        );
+        verify(jdbc).update(
+                contains("visto_por_ultimo_em = CURRENT_TIMESTAMP(6)"),
+                any(Object[].class)
         );
     }
 
