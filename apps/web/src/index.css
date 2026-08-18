@@ -1608,30 +1608,37 @@ textarea:focus {
 }
 
 .legend-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
   display: inline-block;
 }
 
 .progress-chart-periods {
   display: flex;
-  gap: 4px;
+  gap: 12px;
 }
 
 .period-pill {
-  font-size: 0.68rem;
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid #d7dbde;
-  background: #fff;
+  padding: 3px 2px 6px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: color var(--transition-functional);
+}
+
+.period-pill:hover {
+  color: var(--color-ink);
 }
 
 .period-pill--active {
-  background: #fed203;
-  border-color: #fed203;
+  color: var(--color-ink);
   font-weight: 600;
+  box-shadow: 0 2px 0 0 var(--color-brand-yellow);
 }
 
 .progress-chart-plot {
@@ -1706,15 +1713,19 @@ textarea:focus {
 
 .home-overview {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
+/*
+ * A sincronização é uma linha de registro, não um painel: fio em cima, fio
+ * embaixo, e os números falam. A caixa cinza dava a ela mais corpo do que a
+ * própria obra tinha.
+ */
 .home-exception-register {
   display: grid;
-  gap: 14px;
-  padding: 20px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  gap: 12px;
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .home-exception-register__heading {
@@ -1736,8 +1747,11 @@ textarea:focus {
 
 .home-exception-register__heading h2 {
   margin: 0;
-  font-size: 1.1rem;
+  color: var(--color-muted);
+  font-size: 0.68rem;
   font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .home-exception-register__heading p {
@@ -1757,8 +1771,9 @@ textarea:focus {
 .home-exception-register__facts dd {
   margin: 4px 0 0;
   color: var(--color-ink);
-  font-size: 0.78rem;
+  font-size: 1.05rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .home-exception-register__facts {
@@ -1787,18 +1802,29 @@ textarea:focus {
 
 .home-topbar {
   display: flex;
-  align-items: flex-end;
-  gap: 12px;
+  align-items: baseline;
+  gap: 18px;
   flex-wrap: wrap;
-  padding-bottom: 16px;
+  padding-bottom: 4px;
   border-bottom: 1px solid var(--color-border);
 }
 
+/* "Obras relacionadas" apresenta a linha de filtros; quem manda na página é a
+   obra em foco. Título grande aqui competia com ela. */
 .home-topbar h1,
 .home-topbar h2 {
-  margin: 0 8px 0 0;
-  font-size: 1.35rem;
+  margin: 0 10px 0 0;
+  color: var(--color-muted);
+  font-size: 0.68rem;
   font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.home-chips {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .home-memory-card p {
@@ -1819,19 +1845,31 @@ textarea:focus {
   flex-wrap: wrap;
 }
 
+/*
+ * Filtro de status é aba de texto, não pílula: o conjunto inteiro se lê como
+ * uma linha só, e o sublinhado amarelo marca a escolha sem pintar caixa. O
+ * mesmo vocabulário vale para os períodos do gráfico, logo abaixo.
+ */
 .chip {
-  font-size: 0.72rem;
-  padding: 5px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  padding: 6px 2px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: color var(--transition-functional);
+}
+
+.chip:hover {
+  color: var(--color-ink);
 }
 
 .chip--active {
-  border-color: #d6b000;
-  background: var(--color-brand-yellow);
+  color: var(--color-ink);
   font-weight: 600;
+  box-shadow: 0 2px 0 0 var(--color-brand-yellow);
 }
 
 .home-uf-filter {
@@ -1869,12 +1907,34 @@ textarea:focus {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 14px;
+  margin-bottom: 18px;
+}
+
+/* O índice de seção é a menor voz da página: caixa alta miúda e espaçada,
+   sempre a mesma, em todo bloco que precisa se apresentar. */
+.home-section-index {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.home-obra-title-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
 .home-obra-header h2 {
-  font-size: 1rem;
   margin: 0;
+  font-size: 1.45rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
 }
 
 .home-obra-pill {
@@ -1887,27 +1947,49 @@ textarea:focus {
   white-space: nowrap;
 }
 
+/* Estado da obra em texto com ponto, não em selo: acompanha o nome sem
+   disputar com ele. */
 .home-obra-status {
-  font-size: 0.6rem;
-  font-weight: 600;
-  background: #e8f5f2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: #0e5e57;
-  padding: 3px 8px;
-  border-radius: 8px;
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
+.home-obra-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #0e857a;
+}
+
 .home-obra-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin-left: auto;
 }
 
+.home-obra-selector > span {
+  color: var(--color-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .home-obra-selector select {
-  border: 1px solid #d7dbde;
-  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
   padding: 6px 10px;
-  background: #fafbfb;
-  font-size: 0.75rem;
-  max-width: 240px;
+  background: #fff;
+  font-size: 0.78rem;
+  max-width: 260px;
 }
 
 .home-obra-body {
@@ -1921,9 +2003,23 @@ textarea:focus {
   min-width: 230px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  font-size: 0.78rem;
+  gap: 14px;
+  font-size: 0.8rem;
   color: var(--color-graphite);
+}
+
+.home-obra-infos dt {
+  margin-bottom: 2px;
+  color: var(--color-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.home-obra-infos dd {
+  margin: 0;
+  color: var(--color-ink);
 }
 
 .info-coords {
@@ -1945,26 +2041,30 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 6px 22px;
-  margin: 0;
-  padding-top: 12px;
-  border-top: 1px dashed var(--color-border);
+  margin: 14px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
 }
 
 .home-obra-metrics dt {
   color: var(--color-muted);
-  font-size: 0.68rem;
-  line-height: 1.3;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-transform: uppercase;
 }
 
 .home-obra-metrics dd {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .metric-value {
-  font-size: 1.15rem;
+  font-size: 1.4rem;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .metric-value--brand {
@@ -2050,16 +2150,16 @@ textarea:focus {
     auto-fit,
     minmax(220px, 1fr)
   );
-  gap: 12px;
+  gap: 14px;
 }
 
 .home-card {
   background: #fff;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 14px;
+  padding: 16px 18px;
   box-shadow: none;
-  font-size: 0.76rem;
+  font-size: 0.79rem;
 }
 
 @media (max-width: 900px) {
@@ -2092,12 +2192,15 @@ textarea:focus {
 }
 
 .home-card h3 {
-  font-size: 0.8rem;
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  color: var(--color-muted);
+  font-size: 0.64rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
 }
 
 .home-card ul {
@@ -2145,7 +2248,7 @@ textarea:focus {
 }
 
 .home-card--brand h3 {
-  color: #fed203;
+  color: var(--color-brand-yellow);
 }
 
 .home-card--brand a {
@@ -2785,12 +2888,6 @@ textarea:focus {
   color: var(--color-ink);
 }
 
-.chip--active {
-  border-color: var(--color-ink);
-  background: var(--color-ink);
-  color: #fff;
-  font-weight: 500;
-}
 
 .home-obra-card,
 .home-card,

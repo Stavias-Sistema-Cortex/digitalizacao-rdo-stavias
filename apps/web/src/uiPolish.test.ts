@@ -276,10 +276,16 @@ describe("polimento visual da plataforma autenticada", () => {
       "border-bottom: 1px solid var(--color-border);",
     );
 
+    /*
+     * Os filtros de status deixaram de ser pílulas e viraram abas de texto —
+     * pedido do dono do produto na revisão visual: a linha inteira se lê como
+     * uma coisa só, e a escolha se marca pelo sublinhado amarelo, não por
+     * caixa pintada. O que segue protegido é o vocabulário: sem borda própria,
+     * sem fundo, e o ativo carrega o sublinhado da marca.
+     */
     const chip = rule(globalCss, ".chip");
-    expect(chip).toContain("border: 1px solid var(--color-border);");
-    expect(chip).toContain("border-radius: var(--radius-sm);");
-    expect(chip).toContain("background: var(--color-surface);");
+    expect(chip).toContain("border: 0;");
+    expect(chip).toContain("background: transparent;");
 
     const ufSelect = rule(globalCss, ".home-uf-filter select");
     expect(ufSelect).toContain("border: 1px solid var(--color-border);");
@@ -287,7 +293,7 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(ufSelect).toContain("background: var(--color-surface);");
 
     expect(rule(globalCss, ".chip--active")).toContain(
-      "background: var(--color-brand-yellow);",
+      "box-shadow: 0 2px 0 0 var(--color-brand-yellow);",
     );
     expect(rule(globalCss, ".home-obra-card")).toContain(
       "border: 1px solid var(--color-border);",
