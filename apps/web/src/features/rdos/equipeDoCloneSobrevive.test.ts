@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { applyRdoCreationContext } from "./rdoCreationContext";
-import { createEmptyRdo, createEmptyMaoObra } from "./createEmptyRdo";
+import {
+  createEmptyRdo,
+  createEmptyMaoObra,
+  createEmptyEquipamento,
+} from "./createEmptyRdo";
 import { rascunhoClonadoDe } from "./rascunhoClonado";
 import type { RdoDraft } from "./rdo.types";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
@@ -82,6 +86,15 @@ function rdoDeSegunda(): RdoDraft {
         selected: true,
       },
     ],
+    equipamentos: [
+      {
+        ...createEmptyEquipamento(),
+        localId: "eq-segunda",
+        assetId: "asset-re01",
+        prefixo: "RE-01",
+        descricao: "Retroescavadeira",
+      },
+    ],
   };
 }
 
@@ -94,6 +107,23 @@ describe("equipe do RDO clonado", () => {
     expect(pronto.maoObra.map((item) => item.colaboradorId)).toEqual([
       "col-segunda",
     ]);
+  });
+
+  /*
+   * A frota vem junto com a equipe, e hoje sobrevive por omissão: o contexto
+   * não tem herança de equipamentos para atropelá-la. Este teste existe para o
+   * dia em que alguém escrever essa herança — o clone tem de continuar
+   * mandando, pelo mesmo motivo da mão de obra.
+   */
+  it("a frota do clone também sobrevive ao contexto", () => {
+    const clone = rascunhoClonadoDe(rdoDeSegunda(), () => crypto.randomUUID());
+
+    const pronto = applyRdoCreationContext(clone, contexto());
+
+    expect(pronto.equipamentos.map((item) => item.assetId)).toEqual([
+      "asset-re01",
+    ]);
+    expect(pronto.equipamentos[0].prefixo).toBe("RE-01");
   });
 
   /*
