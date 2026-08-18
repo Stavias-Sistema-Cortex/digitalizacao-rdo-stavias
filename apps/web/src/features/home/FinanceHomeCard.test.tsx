@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -24,6 +24,7 @@ vi.mock("../financeiro/servicePriceApi", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 beforeEach(() => {
@@ -96,5 +97,39 @@ describe("FinanceHomeCard: receita comprovada", () => {
     await waitFor(() => {
       expect(fetchRevenueTrace).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("recupera 502 transitório automaticamente sem mostrar HTML do proxy", async () => {
+    vi.useFakeTimers();
+    const proxyHtml = "<!DOCTYPE HTML><title>502 Proxy Error</title>Apache";
+    fetchRevenueCapabilities
+      .mockRejectedValueOnce(new Error(proxyHtml))
+      .mockRejectedValueOnce(new Error(proxyHtml))
+      .mockResolvedValueOnce({
+        obraId: "obra-1",
+        permissoes: ["FINANCEIRO_VISUALIZAR"],
+      });
+
+    render(
+      <MemoryRouter>
+        <FinanceHomeCard obraId="obra-1" />
+      </MemoryRouter>,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.body).not.toHaveTextContent(/doctype|proxy error|apache/i);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(screen.getByText("2 evidências aceitas")).toBeVisible();
+    expect(fetchRevenueCapabilities).toHaveBeenCalledTimes(3);
+    expect(document.body).not.toHaveTextContent(/doctype|proxy error|apache/i);
   });
 });

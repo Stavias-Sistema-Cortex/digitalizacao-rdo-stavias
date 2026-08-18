@@ -5,6 +5,9 @@ const REAUTHENTICATION_REQUIRED_MESSAGE =
   "Sua sessão online expirou ou foi substituída por outra aba. Entre novamente para sincronizar.";
 const ACTIVATION_ONLY_MESSAGE =
   "Ativação inicial do Córtex em andamento.";
+const TEMPORARILY_UNAVAILABLE_MESSAGE =
+  "O Córtex está temporariamente indisponível. Tente novamente em instantes.";
+const HTML_DOCUMENT_PREFIX = /^\s*(?:<!doctype\s+html\b|<html\b|<head\b|<body\b)/i;
 
 /**
  * A narrow error shape for decisions made by the browser. The response body is
@@ -75,6 +78,9 @@ export function responseErrorMessage(
     responseField(body, "detail") ??
     responseField(body, "error") ??
     (typeof body === "string" ? body : `HTTP ${fallbackStatus}`);
+  if (HTML_DOCUMENT_PREFIX.test(message)) {
+    return TEMPORARILY_UNAVAILABLE_MESSAGE;
+  }
   if (/invalid cors request/i.test(message)) {
     return "A API recusou a origem desta tela (CORS). Abra o Córtex por uma origem autorizada ou configure CORTEX_CORS_ALLOWED_ORIGINS no backend.";
   }

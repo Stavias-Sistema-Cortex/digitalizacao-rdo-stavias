@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
+import { responseErrorMessage } from "../../lib/api/apiClient";
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 import { AUTH_SESSION_CHANGED_EVENT } from "../auth/authSession";
 import { fetchRevenueCapabilities } from "../financeiro/financeRevenueAccessApi";
@@ -10,6 +11,8 @@ interface FinanceHomeCardProps {
   obraId: string;
 }
 
+const AUTOMATIC_RETRY_DELAYS_MS = [250, 500, 1_000] as const;
+
 export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
   const [evidenceCount, setEvidenceCount] = useState(0);
   const [state, setState] = useState<
@@ -18,6 +21,8 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
   const [error, setError] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
   const requestSequence = useRef(0);
+  const automaticRetryAttempt = useRef(0);
+  const retryTimeout = useRef<number | null>(null);
 
   useEffect(() => {
     const requestId = requestSequence.current + 1;
@@ -27,6 +32,7 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
     async function load() {
       if (!navigator.onLine) {
         if (active && requestId === requestSequence.current) {
+          automaticRetryAttempt.current = 0;
           setEvidenceCount(0);
           setState("offline");
         }
@@ -40,6 +46,7 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
         if (!active || requestId !== requestSequence.current) return;
         if (!capabilities.permissoes.includes("FINANCEIRO_VISUALIZAR")) {
           if (active && requestId === requestSequence.current) {
+            automaticRetryAttempt.current = 0;
             setEvidenceCount(0);
             setState("denied");
           }
@@ -47,15 +54,33 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
         }
         const trace = await fetchRevenueTrace(obraId);
         if (active && requestId === requestSequence.current) {
+          automaticRetryAttempt.current = 0;
           setEvidenceCount(trace.evidenceCount);
           setState("ready");
         }
       } catch (reason: unknown) {
         if (active && requestId === requestSequence.current) {
-          setEvidenceCount(0);
-          setError(reason instanceof Error
-            ? reason.message
-            : "Não foi possível consultar as evidências de receita.");
+          const retryIndex = automaticRetryAttempt.current;
+          if (
+            navigator.onLine &&
+            retryIndex < AUTOMATIC_RETRY_DELAYS_MS.length
+          ) {
+            automaticRetryAttempt.current += 1;
+            setError("");
+            setState("loading");
+            retryTimeout.current = window.setTimeout(() => {
+              if (active && requestId === requestSequence.current) {
+                setReloadTick((tick) => tick + 1);
+              }
+            }, AUTOMATIC_RETRY_DELAYS_MS[retryIndex]);
+            return;
+          }
+          setError(responseErrorMessage(
+            reason instanceof Error
+              ? reason.message
+              : "Não foi possível consultar as evidências de receita.",
+            502,
+          ));
           setState("error");
         }
       }
@@ -64,11 +89,16 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
     void load();
     return () => {
       active = false;
+      if (retryTimeout.current !== null) {
+        window.clearTimeout(retryTimeout.current);
+        retryTimeout.current = null;
+      }
     };
   }, [obraId, reloadTick]);
 
   useEffect(() => {
     const requestRefresh = () => {
+      automaticRetryAttempt.current = 0;
       setReloadTick((tick) => tick + 1);
     };
     const resetForSession = () => {
@@ -127,7 +157,10 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
           <p>{error}</p>
           <button
             type="button"
-            onClick={() => setReloadTick((tick) => tick + 1)}
+            onClick={() => {
+              automaticRetryAttempt.current = 0;
+              setReloadTick((tick) => tick + 1);
+            }}
           >
             Tentar novamente
           </button>

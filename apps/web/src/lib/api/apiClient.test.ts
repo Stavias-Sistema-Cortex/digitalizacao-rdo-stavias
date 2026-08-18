@@ -101,6 +101,24 @@ describe("responseErrorMessage", () => {
       ).message,
     ).toBe("Não foi possível concluir a solicitação ao Córtex.");
   });
+
+  it("não deixa páginas HTML do proxy atravessarem para a interface", () => {
+    const apacheProxyError = `<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+      <html><head><title>502 Proxy Error</title></head>
+      <body><h1>Proxy Error</h1><p>Error reading from remote server</p>
+      <address>Apache/2.4.68 (Debian) Server at cortex.example Port 443</address>
+      </body></html>`;
+
+    expect(responseErrorMessage(apacheProxyError, 502)).toBe(
+      "O Córtex está temporariamente indisponível. Tente novamente em instantes.",
+    );
+    expect(responseErrorMessage(apacheProxyError, 502)).not.toMatch(
+      /doctype|apache|remote server/i,
+    );
+    expect(responseErrorMessage("Falha operacional conhecida.", 409)).toBe(
+      "Falha operacional conhecida.",
+    );
+  });
 });
 
 describe("apiFetch cookie session", () => {
