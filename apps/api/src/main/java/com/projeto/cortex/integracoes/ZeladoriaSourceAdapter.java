@@ -20,7 +20,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class ZeladoriaSourceAdapter {
 
     private static final int DEFAULT_QUERY_TIMEOUT_SECONDS = 30;
-    private static final int DEFAULT_MAX_ROWS = 10_000;
+    private static final int DEFAULT_PAGE_SIZE = 500;
+    private static final int MAX_PAGE_SIZE = 2_000;
+    private static final String SNAPSHOT_READ_FAILURE =
+            "Falha ao ler snapshot completo da Zeladoria em modo somente leitura.";
 
     private static final String INCOMPLETE_CONFIGURATION =
             "Configuracao da fonte Zeladoria incompleta. Defina "
@@ -44,7 +47,9 @@ public class ZeladoriaSourceAdapter {
                 tipo,
                 modelo
             FROM ativos
+            WHERE id > ?
             ORDER BY id
+            LIMIT ?
             """;
 
     private final String url;
@@ -53,6 +58,14 @@ public class ZeladoriaSourceAdapter {
     private final String passwordFile;
     private final boolean localOrTestOnly;
     private final boolean syncEnabled;
+
+    private static final class SnapshotReadException
+            extends IllegalStateException {
+
+        private SnapshotReadException() {
+            super(SNAPSHOT_READ_FAILURE);
+        }
+    }
 
     @Autowired
     public ZeladoriaSourceAdapter(
@@ -101,13 +114,13 @@ public class ZeladoriaSourceAdapter {
     }
 
     public List<AtivoZeladoriaRecord> fetchAssets(int maxRows) {
+        return fetchCompleteSnapshot(maxRows).assets();
+    }
+
+    public ZeladoriaAssetSnapshot fetchCompleteSnapshot(int pageSize) {
         validateConfig();
 
-        int safeMaxRows =
-                safeMaxRows(maxRows);
-
-        List<AtivoZeladoriaRecord> assets =
-                new ArrayList<>();
+        int safePageSize = safePageSize(pageSize);
 
         try (
                 Connection connection =
@@ -117,39 +130,72 @@ public class ZeladoriaSourceAdapter {
                                 resolvePassword()
                         )
         ) {
-            connection.setReadOnly(true);
+            try {
+                connection.setReadOnly(true);
+                connection.setTransactionIsolation(
+                        Connection.TRANSACTION_REPEATABLE_READ
+                );
+                connection.setAutoCommit(false);
+                List<AtivoZeladoriaRecord> assets = readAllPages(
+                        connection,
+                        safePageSize
+                );
+                connection.commit();
+                return ZeladoriaAssetSnapshot.complete(assets);
+            } catch (Exception ignored) {
+                rollbackQuietly(connection);
+                throw new SnapshotReadException();
+            }
+        } catch (SnapshotReadException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new SnapshotReadException();
+        }
+    }
 
-            try (
-                    PreparedStatement statement =
-                            connection.prepareStatement(
-                                    SQL_SELECT_ATIVOS
-                            )
-            ) {
-                statement.setQueryTimeout(DEFAULT_QUERY_TIMEOUT_SECONDS);
-                statement.setMaxRows(safeMaxRows);
-                statement.setFetchSize(Math.min(safeMaxRows, 500));
+    private List<AtivoZeladoriaRecord> readAllPages(
+            Connection connection,
+            int pageSize
+    ) throws Exception {
+        List<AtivoZeladoriaRecord> assets = new ArrayList<>();
+        String lastSourceId = "0";
 
+        try (PreparedStatement statement = connection.prepareStatement(
+                SQL_SELECT_ATIVOS
+        )) {
+            statement.setQueryTimeout(DEFAULT_QUERY_TIMEOUT_SECONDS);
+            statement.setFetchSize(Math.min(pageSize, DEFAULT_PAGE_SIZE));
+
+            while (true) {
+                statement.setString(1, lastSourceId);
+                statement.setInt(2, pageSize);
+                List<AtivoZeladoriaRecord> page = new ArrayList<>(pageSize);
                 try (ResultSet resultSet = statement.executeQuery()) {
                     while (resultSet.next()) {
-                        assets.add(
-                                new AtivoZeladoriaRecord(
-                                        resultSet.getString("id"),
-                                        resultSet.getString("prefixo"),
-                                        resultSet.getString("tipo"),
-                                        resultSet.getString("modelo")
-                                )
-                        );
+                        page.add(new AtivoZeladoriaRecord(
+                                resultSet.getString("id"),
+                                resultSet.getString("prefixo"),
+                                resultSet.getString("tipo"),
+                                resultSet.getString("modelo")
+                        ));
                     }
                 }
-            }
-        } catch (Exception exception) {
-            throw new IllegalStateException(
-                    "Falha ao ler ativos da Zeladoria em modo somente leitura.",
-                    exception
-            );
-        }
 
-        return List.copyOf(assets);
+                assets.addAll(page);
+                if (page.size() < pageSize) {
+                    return List.copyOf(assets);
+                }
+                String nextSourceId = page.get(page.size() - 1).id();
+                if (nextSourceId == null
+                        || nextSourceId.isBlank()
+                        || nextSourceId.equals(lastSourceId)) {
+                    throw new IllegalStateException(
+                            "Paginacao Zeladoria sem avanco de id de origem."
+                    );
+                }
+                lastSourceId = nextSourceId;
+            }
+        }
     }
 
     public boolean testConnection() {
@@ -240,12 +286,19 @@ public class ZeladoriaSourceAdapter {
         }
     }
 
-    private int safeMaxRows(int maxRows) {
-        if (maxRows <= 0) {
-            return DEFAULT_MAX_ROWS;
+    private int safePageSize(int pageSize) {
+        if (pageSize <= 0) {
+            return DEFAULT_PAGE_SIZE;
         }
+        return Math.min(pageSize, MAX_PAGE_SIZE);
+    }
 
-        return Math.min(maxRows, DEFAULT_MAX_ROWS);
+    private void rollbackQuietly(Connection connection) {
+        try {
+            connection.rollback();
+        } catch (Exception ignored) {
+            // The redacted snapshot failure remains externally visible.
+        }
     }
 
     private boolean isBlank(String value) {
