@@ -4,10 +4,64 @@ umask 077
 
 repo_root="$(git rev-parse --show-toplevel)"
 compose_file="$repo_root/deploy/production/compose.yml"
-runtime_dir="${CORTEX_PRODUCTION_RUNTIME_DIR:-$repo_root/.runtime/production}"
+validator="$repo_root/scripts/deploy/validate-local-release-inputs.sh"
+
+CORTEX_PRODUCTION_MODE="${CORTEX_PRODUCTION_MODE:-rehearsal}"
+case "$CORTEX_PRODUCTION_MODE" in
+  rehearsal)
+    COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-cortex-production-rehearsal}"
+    CORTEX_HTTPS_PORT="${CORTEX_HTTPS_PORT:-18444}"
+    default_runtime_dir="$repo_root/.runtime/production-rehearsal"
+    ;;
+  cutover)
+    COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-cortex-production}"
+    CORTEX_HTTPS_PORT="${CORTEX_HTTPS_PORT:-18443}"
+    default_runtime_dir="$repo_root/.runtime/production"
+    ;;
+  *)
+    echo "CORTEX_PRODUCTION_MODE must be rehearsal or cutover." >&2
+    exit 1
+    ;;
+esac
+CORTEX_PUBLIC_ORIGIN="${CORTEX_PUBLIC_ORIGIN:-https://cortex.portalstavias.com.br}"
+CORTEX_AUTH_WEBAUTHN_RP_ID="${CORTEX_AUTH_WEBAUTHN_RP_ID:-cortex.portalstavias.com.br}"
+
+export CORTEX_PRODUCTION_MODE COMPOSE_PROJECT_NAME CORTEX_HTTPS_PORT
+export CORTEX_PUBLIC_ORIGIN CORTEX_AUTH_WEBAUTHN_RP_ID
+bash "$validator"
+
+release_mode="$CORTEX_PRODUCTION_MODE"
+release_project="$COMPOSE_PROJECT_NAME"
+release_https_port="$CORTEX_HTTPS_PORT"
+release_sha="$CORTEX_RELEASE_SHA"
+release_database_marker="$CORTEX_DATABASE_RELEASE_MARKER"
+release_api_image="$CORTEX_API_IMAGE"
+release_web_image="$CORTEX_WEB_IMAGE"
+release_public_origin="$CORTEX_PUBLIC_ORIGIN"
+release_rp_id="$CORTEX_AUTH_WEBAUTHN_RP_ID"
+
+runtime_dir="${CORTEX_PRODUCTION_RUNTIME_DIR:-$default_runtime_dir}"
 secret_dir="$runtime_dir/secrets"
 backup_dir="$runtime_dir/backups"
 runtime_env="$runtime_dir/production.env"
+source_snapshot_pid=""
+source_snapshot_dir=""
+source_snapshot_release_fifo=""
+source_snapshot=""
+
+abort_source_snapshot() {
+  if [[ -n "$source_snapshot_pid" ]] && kill -0 "$source_snapshot_pid" 2>/dev/null; then
+    kill "$source_snapshot_pid" 2>/dev/null || true
+    wait "$source_snapshot_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$source_snapshot_dir" && -d "$source_snapshot_dir" ]]; then
+    rm -f "$source_snapshot_dir/id" \
+      "$source_snapshot_dir/error" \
+      "$source_snapshot_release_fifo"
+    rmdir "$source_snapshot_dir" 2>/dev/null || true
+  fi
+}
+trap abort_source_snapshot EXIT
 
 main_worktree="$(
   git worktree list --porcelain |
@@ -39,6 +93,28 @@ for required_command in docker openssl psql; do
   }
 done
 docker compose version >/dev/null
+
+docker pull "$release_api_image"
+docker pull "$release_web_image"
+
+verify_release_image() {
+  local image="$1"
+  local component="$2"
+  local actual_revision
+
+  actual_revision="$(
+    docker image inspect \
+      --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+      "$image"
+  )"
+  if [[ "$actual_revision" != "$release_sha" ]]; then
+    echo "$component image revision does not match CORTEX_RELEASE_SHA." >&2
+    exit 1
+  fi
+}
+
+verify_release_image "$release_api_image" API
+verify_release_image "$release_web_image" PWA
 
 pg_dump_bin="${CORTEX_PG_DUMP_BIN:-}"
 if [[ -z "$pg_dump_bin" ]]; then
@@ -203,12 +279,143 @@ fi
 source_postgres_host="${BASH_REMATCH[1]}"
 source_postgres_port="${BASH_REMATCH[3]:-5432}"
 source_postgres_user="$CORTEX_POSTGRES_USER"
+source_psql_args=(
+  psql
+  --no-password
+  --no-psqlrc
+  --quiet
+  --tuples-only
+  --no-align
+  --set=ON_ERROR_STOP=1
+  --host="$source_postgres_host"
+  --port="$source_postgres_port"
+  --username="$source_postgres_user"
+  --dbname=StaviasCortex
+)
+
+table_count_sql() {
+  cat <<'SQL'
+SELECT format(
+  'SELECT %L || E''\t'' || count(*)::text FROM %I.%I;',
+  namespace.nspname || '.' || relation.relname,
+  namespace.nspname,
+  relation.relname
+)
+FROM pg_class relation
+JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+WHERE namespace.nspname = 'public'
+  AND relation.relkind IN ('r', 'p')
+ORDER BY namespace.nspname, relation.relname
+\gexec
+SQL
+}
+
+capture_source_table_counts() {
+  local destination="$1"
+  local snapshot_id="$2"
+  local temporary
+  temporary="$(mktemp "$backup_dir/source-table-counts.tsv.XXXXXX")"
+  if [[ -n "$source_password" ]]; then
+    {
+      printf 'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;\n'
+      printf "SET TRANSACTION SNAPSHOT '%s';\n" "$snapshot_id"
+      table_count_sql
+      printf 'COMMIT;\n'
+    } | PGPASSWORD="$source_password" "${source_psql_args[@]}" > "$temporary"
+  else
+    {
+      printf 'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;\n'
+      printf "SET TRANSACTION SNAPSHOT '%s';\n" "$snapshot_id"
+      table_count_sql
+      printf 'COMMIT;\n'
+    } | "${source_psql_args[@]}" > "$temporary"
+  fi
+  LC_ALL=C sort -o "$temporary" "$temporary"
+  chmod 600 "$temporary"
+  mv "$temporary" "$destination"
+}
+
+start_source_snapshot() {
+  local snapshot_file
+  local snapshot_error
+
+  source_snapshot_dir="$(mktemp -d "$runtime_dir/source-snapshot.XXXXXX")"
+  chmod 700 "$source_snapshot_dir"
+  snapshot_file="$source_snapshot_dir/id"
+  snapshot_error="$source_snapshot_dir/error"
+  source_snapshot_release_fifo="$source_snapshot_dir/release"
+  mkfifo -m 600 "$source_snapshot_release_fifo"
+  export CORTEX_SOURCE_SNAPSHOT_RELEASE_FIFO="$source_snapshot_release_fifo"
+
+  if [[ -n "$source_password" ]]; then
+    PGPASSWORD="$source_password" "${source_psql_args[@]}" \
+      > "$snapshot_file" 2> "$snapshot_error" <<'SQL' &
+BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SELECT pg_export_snapshot();
+\! read cortex_release_snapshot < "$CORTEX_SOURCE_SNAPSHOT_RELEASE_FIFO"
+COMMIT;
+SQL
+  else
+    "${source_psql_args[@]}" > "$snapshot_file" 2> "$snapshot_error" <<'SQL' &
+BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SELECT pg_export_snapshot();
+\! read cortex_release_snapshot < "$CORTEX_SOURCE_SNAPSHOT_RELEASE_FIFO"
+COMMIT;
+SQL
+  fi
+  source_snapshot_pid=$!
+
+  for _ in $(seq 1 100); do
+    source_snapshot="$(sed -n '/^[0-9][0-9]*-[0-9A-F][0-9A-F]*-[0-9][0-9]*$/p' "$snapshot_file" 2>/dev/null | head -n 1)"
+    [[ -n "$source_snapshot" ]] && break
+    if ! kill -0 "$source_snapshot_pid" 2>/dev/null; then
+      echo "Unable to open a consistent read-only PostgreSQL source snapshot." >&2
+      exit 1
+    fi
+    sleep 0.1
+  done
+  if [[ -z "$source_snapshot" ]]; then
+    echo "Timed out while opening a consistent PostgreSQL source snapshot." >&2
+    exit 1
+  fi
+}
+
+finish_source_snapshot() {
+  printf 'release\n' > "$source_snapshot_release_fifo"
+  wait "$source_snapshot_pid"
+  source_snapshot_pid=""
+  rm -f "$source_snapshot_dir/id" \
+    "$source_snapshot_dir/error" \
+    "$source_snapshot_release_fifo"
+  rmdir "$source_snapshot_dir"
+  source_snapshot_dir=""
+  source_snapshot_release_fifo=""
+  unset CORTEX_SOURCE_SNAPSHOT_RELEASE_FIFO
+}
+
+capture_target_table_counts() {
+  local destination="$1"
+  local temporary
+  temporary="$(mktemp "$backup_dir/target-table-counts.tsv.XXXXXX")"
+  "${compose[@]}" exec -T cortex-postgres \
+    psql --no-psqlrc --quiet --tuples-only --no-align \
+      --set=ON_ERROR_STOP=1 \
+      --username=cortex_admin \
+      --dbname=StaviasCortex \
+      > "$temporary" < <(table_count_sql)
+  LC_ALL=C sort -o "$temporary" "$temporary"
+  chmod 600 "$temporary"
+  mv "$temporary" "$destination"
+}
 
 runtime_env_tmp="$(mktemp "$runtime_dir/production.env.XXXXXX")"
 {
-  printf 'COMPOSE_PROJECT_NAME=cortex-production\n'
-  printf 'CORTEX_API_IMAGE=cortex-api:production-local\n'
-  printf 'CORTEX_WEB_IMAGE=cortex-web:production-local\n'
+  printf 'CORTEX_PRODUCTION_MODE=%s\n' "$release_mode"
+  printf 'COMPOSE_PROJECT_NAME=%s\n' "$release_project"
+  printf 'CORTEX_API_IMAGE=%s\n' "$release_api_image"
+  printf 'CORTEX_WEB_IMAGE=%s\n' "$release_web_image"
+  printf 'CORTEX_RELEASE_SHA=%s\n' "$release_sha"
+  printf 'CORTEX_DATABASE_RELEASE_MARKER=%s\n' "$release_database_marker"
   printf 'CORTEX_POSTGRES_DB=StaviasCortex\n'
   printf 'CORTEX_POSTGRES_ADMIN_USER=cortex_admin\n'
   printf 'CORTEX_POSTGRES_MIGRATOR_USER=cortex_migrator\n'
@@ -216,9 +423,9 @@ runtime_env_tmp="$(mktemp "$runtime_dir/production.env.XXXXXX")"
   printf 'CORTEX_POSTGRES_ADMIN_PASSWORD_FILE=%s\n' "$postgres_admin_secret"
   printf 'CORTEX_POSTGRES_MIGRATOR_PASSWORD_FILE=%s\n' "$postgres_migrator_secret"
   printf 'CORTEX_POSTGRES_PASSWORD_FILE=%s\n' "$postgres_runtime_secret"
-  printf 'CORTEX_PUBLIC_ORIGIN=https://cortex.localhost:18443\n'
-  printf 'CORTEX_HTTPS_PORT=18443\n'
-  printf 'CORTEX_AUTH_WEBAUTHN_RP_ID=cortex.localhost\n'
+  printf 'CORTEX_PUBLIC_ORIGIN=%s\n' "$release_public_origin"
+  printf 'CORTEX_HTTPS_PORT=%s\n' "$release_https_port"
+  printf 'CORTEX_AUTH_WEBAUTHN_RP_ID=%s\n' "$release_rp_id"
   printf 'CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID=%s\n' "$CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID"
   printf 'CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE=%s\n' "$cpf_hmac_secret"
   printf 'CORTEX_AUTH_PASSWORD_SETUP_HMAC_KEY_FILE=%s\n' "$password_setup_hmac_secret"
@@ -251,7 +458,11 @@ compose=(
   -f "$compose_file"
 )
 
-backup_file="$backup_dir/StaviasCortex-$(date -u +%Y%m%dT%H%M%SZ).dump"
+backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+backup_file="$backup_dir/StaviasCortex-$backup_stamp.dump"
+source_count_manifest="$backup_dir/$backup_stamp-source-table-counts.tsv"
+target_count_manifest="$backup_dir/$backup_stamp-target-table-counts.tsv"
+pg_restore_log="$backup_dir/$backup_stamp-pg-restore.log"
 source_password=""
 if [[ -n "${CORTEX_POSTGRES_PASSWORD_FILE:-}" ]]; then
   source_password_file="$(resolve_source_file "$CORTEX_POSTGRES_PASSWORD_FILE")"
@@ -274,11 +485,15 @@ dump_command=(
   --dbname=StaviasCortex
   --file="$backup_file"
 )
+start_source_snapshot
+capture_source_table_counts "$source_count_manifest" "$source_snapshot"
+dump_command+=(--snapshot="$source_snapshot")
 if [[ -n "$source_password" ]]; then
   PGPASSWORD="$source_password" "${dump_command[@]}"
 else
   "${dump_command[@]}"
 fi
+finish_source_snapshot
 unset source_password
 chmod 600 "$backup_file"
 
@@ -286,9 +501,12 @@ chmod 600 "$backup_file"
 # --env-file. Remove every imported deployment name so the generated,
 # allowlisted runtime file is the only configuration source.
 unset \
+  CORTEX_PRODUCTION_MODE \
   COMPOSE_PROJECT_NAME \
   CORTEX_API_IMAGE \
   CORTEX_WEB_IMAGE \
+  CORTEX_RELEASE_SHA \
+  CORTEX_DATABASE_RELEASE_MARKER \
   CORTEX_POSTGRES_DB \
   CORTEX_POSTGRES_ADMIN_USER \
   CORTEX_POSTGRES_MIGRATOR_USER \
@@ -355,12 +573,19 @@ if [[ "$target_table_count" == "0" ]]; then
       --host=127.0.0.1 \
       --username="$CORTEX_POSTGRES_MIGRATOR_USER" \
       --dbname="$POSTGRES_DB"
-  ' < "$backup_file"
+  ' < "$backup_file" > "$pg_restore_log" 2>&1
 else
   echo "The isolated PostgreSQL already contains data; restore was skipped." >&2
+  : > "$pg_restore_log"
+fi
+chmod 600 "$pg_restore_log"
+
+capture_target_table_counts "$target_count_manifest"
+if ! cmp -s "$source_count_manifest" "$target_count_manifest"; then
+  echo "The restored PostgreSQL table counts differ from the source manifest." >&2
+  exit 1
 fi
 
-"${compose[@]}" build cortex-migrate cortex-api cortex-web
 "${compose[@]}" up --force-recreate cortex-migrate
 "${compose[@]}" up -d --force-recreate cortex-api cortex-web cortex-edge
 
@@ -394,13 +619,16 @@ done
 chmod 600 "$ca_certificate"
 
 https_ready=false
+candidate_base_url="https://$release_rp_id:$release_https_port"
+candidate_resolve="$release_rp_id:$release_https_port:127.0.0.1"
 for _ in $(seq 1 30); do
   if curl \
     --cacert "$ca_certificate" \
+    --resolve "$candidate_resolve" \
     --fail \
     --silent \
     --show-error \
-    https://cortex.localhost:18443/healthz >/dev/null 2>&1; then
+    "$candidate_base_url/healthz" >/dev/null 2>&1; then
     https_ready=true
     break
   fi
@@ -411,10 +639,12 @@ if [[ "$https_ready" != "true" ]]; then
   exit 1
 fi
 
-CORTEX_BASE_URL=https://cortex.localhost:18443 \
+CORTEX_BASE_URL="$candidate_base_url" \
 CORTEX_SMOKE_CA_CERT="$ca_certificate" \
+CORTEX_SMOKE_RESOLVE="$candidate_resolve" \
   "$repo_root/scripts/smoke-deploy.sh"
 
-printf 'Production runtime is ready at https://cortex.localhost:18443\n'
+printf 'Candidate runtime is ready on loopback port %s for %s\n' \
+  "$release_https_port" "$release_public_origin"
 printf 'Backup: %s\n' "$backup_file"
 printf 'Environment: %s\n' "$runtime_env"

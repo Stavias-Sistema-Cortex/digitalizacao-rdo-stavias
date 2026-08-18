@@ -3,7 +3,7 @@
 	auto_https disable_redirects
 }
 
-https://cortex.localhost {
+https://{$CORTEX_EDGE_HOST:cortex.portalstavias.com.br} {
 	tls internal
 	encode zstd gzip
 

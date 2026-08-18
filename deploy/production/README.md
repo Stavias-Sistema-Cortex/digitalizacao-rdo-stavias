@@ -25,27 +25,43 @@ Prepare uma cópia isolada e persistente do ambiente:
 
 ```bash
 CORTEX_SOURCE_ENV_FILE=/caminho/seguro/.env.local \
+CORTEX_RELEASE_SHA=63f315df6bd0377b162851d22bdd4f644a938c2b \
+CORTEX_DATABASE_RELEASE_MARKER=igfgku3z2pPhpBClBEpnaMTZs8HLLhfa-vuAM6E269Q \
+CORTEX_API_IMAGE=ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias-api@sha256:6c64976326ee90cfc57b487e34174095a5fd74a705979cc0cb23f8fa74bf4244 \
+CORTEX_WEB_IMAGE=ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias-web@sha256:79b7d935c480954c1a93e1e827fa4b7126c546210d5b77b2a57535a5b680b1e9 \
   bash scripts/deploy/prepare-local-production.sh
 ```
+
+Os valores acima exemplificam uma única revisão já publicada. Em cada ensaio,
+use o SHA, o marcador canônico e os dois digests produzidos pelo mesmo run de
+release. O validador rejeita tags móveis, imagens de outro repositório, SHA
+abreviado, marcador de outra revisão e qualquer origem diferente de
+`https://cortex.portalstavias.com.br`.
 
 O comando:
 
 1. copia somente os segredos necessários e gera uma chave exclusiva para os
    códigos temporários em um diretório ignorado pelo Git;
-2. cria um backup lógico restaurável do PostgreSQL canônico atual;
-3. restaura esse backup no PostgreSQL 18 isolado;
-4. executa Flyway;
-5. constrói e inicia API, PWA e a borda HTTPS;
-6. executa o smoke test pela origem final.
+2. baixa as imagens imutáveis do GHCR e confere o label OCI de revisão antes de
+   acessar o banco;
+3. cria um backup lógico restaurável do PostgreSQL canônico atual;
+4. restaura esse backup no PostgreSQL 18 isolado e compara a contagem de todas
+   as tabelas públicas com o manifesto da origem;
+5. executa Flyway e grava o marcador público da mesma revisão;
+6. inicia API, PWA e a borda HTTPS sem construir imagens no servidor;
+7. executa o smoke test direto no candidato pela origem final, fixada em
+   loopback e sem alterar o Apache.
 
-O endereço local é `https://cortex.localhost:18443`. O domínio reservado
-`.localhost` resolve para loopback, mas preserva o contrato de hostname exigido
-pelo perfil de produção e por WebAuthn. Caddy usa uma autoridade local
-interna, portanto `curl` precisa de `--cacert` ou, somente para o primeiro smoke
-isolado, `-k`. Em um host público, substitua a entrada Caddy por TLS gerenciado e
-configure a origem HTTPS real; não publique HTTP.
+No modo padrão `rehearsal`, o projeto é `cortex-production-rehearsal` e publica
+somente `127.0.0.1:18444`. O curl de validação fixa
+`cortex.portalstavias.com.br` nesse loopback, usando a autoridade interna do
+Caddy, enquanto o Apache e o tráfego real continuam intocados. O modo
+`cutover` usa o projeto `cortex-production` e `127.0.0.1:18443`, mas só deve ser
+executado pelo procedimento explícito de corte e rollback.
 
-Arquivos gerados ficam em `.runtime/production/` e nunca são versionados.
+O ensaio grava artefatos em `.runtime/production-rehearsal/`; o cutover usa
+`.runtime/production/`. Ambos ficam fora do Git. O dump, o log do restore e os
+manifestos de contagem usam modo `600`.
 Volumes de banco, objetos e certificados são persistentes. O script não apaga
 nem sobrescreve um banco de destino que já contenha dados.
 

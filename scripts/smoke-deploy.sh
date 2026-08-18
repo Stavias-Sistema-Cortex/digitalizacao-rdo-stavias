@@ -12,6 +12,13 @@ if [[ -n "${CORTEX_SMOKE_CA_CERT:-}" ]]; then
   }
   curl_tls_args=(--cacert "$CORTEX_SMOKE_CA_CERT")
 fi
+if [[ -n "${CORTEX_SMOKE_RESOLVE:-}" ]]; then
+  if [[ ! "$CORTEX_SMOKE_RESOLVE" =~ ^[A-Za-z0-9.-]+:[0-9]{2,5}:127\.0\.0\.1$ ]]; then
+    echo "CORTEX_SMOKE_RESOLVE must pin one hostname and port to 127.0.0.1." >&2
+    exit 1
+  fi
+  curl_tls_args+=(--resolve "$CORTEX_SMOKE_RESOLVE")
+fi
 
 request() {
   curl --fail --silent --show-error "${curl_tls_args[@]}" "$@"

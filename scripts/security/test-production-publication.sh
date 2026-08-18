@@ -34,6 +34,8 @@ postgres_init_file="$repo_root/deploy/production/postgres-init.sh"
 postgres_entrypoint_file="$repo_root/deploy/production/postgres-entrypoint.sh"
 runbook_file="$repo_root/deploy/production/README.md"
 prepare_script="$repo_root/scripts/deploy/prepare-local-production.sh"
+release_validator="$repo_root/scripts/deploy/validate-local-release-inputs.sh"
+prepare_contract="$repo_root/scripts/deploy/test-prepare-local-production.sh"
 
 for required_file in \
   "$workflow_file" \
@@ -43,7 +45,9 @@ for required_file in \
   "$postgres_init_file" \
   "$postgres_entrypoint_file" \
   "$runbook_file" \
-  "$prepare_script"; do
+  "$prepare_script" \
+  "$release_validator" \
+  "$prepare_contract"; do
   [[ -f "$required_file" ]] || {
     echo "missing production publication file: $required_file" >&2
     exit 1
@@ -51,6 +55,8 @@ for required_file in \
 done
 
 bash -n "$prepare_script"
+bash -n "$release_validator"
+bash "$prepare_contract"
 grep -Fq 'A PostgreSQL 18 pg_dump client is required' "$prepare_script"
 grep -Fq 'install_secret_file CORTEX_ACADEMY_DB_PASSWORD_FILE' \
   "$prepare_script"
@@ -161,8 +167,10 @@ done
 
 rendered_file="$contract_dir/rendered.json"
 env \
-  CORTEX_API_IMAGE='cortex-api:contract' \
-  CORTEX_WEB_IMAGE='cortex-web:contract' \
+  CORTEX_API_IMAGE='ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+  CORTEX_WEB_IMAGE='ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
+  CORTEX_RELEASE_SHA='63f315df6bd0377b162851d22bdd4f644a938c2b' \
+  CORTEX_DATABASE_RELEASE_MARKER='igfgku3z2pPhpBClBEpnaMTZs8HLLhfa-vuAM6E269Q' \
   CORTEX_POSTGRES_DB='StaviasCortex' \
   CORTEX_POSTGRES_ADMIN_USER='cortex_admin' \
   CORTEX_POSTGRES_ADMIN_PASSWORD_FILE="$contract_dir/postgres_admin" \
@@ -291,11 +299,22 @@ assert any(
 
 migrate_environment = services["cortex-migrate"]["environment"]
 assert migrate_environment["CORTEX_POSTGRES_USER"] == "cortex_migrator"
+assert migrate_environment["CORTEX_POSTGRES_RELEASE_MARKER_WRITE_ENABLED"] == "true"
+assert migrate_environment["CORTEX_RELEASE_REVISION"] == (
+    "63f315df6bd0377b162851d22bdd4f644a938c2b"
+)
+assert migrate_environment["CORTEX_RELEASE_MARKER"] == (
+    "igfgku3z2pPhpBClBEpnaMTZs8HLLhfa-vuAM6E269Q"
+)
 assert migrate_environment["CORTEX_MAIN_CLASS"].endswith(
     ".PostgresqlMigrationApplication"
 )
 postgres_environment = services["cortex-postgres"]["environment"]
 assert postgres_environment["POSTGRES_USER"] == "cortex_admin"
+assert api_environment["CORTEX_POSTGRES_RELEASE_MARKER_REQUIRED"] == "true"
+assert api_environment["RENDER_GIT_COMMIT"] == (
+    "63f315df6bd0377b162851d22bdd4f644a938c2b"
+)
 
 assert "cortex_private" in document["networks"]
 assert document["networks"]["cortex_private"]["internal"] is True

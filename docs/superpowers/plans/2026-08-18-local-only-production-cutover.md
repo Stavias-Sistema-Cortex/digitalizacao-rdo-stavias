@@ -76,20 +76,25 @@ git commit -m "ops: capture local cutover evidence"
 ### Task 2: Make the isolated local rehearsal use immutable release images
 
 **Files:**
+- Create: `scripts/deploy/validate-local-release-inputs.sh`
+- Create: `scripts/deploy/test-validate-local-release-inputs.sh`
 - Modify: `scripts/deploy/prepare-local-production.sh`
+- Modify: `scripts/smoke-deploy.sh`
 - Modify: `deploy/production/compose.yml`
+- Modify: `deploy/production/Caddyfile`
 - Modify: `deploy/production/README.md`
+- Modify: `scripts/security/test-production-publication.sh`
 - Create: `scripts/deploy/test-prepare-local-production.sh`
 
 **Interfaces:**
 - Consumes: full release SHA, GHCR image coordinates/digests, source PostgreSQL secret files, Academy/Zeladoria secret files, and the existing offline signing keys.
 - Produces: an isolated `cortex-production-rehearsal` stack that coexists with the Apache canary and never builds mutable images on the server.
 
-- [ ] **Step 1: Write RED contracts for immutable inputs and coexistence**
+- [x] **Step 1: Write RED contracts for immutable inputs and coexistence**
 
 Require a 40-hex `CORTEX_RELEASE_SHA`, `ghcr.io/...@sha256:<64 hex>` API/PWA images, a unique rehearsal project name, loopback-only port binding, no `docker compose build`, and no remote mutation command.
 
-- [ ] **Step 2: Confirm RED**
+- [x] **Step 2: Confirm RED**
 
 ```bash
 bash scripts/deploy/test-prepare-local-production.sh
@@ -97,15 +102,15 @@ bash scripts/deploy/test-prepare-local-production.sh
 
 Expected: failure because the current script uses mutable local tags and builds images.
 
-- [ ] **Step 3: Implement immutable rehearsal mode**
+- [x] **Step 3: Implement immutable rehearsal mode**
 
 Add `CORTEX_PRODUCTION_MODE=rehearsal|cutover`, defaulting to `rehearsal`; require digest-pinned images; retain `CORTEX_PUBLIC_ORIGIN=https://cortex.portalstavias.com.br` and `CORTEX_AUTH_WEBAUTHN_RP_ID=cortex.portalstavias.com.br`; allocate a loopback-only rehearsal port that does not alter Apache. Pull images and verify OCI revision labels before starting any service.
 
-- [ ] **Step 4: Preserve the database restore boundary**
+- [x] **Step 4: Preserve the database restore boundary**
 
 Keep the existing custom-format dump and empty-target-only restore. Add source/target count manifests for every public table, excluding no application table, and fail if any count differs after restore. Persist the dump, manifest, and pg_restore log mode `600` outside the checkout.
 
-- [ ] **Step 5: Run GREEN and security gates**
+- [x] **Step 5: Run GREEN and security gates**
 
 ```bash
 bash scripts/deploy/test-prepare-local-production.sh
@@ -113,12 +118,16 @@ bash scripts/security/test-local-compose-security.sh
 bash scripts/security/scan-cortex-secrets.sh
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/deploy/prepare-local-production.sh \
-  scripts/deploy/test-prepare-local-production.sh \
-  deploy/production/compose.yml deploy/production/README.md
+  scripts/deploy/validate-local-release-inputs.sh \
+  scripts/deploy/test-validate-local-release-inputs.sh \
+  scripts/deploy/test-prepare-local-production.sh scripts/smoke-deploy.sh \
+  scripts/security/test-production-publication.sh \
+  deploy/production/compose.yml deploy/production/Caddyfile \
+  deploy/production/README.md
 git commit -m "ops: rehearse immutable local production"
 ```
 
