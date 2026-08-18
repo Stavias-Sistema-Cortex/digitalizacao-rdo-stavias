@@ -169,6 +169,31 @@ Alertar para:
 Logs devem carregar correlation ID, entidade e resultado, nunca CPF, OTP,
 cookie, segredo, corpo de mensagem ou anexo.
 
+### Evidência redigida antes do cutover local
+
+Antes de atualizar imagens, restaurar banco ou trocar o upstream do Apache,
+capture o estado exato do runtime atual. O diretório de evidências deve existir,
+ter modo `700` e permanecer fora do checkout; o arquivo final será escrito
+atomicamente com modo `600`.
+
+```bash
+CORTEX_BASE_URL=https://cortex.portalstavias.com.br \
+CORTEX_EXPECTED_RELEASE_SHA="$(git rev-parse HEAD)" \
+CORTEX_CUTOVER_EVIDENCE_FILE=/caminho/protegido/pre-cutover.json \
+CORTEX_COMPOSE_FILE=/caminho/protegido/compose.yml \
+CORTEX_COMPOSE_ENV_FILE=/caminho/protegido/production.env \
+CORTEX_COMPOSE_PROJECT_NAME=cortex-production \
+  bash scripts/deploy/capture-local-cutover-state.sh
+```
+
+O comando é somente leitura. Ele exige API, PWA, banco e object storage na
+mesma revisão esperada, confere os containers reais e grava somente SHA,
+saúde, IDs de imagem, contagem de reinícios, nomes de volumes e a classificação
+redigida do destino PostgreSQL (`LOCAL`, `NEON` ou `OTHER`). URL JDBC,
+hostname, usuário, senha e demais variáveis do container nunca entram no
+arquivo. Uma revisão diferente ou readiness incompleta interrompe o processo;
+não se deve contornar esse bloqueio para prosseguir com a migração.
+
 ## Incidentes
 
 ### Banco indisponível
