@@ -73,12 +73,18 @@ O adaptador lê um snapshot completo e consistente de `usuarios`, com paginaçã
 determinística dentro de uma transação MySQL `REPEATABLE READ` somente leitura.
 Antes de qualquer alteração no PostgreSQL do Córtex, o snapshot é rejeitado se
 for incompleto, se possuir identificadores de origem inválidos ou duplicados,
-ou se houver conflito de CPF/identidade que torne a aplicação ambígua.
+ou se houver conflito de CPF/identidade que torne a aplicação ambígua. A coluna
+`usuarios.funcao` é opcional: quando existir e vier preenchida, atualiza o
+colaborador canônico e alimenta tanto o contexto dos RDOs quanto o rateio de
+mão de obra; quando não existir ou vier vazia, o snapshot continua e não apaga
+uma função preenchida manualmente no Córtex. Para um colaborador novo, a função
+fica em branco até ser informada na origem ou no Córtex.
 
 Depois da validação, uma única transação PostgreSQL:
 
 1. insere novos colaboradores;
-2. atualiza nome, e-mail, grupo, perfil, papel e demais dados alterados;
+2. atualiza nome, e-mail, grupo, perfil, papel, função disponível e demais dados
+   alterados;
 3. desativa imediatamente linhas explicitamente inativas na fonte;
 4. preserva colaboradores ausentes do snapshot: ausência não equivale a
    desligamento e somente o campo explícito `usuarios.ativo` mantido no Academy

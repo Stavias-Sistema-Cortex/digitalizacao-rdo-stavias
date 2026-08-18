@@ -56,14 +56,9 @@ public class AcademySourceAdapter {
     }
 
     /**
-     * A função é lida por template, não fixa na consulta.
-     *
-     * <p>Ela é a coluna mais nova da origem, e a origem é um banco de outro
-     * time: se ela ainda não existir ali — ou tiver outro nome —, uma consulta
-     * que a exige derruba o snapshot inteiro, e com ele param nomes, admissões
-     * e desligamentos. O sync de colaboradores é a espinha do Córtex; ele não
-     * pode morrer por causa de um campo acessório. Sem a coluna, a função vem
-     * nula e todo o resto continua entrando.
+     * A função é opcional na fonte, mas é aproveitada quando estiver presente.
+     * A aplicação preserva eventual preenchimento manual quando a origem não
+     * fornecer esse campo.
      */
     private static final String COLUNA_FUNCAO = "funcao";
 
@@ -238,28 +233,13 @@ public class AcademySourceAdapter {
         }
     }
 
-    /** A consulta com ou sem a coluna de função, conforme a origem a tenha. */
+    /** A consulta com ou sem a coluna opcional de função. */
     private static String sqlSelectUsuarios(boolean comFuncao) {
         return comFuncao
                 ? SQL_SELECT_USUARIOS.formatted("", "")
-                // Os marcadores comentam a coluna sem desalinhar o resto do
-                // texto, que é o mesmo dos dois jeitos.
                 : SQL_SELECT_USUARIOS.formatted("-- ", "");
     }
 
-    /**
-     * A origem tem a coluna de função?
-     *
-     * <p>A pergunta vai ao dicionário do próprio driver — {@code
-     * DatabaseMetaData} —, e não a uma consulta nossa: é a via padrão do JDBC
-     * para saber se uma coluna existe, funciona igual em qualquer versão do
-     * MySQL e não gasta uma linha do instantâneo que a paginação vai ler.
-     *
-     * <p>Qualquer tropeço responde "não". O sync sem a função é o
-     * comportamento de sempre e vale mil vezes mais que um sync que não roda:
-     * a coluna é acessória, mas a consulta que a exige derrubaria o snapshot
-     * inteiro — e com ele parariam nomes, admissões e desligamentos.
-     */
     private boolean origemTemFuncao(Connection connection) {
         try (ResultSet colunas = connection.getMetaData().getColumns(
                 connection.getCatalog(),
@@ -271,15 +251,15 @@ public class AcademySourceAdapter {
                 return true;
             }
             LOGGER.warn(
-                    "Academy sem a coluna 'usuarios.{}': o sync segue sem a"
-                            + " função do colaborador.",
+                    "Academy sem a coluna 'usuarios.{}': o sync segue sem a "
+                            + "função do colaborador.",
                     COLUNA_FUNCAO
             );
             return false;
         } catch (Exception ignored) {
             LOGGER.warn(
-                    "Não foi possível conferir a coluna 'usuarios.{}' na"
-                            + " Academy; o sync segue sem a função.",
+                    "Não foi possível conferir a coluna 'usuarios.{}' na "
+                            + "Academy; o sync segue sem a função.",
                     COLUNA_FUNCAO
             );
             return false;

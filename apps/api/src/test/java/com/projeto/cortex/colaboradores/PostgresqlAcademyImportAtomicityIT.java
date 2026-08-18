@@ -546,6 +546,85 @@ class PostgresqlAcademyImportAtomicityIT {
     }
 
     @Test
+    void funcaoDoAcademyAtualizaOCadastroSemApagarPreenchimentoManualQuandoAusente() {
+        int sourceId = 920_223;
+        AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
+        when(academy.fetchCompleteSnapshot(anyInt())).thenReturn(
+                AcademyUserSnapshot.complete(List.of(
+                        academyUserWithFunction(
+                                sourceId,
+                                FIRST_CPF,
+                                "funcao.academy@example.invalid",
+                                "TOPOGRAFA"
+                        )
+                )),
+                AcademyUserSnapshot.complete(List.of(
+                        academyUserWithFunction(
+                                sourceId,
+                                FIRST_CPF,
+                                "funcao.academy@example.invalid",
+                                null
+                        )
+                )),
+                AcademyUserSnapshot.complete(List.of(
+                        academyUserWithFunction(
+                                sourceId,
+                                FIRST_CPF,
+                                "funcao.academy@example.invalid",
+                                "   "
+                        )
+                )),
+                AcademyUserSnapshot.complete(List.of(
+                        academyUserWithFunction(
+                                sourceId,
+                                FIRST_CPF,
+                                "funcao.academy@example.invalid",
+                                "ENCARREGADA DE TURMA"
+                        )
+                ))
+        );
+        ColaboradorImportService service = service(
+                jdbc,
+                academy,
+                identities(jdbc),
+                24
+        );
+
+        service.importarUsuariosDaAcademy();
+        assertThat(jdbc.queryForObject(
+                "SELECT funcao FROM colaborador WHERE pk_origem = ?",
+                String.class,
+                String.valueOf(sourceId)
+        )).isEqualTo("TOPOGRAFA");
+
+        jdbc.update(
+                "UPDATE colaborador SET funcao = 'FUNCAO MANUAL' "
+                        + "WHERE pk_origem = ?",
+                String.valueOf(sourceId)
+        );
+        service.importarUsuariosDaAcademy();
+        assertThat(jdbc.queryForObject(
+                "SELECT funcao FROM colaborador WHERE pk_origem = ?",
+                String.class,
+                String.valueOf(sourceId)
+        )).isEqualTo("FUNCAO MANUAL");
+
+        service.importarUsuariosDaAcademy();
+        assertThat(jdbc.queryForObject(
+                "SELECT funcao FROM colaborador WHERE pk_origem = ?",
+                String.class,
+                String.valueOf(sourceId)
+        )).isEqualTo("FUNCAO MANUAL");
+
+        service.importarUsuariosDaAcademy();
+        assertThat(jdbc.queryForObject(
+                "SELECT funcao FROM colaborador WHERE pk_origem = ?",
+                String.class,
+                String.valueOf(sourceId)
+        )).isEqualTo("ENCARREGADA DE TURMA");
+    }
+
+    @Test
     void crossReplicaLockRejectsOverlapBeforeSourceReadAndPreservesOrder()
             throws Exception {
         CountDownLatch oldSnapshotStarted = new CountDownLatch(1);
@@ -1423,6 +1502,27 @@ class PostgresqlAcademyImportAtomicityIT {
                 email,
                 active,
                 "Colaborador Academy Sintetico"
+        );
+    }
+
+    private AcademySourceAdapter.UsuarioAcademyRecord academyUserWithFunction(
+            int sourceId,
+            String cpf,
+            String email,
+            String funcao
+    ) {
+        return new AcademySourceAdapter.UsuarioAcademyRecord(
+                sourceId,
+                cpf,
+                "Colaborador Academy com funcao",
+                funcao,
+                email,
+                true,
+                "grupo-teste",
+                "Operacional",
+                "perfil-teste",
+                "Operacional",
+                LocalDateTime.of(2026, 1, 1, 0, 0)
         );
     }
 

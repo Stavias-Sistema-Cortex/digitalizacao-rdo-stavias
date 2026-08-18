@@ -438,7 +438,7 @@ public class ColaboradorImportService {
                         ? null
                         : CpfHasher.mascarar(cpfNormalizado),
                 sourceUser.nome(),
-                sourceUser.funcao(),
+                optionalSourceValue(sourceUser.funcao()),
                 sourceUser.email(),
                 sourceUser.idGrupo(),
                 sourceUser.nomeGrupo(),
@@ -489,7 +489,7 @@ public class ColaboradorImportService {
                         ELSE EXCLUDED.cpf_mascarado
                     END,
                     nome = EXCLUDED.nome,
-                    funcao = EXCLUDED.funcao,
+                    funcao = COALESCE(EXCLUDED.funcao, colaborador.funcao),
                     email = EXCLUDED.email,
                     id_grupo_origem = EXCLUDED.id_grupo_origem,
                     nome_grupo = EXCLUDED.nome_grupo,
@@ -570,6 +570,10 @@ public class ColaboradorImportService {
         } catch (IllegalArgumentException ignored) {
             return null;
         }
+    }
+
+    private String optionalSourceValue(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
     }
 
     private String buscarHashExistente(String pkOrigem) {

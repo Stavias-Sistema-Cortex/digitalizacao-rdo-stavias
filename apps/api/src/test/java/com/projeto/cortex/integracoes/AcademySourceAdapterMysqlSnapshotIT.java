@@ -115,11 +115,9 @@ class AcademySourceAdapterMysqlSnapshotIT {
     }
 
     /*
-     * A função é a coluna mais nova da origem, e a origem é o banco de outro
-     * time. Se ela ainda não estiver lá — ou tiver outro nome — uma consulta
-     * que a exige derruba o snapshot inteiro, e com ele param nomes,
-     * admissões e desligamentos. O sync de colaboradores é a espinha do
-     * Córtex; ele não pode morrer por causa de um campo acessório.
+     * A função alimenta o RDO e o rateio quando o Academy a entrega. A coluna
+     * continua opcional para não interromper admissões e desligamentos; a
+     * camada de aplicação preserva eventual preenchimento manual no Córtex.
      */
     @Test
     void semAColunaDeFuncaoOSyncSegueTrazendoTodoOResto() throws Exception {
@@ -128,9 +126,11 @@ class AcademySourceAdapterMysqlSnapshotIT {
             statement.execute("ALTER TABLE usuarios DROP COLUMN funcao");
         }
         try {
-            AcademyUserSnapshot snapshot = new AcademySourceAdapter(
+            AcademySourceAdapter adapter = new AcademySourceAdapter(
                     jdbcUrl(), READER_USER, READER_PASSWORD
-            ).fetchCompleteSnapshot(2);
+            );
+
+            AcademyUserSnapshot snapshot = adapter.fetchCompleteSnapshot(2);
 
             assertThat(snapshot.complete()).isTrue();
             assertThat(snapshot.users()).isNotEmpty();
@@ -139,10 +139,10 @@ class AcademySourceAdapterMysqlSnapshotIT {
                             AcademySourceAdapter.UsuarioAcademyRecord::nome
                     )
                     .contains("Academy 10");
-            // Sem a coluna, a função vem nula — e nada mais se perde.
             assertThat(snapshot.users())
                     .allSatisfy(usuario ->
                             assertThat(usuario.funcao()).isNull());
+            assertThat(adapter.testConnection()).isTrue();
         } finally {
             try (Connection admin = adminConnection();
                  Statement statement = admin.createStatement()) {

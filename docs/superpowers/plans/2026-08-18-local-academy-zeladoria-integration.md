@@ -96,12 +96,19 @@
 
 **Files:**
 
+- Modify: `apps/api/src/main/java/com/projeto/cortex/integracoes/AcademySourceAdapter.java`
+- Modify: `apps/api/src/test/java/com/projeto/cortex/integracoes/AcademySourceAdapterMysqlSnapshotIT.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/colaboradores/PostgresqlAcademyImportAtomicityIT.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/auth/PostgresqlAcademyCpfLoginIT.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/rdos/PostgresqlRdoCreationContextIT.java`
+- Test: `apps/api/src/test/java/com/projeto/cortex/obras/rateio/PostgresqlRateioMaoDeObraIT.java`
 
-1. Add a RED/characterization journey with two snapshots: initial active workforce, then current source with one explicitly inactive and one missing person.
+1. Add a RED/characterization journey with two snapshots: initial active workforce, then current source with one explicitly inactive, one missing person and an updated `usuarios.funcao`.
 2. Prove the current complete snapshot contract:
+   - keeps synchronizing all other fields when the optional source column `usuarios.funcao` is unavailable;
+   - leaves a new collaborator's function blank and preserves a manual Córtex value when the source function is null or blank;
+   - updates the canonical function from the current Academy row;
+   - exposes that function in RDO creation context and workforce rateio;
    - preserves the missing row and its login eligibility;
    - deactivates the explicitly inactive row and revokes only that Academy CPF login;
    - keeps the collaborator and prior RDO references;
@@ -198,7 +205,8 @@ This task has an explicit human confirmation boundary before reading the saved c
 - [ ] Code and integration tests passed.
 - [ ] CI passed for the exact merged SHA.
 - [ ] Exact SHA is served by the local API and PWA.
-- [ ] Current Academy deactivations are reflected without history loss.
+- [ ] Current Academy deactivations and available `usuarios.funcao` updates are reflected without history loss.
+- [ ] Current Academy function appears in RDO creation context and workforce rateio.
 - [ ] Zeladoria equipment refresh works without history loss.
 - [ ] Two automatic local cycles passed.
 - [ ] Hosted schedulers remain disabled.

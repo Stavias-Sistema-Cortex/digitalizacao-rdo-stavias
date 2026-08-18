@@ -2657,6 +2657,10 @@ class PostgresqlRdoCreationContextIT {
                 "Ana Vinculo", "ana@fixture.invalid", "***.901.***-**");
         String soNaEquipeA = inserirColaborador(
                 "Bruno Equipe A", "bruno@fixture.invalid", "***.902.***-**");
+        jdbc.update(
+                "UPDATE colaborador SET funcao = 'PEDREIRO' WHERE id = ?",
+                soNaEquipeA
+        );
         String soNaEquipeB = inserirColaborador(
                 "Carla Equipe B", "carla@fixture.invalid", "***.903.***-**");
         String nasDuasEquipes = inserirColaborador(
@@ -2703,6 +2707,14 @@ class PostgresqlRdoCreationContextIT {
         assertThat(response.colaboradores())
                 .filteredOn(item -> item.id().equals(nasDuasEquipes))
                 .hasSize(1);
+
+        // O ofício sincronizado do Academy acompanha a pessoa até a lista do
+        // RDO; perfil de acesso e função operacional continuam campos distintos.
+        assertThat(response.colaboradores())
+                .filteredOn(item -> item.id().equals(soNaEquipeA))
+                .singleElement()
+                .extracting(RdoContextResponse.ColaboradorContexto::funcao)
+                .isEqualTo("PEDREIRO");
 
         /*
          * Vigência dos dois lados continua valendo — mudou o que ela decide.
