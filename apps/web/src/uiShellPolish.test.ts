@@ -131,6 +131,25 @@ describe("shell e superfícies operacionais", () => {
     );
   });
 
+  /*
+   * A faixa do topo tem altura constante entre as abas — pedido direto do dono
+   * do produto: ela "mudava de tamanho de acordo com a tab". Três coisas a
+   * faziam pular: a descrição presente numa aba e ausente noutra, o select de
+   * filtro herdando os 44px do controle global, e a falta de um piso comum.
+   */
+  it("mantém a faixa do topo com a mesma altura em toda aba", () => {
+    const header = rule(headerCss, ".cortex-page-header");
+    expect(header).toContain("min-block-size: 68px;");
+
+    const description = rule(headerCss, ".cortex-page-header__description");
+    expect(description).toContain("white-space: nowrap;");
+    expect(description).toContain("text-overflow: ellipsis;");
+
+    expect(
+      rule(headerCss, ".cortex-page-header .cortex-page-header__actions select"),
+    ).toContain("min-height: 34px;");
+  });
+
   it("quebra o estado operacional sem truncar label ou detalhe", () => {
     const state = rule(
       operationalWorkspaceCss,

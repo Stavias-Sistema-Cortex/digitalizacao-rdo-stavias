@@ -5,6 +5,15 @@
 .cortex-page-header {
   inline-size: 100%;
   min-inline-size: 0;
+
+  /*
+   * Altura constante entre as abas. Sem o mínimo, cada página ditava a sua:
+   * quem tem descrição somava uma linha, quem injeta filtros herdava os 44px
+   * do controle global, quem não injeta nada encolhia — e a faixa pulava de
+   * tamanho a cada clique na navegação. O mínimo cabe o par título+descrição;
+   * nenhum conteúdo padrão passa dele.
+   */
+  min-block-size: 68px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -50,9 +59,15 @@
   flex-basis: 100%;
   max-inline-size: 88ch;
   margin: 2px 0 0;
+
+  /* Uma linha, sempre: descrição que dobra faz a faixa crescer só naquela
+     aba, e a altura do topo deixa de ser constante. */
+  overflow: hidden;
   color: color-mix(in srgb, #fff 72%, transparent);
   font-size: 0.8rem;
   line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cortex-page-header__right {
@@ -101,6 +116,9 @@
  * chrome: fundo do próprio teal, fio branco discreto, texto branco.
  */
 .cortex-page-header .cortex-page-header__actions select {
+  /* Anula os 44px do controle global: dentro da faixa, o select tem a
+     estatura dos botões redondos do canto, não a de campo de formulário. */
+  min-height: 34px;
   border: 1px solid rgb(255 255 255 / 32%);
   border-radius: 999px;
   padding: 5px 12px;
