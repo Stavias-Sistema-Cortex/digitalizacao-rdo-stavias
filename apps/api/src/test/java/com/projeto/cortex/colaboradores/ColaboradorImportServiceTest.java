@@ -114,13 +114,14 @@ class ColaboradorImportServiceTest {
                 anyString(),
                 objectPayloads.capture()
         );
-        verify(memory, times(2)).registrarEvento(
+        verify(memory, times(1)).registrarEvento(
                 anyString(),
                 anyString(),
                 anyString(),
                 anyString(),
                 eventPayloads.capture()
         );
+        verify(memory).registrarEventosEmLote(any(List.class));
 
         assertThat(evidenceFields.getValue())
                 .containsKey("cpf_mascarado")
@@ -308,6 +309,60 @@ class ColaboradorImportServiceTest {
                 anyString(),
                 anyString(),
                 anyString()
+        );
+    }
+
+    @Test
+    void publishesOneSerializedMemoryEventCallForAnEntireChangedSnapshot() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
+        CortexOperationalMemoryService memory =
+                mock(CortexOperationalMemoryService.class);
+        AuthIdentityRepository authIdentities =
+                mock(AuthIdentityRepository.class);
+
+        when(academy.fetchCompleteSnapshot(anyInt())).thenReturn(
+                AcademyUserSnapshot.complete(List.of(
+                        academyUser(
+                                900_000_021,
+                                FIRST_SYNTHETIC_CPF,
+                                "first.batch@example.invalid",
+                                true
+                        ),
+                        academyUser(
+                                900_000_022,
+                                SECOND_SYNTHETIC_CPF,
+                                "second.batch@example.invalid",
+                                true
+                        )
+                ))
+        );
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class)))
+                .thenReturn(List.of());
+
+        ColaboradorImportResult result = service(
+                jdbc,
+                academy,
+                memory,
+                authIdentities
+        ).importarUsuariosDaAcademy();
+
+        assertThat(result.status()).isEqualTo("SUCCESS");
+        verify(memory, times(1)).registrarEvento(
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString(),
+                any(Map.class)
+        );
+        List<?> batchInvocations = mockingDetails(memory).getInvocations()
+                .stream()
+                .filter(invocation -> invocation.getMethod().getName()
+                        .equals("registrarEventosEmLote"))
+                .toList();
+        assertThat(batchInvocations).singleElement().satisfies(invocation ->
+                assertThat((List<?>) ((org.mockito.invocation.Invocation)
+                        invocation).getArgument(0)).hasSize(2)
         );
     }
 
@@ -642,6 +697,22 @@ class ColaboradorImportServiceTest {
             for (Object item : values) {
                 if (containsCpfRepresentation(item)) {
                     return true;
+                }
+            }
+        }
+        if (value != null && value.getClass().isRecord()) {
+            for (var component : value.getClass().getRecordComponents()) {
+                try {
+                    if (containsCpfRepresentation(
+                            component.getAccessor().invoke(value)
+                    )) {
+                        return true;
+                    }
+                } catch (ReflectiveOperationException exception) {
+                    throw new AssertionError(
+                            "Não foi possível inspecionar o payload do record.",
+                            exception
+                    );
                 }
             }
         }

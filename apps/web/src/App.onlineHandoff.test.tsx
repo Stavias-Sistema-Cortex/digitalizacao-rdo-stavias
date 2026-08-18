@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -32,18 +32,6 @@ vi.mock("./features/auth/offlineVaultRepository", () => ({
 
 vi.mock("./features/auth/renovacaoDoGrantOffline", () => ({
   renovarGrantOfflineSePreciso: mocks.renovarGrantOfflineSePreciso,
-}));
-
-vi.mock("./features/auth/OfflineGrantRenewalPrompt", () => ({
-  OfflineGrantRenewalPrompt: ({
-    onSuccess,
-  }: {
-    onSuccess: () => void;
-  }) => (
-    <aside data-testid="renewal-prompt">
-      <button type="button" onClick={onSuccess}>Reauthenticated</button>
-    </aside>
-  ),
 }));
 
 vi.mock("./lib/db/cortexDb", () => ({
@@ -139,13 +127,17 @@ describe("App online authentication handoff", () => {
     )).toBeInTheDocument();
   });
 
-  it("keeps online work open while asking for password before renewal", async () => {
+  it("keeps online work open without rendering a manual renewal prompt", async () => {
     activeSession = profile;
     mocks.renovarGrantOfflineSePreciso.mockResolvedValue("SENHA_NECESSARIA");
 
     render(<App />);
 
-    expect(await screen.findByTestId("renewal-prompt")).toBeInTheDocument();
-    expect(mocks.renovarGrantOfflineSePreciso).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mocks.renovarGrantOfflineSePreciso).toHaveBeenCalled();
+    });
+    expect(screen.queryByText("Renovar acesso offline")).not
+      .toBeInTheDocument();
+    expect(await screen.findByTestId("home-page")).toBeInTheDocument();
   });
 });

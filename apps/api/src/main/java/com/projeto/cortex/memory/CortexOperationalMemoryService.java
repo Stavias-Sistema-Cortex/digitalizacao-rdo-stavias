@@ -3,6 +3,9 @@ package com.projeto.cortex.memory;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.temporal.TemporalAccessor;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -11,6 +14,7 @@ import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +23,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class CortexOperationalMemoryService {
+
+    public record EventoEmLote(
+            String tipoEntidade,
+            String entidadeId,
+            String tipoEvento,
+            String fonte,
+            Map<String, Object> payload
+    ) {
+    }
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -50,6 +63,200 @@ public class CortexOperationalMemoryService {
                 null,
                 payload
         );
+    }
+
+    /**
+     * Persiste eventos homogêneos de uma importação em lote sem obter a trava
+     * da sequência global uma vez por entidade. A faixa de commit é reservada
+     * em uma única instrução e os eventos/estados são enviados em batches;
+     * assim a transação continua atômica, mas não paralisa o sync interativo
+     * durante centenas de viagens de rede ao PostgreSQL.
+     */
+    @Transactional
+    public void registrarEventosEmLote(List<EventoEmLote> eventos) {
+        if (eventos == null || eventos.isEmpty()) {
+            return;
+        }
+
+        Long ultimoCommitSeq = jdbcTemplate.queryForObject(
+                """
+                UPDATE cortex_evento_commit_sequence
+                SET ultima_commit_seq = ultima_commit_seq + ?
+                WHERE id = 1
+                RETURNING ultima_commit_seq
+                """,
+                Long.class,
+                eventos.size()
+        );
+        if (ultimoCommitSeq == null) {
+            throw new IllegalStateException(
+                    "Não foi possível reservar a sequência dos eventos."
+            );
+        }
+
+        long primeiroCommitSeq = ultimoCommitSeq - eventos.size() + 1;
+        LocalDateTime agora = LocalDateTime.now();
+        List<EventoPersistidoEmLote> persistidos = new ArrayList<>(
+                eventos.size()
+        );
+        for (int indice = 0; indice < eventos.size(); indice++) {
+            EventoEmLote evento = eventos.get(indice);
+            persistidos.add(new EventoPersistidoEmLote(
+                    UUID.randomUUID().toString(),
+                    primeiroCommitSeq + indice,
+                    evento,
+                    agora
+            ));
+        }
+
+        jdbcTemplate.batchUpdate(
+                """
+                INSERT INTO cortex_evento_operacional (
+                    id,
+                    commit_seq,
+                    tipo_entidade,
+                    entidade_id,
+                    tipo_evento,
+                    fonte,
+                    origem,
+                    sync_status,
+                    ocorrido_em,
+                    sincronizado_em,
+                    entidades_relacionadas_json,
+                    schema_version,
+                    payload_json
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, 'ONLINE', 'SYNCED', ?, ?,
+                    '[]'::jsonb, 1, ?::jsonb
+                )
+                """,
+                new BatchPreparedStatementSetter() {
+                    @Override
+                    public void setValues(
+                            java.sql.PreparedStatement statement,
+                            int index
+                    ) throws java.sql.SQLException {
+                        EventoPersistidoEmLote persisted =
+                                persistidos.get(index);
+                        statement.setString(1, persisted.id());
+                        statement.setLong(2, persisted.commitSeq());
+                        statement.setString(
+                                3,
+                                persisted.evento().tipoEntidade()
+                        );
+                        statement.setString(
+                                4,
+                                persisted.evento().entidadeId()
+                        );
+                        statement.setString(
+                                5,
+                                persisted.evento().tipoEvento()
+                        );
+                        statement.setString(6, persisted.evento().fonte());
+                        statement.setObject(7, persisted.ocorridoEm());
+                        statement.setObject(8, persisted.ocorridoEm());
+                        statement.setString(
+                                9,
+                                toJson(persisted.evento().payload())
+                        );
+                    }
+
+                    @Override
+                    public int getBatchSize() {
+                        return persistidos.size();
+                    }
+                }
+        );
+
+        List<String> ids = persistidos.stream()
+                .map(EventoPersistidoEmLote::id)
+                .toList();
+        String placeholders = String.join(
+                ", ",
+                Collections.nCopies(ids.size(), "?")
+        );
+        Map<String, Long> sequenciasPorId = new HashMap<>();
+        jdbcTemplate.query(
+                "SELECT id, sequencia FROM cortex_evento_operacional "
+                        + "WHERE id IN (" + placeholders + ")",
+                resultSet -> {
+                    while (resultSet.next()) {
+                        sequenciasPorId.put(
+                                resultSet.getString("id"),
+                                resultSet.getLong("sequencia")
+                        );
+                    }
+                    return null;
+                },
+                ids.toArray()
+        );
+        if (sequenciasPorId.size() != persistidos.size()) {
+            throw new IllegalStateException(
+                    "Eventos em lote foram criados sem sequência."
+            );
+        }
+
+        jdbcTemplate.batchUpdate(
+                """
+                INSERT INTO cortex_estado_entidade (
+                    tipo_entidade,
+                    entidade_id,
+                    versao_entidade,
+                    ultimo_evento_seq
+                ) VALUES (?, ?, 1, ?)
+                ON CONFLICT (tipo_entidade, entidade_id) DO UPDATE SET
+                    versao_entidade =
+                        cortex_estado_entidade.versao_entidade + 1,
+                    ultimo_evento_seq = EXCLUDED.ultimo_evento_seq
+                """,
+                new BatchPreparedStatementSetter() {
+                    @Override
+                    public void setValues(
+                            java.sql.PreparedStatement statement,
+                            int index
+                    ) throws java.sql.SQLException {
+                        EventoPersistidoEmLote persisted =
+                                persistidos.get(index);
+                        statement.setString(
+                                1,
+                                persisted.evento().tipoEntidade()
+                        );
+                        statement.setString(
+                                2,
+                                persisted.evento().entidadeId()
+                        );
+                        statement.setLong(
+                                3,
+                                sequenciasPorId.get(persisted.id())
+                        );
+                    }
+
+                    @Override
+                    public int getBatchSize() {
+                        return persistidos.size();
+                    }
+                }
+        );
+
+        for (EventoPersistidoEmLote persisted : persistidos) {
+            EventoEmLote evento = persisted.evento();
+            eventPublisher.publishEvent(new CortexObservacaoRegistrada(
+                    persisted.id(),
+                    evento.tipoEntidade(),
+                    evento.entidadeId(),
+                    evento.tipoEvento(),
+                    evento.fonte(),
+                    null
+            ));
+        }
+    }
+
+    private record EventoPersistidoEmLote(
+            String id,
+            long commitSeq,
+            EventoEmLote evento,
+            LocalDateTime ocorridoEm
+    ) {
     }
 
     /**

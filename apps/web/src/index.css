@@ -357,49 +357,6 @@ h1 {
   box-shadow: none;
 }
 
-.auth-renewal-prompt {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 90;
-  width: min(420px, calc(100vw - 32px));
-  padding: 18px;
-  border: 1px solid #9fbdb2;
-  border-radius: var(--radius-control);
-  background: #fff;
-  color: #173627;
-  box-shadow: 0 12px 32px rgb(17 19 18 / 18%);
-}
-
-.auth-renewal-prompt h2,
-.auth-renewal-prompt p {
-  margin: 0 0 10px;
-}
-
-.auth-renewal-prompt form {
-  display: grid;
-  gap: 8px;
-}
-
-.auth-renewal-prompt label {
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.auth-renewal-prompt input {
-  min-height: 42px;
-  padding: 0 11px;
-  border: 1px solid #8f9792;
-  border-radius: var(--radius-control);
-  font: inherit;
-}
-
-.auth-renewal-prompt form > div {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
 .form-card {
   margin-bottom: 14px;
   padding: 18px 20px;

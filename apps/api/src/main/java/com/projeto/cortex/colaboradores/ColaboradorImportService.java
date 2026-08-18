@@ -5,10 +5,12 @@ import com.projeto.cortex.auth.identity.CpfNormalizer;
 import com.projeto.cortex.integracoes.AcademySourceAdapter;
 import com.projeto.cortex.integracoes.AcademyUserSnapshot;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.memory.CortexOperationalMemoryService.EventoEmLote;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -217,6 +219,7 @@ public class ColaboradorImportService {
         int registrosInseridos = 0;
         int registrosAtualizados = 0;
         int registrosDesativados = 0;
+        List<EventoEmLote> eventosDeColaborador = new ArrayList<>();
 
         for (UsuarioAcademy usuario : snapshot.users()) {
             String hashOrigem = gerarHash(usuario);
@@ -249,7 +252,7 @@ public class ColaboradorImportService {
                 );
             }
 
-            registrarColaboradorNaMemoria(
+            EventoEmLote evento = registrarColaboradorNaMemoria(
                     syncRunId,
                     usuario,
                     hashOrigem,
@@ -257,7 +260,12 @@ public class ColaboradorImportService {
                     hashExistente != null
                             && !hashExistente.equals(hashOrigem)
             );
+            if (evento != null) {
+                eventosDeColaborador.add(evento);
+            }
         }
+
+        memoryService.registrarEventosEmLote(eventosDeColaborador);
 
         finalizarExecucaoComSucesso(
                 syncRunId,
@@ -817,7 +825,7 @@ public class ColaboradorImportService {
         }
     }
 
-    private void registrarColaboradorNaMemoria(
+    private EventoEmLote registrarColaboradorNaMemoria(
             String syncRunId,
             UsuarioAcademy usuario,
             String hashOrigem,
@@ -844,6 +852,7 @@ public class ColaboradorImportService {
         Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("codigo_colaborador", usuario.codigoColaborador());
         fields.put("nome", usuario.nome());
+        fields.put("funcao", usuario.funcao());
         fields.put("email", usuario.email());
         fields.put("cpf_mascarado", usuario.cpfMascarado());
         fields.put("grupo", usuario.nomeGrupo());
@@ -873,7 +882,7 @@ public class ColaboradorImportService {
         );
 
         if (!inserted && !updated) {
-            return;
+            return null;
         }
 
         Map<String, Object> payload = new LinkedHashMap<>(metadata);
@@ -881,9 +890,10 @@ public class ColaboradorImportService {
         payload.put("colaboradorId", usuario.id());
         payload.put("codigoColaborador", usuario.codigoColaborador());
         payload.put("nome", usuario.nome());
+        payload.put("funcao", usuario.funcao());
         payload.put("ativo", usuario.ativo());
 
-        memoryService.registrarEvento(
+        return new EventoEmLote(
                 "COLABORADOR",
                 usuario.id(),
                 inserted

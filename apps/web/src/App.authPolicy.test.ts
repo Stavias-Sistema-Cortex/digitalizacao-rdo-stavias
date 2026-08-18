@@ -67,5 +67,7 @@ describe("App offline session handoff", () => {
     expect(source).toContain(
       "window.addEventListener(SYNC_COMPLETED_EVENT, renovar)",
     );
+    expect(source).not.toContain("OfflineGrantRenewalPrompt");
+    expect(source).not.toContain("renewalNeedsPassword");
   });
 });

@@ -218,6 +218,175 @@ class PostgresqlAcademyImportAtomicityIT {
                 FROM cortex_estado_entidade
                 WHERE tipo_entidade = 'COLABORADOR'
                 """, Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT ultima_commit_seq
+                FROM cortex_evento_commit_sequence
+                WHERE id = 1
+                """, Long.class)).isOne();
+        assertThat(jdbc.queryForList("""
+                SELECT tipo_evento
+                FROM cortex_evento_operacional
+                ORDER BY commit_seq
+                """, String.class)).containsExactly(
+                        "IMPORTACAO_LEGADA_FALHOU"
+                );
+    }
+
+    @Test
+    void changedSnapshotPersistsAuditableEventsInOneContiguousBatch() {
+        AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
+        when(academy.fetchCompleteSnapshot(anyInt())).thenReturn(
+                AcademyUserSnapshot.complete(List.of(
+                        academyUser(
+                                920_111,
+                                FIRST_CPF,
+                                "first.batch@example.invalid",
+                                true
+                        ),
+                        academyUser(
+                                920_112,
+                                SECOND_CPF,
+                                "second.batch@example.invalid",
+                                true
+                        )
+                ))
+        );
+        ColaboradorImportService service = service(
+                jdbc,
+                academy,
+                identities(jdbc),
+                realMemory(jdbc),
+                24
+        );
+
+        ColaboradorImportResult result =
+                service.importarUsuariosDaAcademy();
+
+        assertThat(result.status()).isEqualTo("SUCCESS");
+        assertThat(jdbc.queryForList("""
+                SELECT commit_seq
+                FROM cortex_evento_operacional
+                WHERE tipo_entidade = 'COLABORADOR'
+                ORDER BY commit_seq
+                """, Long.class)).containsExactly(1L, 2L);
+        assertThat(jdbc.queryForList("""
+                SELECT payload_json ->> 'funcao'
+                FROM cortex_evento_operacional
+                WHERE tipo_entidade = 'COLABORADOR'
+                ORDER BY commit_seq
+                """, String.class)).containsExactly(
+                        "FUNCAO DE TESTE",
+                        "FUNCAO DE TESTE"
+                );
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM cortex_estado_entidade
+                WHERE tipo_entidade = 'COLABORADOR'
+                """, Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("""
+                SELECT ultima_commit_seq
+                FROM cortex_evento_commit_sequence
+                WHERE id = 1
+                """, Long.class)).isEqualTo(3L);
+    }
+
+    @Test
+    void academyDoesNotHoldTheGlobalEventSequenceDuringPerUserWork()
+            throws Exception {
+        CountDownLatch academyReachedBatch = new CountDownLatch(1);
+        CountDownLatch releaseAcademyBatch = new CountDownLatch(1);
+        JdbcTemplate academyJdbc = new JdbcTemplate(dataSource);
+        CortexOperationalMemoryService academyMemory =
+                new CortexOperationalMemoryService(
+                        academyJdbc,
+                        new ObjectMapper(),
+                        mock(ApplicationEventPublisher.class)
+                ) {
+                    @Override
+                    public void registrarEventosEmLote(
+                            List<EventoEmLote> eventos
+                    ) {
+                        academyReachedBatch.countDown();
+                        try {
+                            if (!releaseAcademyBatch.await(
+                                    10,
+                                    TimeUnit.SECONDS
+                            )) {
+                                throw new IllegalStateException(
+                                        "synthetic batch latch timeout"
+                                );
+                            }
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException(
+                                    "synthetic batch latch interrupted",
+                                    exception
+                            );
+                        }
+                        super.registrarEventosEmLote(eventos);
+                    }
+                };
+        AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
+        when(academy.fetchCompleteSnapshot(anyInt())).thenReturn(
+                AcademyUserSnapshot.complete(List.of(
+                        academyUser(
+                                920_121,
+                                FIRST_CPF,
+                                "concurrency.first@example.invalid",
+                                true
+                        ),
+                        academyUser(
+                                920_122,
+                                SECOND_CPF,
+                                "concurrency.second@example.invalid",
+                                true
+                        )
+                ))
+        );
+        ColaboradorImportService service = service(
+                academyJdbc,
+                academy,
+                identities(academyJdbc),
+                academyMemory,
+                24
+        );
+        JdbcTemplate interactiveJdbc = new JdbcTemplate(dataSource);
+        CortexOperationalMemoryService interactiveMemory =
+                realMemory(interactiveJdbc);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<ColaboradorImportResult> importRun = executor.submit(
+                    service::importarUsuariosDaAcademy
+            );
+            assertThat(academyReachedBatch.await(10, TimeUnit.SECONDS))
+                    .isTrue();
+
+            Future<Long> interactiveWrite = executor.submit(() -> {
+                interactiveJdbc.execute("SET lock_timeout = '1s'");
+                return interactiveMemory.registrarEvento(
+                        "OBRA",
+                        "obra-interativa",
+                        "OBRA_ATUALIZADA",
+                        "INTERATIVO",
+                        Map.of("origem", "teste-concorrencia")
+                );
+            });
+            assertThat(interactiveWrite.get(3, TimeUnit.SECONDS))
+                    .isPositive();
+
+            releaseAcademyBatch.countDown();
+            assertThat(importRun.get(10, TimeUnit.SECONDS).status())
+                    .isEqualTo("SUCCESS");
+            assertThat(jdbc.queryForList("""
+                    SELECT commit_seq
+                    FROM cortex_evento_operacional
+                    ORDER BY commit_seq
+                    """, Long.class)).containsExactly(1L, 2L, 3L, 4L);
+        } finally {
+            releaseAcademyBatch.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test
