@@ -58,15 +58,25 @@
  */
 .lista-de-marcar__grupo {
   position: sticky;
-  top: 0;
+
+  /*
+   * O -4px anula o padding do contêiner: preso, o cabeçalho encosta na borda
+   * da caixa em vez de deixar uma fresta onde as linhas apareceriam por cima.
+   *
+   * A cor apagada vem de `color`, nunca de `opacity`: com o elemento
+   * translúcido, o cabeçalho preso deixava ver o que rolava por baixo — e dois
+   * grupos que se encontravam no topo viravam texto sobre texto. Opaco, o
+   * grupo que chega cobre o que estava, que é o comportamento esperado.
+   */
+  top: -4px;
   z-index: 1;
-  padding: 8px 8px 4px;
-  background: var(--surface, #fff);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  padding: 10px 8px 6px;
+  background: #fff;
+  color: var(--color-muted, #66706b);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
-  opacity: 0.6;
 }
 
 .lista-de-marcar__grupo:not(:first-child) {
