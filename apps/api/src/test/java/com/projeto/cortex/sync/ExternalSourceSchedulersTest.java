@@ -14,6 +14,8 @@ import com.projeto.cortex.assets.AssetImportService;
 import com.projeto.cortex.colaboradores.ColaboradorImportService;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
@@ -32,6 +34,12 @@ class ExternalSourceSchedulersTest {
             assertThat(context).hasNotFailed();
             assertThat(context).doesNotHaveBean(AcademySyncScheduler.class);
             assertThat(context).doesNotHaveBean(ZeladoriaSyncScheduler.class);
+            assertThat(context).doesNotHaveBean(
+                    ExternalSourceSchedulingConfiguration.ACADEMY_SCHEDULER
+            );
+            assertThat(context).doesNotHaveBean(
+                    ExternalSourceSchedulingConfiguration.ZELADORIA_SCHEDULER
+            );
 
             assertThat(context.getEnvironment().getProperty(
                     "cortex.sync.academy.enabled",
@@ -74,6 +82,14 @@ class ExternalSourceSchedulersTest {
                             .hasSingleBean(AcademySyncScheduler.class);
                     assertThat(context)
                             .doesNotHaveBean(ZeladoriaSyncScheduler.class);
+                    assertThat(context).hasBean(
+                            ExternalSourceSchedulingConfiguration
+                                    .ACADEMY_SCHEDULER
+                    );
+                    assertThat(context).doesNotHaveBean(
+                            ExternalSourceSchedulingConfiguration
+                                    .ZELADORIA_SCHEDULER
+                    );
 
                     context.getBean(AcademySyncScheduler.class)
                             .sincronizarAcademy();
@@ -99,6 +115,14 @@ class ExternalSourceSchedulersTest {
                             .doesNotHaveBean(AcademySyncScheduler.class);
                     assertThat(context)
                             .hasSingleBean(ZeladoriaSyncScheduler.class);
+                    assertThat(context).doesNotHaveBean(
+                            ExternalSourceSchedulingConfiguration
+                                    .ACADEMY_SCHEDULER
+                    );
+                    assertThat(context).hasBean(
+                            ExternalSourceSchedulingConfiguration
+                                    .ZELADORIA_SCHEDULER
+                    );
 
                     context.getBean(ZeladoriaSyncScheduler.class)
                             .sincronizarZeladoria();
@@ -112,20 +136,59 @@ class ExternalSourceSchedulersTest {
     }
 
     @Test
+    void academyAndZeladoriaRunOnIndependentExecutors() {
+        contextRunner()
+                .withPropertyValues(
+                        "cortex.sync.academy.enabled=true",
+                        "cortex.sync.zeladoria.enabled=true"
+                )
+                .run(context -> {
+                    var academyScheduler = context.getBean(
+                            ExternalSourceSchedulingConfiguration
+                                    .ACADEMY_SCHEDULER,
+                            org.springframework.core.task.TaskExecutor.class
+                    );
+                    var zeladoriaScheduler = context.getBean(
+                            ExternalSourceSchedulingConfiguration
+                                    .ZELADORIA_SCHEDULER,
+                            org.springframework.core.task.TaskExecutor.class
+                    );
+                    CountDownLatch academyStarted = new CountDownLatch(1);
+                    CountDownLatch releaseAcademy = new CountDownLatch(1);
+                    CountDownLatch zeladoriaFinished = new CountDownLatch(1);
+
+                    academyScheduler.execute(() -> {
+                        academyStarted.countDown();
+                        awaitLatch(releaseAcademy);
+                    });
+                    assertThat(academyStarted.await(1, TimeUnit.SECONDS))
+                            .isTrue();
+
+                    zeladoriaScheduler.execute(zeladoriaFinished::countDown);
+
+                    assertThat(zeladoriaFinished.await(1, TimeUnit.SECONDS))
+                            .isTrue();
+                    releaseAcademy.countDown();
+                });
+    }
+
+    @Test
     void scheduledMethodsUseTheirOwnIntervalProperties() throws Exception {
         assertSchedule(
                 AcademySyncScheduler.class.getDeclaredMethod(
                         "sincronizarAcademy"
                 ),
                 "${cortex.sync.academy.initial-delay-ms:60000}",
-                "${cortex.sync.academy.fixed-delay-ms:300000}"
+                "${cortex.sync.academy.fixed-delay-ms:300000}",
+                "academySourceTaskScheduler"
         );
         assertSchedule(
                 ZeladoriaSyncScheduler.class.getDeclaredMethod(
                         "sincronizarZeladoria"
                 ),
                 "${cortex.sync.zeladoria.initial-delay-ms:60000}",
-                "${cortex.sync.zeladoria.fixed-delay-ms:300000}"
+                "${cortex.sync.zeladoria.fixed-delay-ms:300000}",
+                "zeladoriaSourceTaskScheduler"
         );
     }
 
@@ -167,6 +230,7 @@ class ExternalSourceSchedulersTest {
                         new ConfigDataApplicationContextInitializer()
                 )
                 .withUserConfiguration(
+                        ExternalSourceSchedulingConfiguration.class,
                         AcademySyncScheduler.class,
                         ZeladoriaSyncScheduler.class
                 )
@@ -183,7 +247,8 @@ class ExternalSourceSchedulersTest {
     private void assertSchedule(
             Method method,
             String expectedInitialDelay,
-            String expectedFixedDelay
+            String expectedFixedDelay,
+            String expectedScheduler
     ) {
         Scheduled scheduled = method.getAnnotation(Scheduled.class);
 
@@ -192,6 +257,7 @@ class ExternalSourceSchedulersTest {
                 .isEqualTo(expectedInitialDelay);
         assertThat(scheduled.fixedDelayString())
                 .isEqualTo(expectedFixedDelay);
+        assertThat(scheduled.scheduler()).isEqualTo(expectedScheduler);
     }
 
     private void assertRedactedFailureLog(
@@ -224,5 +290,14 @@ class ExternalSourceSchedulersTest {
                         "test-only-secret"
                 );
         assertThat(errorEvents.getFirst().getThrowableProxy()).isNull();
+    }
+
+    private static void awaitLatch(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
     }
 }

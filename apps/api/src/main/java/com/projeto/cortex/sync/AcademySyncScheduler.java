@@ -30,7 +30,9 @@ public class AcademySyncScheduler {
             initialDelayString =
                     "${cortex.sync.academy.initial-delay-ms:60000}",
             fixedDelayString =
-                    "${cortex.sync.academy.fixed-delay-ms:300000}"
+                    "${cortex.sync.academy.fixed-delay-ms:300000}",
+            scheduler = ExternalSourceSchedulingConfiguration
+                    .ACADEMY_SCHEDULER
     )
     public void sincronizarAcademy() {
         try {

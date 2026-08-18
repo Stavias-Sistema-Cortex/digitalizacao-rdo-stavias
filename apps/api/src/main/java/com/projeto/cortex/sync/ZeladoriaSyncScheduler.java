@@ -28,7 +28,9 @@ public class ZeladoriaSyncScheduler {
             initialDelayString =
                     "${cortex.sync.zeladoria.initial-delay-ms:60000}",
             fixedDelayString =
-                    "${cortex.sync.zeladoria.fixed-delay-ms:300000}"
+                    "${cortex.sync.zeladoria.fixed-delay-ms:300000}",
+            scheduler = ExternalSourceSchedulingConfiguration
+                    .ZELADORIA_SCHEDULER
     )
     public void sincronizarZeladoria() {
         try {
