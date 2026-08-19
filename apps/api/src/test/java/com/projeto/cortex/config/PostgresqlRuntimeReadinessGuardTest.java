@@ -332,7 +332,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void concurrentReadinessCheckFailsFastWhileOneEvaluationIsInFlight() {
+    void concurrentReadinessCheckWaitsForAndReusesTheInFlightEvaluation() {
         String revision = "a".repeat(40);
         String marker = releaseMarker(revision);
         CountDownLatch evaluationStarted = new CountDownLatch(1);
@@ -362,12 +362,18 @@ class PostgresqlRuntimeReadinessGuardTest {
             }
         }).doesNotThrowAnyException();
 
-        assertThatThrownBy(readinessGuard::verifyRuntimeReadiness)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("PostgreSQL indisponível para readiness.")
-                .hasNoCause();
-        releaseEvaluation.countDown();
+        CompletableFuture<Void> release = CompletableFuture.runAsync(
+                releaseEvaluation::countDown,
+                CompletableFuture.delayedExecutor(
+                        100L,
+                        TimeUnit.MILLISECONDS
+                )
+        );
+        assertThatCode(readinessGuard::verifyRuntimeReadiness)
+                .doesNotThrowAnyException();
         assertThatCode(() -> first.get(2, TimeUnit.SECONDS))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> release.get(2, TimeUnit.SECONDS))
                 .doesNotThrowAnyException();
         assertThat(readinessGuard.publicEvidence()).isEqualTo(Map.of(
                 "databaseReleaseRevision", revision,

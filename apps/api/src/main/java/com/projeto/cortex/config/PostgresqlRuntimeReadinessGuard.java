@@ -35,6 +35,8 @@ public final class PostgresqlRuntimeReadinessGuard implements
             TimeUnit.SECONDS.toNanos(1L);
     static final long RUNTIME_FAILURE_BACKOFF_NANOS =
             TimeUnit.MILLISECONDS.toNanos(250L);
+    static final long RUNTIME_EVALUATION_WAIT_NANOS =
+            TimeUnit.SECONDS.toNanos(2L);
     private static final Pattern FULL_GIT_REVISION = Pattern.compile("[0-9a-f]{40}");
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
@@ -224,7 +226,15 @@ public final class PostgresqlRuntimeReadinessGuard implements
             throw transientRuntimeReadinessFailure();
         }
 
-        if (!runtimeEvaluationLock.tryLock()) {
+        try {
+            if (!runtimeEvaluationLock.tryLock(
+                    RUNTIME_EVALUATION_WAIT_NANOS,
+                    TimeUnit.NANOSECONDS
+            )) {
+                throw transientRuntimeReadinessFailure();
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
             throw transientRuntimeReadinessFailure();
         }
         try {
