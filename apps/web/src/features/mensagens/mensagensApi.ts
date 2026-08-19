@@ -1,4 +1,5 @@
 import {
+  apiError,
   apiFetch,
   readResponseBody,
   responseErrorMessage,
@@ -55,7 +56,7 @@ export interface MessageApi {
 async function readJson<T>(response: Response): Promise<T> {
   const body = await readResponseBody(response);
   if (!response.ok) {
-    throw new Error(responseErrorMessage(body, response.status));
+    throw apiError(body, response.status);
   }
   return body as T;
 }
