@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 import type { PropsWithChildren } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../../lib/api/apiError";
@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
   hasOnlineSession: vi.fn(),
   refreshConversationList: vi.fn(),
   refreshConversationHistory: vi.fn(),
+  resolveConversationId: vi.fn(),
+  queueMessage: vi.fn(),
+  syncNow: vi.fn(),
 }));
 
 vi.mock("../../components/shell/CortexShell", () => ({
@@ -26,7 +29,7 @@ vi.mock("../../lib/db/obraLocalRepository", () => ({
   listObrasLocais: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("../../lib/sync/syncEngine", () => ({ syncNow: vi.fn() }));
+vi.mock("../../lib/sync/syncEngine", () => ({ syncNow: mocks.syncNow }));
 
 vi.mock("../../lib/sync/useSyncStatus", () => ({
   useSyncStatus: () => ({
@@ -61,20 +64,24 @@ vi.mock("./mensagensHydration", async (importOriginal) => {
 });
 
 vi.mock("./mensagensRepository", () => ({
-  MESSAGES_CHANGED_EVENT: "cortex:test-messages-changed",
+  MESSAGES_CHANGED_EVENT: "cortex-messages-changed",
   localAttachmentBlob: vi.fn(),
   listLocalConversationPreviews: mocks.listLocalConversationPreviews,
   listLocalConversations: mocks.listLocalConversations,
   listLocalMessages: mocks.listLocalMessages,
-  queueMessage: vi.fn(),
+  queueMessage: mocks.queueMessage,
+  resolveLocalConversationId: mocks.resolveConversationId,
   retryMessage: vi.fn(),
   searchLocalMessages: vi.fn(),
   storeServerConversations: vi.fn(),
   storeServerMessages: vi.fn(),
   gravarPreferenciaDaConversa: vi.fn(),
+  confirmarPreferenciaDaConversaSincronizada: vi.fn(),
+  listarPreferenciasPendentesDaConversa: vi.fn(async () => []),
   listarPreferenciasDeConversa: vi.fn(async () => new Map()),
 }));
 
+import { emitMessagesChanged } from "./mensagensEvents";
 import { MensagensPage } from "./MensagensPage";
 
 /** Conversa direta criada neste aparelho, ainda sem contrapartida no servidor. */
@@ -91,10 +98,15 @@ const conversaNova: ConversaLocalRecord = {
   versaoEntidade: null,
 } as unknown as ConversaLocalRecord;
 
-function renderPage() {
+function LocationProbe() {
+  return <output data-testid="location-search">{useLocation().search}</output>;
+}
+
+function renderPage(initialEntry = "/mensagens") {
   return render(
-    <MemoryRouter initialEntries={["/mensagens"]}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <MensagensPage />
+      <LocationProbe />
     </MemoryRouter>,
   );
 }
@@ -115,6 +127,9 @@ beforeEach(() => {
   mocks.listLocalMessages.mockResolvedValue([]);
   mocks.hasOnlineSession.mockReturnValue(true);
   mocks.refreshConversationList.mockResolvedValue(undefined);
+  mocks.refreshConversationHistory.mockResolvedValue(undefined);
+  mocks.resolveConversationId.mockImplementation(async (id: string) => id);
+  mocks.syncNow.mockResolvedValue({ errors: 0, conflicts: 0 });
 });
 
 afterEach(() => {
@@ -197,5 +212,120 @@ describe("conversa que ainda não subiu", () => {
         screen.queryByText("Serviço indisponível."),
       ).not.toBeInTheDocument();
     });
+  });
+
+  it("continua na conversa canônica e leva URL e rascunho ao trocar o id", async () => {
+    const user = userEvent.setup();
+    const provisoria = {
+      ...conversaNova,
+      id: "CONVERSA:provisoria",
+      participantes: [
+        {
+          colaboradorId: "COLABORADOR:abner",
+          nome: "Abner",
+          papel: "MEMBRO",
+          status: "ATIVO",
+          adicionadoEm: "2026-08-14T12:00:00.000Z",
+        },
+      ],
+    } as unknown as ConversaLocalRecord;
+    const canonica = {
+      ...provisoria,
+      id: "CONVERSA:canonica",
+      versaoEntidade: 3,
+    } as unknown as ConversaLocalRecord;
+    const maisRecente = {
+      ...conversaNova,
+      id: "CONVERSA:mais-recente",
+      tipo: "GRUPO",
+      titulo: "Outra frente",
+      atualizadaEm: "2026-08-19T15:00:00.000Z",
+      versaoEntidade: 2,
+    } as unknown as ConversaLocalRecord;
+    mocks.listLocalConversations.mockResolvedValue([maisRecente, provisoria]);
+    mocks.refreshConversationHistory.mockResolvedValue(undefined);
+
+    renderPage("/mensagens?conversa=CONVERSA%3Aprovisoria");
+
+    expect(
+      await screen.findByRole("heading", { name: "Abner" }),
+    ).toBeInTheDocument();
+    const composer = screen.getByPlaceholderText("Mensagem");
+    await user.type(composer, "Rascunho que não pode sumir");
+
+    mocks.listLocalConversations.mockResolvedValue([maisRecente, canonica]);
+    mocks.listLocalMessages.mockClear();
+    await act(async () => {
+      emitMessagesChanged({
+        from: provisoria.id,
+        to: canonica.id,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("location-search")).toHaveTextContent(
+        "?conversa=CONVERSA%3Acanonica",
+      );
+      expect(screen.getByPlaceholderText("Mensagem")).toHaveValue(
+        "Rascunho que não pode sumir",
+      );
+      expect(mocks.listLocalMessages).toHaveBeenCalledWith(canonica.id);
+    });
+    expect(
+      screen.getByRole("heading", { name: "Abner" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Outra frente" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("não volta a ler o id provisório quando o envio termina depois do alias", async () => {
+    const user = userEvent.setup();
+    const provisoria = {
+      ...conversaNova,
+      id: "CONVERSA:provisoria-em-voo",
+      participantes: [{
+        colaboradorId: "COLABORADOR:abner",
+        nome: "Abner",
+        papel: "MEMBRO",
+        status: "ATIVO",
+        adicionadoEm: "2026-08-14T12:00:00.000Z",
+      }],
+    } as unknown as ConversaLocalRecord;
+    const canonica = {
+      ...provisoria,
+      id: "CONVERSA:canonica-em-voo",
+      versaoEntidade: 4,
+    } as unknown as ConversaLocalRecord;
+    let finishSync!: () => void;
+    mocks.listLocalConversations.mockResolvedValue([provisoria]);
+    mocks.queueMessage.mockResolvedValue({
+      id: "MENSAGEM:local",
+      conversaId: provisoria.id,
+      anexos: [],
+    });
+    mocks.syncNow.mockImplementationOnce(() => new Promise((resolve) => {
+      finishSync = () => resolve({ errors: 0, conflicts: 0 });
+    }));
+    mocks.resolveConversationId.mockResolvedValue(canonica.id);
+
+    renderPage(`/mensagens?conversa=${encodeURIComponent(provisoria.id)}`);
+    await screen.findByRole("heading", { name: "Abner" });
+    await user.type(screen.getByPlaceholderText("Mensagem"), "Em campo");
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+    await waitFor(() => expect(mocks.syncNow).toHaveBeenCalledOnce());
+
+    mocks.listLocalMessages.mockClear();
+    mocks.listLocalConversations.mockResolvedValue([canonica]);
+    await act(async () => {
+      emitMessagesChanged({ from: provisoria.id, to: canonica.id });
+      finishSync();
+    });
+
+    await waitFor(() => {
+      expect(mocks.resolveConversationId).toHaveBeenCalledWith(provisoria.id);
+      expect(mocks.listLocalMessages).toHaveBeenCalledWith(canonica.id);
+    });
+    expect(mocks.listLocalMessages).not.toHaveBeenCalledWith(provisoria.id);
   });
 });

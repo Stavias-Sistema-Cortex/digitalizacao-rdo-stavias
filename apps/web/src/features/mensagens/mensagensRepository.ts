@@ -4,6 +4,7 @@ import type {
   ConversaLocalRecord,
   MensagemAnexoLocalRecord,
   MensagemLocalRecord,
+  OutboxMutationRecord,
 } from "../../lib/db/db.types";
 import { getSession } from "../auth/authSession";
 import type {
@@ -27,11 +28,26 @@ import {
   type SyncSessionGuard,
 } from "../../lib/sync/syncSession";
 import { compararInstantesDoServidor } from "../../lib/tempo/fusoBrasilia";
+import { emitMessagesChanged } from "./mensagensEvents";
+import {
+  camposPendentesDaPreferencia,
+  pendenciasDaPreferencia,
+  preferenciaComPendencias,
+  type CampoPendenteDePreferencia,
+} from "./mensagemPreferenciaPendente";
 
-export const MESSAGES_CHANGED_EVENT =
-  "cortex-messages-changed";
+export {
+  emitMessagesChanged,
+  MESSAGES_CHANGED_EVENT,
+} from "./mensagensEvents";
 
 const DEFAULT_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MESSAGING_ACCESS_REVOKED_REVIEW_CODE =
+  "MESSAGING_ACCESS_REVOKED_REQUIRES_REVIEW";
+const MESSAGING_AUTHORIZATION_SNAPSHOT_ID =
+  "__cortex_messaging_authorization_snapshot__";
+const MESSAGING_AUTHORIZATION_SEQUENCE_ID =
+  "__cortex_messaging_authorization_sequence__";
 const DEFAULT_ALLOWED_MEDIA_TYPES = new Set([
   "application/pdf",
   "application/zip",
@@ -48,6 +64,53 @@ const DEFAULT_ALLOWED_MEDIA_TYPES = new Set([
 
 export interface MensagemComAnexos extends MensagemLocalRecord {
   anexos: MensagemAnexoLocalRecord[];
+}
+
+export interface StoreServerMessageOptions {
+  /** Ordem reservada antes da requisição que produziu esta resposta remota. */
+  requestOrdinal?: number;
+}
+
+function authorizationControlRecord(id: string): boolean {
+  return id === MESSAGING_AUTHORIZATION_SNAPSHOT_ID ||
+    id === MESSAGING_AUTHORIZATION_SEQUENCE_ID;
+}
+
+function validMessagingOrdinal(value: number | undefined): number {
+  return Number.isSafeInteger(value) && (value ?? 0) > 0 ? value! : 0;
+}
+
+/**
+ * Reserva uma ordem global do escopo local antes de iniciar uma requisição.
+ *
+ * A transação readwrite é serializada pelo IndexedDB inclusive entre abas. A
+ * ordem não usa Date.now(): duas requisições no mesmo milissegundo e um relógio
+ * que ande para trás continuam tendo uma relação inequívoca.
+ */
+export async function reserveMessagingRequestOrdinal(): Promise<number> {
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    "mensagem_autorizacoes",
+    "readwrite",
+  );
+  const store = transaction.objectStore("mensagem_autorizacoes");
+  const sequence = await store.get(MESSAGING_AUTHORIZATION_SEQUENCE_ID);
+  const currentSnapshot = await store.get(MESSAGING_AUTHORIZATION_SNAPSHOT_ID);
+  const current = Math.max(
+    validMessagingOrdinal(sequence?.ordinal),
+    validMessagingOrdinal(currentSnapshot?.ordinal),
+  );
+  if (current >= Number.MAX_SAFE_INTEGER) {
+    transaction.abort();
+    throw new Error("A ordem local de autorização de mensagens se esgotou.");
+  }
+  const next = current + 1;
+  await store.put({
+    id: MESSAGING_AUTHORIZATION_SEQUENCE_ID,
+    ordinal: next,
+  });
+  await transaction.done;
+  return next;
 }
 
 export function maxMessageAttachmentBytes(): number {
@@ -133,8 +196,19 @@ export async function queueMessage(input: {
     "readwrite",
   );
 
-  await transaction.objectStore("mensagens").add(hashedPlan.message);
-  for (const attachment of hashedPlan.attachments) {
+  const criacaoDaConversa = await transaction
+    .objectStore("outbox_mutations")
+    .get(input.conversaId);
+  const canonicalConversationId = resolvedConversationId(
+    input.conversaId,
+    criacaoDaConversa,
+  );
+  const effectivePlan = canonicalConversationId === input.conversaId
+    ? hashedPlan
+    : remapQueuedMessagePlan(hashedPlan, canonicalConversationId);
+
+  await transaction.objectStore("mensagens").add(effectivePlan.message);
+  for (const attachment of effectivePlan.attachments) {
     await transaction.objectStore("mensagem_anexos").add(attachment);
   }
   /*
@@ -143,23 +217,21 @@ export async function queueMessage(input: {
    * recusaria por conversa inexistente — e a recusa travaria a fila inteira
    * atrás dela, que é o pior desfecho possível para quem apontou em campo.
    */
-  const criacaoDaConversa = await transaction
-    .objectStore("outbox_mutations")
-    .get(input.conversaId);
   const dependeDaConversa =
     criacaoDaConversa?.entidadeTipo === "CONVERSA" &&
-    criacaoDaConversa.operacao === "CRIAR_CONVERSA";
+    criacaoDaConversa.operacao === "CRIAR_CONVERSA" &&
+    criacaoDaConversa.status !== "SYNCED";
   const messageMutation = dependeDaConversa
     ? {
-      ...hashedPlan.messageMutation,
+      ...effectivePlan.messageMutation,
       dependsOnMutationIds: [
-        ...(hashedPlan.messageMutation.dependsOnMutationIds ?? []),
+        ...(effectivePlan.messageMutation.dependsOnMutationIds ?? []),
         criacaoDaConversa.clientMutationId,
       ],
     }
-    : hashedPlan.messageMutation;
+    : effectivePlan.messageMutation;
   for (const mutation of [
-    ...hashedPlan.uploadMutations,
+    ...effectivePlan.uploadMutations,
     messageMutation,
   ]) {
     await transaction.objectStore("outbox_mutations").add(mutation);
@@ -175,8 +247,58 @@ export async function queueMessage(input: {
    */
   anunciarEscritaLocal();
   return {
-    ...hashedPlan.message,
-    anexos: hashedPlan.attachments,
+    ...effectivePlan.message,
+    anexos: effectivePlan.attachments,
+  };
+}
+
+function resolvedConversationId(
+  requestedId: string,
+  creation: OutboxMutationRecord | undefined,
+): string {
+  if (
+    creation?.entidadeTipo !== "CONVERSA" ||
+    creation.operacao !== "CRIAR_CONVERSA" ||
+    creation.entidadeId !== requestedId ||
+    creation.status !== "SYNCED"
+  ) {
+    return requestedId;
+  }
+  const resolved = creation.resultadoServidor?.id;
+  return typeof resolved === "string" && resolved.trim()
+    ? resolved.trim()
+    : requestedId;
+}
+
+/** Resolve o alias durável criado quando uma conversa direta já existia. */
+export async function resolveLocalConversationId(
+  requestedId: string,
+): Promise<string> {
+  const database = await getCortexDb();
+  const creation = await database.get("outbox_mutations", requestedId);
+  return resolvedConversationId(requestedId, creation);
+}
+
+function remapQueuedMessagePlan(
+  plan: QueuedMessagePlan,
+  conversationId: string,
+): QueuedMessagePlan {
+  const remapMutation = (
+    mutation: OutboxMutationRecord,
+  ): OutboxMutationRecord => ({
+    ...mutation,
+    payload: mutation.payload.conversaId === plan.message.conversaId
+      ? { ...mutation.payload, conversaId: conversationId }
+      : mutation.payload,
+  });
+  return {
+    message: { ...plan.message, conversaId: conversationId },
+    attachments: plan.attachments.map((attachment) => ({
+      ...attachment,
+      conversaId: conversationId,
+    })),
+    uploadMutations: plan.uploadMutations.map(remapMutation),
+    messageMutation: remapMutation(plan.messageMutation),
   };
 }
 
@@ -219,10 +341,18 @@ export async function lerPreferenciaDaConversa(
 ): Promise<PreferenciaDeConversaLocal> {
   const database = await getCortexDb();
   const guardada = await database.get("mensagem_preferencias", conversaId);
-  return guardada ?? {
+  if (guardada) {
+    return preferenciaComPendencias(
+      guardada,
+      pendenciasDaPreferencia(guardada),
+    );
+  }
+  return {
     conversaId,
     arquivadoEm: null,
     limpoAte: null,
+    arquivadoPendente: false,
+    limpoPendente: false,
     pendente: false,
   };
 }
@@ -232,7 +362,81 @@ export async function listarPreferenciasDeConversa(): Promise<
 > {
   const database = await getCortexDb();
   const todas = await database.getAll("mensagem_preferencias");
-  return new Map(todas.map((item) => [item.conversaId, item]));
+  return new Map(todas.map((item) => [
+    item.conversaId,
+    preferenciaComPendencias(item, pendenciasDaPreferencia(item)),
+  ]));
+}
+
+export async function listarPreferenciasPendentesDaConversa(
+  guard?: SyncSessionGuard,
+): Promise<PreferenciaDeConversaLocal[]> {
+  if (guard) assertSyncSession(guard);
+  const database = await getCortexDb();
+  if (guard) assertSyncSession(guard);
+  const preferences = await database.getAll("mensagem_preferencias");
+  if (guard) assertSyncSession(guard);
+  return preferences
+    .map((preference) => preferenciaComPendencias(
+      preference,
+      pendenciasDaPreferencia(preference),
+    ))
+    .filter((preference) => preference.pendente);
+}
+
+/**
+ * Confirma somente o gesto que acabou de subir.
+ *
+ * <p>Se a pessoa mudou de ideia enquanto a requisição estava em voo, os
+ * valores já não coincidem e a preferência nova continua pendente.</p>
+ */
+export async function confirmarPreferenciaDaConversaSincronizada(
+  expected: PreferenciaDeConversaLocal,
+  guard?: SyncSessionGuard,
+  fields: readonly CampoPendenteDePreferencia[] =
+    camposPendentesDaPreferencia(expected),
+): Promise<boolean> {
+  if (guard) assertSyncSession(guard);
+  const database = await getCortexDb();
+  if (guard) assertSyncSession(guard);
+  const rawTransaction = database.transaction(
+    "mensagem_preferencias",
+    "readwrite",
+  );
+  const guardedTransaction = guard
+    ? guardSyncTransaction(rawTransaction, guard)
+    : null;
+  const transaction = guardedTransaction?.transaction ?? rawTransaction;
+  const store = transaction.objectStore("mensagem_preferencias");
+  const current = await store.get(expected.conversaId);
+  const currentPending = current
+    ? pendenciasDaPreferencia(current)
+    : { arquivamento: false, limpeza: false };
+  const unchanged = Boolean(current) && fields.length > 0 && fields.every(
+    (field) => field === "ARQUIVAMENTO"
+      ? currentPending.arquivamento &&
+        current?.arquivadoEm === expected.arquivadoEm &&
+        current?.arquivadoAtualizadoEm === expected.arquivadoAtualizadoEm
+      : currentPending.limpeza &&
+        current?.limpoAte === expected.limpoAte &&
+        current?.limpoAtualizadoEm === expected.limpoAtualizadoEm,
+  );
+  if (current && unchanged) {
+    await store.put(preferenciaComPendencias(current, {
+      arquivamento: fields.includes("ARQUIVAMENTO")
+        ? false
+        : currentPending.arquivamento,
+      limpeza: fields.includes("LIMPEZA")
+        ? false
+        : currentPending.limpeza,
+    }));
+  }
+  if (guardedTransaction) {
+    await guardedTransaction.complete();
+  } else {
+    await transaction.done;
+  }
+  return unchanged;
 }
 
 /**
@@ -244,16 +448,69 @@ export async function listarPreferenciasDeConversa(): Promise<
  */
 export async function gravarPreferenciaDaConversa(
   conversaId: string,
-  mudanca: Partial<Omit<PreferenciaDeConversaLocal, "conversaId">>,
+  mudanca: Partial<
+    Pick<
+      PreferenciaDeConversaLocal,
+      "arquivadoEm" | "limpoAte" | "pendente"
+    >
+  >,
 ): Promise<PreferenciaDeConversaLocal> {
   const database = await getCortexDb();
-  const atual = await lerPreferenciaDaConversa(conversaId);
-  const proxima: PreferenciaDeConversaLocal = {
+  const transaction = database.transaction(
+    ["mensagem_preferencias", "outbox_mutations"],
+    "readwrite",
+  );
+  const creation = await transaction
+    .objectStore("outbox_mutations")
+    .get(conversaId);
+  const effectiveConversationId = resolvedConversationId(
+    conversaId,
+    creation,
+  );
+  const preferenceStore = transaction.objectStore("mensagem_preferencias");
+  const atual = (await preferenceStore.get(effectiveConversationId)) ?? {
+    conversaId: effectiveConversationId,
+    arquivadoEm: null,
+    limpoAte: null,
+    arquivadoPendente: false,
+    limpoPendente: false,
+    pendente: false,
+  };
+  const gestureAt = new Date().toISOString();
+  const archiveChanged = Object.prototype.hasOwnProperty.call(
+    mudanca,
+    "arquivadoEm",
+  );
+  const historyChanged = Object.prototype.hasOwnProperty.call(
+    mudanca,
+    "limpoAte",
+  );
+  const currentPending = pendenciasDaPreferencia(atual);
+  let arquivamentoPendente = currentPending.arquivamento;
+  let limpezaPendente = currentPending.limpeza;
+  if (mudanca.pendente === true) {
+    if (archiveChanged) arquivamentoPendente = true;
+    if (historyChanged) limpezaPendente = true;
+  } else if (mudanca.pendente === false) {
+    if (archiveChanged) arquivamentoPendente = false;
+    if (historyChanged) limpezaPendente = false;
+    if (!archiveChanged && !historyChanged) {
+      arquivamentoPendente = false;
+      limpezaPendente = false;
+    }
+  }
+  const proxima = preferenciaComPendencias({
     ...atual,
     ...mudanca,
-    conversaId,
-  };
-  await database.put("mensagem_preferencias", proxima);
+    ...(archiveChanged ? { arquivadoAtualizadoEm: gestureAt } : {}),
+    ...(historyChanged ? { limpoAtualizadoEm: gestureAt } : {}),
+    conversaId: effectiveConversationId,
+  }, {
+    arquivamento: arquivamentoPendente,
+    limpeza: limpezaPendente,
+  });
+  await preferenceStore.put(proxima);
+  await transaction.done;
   return proxima;
 }
 
@@ -261,21 +518,55 @@ export async function listLocalMessages(
   conversationId: string,
 ): Promise<MensagemComAnexos[]> {
   const database = await getCortexDb();
+  const transaction = database.transaction([
+    "mensagem_autorizacoes",
+    "mensagem_conversas",
+    "mensagem_preferencias",
+    "mensagens",
+    "mensagem_anexos",
+    "outbox_mutations",
+  ]);
+  const authorizationStore = transaction.objectStore(
+    "mensagem_autorizacoes",
+  );
+  const [authorizationSnapshot, authorization, conversation, preferencia,
+    messages, attachments, outbox] = await Promise.all([
+    authorizationStore.get(MESSAGING_AUTHORIZATION_SNAPSHOT_ID),
+    authorizationStore.get(conversationId),
+    transaction.objectStore("mensagem_conversas").get(conversationId),
+    transaction.objectStore("mensagem_preferencias").get(conversationId),
+    transaction.objectStore("mensagens")
+      .index("by-conversation-id")
+      .getAll(conversationId),
+    transaction.objectStore("mensagem_anexos")
+      .index("by-conversation-id")
+      .getAll(conversationId),
+    transaction.objectStore("outbox_mutations").getAll(),
+  ]);
+  await transaction.done;
+  const locallyCreated = outbox.some(
+    (mutation) =>
+      mutation.entidadeTipo === "CONVERSA" &&
+      mutation.operacao === "CRIAR_CONVERSA" &&
+      resolvedConversationId(mutation.entidadeId, mutation) === conversationId,
+  );
+  if (authorizationSnapshot && !authorization && !locallyCreated) {
+    return [];
+  }
+  if (!conversation) {
+    const quarantined = outbox.some(
+      (mutation) =>
+        mutation.lastSafeCode === MESSAGING_ACCESS_REVOKED_REVIEW_CODE &&
+        mutation.payload.conversaId === conversationId,
+    );
+    if (quarantined) {
+      return [];
+    }
+  }
   // A cortina de quem limpou a conversa. Sem ela aqui, "limpar" só valia na
   // resposta do servidor e a tela seguia mostrando o cache do aparelho — o
   // botão parecia morto, e só arquivar e desarquivar (que descarta e rebaixa
   // o cache) fazia o histórico sumir.
-  const preferencia = await lerPreferenciaDaConversa(conversationId);
-  const messages = await database.getAllFromIndex(
-    "mensagens",
-    "by-conversation-id",
-    conversationId,
-  );
-  const attachments = await database.getAllFromIndex(
-    "mensagem_anexos",
-    "by-conversation-id",
-    conversationId,
-  );
   const byMessage = new Map<string, MensagemAnexoLocalRecord[]>();
   for (const attachment of attachments) {
     const current = byMessage.get(attachment.mensagemId) ?? [];
@@ -285,7 +576,7 @@ export async function listLocalMessages(
   return messages
     .filter(
       (message) =>
-        !preferencia.limpoAte ||
+        !preferencia?.limpoAte ||
         compararInstantesDoServidor(
           message.criadaNoClienteEm,
           preferencia.limpoAte,
@@ -313,10 +604,58 @@ export async function searchLocalMessages(
     return [];
   }
   const database = await getCortexDb();
-  const messages = (await database.getAll("mensagens")).filter((message) =>
-    message.corpo?.toLocaleLowerCase("pt-BR").includes(normalized),
+  const transaction = database.transaction([
+    "mensagem_autorizacoes",
+    "mensagem_conversas",
+    "mensagem_preferencias",
+    "mensagens",
+    "mensagem_anexos",
+    "outbox_mutations",
+  ]);
+  const [authorization, conversations, storedPreferences, storedMessages,
+    allAttachments, outbox] = await Promise.all([
+    transaction.objectStore("mensagem_autorizacoes").getAll(),
+    transaction.objectStore("mensagem_conversas").getAll(),
+    transaction.objectStore("mensagem_preferencias").getAll(),
+    transaction.objectStore("mensagens").getAll(),
+    transaction.objectStore("mensagem_anexos").getAll(),
+    transaction.objectStore("outbox_mutations").getAll(),
+  ]);
+  await transaction.done;
+  const snapshotInitialized = authorization.some(
+    ({ id }) => id === MESSAGING_AUTHORIZATION_SNAPSHOT_ID,
   );
-  const allAttachments = await database.getAll("mensagem_anexos");
+  const visibleConversationIds = new Set(
+    snapshotInitialized
+      ? authorization
+          .filter(({ id }) => !authorizationControlRecord(id))
+          .map(({ id }) => id)
+      : conversations.map(({ id }) => id),
+  );
+  for (const mutation of outbox) {
+    if (
+      mutation.entidadeTipo === "CONVERSA" &&
+      mutation.operacao === "CRIAR_CONVERSA" &&
+      mutation.status !== "SYNCED"
+    ) {
+      visibleConversationIds.add(mutation.entidadeId);
+    }
+  }
+  const preferences = new Map(
+    storedPreferences.map((preference) => [
+      preference.conversaId,
+      preference,
+    ]),
+  );
+  const messages = storedMessages.filter((message) => {
+    const cutoff = preferences.get(message.conversaId)?.limpoAte;
+    return visibleConversationIds.has(message.conversaId) &&
+      (!cutoff || compararInstantesDoServidor(
+        message.criadaNoClienteEm,
+        cutoff,
+      ) > 0) &&
+      message.corpo?.toLocaleLowerCase("pt-BR").includes(normalized);
+  });
   return messages
     .sort((left, right) =>
       compararInstantesDoServidor(
@@ -334,15 +673,39 @@ export async function searchLocalMessages(
 
 export async function storeServerConversations(
   conversations: ConversationApi[],
-  options: { authoritative?: boolean } = {},
+  options: {
+    authorizedConversationIds?: readonly string[];
+    archivedConversationIds?: readonly string[];
+    historyCutoffs?: readonly {
+      conversationId: string;
+      limpoAte: string | null;
+    }[];
+    requestStartedAt?: string;
+    authorizationSnapshotOrdinal?: number;
+  } = {},
   guard?: SyncSessionGuard,
 ): Promise<void> {
+  if (guard) assertSyncSession(guard);
+  const authorizationSnapshotOrdinal =
+    options.authorizedConversationIds === undefined
+      ? null
+      : options.authorizationSnapshotOrdinal === undefined
+        ? await reserveMessagingRequestOrdinal()
+        : validMessagingOrdinal(options.authorizationSnapshotOrdinal);
+  if (
+    options.authorizedConversationIds !== undefined &&
+    authorizationSnapshotOrdinal === 0
+  ) {
+    throw new Error("A ordem do snapshot de autorização é inválida.");
+  }
   if (guard) assertSyncSession(guard);
   const database = await getCortexDb();
   if (guard) assertSyncSession(guard);
   const rawTransaction = database.transaction(
     [
+      "mensagem_autorizacoes",
       "mensagem_conversas",
+      "mensagem_preferencias",
       "mensagens",
       "mensagem_anexos",
       "outbox_mutations",
@@ -356,13 +719,151 @@ export async function storeServerConversations(
   const conversationStore = transaction.objectStore(
     "mensagem_conversas",
   );
+  const authorizationStore = transaction.objectStore(
+    "mensagem_autorizacoes",
+  );
+  const requestStartedAt = options.requestStartedAt ?? new Date().toISOString();
+  const requestStartedAtEpoch = Date.parse(requestStartedAt);
+  if (options.authorizedConversationIds !== undefined) {
+    const currentSnapshot = await authorizationStore.get(
+      MESSAGING_AUTHORIZATION_SNAPSHOT_ID,
+    );
+    if (
+      currentSnapshot &&
+      validMessagingOrdinal(currentSnapshot.ordinal) >
+        (authorizationSnapshotOrdinal ?? 0)
+    ) {
+      if (guardedTransaction) {
+        await guardedTransaction.complete();
+      } else {
+        await transaction.done;
+      }
+      return;
+    }
+  }
   for (const conversation of conversations) {
     await conversationStore.put(conversationRecord(conversation));
   }
-  if (options.authoritative) {
-    const authorizedIds = new Set(
-      conversations.map((conversation) => conversation.id),
-    );
+  if (options.authorizedConversationIds !== undefined) {
+    const authorizedIds = new Set(options.authorizedConversationIds);
+    for (const current of await authorizationStore.getAll()) {
+      if (
+        !authorizationControlRecord(current.id) &&
+        !authorizedIds.has(current.id)
+      ) {
+        await authorizationStore.delete(current.id);
+      }
+    }
+    for (const conversationId of authorizedIds) {
+      await authorizationStore.put({
+        id: conversationId,
+        ordinal: authorizationSnapshotOrdinal ?? 0,
+      });
+    }
+    await authorizationStore.put({
+      id: MESSAGING_AUTHORIZATION_SNAPSHOT_ID,
+      ordinal: authorizationSnapshotOrdinal ?? 0,
+    });
+  }
+  const archivedIds = options.archivedConversationIds === undefined
+    ? null
+    : new Set(options.archivedConversationIds);
+  if (archivedIds) {
+    const preferenceStore = transaction.objectStore("mensagem_preferencias");
+    for (const conversation of conversations) {
+      const current = await preferenceStore.get(conversation.id);
+      const currentPending = current
+        ? pendenciasDaPreferencia(current)
+        : { arquivamento: false, limpeza: false };
+      if (currentPending.arquivamento) {
+        continue;
+      }
+      const archiveUpdatedAtEpoch = Date.parse(
+        current?.arquivadoAtualizadoEm ?? "",
+      );
+      if (
+        Number.isFinite(archiveUpdatedAtEpoch) &&
+        (
+          !Number.isFinite(requestStartedAtEpoch) ||
+          archiveUpdatedAtEpoch >= requestStartedAtEpoch
+        )
+      ) {
+        continue;
+      }
+      const serverArchived = archivedIds.has(conversation.id);
+      const currentlyArchived = current?.arquivadoEm != null;
+      if (serverArchived === currentlyArchived) {
+        continue;
+      }
+      if (!current && !serverArchived) {
+        continue;
+      }
+      await preferenceStore.put(preferenciaComPendencias({
+        ...(current ?? {
+          conversaId: conversation.id,
+          arquivadoEm: null,
+          limpoAte: null,
+          arquivadoPendente: false,
+          limpoPendente: false,
+          pendente: false,
+        }),
+        conversaId: conversation.id,
+        arquivadoEm: serverArchived ? requestStartedAt : null,
+        arquivadoAtualizadoEm: requestStartedAt,
+      }, {
+        arquivamento: false,
+        limpeza: currentPending.limpeza,
+      }));
+    }
+  }
+  if (options.historyCutoffs !== undefined) {
+    const preferenceStore = transaction.objectStore("mensagem_preferencias");
+    const authorizedIds = new Set(options.authorizedConversationIds ?? []);
+    for (const serverPreference of options.historyCutoffs) {
+      if (!authorizedIds.has(serverPreference.conversationId)) {
+        continue;
+      }
+      const current = await preferenceStore.get(
+        serverPreference.conversationId,
+      );
+      const currentPending = current
+        ? pendenciasDaPreferencia(current)
+        : { arquivamento: false, limpeza: false };
+      if (currentPending.limpeza) {
+        continue;
+      }
+      const cleanupUpdatedAtEpoch = Date.parse(
+        current?.limpoAtualizadoEm ?? "",
+      );
+      if (
+        Number.isFinite(cleanupUpdatedAtEpoch) &&
+        (
+          !Number.isFinite(requestStartedAtEpoch) ||
+          cleanupUpdatedAtEpoch >= requestStartedAtEpoch
+        )
+      ) {
+        continue;
+      }
+      await preferenceStore.put(preferenciaComPendencias({
+        ...(current ?? {
+          conversaId: serverPreference.conversationId,
+          arquivadoEm: null,
+          limpoAte: null,
+          arquivadoPendente: false,
+          limpoPendente: false,
+          pendente: false,
+        }),
+        conversaId: serverPreference.conversationId,
+        limpoAte: serverPreference.limpoAte,
+        limpoAtualizadoEm: requestStartedAt,
+      }, {
+        arquivamento: currentPending.arquivamento,
+        limpeza: false,
+      }));
+    }
+  }
+  if (options.authorizedConversationIds !== undefined) {
+    const authorizedIds = new Set(options.authorizedConversationIds);
     /*
      * A conversa criada aqui e ainda não subida não está na resposta do
      * servidor — ele não a conhece. Apagá-la por isso destruiria a conversa,
@@ -370,31 +871,68 @@ export async function storeServerConversations(
      * tudo em silêncio, na primeira releitura. É a mesma regra da geometria:
      * resposta do servidor não apaga trabalho local que ainda não subiu.
      */
-    const aguardandoSubida = new Set(
-      (await transaction.objectStore("outbox_mutations").getAll())
-        .filter(
-          (mutation) =>
-            mutation.entidadeTipo === "CONVERSA" &&
-            mutation.operacao === "CRIAR_CONVERSA",
-        )
-        .map((mutation) => mutation.entidadeId),
-    );
-    for (const local of await conversationStore.getAll()) {
-      if (authorizedIds.has(local.id) || aguardandoSubida.has(local.id)) {
+    const aguardandoSubida = new Set<string>();
+    for (const mutation of await transaction
+      .objectStore("outbox_mutations")
+      .getAll()) {
+      if (
+        mutation.entidadeTipo !== "CONVERSA" ||
+        mutation.operacao !== "CRIAR_CONVERSA"
+      ) {
+        continue;
+      }
+      if (mutation.status !== "SYNCED") {
+        aguardandoSubida.add(mutation.entidadeId);
+        continue;
+      }
+      /*
+       * Uma resposta iniciada antes do alias não pode apagar a conversa que
+       * acabou de ser adotada. Uma resposta atual, iniciada depois, pode: é
+       * assim que revogação e exclusão autoritativas deixam de virar ghosts.
+       */
+      if (
+        Date.parse(requestStartedAt) <= Date.parse(mutation.updatedAt)
+      ) {
+        aguardandoSubida.add(
+          resolvedConversationId(mutation.entidadeId, mutation),
+        );
+      }
+    }
+    const [allConversations, allMessages, allAttachments, allPreferences,
+      allMutations] = await Promise.all([
+      conversationStore.getAll(),
+      transaction.objectStore("mensagens").getAll(),
+      transaction.objectStore("mensagem_anexos").getAll(),
+      transaction.objectStore("mensagem_preferencias").getAll(),
+      transaction.objectStore("outbox_mutations").getAll(),
+    ]);
+    const candidateConversationIds = new Set<string>([
+      ...allConversations.map(({ id }) => id),
+      ...allMessages.map(({ conversaId }) => conversaId),
+      ...allAttachments.map(({ conversaId }) => conversaId),
+      ...allPreferences.map(({ conversaId }) => conversaId),
+      ...allMutations.flatMap((mutation) =>
+        typeof mutation.payload.conversaId === "string"
+          ? [mutation.payload.conversaId]
+          : []),
+    ]);
+    for (const conversationId of candidateConversationIds) {
+      if (
+        authorizedIds.has(conversationId) ||
+        aguardandoSubida.has(conversationId)
+      ) {
         continue;
       }
       const messages = await transaction
         .objectStore("mensagens")
         .index("by-conversation-id")
-        .getAll(local.id);
+        .getAll(conversationId);
       const attachments = await transaction
         .objectStore("mensagem_anexos")
         .index("by-conversation-id")
-        .getAll(local.id);
+        .getAll(conversationId);
       const messageIds = new Set(messages.map((message) => message.id));
-      const attachmentIds = new Set(
-        attachments.map((attachment) => attachment.id),
-      );
+      const attachmentIds = new Set(attachments.map(({ id }) => id));
       const uploadMutationIds = new Set(
         attachments.flatMap((attachment) =>
           attachment.uploadMutationId
@@ -403,25 +941,105 @@ export async function storeServerConversations(
         ),
       );
       const outboxStore = transaction.objectStore("outbox_mutations");
-      for (const mutation of await outboxStore.getAll()) {
-        if (
+      const relatedMutations = allMutations.filter(
+        (mutation) =>
           messageIds.has(mutation.entidadeId) ||
           attachmentIds.has(mutation.entidadeId) ||
           uploadMutationIds.has(mutation.clientMutationId) ||
-          mutation.payload.conversaId === local.id
-        ) {
+          mutation.payload.conversaId === conversationId ||
+          (
+            mutation.entidadeTipo === "CONVERSA" &&
+            mutation.entidadeId === conversationId
+          ),
+      );
+      const pendingEntityIds = new Set(
+        relatedMutations
+          .filter((mutation) => mutation.status !== "SYNCED")
+          .map((mutation) => mutation.entidadeId),
+      );
+      const pendingMutationIds = new Set(
+        relatedMutations
+          .filter((mutation) => mutation.status !== "SYNCED")
+          .map((mutation) => mutation.clientMutationId),
+      );
+      const quarantinedMessageIds = new Set(
+        messages
+          .filter(
+            (message) =>
+              message.syncStatus !== "SINCRONIZADO" ||
+              pendingEntityIds.has(message.id),
+          )
+          .map((message) => message.id),
+      );
+      const quarantinedAttachmentIds = new Set(
+        attachments
+          .filter(
+            (attachment) =>
+              attachment.syncStatus !== "SINCRONIZADO" ||
+              pendingEntityIds.has(attachment.id) ||
+              (
+                attachment.uploadMutationId !== null &&
+                pendingMutationIds.has(attachment.uploadMutationId)
+              ) ||
+              quarantinedMessageIds.has(attachment.mensagemId),
+          )
+          .map((attachment) => attachment.id),
+      );
+      const quarantineReason =
+        "Acesso a conversa revogado; trabalho local preservado para revisao.";
+      for (const mutation of relatedMutations) {
+        if (mutation.status === "SYNCED") {
           await outboxStore.delete(mutation.clientMutationId);
+          continue;
         }
+        await outboxStore.put({
+          ...mutation,
+          status: "REJECTED",
+          lastSafeCode: MESSAGING_ACCESS_REVOKED_REVIEW_CODE,
+          blockedReason: quarantineReason,
+          ultimoErro: quarantineReason,
+          conflito: {
+            tipo: "MENSAGEM_ACESSO_REVOGADO",
+            conversaId: conversationId,
+          },
+          updatedAt: new Date().toISOString(),
+        });
       }
       for (const message of messages) {
-        await transaction.objectStore("mensagens").delete(message.id);
+        if (quarantinedMessageIds.has(message.id)) {
+          await transaction.objectStore("mensagens").put({
+            ...message,
+            syncStatus: "FALHOU",
+            ultimoErro: quarantineReason,
+            updatedAt: new Date().toISOString(),
+          });
+        } else {
+          await transaction.objectStore("mensagens").delete(message.id);
+        }
       }
       for (const attachment of attachments) {
-        await transaction
-          .objectStore("mensagem_anexos")
-          .delete(attachment.id);
+        if (quarantinedAttachmentIds.has(attachment.id)) {
+          await transaction.objectStore("mensagem_anexos").put({
+            ...attachment,
+            syncStatus: "FALHOU",
+            ultimoErro: quarantineReason,
+            updatedAt: new Date().toISOString(),
+          });
+        } else {
+          await transaction.objectStore("mensagem_anexos").delete(
+            attachment.id,
+          );
+        }
       }
-      await conversationStore.delete(local.id);
+      const preference = await transaction
+        .objectStore("mensagem_preferencias")
+        .get(conversationId);
+      if (!preference?.pendente) {
+        await transaction.objectStore("mensagem_preferencias").delete(
+          conversationId,
+        );
+      }
+      await conversationStore.delete(conversationId);
     }
   }
   if (guardedTransaction) {
@@ -435,12 +1053,25 @@ export async function storeServerConversations(
 export async function storeServerMessages(
   messages: MessageApi[],
   guard?: SyncSessionGuard,
+  options: StoreServerMessageOptions = {},
 ): Promise<void> {
+  if (guard) assertSyncSession(guard);
+  const requestOrdinal = options.requestOrdinal === undefined
+    ? await reserveMessagingRequestOrdinal()
+    : validMessagingOrdinal(options.requestOrdinal);
+  if (requestOrdinal === 0) {
+    throw new Error("A ordem da requisição de mensagens é inválida.");
+  }
   if (guard) assertSyncSession(guard);
   const database = await getCortexDb();
   if (guard) assertSyncSession(guard);
   const rawTransaction = database.transaction(
-    ["mensagens", "mensagem_anexos"],
+    [
+      "mensagem_autorizacoes",
+      "mensagem_conversas",
+      "mensagens",
+      "mensagem_anexos",
+    ],
     "readwrite",
   );
   const guardedTransaction = guard
@@ -449,9 +1080,30 @@ export async function storeServerMessages(
   const transaction = guardedTransaction?.transaction ?? rawTransaction;
   const messageStore = transaction.objectStore("mensagens");
   const attachmentStore = transaction.objectStore("mensagem_anexos");
+  const authorizationStore = transaction.objectStore(
+    "mensagem_autorizacoes",
+  );
+  const conversationStore = transaction.objectStore(
+    "mensagem_conversas",
+  );
   const timestamp = new Date().toISOString();
+  const authorizationSnapshot = await authorizationStore.get(
+    MESSAGING_AUTHORIZATION_SNAPSHOT_ID,
+  );
 
   for (const message of messages) {
+    const authorization = authorizationSnapshot
+      ? await authorizationStore.get(message.conversaId)
+      : null;
+    const authorized = authorizationSnapshot
+      ? Boolean(
+          authorization &&
+          requestOrdinal >= validMessagingOrdinal(authorization.ordinal),
+        )
+      : Boolean(await conversationStore.get(message.conversaId));
+    if (!authorized) {
+      continue;
+    }
     const existing = await messageStore.get(message.id);
     const byMutation = existing
       ? undefined
@@ -626,10 +1278,4 @@ export async function sha256Blob(blob: Blob): Promise<string> {
 
 function formatBytes(bytes: number): string {
   return `${Math.round(bytes / 1024 / 1024)} MB`;
-}
-
-export function emitMessagesChanged(): void {
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(MESSAGES_CHANGED_EVENT));
-  }
 }

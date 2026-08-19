@@ -163,8 +163,24 @@ const CORPORATE_SOURCE_LINES = new Map([
       "or candidate.hostname != \"cortex.portalstavias.com.br\"",
       "or public.hostname != \"cortex.portalstavias.com.br\"",
       "r\"(?mi)^\\s*ProxyPass\\s+/\\s+https://cortex\\.portalstavias\\.com\\.br:18443/\",",
+      "r\"(?mi)^\\s*ProxyPass\\s+/\\s+https://cortex\\.portalstavias\\.com\\.br:18443/[^\\r\\n]*\\baddressttl=1(?:\\s|$)\",",
+      "r\"(?mi)^\\s*ProxyPass\\s+/\\s+https://cortex\\.portalstavias\\.com\\.br:18443/[^\\r\\n]*\\bdisablereuse=On(?:\\s|$)\",",
       "r\"(?mi)^\\s*ProxyPassReverse\\s+/\\s+https://cortex\\.portalstavias\\.com\\.br:18443/\\s*$\",",
       "--resolve 'cortex.portalstavias.com.br:18443:127.0.0.1'",
+      "curl_args+=(--resolve 'cortex.portalstavias.com.br:443:127.0.0.1')",
+    ],
+  ],
+  [
+    "scripts/deploy/configure-local-upstream-resolution.sh",
+    ["hostname=\"cortex.portalstavias.com.br\""],
+  ],
+  [
+    "scripts/deploy/test-configure-local-upstream-resolution.sh",
+    [
+      "192.168.0.15 cortex.portalstavias.com.br webserver # internal aliases",
+      "grep -Fxq '127.0.0.1 cortex.portalstavias.com.br # cortex-local-upstream' \"$hosts\"",
+      ...Array(2).fill("[[ \"$(grep -c 'cortex.portalstavias.com.br' \"$hosts\")\" == \"1\" ]]"),
+      "grep -Fxq '192.168.0.15 cortex.portalstavias.com.br webserver # internal aliases' \"$backup\"",
     ],
   ],
   [
@@ -193,11 +209,35 @@ const CORPORATE_SOURCE_LINES = new Map([
   [
     "scripts/deploy/test-local-production-cutover.sh",
     [
-      "ProxyPass / https://cortex.portalstavias.com.br:18443/ retry=0",
+      "ProxyPass / https://cortex.portalstavias.com.br:18443/ retry=0 addressttl=1 disablereuse=On",
       "ProxyPassReverse / https://cortex.portalstavias.com.br:18443/",
       "export CORTEX_CANDIDATE_BASE_URL=\"https://cortex.portalstavias.com.br:18443\"",
       "export CORTEX_PUBLIC_BASE_URL=\"https://cortex.portalstavias.com.br\"",
+      "&& \"$next_argument\" == \"cortex.portalstavias.com.br:443:127.0.0.1\" ]]; then",
       "grep -Fq -- '--resolve cortex.portalstavias.com.br:18443:127.0.0.1' \"$CORTEX_TEST_CURL_LOG\"",
+      "grep -Fq -- '--resolve cortex.portalstavias.com.br:443:127.0.0.1' \"$CORTEX_TEST_CURL_LOG\"",
+    ],
+  ],
+  [
+    "scripts/deploy/update-local-production-release.sh",
+    [
+      "image_repository='ghcr\\.io/stavias-sistema-cortex/digitalizacao-rdo-stavias'",
+      'or candidate.hostname != "cortex.portalstavias.com.br"',
+      'or public.hostname != "cortex.portalstavias.com.br"',
+      'args+=(--cacert "$CORTEX_CANDIDATE_CA_FILE" --resolve \'cortex.portalstavias.com.br:18443:127.0.0.1\')',
+      "args+=(--resolve 'cortex.portalstavias.com.br:443:127.0.0.1')",
+      'local stem="StaviasCortex-before-${CORTEX_EXPECTED_NEW_RELEASE_SHA:0:12}"',
+    ],
+  ],
+  [
+    "scripts/deploy/test-update-local-production-release.sh",
+    [
+      'image_repository="ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias"',
+      "CORTEX_PUBLIC_ORIGIN=https://cortex.portalstavias.com.br",
+      "CORTEX_AUTH_WEBAUTHN_RP_ID=cortex.portalstavias.com.br",
+      '&& "$*" != *"--resolve cortex.portalstavias.com.br:443:127.0.0.1"* ]]; then',
+      "export CORTEX_CANDIDATE_BASE_URL=https://cortex.portalstavias.com.br:18443",
+      "export CORTEX_PUBLIC_BASE_URL=https://cortex.portalstavias.com.br",
     ],
   ],
   [

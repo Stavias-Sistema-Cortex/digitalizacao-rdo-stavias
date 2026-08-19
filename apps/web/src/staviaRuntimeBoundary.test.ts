@@ -975,6 +975,50 @@ describe("StavIA runtime boundary", () => {
 
   });
 
+  it("pins local production release brand references to exact reviewed lines", () => {
+    for (const fixture of [
+      {
+        path: "scripts/deploy/update-local-production-release.sh",
+        line: "image_repository='ghcr\\.io/stavias-sistema-cortex/digitalizacao-rdo-stavias'",
+      },
+      {
+        path: "scripts/deploy/test-update-local-production-release.sh",
+        line: 'image_repository="ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias"',
+      },
+      {
+        path: "scripts/deploy/cutover-local-production.sh",
+        line: "curl_args+=(--resolve 'cortex.portalstavias.com.br:443:127.0.0.1')",
+      },
+      {
+        path: "scripts/deploy/test-local-production-cutover.sh",
+        line: '&& "$next_argument" == "cortex.portalstavias.com.br:443:127.0.0.1" ]]; then',
+      },
+      {
+        path: "scripts/deploy/test-local-production-cutover.sh",
+        line: "grep -Fq -- '--resolve cortex.portalstavias.com.br:443:127.0.0.1' \"$CORTEX_TEST_CURL_LOG\"",
+      },
+    ]) {
+      const content = readFileSync(
+        path.join(REPOSITORY_ROOT, fixture.path),
+        "utf8",
+      );
+      expect(
+        inspectSourceBoundary([
+          ...validCleanupFixtures(),
+          { path: fixture.path, content },
+        ]),
+      ).toEqual([]);
+      expect(
+        inspectSourceBoundary([
+          ...validCleanupFixtures(),
+          { path: fixture.path, content: `${content}\n${fixture.line}` },
+        ]),
+      ).toContain(
+        `${fixture.path}: corporate line ${JSON.stringify(fixture.line)} expected 1, found 2`,
+      );
+    }
+  });
+
   it("rejects unapproved plural corporate roles in generated text", () => {
     for (const assistantRole of [
       "StaviasAgent",

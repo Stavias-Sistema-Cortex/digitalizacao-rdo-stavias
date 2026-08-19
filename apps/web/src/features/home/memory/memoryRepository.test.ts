@@ -169,8 +169,8 @@ describe("Memory v15 through obra lifecycle v21 migration", () => {
 
     const upgraded = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(23);
-    expect(upgraded.version).toBe(23);
+    expect(CORTEX_DATABASE_VERSION).toBe(24);
+    expect(upgraded.version).toBe(24);
     expect(await upgraded.get("rdos", "rdo-preservado")).toMatchObject({
       numeroRdo: "17",
     });

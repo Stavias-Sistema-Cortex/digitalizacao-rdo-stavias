@@ -137,6 +137,15 @@ public class VinculoColaboradorObraService {
             return carregar(atual.id());
         }
 
+        if (atual != null
+                && canonicalRequestedId != null
+                && !atual.id().equals(canonicalRequestedId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A reativação deve preservar o identificador do vínculo histórico."
+            );
+        }
+
         operabilityGuard.requireWritable(normalizedObraId);
         normalizedColaboradorId = exigirColaborador(normalizedColaboradorId);
 

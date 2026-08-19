@@ -1,6 +1,9 @@
 import { processObjectUploads } from "../../features/mensagens/objectUploadSync";
 import { processRdoPhotoUploads } from "../../features/rdos/rdoPhotoSync";
-import { refreshMessagingAfterPull } from "../../features/mensagens/mensagensHydration";
+import {
+  flushPendingConversationPreferences,
+  refreshMessagingAfterPull,
+} from "../../features/mensagens/mensagensHydration";
 import {
   hydrateBlockedRdoCreationContextsForSync,
   recoverErroredWorkforceRdoMutationsForSync,
@@ -234,6 +237,15 @@ async function executeSync(
           reconciledReplacementByOriginalId: new Map<string, string>(),
         };
     await assertSyncExecution(guard, lease);
+    await reparoSemDerrubarOCiclo("preferências de mensagens", async () => {
+      const preferenceSummary =
+        await flushPendingConversationPreferences(guard);
+      if (preferenceSummary.errors > 0) {
+        throw new Error(
+          `${preferenceSummary.errors} preferência(s) aguardam nova tentativa.`,
+        );
+      }
+    });
     const pullSummary = await pullEvents(deviceId, guard);
     // Este passo vai à rede duas vezes, e ficou de fora do isolamento quando
     // os reparos entraram. Fora dele, uma falha de mensageria derrubava o

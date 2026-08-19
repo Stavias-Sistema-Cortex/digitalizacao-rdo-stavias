@@ -170,10 +170,13 @@ if not re.search(r"(?mi)^\s*Header\s+always\s+set\s+Retry-After\s+", maintenance
 required = (
     r"(?mi)^\s*SSLProxyEngine\s+On\s*$",
     r"(?mi)^\s*SSLProxyVerify\s+require\s*$",
+    r"(?mi)^\s*SSLProxyVerifyDepth\s+2\s*$",
     r"(?mi)^\s*SSLProxyCheckPeerName\s+on\s*$",
     rf"(?mi)^\s*SSLProxyCACertificateFile\s+{ca_file}\s*$",
     r"(?mi)^\s*ProxyPreserveHost\s+On\s*$",
     r"(?mi)^\s*ProxyPass\s+/\s+https://cortex\.portalstavias\.com\.br:18443/",
+    r"(?mi)^\s*ProxyPass\s+/\s+https://cortex\.portalstavias\.com\.br:18443/[^\r\n]*\baddressttl=1(?:\s|$)",
+    r"(?mi)^\s*ProxyPass\s+/\s+https://cortex\.portalstavias\.com\.br:18443/[^\r\n]*\bdisablereuse=On(?:\s|$)",
     r"(?mi)^\s*ProxyPassReverse\s+/\s+https://cortex\.portalstavias\.com\.br:18443/\s*$",
 )
 if any(re.search(pattern, candidate) is None for pattern in required):
@@ -291,6 +294,11 @@ apache_validate_reload() {
   "$CORTEX_APACHECTL_BIN" -k graceful
 }
 
+apache_validate_restart() {
+  "$CORTEX_APACHECTL_BIN" configtest
+  "$CORTEX_APACHECTL_BIN" -k restart
+}
+
 compose=(
   "$CORTEX_DOCKER_BIN" compose
   --env-file "$CORTEX_COMPOSE_ENV_FILE"
@@ -381,7 +389,16 @@ verify_origin() {
   local origin="$1"
   local route="$2"
   local health readiness healthz
-  local -a curl_args=(--disable --fail --silent --show-error --connect-timeout 5 --max-time 15)
+  local -a curl_args=(
+    --disable
+    --fail
+    --silent
+    --show-error
+    --noproxy '*'
+    --proxy ''
+    --connect-timeout 5
+    --max-time 15
+  )
   if [[ "$route" == "loopback" ]]; then
     candidate_ca="$CORTEX_PRODUCTION_RUNTIME_DIR/caddy-local-root.crt"
     [[ -s "$candidate_ca" && -f "$candidate_ca" && ! -L "$candidate_ca" ]] || {
@@ -392,10 +409,12 @@ verify_origin() {
       --cacert "$candidate_ca"
       --resolve 'cortex.portalstavias.com.br:18443:127.0.0.1'
     )
+  elif [[ "$route" == "public" ]]; then
+    curl_args+=(--resolve 'cortex.portalstavias.com.br:443:127.0.0.1')
   fi
-  health="$($CORTEX_CURL_BIN "${curl_args[@]}" "$origin/api/health")"
-  readiness="$($CORTEX_CURL_BIN "${curl_args[@]}" "$origin/api/readiness")"
-  healthz="$($CORTEX_CURL_BIN "${curl_args[@]}" "$origin/healthz")"
+  health="$($CORTEX_CURL_BIN "${curl_args[@]}" "$origin/api/health")" || return 1
+  readiness="$($CORTEX_CURL_BIN "${curl_args[@]}" "$origin/api/readiness")" || return 1
+  healthz="$($CORTEX_CURL_BIN "${curl_args[@]}" "$origin/healthz")" || return 1
   python3 - "$health" "$readiness" "$healthz" "$CORTEX_EXPECTED_RELEASE_SHA" <<'PY'
 import json, sys
 try:
@@ -404,7 +423,7 @@ try:
 except json.JSONDecodeError as error:
     raise SystemExit("Candidate health response is not valid JSON.") from error
 revision = sys.argv[4]
-if health != {"status": "UP", "revision": revision}:
+if health.get("status") != "UP" or health.get("revision") != revision:
     raise SystemExit("Candidate health is not the exact revision.")
 if any((
     readiness.get("status") != "READY",
@@ -417,10 +436,33 @@ if any((
 PY
 }
 
+verify_public_origin_after_reload() {
+  local max_attempts="${CORTEX_PUBLIC_VERIFY_MAX_ATTEMPTS:-30}"
+  local delay_seconds="${CORTEX_PUBLIC_VERIFY_DELAY_SECONDS:-1}"
+  local attempt
+  [[ "$max_attempts" =~ ^[0-9]+$ ]] \
+    && (( max_attempts >= 1 && max_attempts <= 60 )) \
+    && [[ "$delay_seconds" =~ ^[0-9]+$ ]] \
+    && (( delay_seconds <= 5 )) || {
+      echo "Public verification retry settings are invalid." >&2
+      return 1
+    }
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    if verify_origin "$CORTEX_PUBLIC_BASE_URL" public; then
+      return 0
+    fi
+    if (( attempt < max_attempts )); then
+      sleep "$delay_seconds"
+    fi
+  done
+  echo "The public origin did not converge after the Apache worker restart." >&2
+  return 1
+}
+
 verify_origin "$CORTEX_CANDIDATE_BASE_URL" loopback
 atomic_switch "$CORTEX_APACHE_CANDIDATE_CONFIG"
-apache_validate_reload
-verify_origin "$CORTEX_PUBLIC_BASE_URL" public
+apache_validate_restart
+verify_public_origin_after_reload
 
 candidate_sha="$(openssl dgst -sha256 "$CORTEX_APACHE_CANDIDATE_CONFIG" | awk '{print $NF}')"
 evidence_temp="$(mktemp "$evidence_dir/.cutover.XXXXXX")"

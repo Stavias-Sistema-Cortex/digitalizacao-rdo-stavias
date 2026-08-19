@@ -1,5 +1,6 @@
 package com.projeto.cortex.financeiro.catalog;
 
+import com.projeto.cortex.common.JdbcSavepointBoundary;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -177,6 +178,10 @@ public class PostgresqlServicePriceCatalogRepository
                 resultSet -> null,
                 "catalogo_servico:" + record.code()
         );
+        JdbcSavepointBoundary createSavepoint = JdbcSavepointBoundary.begin(
+                jdbc,
+                "Não foi possível proteger a criação do serviço."
+        );
         try {
             jdbc.update("""
                     INSERT INTO catalogo_servico (
@@ -198,12 +203,18 @@ public class PostgresqlServicePriceCatalogRepository
                     record.createdAt()
             );
         } catch (DataAccessException exception) {
+            createSavepoint.rollbackAndRelease(
+                    "Não foi possível recuperar a criação concorrente do serviço."
+            );
             if (contains(exception, "uq_catalogo_servico_codigo_normalizado")
                     || contains(exception, "catalogo_servico_codigo")) {
                 throw new ServiceCatalogCodeConflictException();
             }
             throw exception;
         }
+        createSavepoint.release(
+                "Não foi possível confirmar a criação do serviço."
+        );
         return findService(record.id()).orElseThrow();
     }
 

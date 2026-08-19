@@ -3,6 +3,7 @@ package com.projeto.cortex.sync;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -35,7 +36,13 @@ public class SyncController {
     }
 
     @PostMapping("/api/sync/push")
-    public SyncPushResponse push(@RequestBody SyncPushRequest request) {
-        return service.push(request);
+    public SyncPushResponse push(
+            @RequestBody SyncPushRequest request,
+            @RequestHeader(
+                    name = SyncService.CLIENT_CAPABILITIES_HEADER,
+                    required = false
+            ) String clientCapabilities
+    ) {
+        return service.push(request, clientCapabilities);
     }
 }

@@ -266,6 +266,71 @@ class PostgresqlServicePriceCatalogIT {
     }
 
     @Test
+    void primaryKeyCollisionDoesNotAbortIdempotencyLookupOrTheOuterTransaction() {
+        String obra = insertWorksite("SERVICE-PK-COLLISION");
+        String actor = insertActor("Service PK Collision Owner");
+        ServicePriceCatalogService service = service(
+                org.mockito.Mockito.mock(ServiceCatalogOntologyPublisher.class)
+        );
+        String occupiedId = id();
+        CreateServiceCommand occupied = new CreateServiceCommand(
+                occupiedId,
+                "CAT-SERVICE-PK-OCCUPIED",
+                "CAT.SERVICE.PK.OCCUPIED",
+                "Serviço já persistido",
+                null
+        );
+        inTx(() -> service.createService(obra, actor, occupied));
+
+        CreateServiceCommand collision = new CreateServiceCommand(
+                occupiedId,
+                "CAT-SERVICE-PK-COLLISION",
+                "CAT.SERVICE.PK.COLLISION",
+                "Serviço com identificador em colisão",
+                null
+        );
+        String continuedId = id();
+        CreateServiceCommand continued = new CreateServiceCommand(
+                continuedId,
+                "CAT-SERVICE-AFTER-COLLISION",
+                "CAT.SERVICE.AFTER.COLLISION",
+                "Serviço persistido após a colisão",
+                null
+        );
+
+        ServiceCatalogEntry createdAfterCollision = inTx(() -> {
+            assertThatThrownBy(() -> service.createService(
+                    obra,
+                    actor,
+                    collision
+            )).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class)
+                    .hasMessageNotContaining("current transaction is aborted");
+
+            assertThat(repository().findMutation(
+                    actor,
+                    "CAT-SERVICE-PK-COLLISION"
+            )).isEmpty();
+            return service.createService(obra, actor, continued);
+        });
+
+        assertThat(createdAfterCollision.id()).isEqualTo(continuedId);
+        assertThat(inTx(() -> service.createService(obra, actor, continued)).id())
+                .isEqualTo(continuedId);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM catalogo_servico WHERE codigo = ?",
+                Integer.class,
+                "CAT.SERVICE.PK.COLLISION"
+        )).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM service_catalog_mutation"
+                        + " WHERE ator_id = ? AND client_mutation_id = ?",
+                Integer.class,
+                actor,
+                "CAT-SERVICE-PK-COLLISION"
+        )).isZero();
+    }
+
+    @Test
     void missingAlfaWorksiteIsRejectedBeforeGlobalReadOrForeignKeyWrite() {
         String missingWorksite = id();
         String actor = insertActor("Missing Worksite ALFA");

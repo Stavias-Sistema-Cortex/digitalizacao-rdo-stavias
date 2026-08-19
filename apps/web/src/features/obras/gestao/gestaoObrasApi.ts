@@ -249,9 +249,14 @@ export async function queueVinculoColaborador(
   obraId: string,
   colaboradorId: string,
   papelNaObra?: string,
+  vinculoHistoricoId?: string,
 ): Promise<PendingVinculoApi> {
   const identity = await governanceMutationIdentity();
-  const id = crypto.randomUUID();
+  const id = vinculoHistoricoId?.trim() || crypto.randomUUID();
+  // A entidade reativada conserva sua identidade histórica, mas a nova ação
+  // precisa de um recibo próprio. Reusar também o clientMutationId faria o
+  // servidor confundir a reativação com a criação original já processada.
+  const mutationId = vinculoHistoricoId ? crypto.randomUUID() : id;
   const timestamp = new Date().toISOString();
   const pending: PendingVinculoApi = {
     id,
@@ -266,7 +271,7 @@ export async function queueVinculoColaborador(
     revogadoPor: null,
     versaoEntidade: 0,
     syncStatus: "PENDING_SYNC",
-    pendingMutationId: id,
+    pendingMutationId: mutationId,
   };
 
   const { commitLocalMutation } = await import(
@@ -274,7 +279,7 @@ export async function queueVinculoColaborador(
   );
   await commitLocalMutation({
     ...identity,
-    clientMutationId: id,
+    clientMutationId: mutationId,
     obraId,
     entityType: "VINCULO_OBRA",
     entityId: id,

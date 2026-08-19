@@ -393,10 +393,12 @@ describe("FinanceiroPage: superfície de receita", () => {
     const selector = await screen.findByRole("combobox", {
       name: "Obra em análise",
     });
-    expect(selector).toHaveTextContent("Obra ativa");
-    expect(selector).not.toHaveTextContent(
-      "Obra ainda ativa no servidor",
-    );
+    await waitFor(() => {
+      expect(selector).toHaveTextContent("Obra ativa");
+      expect(selector).not.toHaveTextContent(
+        "Obra ainda ativa no servidor",
+      );
+    });
     expect(listObrasLocais).toHaveBeenCalledWith({
       includeArchived: true,
     });
@@ -481,8 +483,10 @@ describe("FinanceiroPage: superfície de receita", () => {
       const selector = await screen.findByRole("combobox", {
         name: "Obra em análise",
       });
-      expect(selector).toHaveTextContent(
-        "Obra restaurada autoritativamente",
+      await waitFor(() =>
+        expect(selector).toHaveTextContent(
+          "Obra restaurada autoritativamente",
+        )
       );
     },
   );

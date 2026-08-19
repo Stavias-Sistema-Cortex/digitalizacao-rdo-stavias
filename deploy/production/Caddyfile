@@ -1,6 +1,9 @@
 {
 	admin off
 	auto_https disable_redirects
+	servers {
+		protocols h1 h2
+	}
 }
 
 https://{$CORTEX_EDGE_HOST:cortex.portalstavias.com.br} {

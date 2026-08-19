@@ -285,14 +285,24 @@ export function GestaoObrasPage() {
       setAviso("Este colaborador já está vinculado a esta obra.");
       return;
     }
+    const vinculoHistorico = vinculos.find(
+      (vinculo) =>
+        vinculo.colaboradorId === colabSelecionado &&
+        vinculo.status === "REVOGADO",
+    );
     setSalvandoVinculo(true);
     setAviso(null);
     try {
       const pending = await queueVinculoColaborador(
         obraSelecionadaId,
         colabSelecionado,
+        undefined,
+        vinculoHistorico?.id,
       );
-      setVinculos((current) => [pending, ...current]);
+      setVinculos((current) => vinculoHistorico
+        ? current.map((item) => item.id === vinculoHistorico.id ? pending : item)
+        : [pending, ...current]
+      );
       setColabSelecionado("");
       setAviso(
         "Vínculo pendente de revalidação Alfa; o sync enviará a solicitação automaticamente.",

@@ -55,8 +55,37 @@ class LocalCorsConfigurationTest {
                 "Accept",
                 "Content-Type",
                 "X-CSRF-Token",
-                "X-Cortex-Client-Instance"
+                "X-Cortex-Client-Instance",
+                "X-Cortex-Sync-Capabilities"
         );
+    }
+
+    @Test
+    void syncCapabilityHeaderPassesCredentialedPreflight() throws Exception {
+        LocalCorsConfiguration configuration =
+                new LocalCorsConfiguration(
+                        "https://cortex.example.invalid",
+                        true
+                );
+        MockHttpServletRequest request = new MockHttpServletRequest(
+                "OPTIONS",
+                "/api/sync/push"
+        );
+        request.setRequestURI("/api/sync/push");
+        request.addHeader("Origin", "https://cortex.example.invalid");
+        request.addHeader("Access-Control-Request-Method", "POST");
+        request.addHeader(
+                "Access-Control-Request-Headers",
+                "content-type,x-cortex-sync-capabilities"
+        );
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        configuration.cortexCorsFilterRegistration().getFilter()
+                .doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getHeader("Access-Control-Allow-Headers"))
+                .containsIgnoringCase("X-Cortex-Sync-Capabilities");
     }
 
     @Test

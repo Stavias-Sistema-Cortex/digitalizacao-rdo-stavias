@@ -22,6 +22,7 @@ fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/cortex-cutover-contract.XXXXXX")"
 trap 'rm -rf "$fixture_root"' EXIT
 
 release_sha="$(printf 'a%.0s' {1..40})"
+remote_release_sha="$(printf 'd%.0s' {1..40})"
 
 fail() {
   echo "$1" >&2
@@ -57,10 +58,11 @@ CONF
   cat > "$candidate_config" <<CONF
 SSLProxyEngine On
 SSLProxyVerify require
+SSLProxyVerifyDepth 2
 SSLProxyCheckPeerName on
 SSLProxyCACertificateFile $case_root/runtime/caddy-local-root.crt
 ProxyPreserveHost On
-ProxyPass / https://cortex.portalstavias.com.br:18443/ retry=0
+ProxyPass / https://cortex.portalstavias.com.br:18443/ retry=0 addressttl=1 disablereuse=On
 ProxyPassReverse / https://cortex.portalstavias.com.br:18443/
 CONF
   chmod 600 "$current_config" "$maintenance_config" "$candidate_config"
@@ -120,15 +122,50 @@ SH
 set -euo pipefail
 url="${*: -1}"
 printf '%s\n' "$*" >> "$CORTEX_TEST_CURL_LOG"
+arguments=("$@")
+proxy_bypassed=false
+empty_proxy=false
+public_pinned=false
+for ((index = 0; index < ${#arguments[@]}; index += 1)); do
+  argument="${arguments[$index]}"
+  next_index=$((index + 1))
+  next_argument=""
+  if (( next_index < ${#arguments[@]} )); then
+    next_argument="${arguments[$next_index]}"
+  fi
+  if [[ "$argument" == "--noproxy" && "$next_argument" == "*" ]]; then
+    proxy_bypassed=true
+  elif [[ "$argument" == "--proxy" && -z "$next_argument" ]]; then
+    empty_proxy=true
+  elif [[ "$argument" == "--resolve" \
+    && "$next_argument" == "cortex.portalstavias.com.br:443:127.0.0.1" ]]; then
+    public_pinned=true
+  fi
+done
 if [[ -f "$CORTEX_TEST_FAIL_CANDIDATE" && "$url" == "$CORTEX_CANDIDATE_BASE_URL"* ]]; then
   exit 28
 fi
-if [[ -f "$CORTEX_TEST_FAIL_PUBLIC" && "$url" == "$CORTEX_PUBLIC_BASE_URL"* ]]; then
+if [[ -f "$CORTEX_TEST_FAIL_PUBLIC" && "$url" == "$CORTEX_PUBLIC_BASE_URL/"* ]]; then
   exit 22
 fi
+if [[ "$url" == "$CORTEX_PUBLIC_BASE_URL/"* && -s "$CORTEX_TEST_TRANSIENT_PUBLIC_FAILURES" ]]; then
+  remaining="$(cat "$CORTEX_TEST_TRANSIENT_PUBLIC_FAILURES")"
+  if (( remaining > 0 )); then
+    printf '%s\n' "$((remaining - 1))" > "$CORTEX_TEST_TRANSIENT_PUBLIC_FAILURES"
+    exit 22
+  fi
+fi
+response_revision="$CORTEX_EXPECTED_RELEASE_SHA"
+if [[ -n "${HTTPS_PROXY:-}${https_proxy:-}${ALL_PROXY:-}${all_proxy:-}" \
+  && ( "$proxy_bypassed" != "true" || "$empty_proxy" != "true" ) ]]; then
+  response_revision="$CORTEX_TEST_PROXY_REMOTE_REVISION"
+fi
+if [[ "$url" == "$CORTEX_PUBLIC_BASE_URL/"* && "$public_pinned" != "true" ]]; then
+  response_revision="$CORTEX_TEST_PROXY_REMOTE_REVISION"
+fi
 case "$url" in
-  */api/health) printf '{\"status\":\"UP\",\"revision\":\"%s\"}\n' "$CORTEX_EXPECTED_RELEASE_SHA" ;;
-  */api/readiness) printf '{\"status\":\"READY\",\"revision\":\"%s\",\"databaseReleaseRevision\":\"%s\",\"objectStorage\":\"READY\"}\n' "$CORTEX_EXPECTED_RELEASE_SHA" "$CORTEX_EXPECTED_RELEASE_SHA" ;;
+  */api/health) printf '{\"service\":\"cortex-api\",\"timestamp\":\"2026-08-19T14:00:00Z\",\"status\":\"UP\",\"revision\":\"%s\"}\n' "$response_revision" ;;
+  */api/readiness) printf '{\"status\":\"READY\",\"revision\":\"%s\",\"databaseReleaseRevision\":\"%s\",\"objectStorage\":\"READY\"}\n' "$response_revision" "$response_revision" ;;
   */healthz) printf 'ok\n' ;;
   *) exit 22 ;;
 esac
@@ -163,6 +200,8 @@ SH
   export CORTEX_COMPOSE_ENV_FILE="$runtime_env"
   export CORTEX_COMPOSE_PROJECT_NAME=cortex-production
   export CORTEX_PRODUCTION_RUNTIME_DIR="$case_root/runtime"
+  export CORTEX_PUBLIC_VERIFY_MAX_ATTEMPTS=3
+  export CORTEX_PUBLIC_VERIFY_DELAY_SECONDS=0
   export CORTEX_TEST_APACHE_LOG="$case_root/apache.log"
   export CORTEX_TEST_ACTION_LOG="$case_root/actions.log"
   export CORTEX_TEST_DOCKER_LOG="$case_root/docker.log"
@@ -171,9 +210,15 @@ SH
   export CORTEX_TEST_FAIL_PREPARE="$case_root/fail-prepare"
   export CORTEX_TEST_FAIL_CANDIDATE="$case_root/fail-candidate"
   export CORTEX_TEST_FAIL_PUBLIC="$case_root/fail-public"
+  export CORTEX_TEST_TRANSIENT_PUBLIC_FAILURES="$case_root/transient-public-failures"
   export CORTEX_TEST_RUNTIME_ENV="$runtime_env"
   export CORTEX_TEST_DATABASE_EVIDENCE="$db_evidence"
   export CORTEX_TEST_OBJECT_EVIDENCE="$object_evidence"
+  export CORTEX_TEST_PROXY_REMOTE_REVISION="$remote_release_sha"
+  export HTTPS_PROXY="http://hostile-proxy.invalid:8443"
+  export https_proxy="$HTTPS_PROXY"
+  export ALL_PROXY="socks5://hostile-proxy.invalid:1080"
+  export all_proxy="$ALL_PROXY"
 }
 
 run_cutover() {
@@ -255,10 +300,35 @@ printf '%s\n' 'ProxyPass / https://cortex-api-4038.onrender.com/' > "$candidate_
 expect_cutover_rejected remote-candidate run_cutover
 [[ "$(readlink "$current_link")" == "$current_config" ]]
 
+prepare_case missing-proxy-verify-depth
+sed -i.bak '/^[[:space:]]*SSLProxyVerifyDepth[[:space:]]/d' "$candidate_config"
+rm -f "$candidate_config.bak"
+expect_cutover_rejected missing-proxy-verify-depth run_cutover
+[[ "$(readlink "$current_link")" == "$current_config" ]]
+
+prepare_case missing-proxy-address-ttl
+sed -i.bak 's/[[:space:]]addressttl=1//' "$candidate_config"
+rm -f "$candidate_config.bak"
+expect_cutover_rejected missing-proxy-address-ttl run_cutover
+[[ "$(readlink "$current_link")" == "$current_config" ]]
+
+prepare_case missing-proxy-disable-reuse
+sed -i.bak 's/[[:space:]]disablereuse=On//' "$candidate_config"
+rm -f "$candidate_config.bak"
+expect_cutover_rejected missing-proxy-disable-reuse run_cutover
+[[ "$(readlink "$current_link")" == "$current_config" ]]
+
 prepare_case public-failure
 touch "$CORTEX_TEST_FAIL_PUBLIC"
 expect_cutover_rejected public-failure run_cutover
 [[ "$(readlink "$current_link")" == "$current_config" ]]
+
+prepare_case transient-public-failure
+printf '1\n' > "$CORTEX_TEST_TRANSIENT_PUBLIC_FAILURES"
+run_cutover
+[[ "$(readlink "$current_link")" == "$candidate_config" ]]
+[[ "$(grep -cFx -- '-k restart' "$CORTEX_TEST_APACHE_LOG" || true)" -eq 1 ]] ||
+  fail "Candidate activation did not recycle Apache proxy workers with a full restart."
 
 prepare_case tampered-backup
 run_cutover
@@ -292,6 +362,7 @@ grep -Fq 'cortex-object-migrate' "$CORTEX_TEST_DOCKER_LOG"
 grep -Fq "$CORTEX_CANDIDATE_BASE_URL/api/readiness" "$CORTEX_TEST_CURL_LOG"
 grep -Fq "$CORTEX_PUBLIC_BASE_URL/api/readiness" "$CORTEX_TEST_CURL_LOG"
 grep -Fq -- '--resolve cortex.portalstavias.com.br:18443:127.0.0.1' "$CORTEX_TEST_CURL_LOG"
+grep -Fq -- '--resolve cortex.portalstavias.com.br:443:127.0.0.1' "$CORTEX_TEST_CURL_LOG"
 
 bash "$rollback_script" > "$case_root/rollback-stdout" 2> "$case_root/rollback-stderr"
 [[ "$(readlink "$current_link")" == "$current_config" ]]

@@ -12,7 +12,9 @@ import com.projeto.cortex.storage.StoredObjectDownload;
 import com.projeto.cortex.storage.StoredObjectRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -80,6 +82,16 @@ public class MensagensController {
         return conversaService.list(limit, arquivadas);
     }
 
+    @GetMapping("/api/mensagens/conversas/autorizadas/ids")
+    public List<String> authorizedConversationIds() {
+        return conversaService.authorizedConversationIds();
+    }
+
+    @GetMapping("/api/mensagens/conversas/autorizadas/snapshot")
+    public ConversationAuthorizationSnapshotResponse authorizationSnapshot() {
+        return conversaService.authorizationSnapshot();
+    }
+
     /*
      * Arrumar a própria caixa não pede papel nenhum: qualquer pessoa faz isso
      * em qualquer conversa que já alcance, e o efeito para nos olhos dela. O
@@ -105,8 +117,19 @@ public class MensagensController {
      */
     @PostMapping("/api/mensagens/conversas/{conversationId}/limpar")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void limparConversa(@PathVariable String conversationId) {
-        preferencias.limpar(conversationId);
+    public void limparConversa(
+            @PathVariable String conversationId,
+            @RequestBody(required = false)
+            ConversationHistoryClearRequest request
+    ) {
+        if (request == null) {
+            preferencias.limpar(conversationId);
+            return;
+        }
+        preferencias.limpar(
+                conversationId,
+                parseHistoryCutoff(request.limpoAte())
+        );
     }
 
     @PostMapping("/api/mensagens/conversas/{conversationId}/reabrir-historico")
@@ -198,6 +221,23 @@ public class MensagensController {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "before deve ser uma data e hora ISO-8601 válida."
+            );
+        }
+    }
+
+    private Instant parseHistoryCutoff(String limpoAte) {
+        if (limpoAte == null || limpoAte.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "limpoAte deve ser um instante ISO-8601 com offset."
+            );
+        }
+        try {
+            return OffsetDateTime.parse(limpoAte).toInstant();
+        } catch (DateTimeParseException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "limpoAte deve ser um instante ISO-8601 com offset."
             );
         }
     }

@@ -22,6 +22,11 @@ vi.mock("../../features/mensagens/objectUploadSync", () => ({
   processObjectUploads: syncMocks.uploads,
 }));
 vi.mock("../../features/mensagens/mensagensHydration", () => ({
+  flushPendingConversationPreferences: vi.fn(async () => ({
+    inspected: 0,
+    applied: 0,
+    errors: 0,
+  })),
   refreshMessagingAfterPull: vi.fn(async () => undefined),
 }));
 vi.mock("../db/localRdoService", () => ({

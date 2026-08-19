@@ -93,6 +93,35 @@ class ServicePriceCatalogServiceTest {
     }
 
     @Test
+    void dataIntegrityRaceReplaysOnlyTheMatchingServiceMutation() {
+        CreateServiceCommand command = new CreateServiceCommand(
+                SERVICE,
+                "mutation-service-race",
+                "PAVIMENTACAO.CBUQ",
+                "Pavimentação CBUQ",
+                null
+        );
+        ServiceCatalogEntry created = serviceEntry();
+        CatalogMutation receipt = new CatalogMutation(
+                "SERVICE_CREATED",
+                SERVICE,
+                ServicePriceCatalogService.requestHash(OBRA, command)
+        );
+        when(repository.findMutation(ACTOR, "mutation-service-race"))
+                .thenReturn(Optional.empty(), Optional.of(receipt));
+        when(repository.createService(any())).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "client-generated id collision"
+                )
+        );
+        when(repository.findService(SERVICE)).thenReturn(Optional.of(created));
+
+        assertThat(service.createService(OBRA, ACTOR, command))
+                .isEqualTo(created);
+        verify(ontology, never()).serviceCreated(any(), any(), any(), any());
+    }
+
+    @Test
     void archivedWorksiteRejectsNewServiceBeforePersistence() {
         CreateServiceCommand command = new CreateServiceCommand(
                 "mutation-service-archived",

@@ -107,6 +107,35 @@ describe("operações canônicas institucionais", () => {
     });
   });
 
+  it("reativa vínculo revogado com a entidade histórica e uma mutação nova", async () => {
+    const vinculoHistoricoId = "00000000-0000-4000-8000-000000000003";
+
+    const pending = await queueVinculoColaborador(
+      OBRA_ID,
+      COLABORADOR_ID,
+      undefined,
+      vinculoHistoricoId,
+    );
+
+    const queued = await (await getCortexDb()).getAll("outbox_mutations");
+    expect(pending).toMatchObject({
+      id: vinculoHistoricoId,
+      pendingMutationId: expect.any(String),
+    });
+    expect(pending.pendingMutationId).not.toBe(vinculoHistoricoId);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      clientMutationId: pending.pendingMutationId,
+      entidadeTipo: "VINCULO_OBRA",
+      entidadeId: vinculoHistoricoId,
+      payload: {
+        id: vinculoHistoricoId,
+        obraId: OBRA_ID,
+        colaboradorId: COLABORADOR_ID,
+      },
+    });
+  });
+
   it("não simula ação externa: persiste PENDENTE/AGUARDANDO_REDE sem fetch", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);

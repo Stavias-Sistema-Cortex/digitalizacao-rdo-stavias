@@ -5,26 +5,39 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.mensagens.api.ConversationCreateRequest;
 import com.projeto.cortex.mensagens.api.ConversationResponse;
 import com.projeto.cortex.mensagens.api.MessageResponse;
 import com.projeto.cortex.mensagens.domain.ConversaAccessPolicy;
 import com.projeto.cortex.mensagens.domain.ConversaService;
 import com.projeto.cortex.mensagens.domain.MensagemService;
+import com.projeto.cortex.mensagens.domain.MessagingAuditContext;
 import com.projeto.cortex.mensagens.domain.MessagingOperationalEventService;
 import com.projeto.cortex.mensagens.domain.PreferenciaDeConversaService;
 import com.projeto.cortex.obras.ObraOperabilityGuard;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -53,6 +66,7 @@ class PostgresqlConversaPreferenciaPessoalIT {
     private static ConversaService conversas;
     private static MensagemService mensagens;
     private static PreferenciaDeConversaService preferencias;
+    private static TransactionTemplate transactions;
 
     @BeforeAll
     static void migrarECriarServicos() {
@@ -65,11 +79,15 @@ class PostgresqlConversaPreferenciaPessoalIT {
                 .locations("classpath:db/migration-postgresql")
                 .load()
                 .migrate();
-        jdbc = new JdbcTemplate(new DriverManagerDataSource(
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 DATABASE.getJdbcUrl(),
                 DATABASE.getUsername(),
                 DATABASE.getPassword()
-        ));
+        );
+        jdbc = new JdbcTemplate(dataSource);
+        transactions = new TransactionTemplate(
+                new DataSourceTransactionManager(dataSource)
+        );
         currentUser = new CurrentUserService(jdbc, new MockEnvironment(), false);
         ConversaAccessPolicy politica =
                 new ConversaAccessPolicy(jdbc, currentUser);
@@ -161,6 +179,62 @@ class PostgresqlConversaPreferenciaPessoalIT {
     }
 
     @Test
+    void limpezaOfflinePreservaOCorteEReplaysNaoORegridem() {
+        String eu = colaborador("Quem limpa offline");
+        String outro = colaborador("Quem escreve enquanto esta offline");
+        String conversaId = conversa(eu, "Assunto reconectado");
+        participante(conversaId, eu, eu);
+        participante(conversaId, outro, eu);
+        String antiga = mensagem(
+                conversaId,
+                outro,
+                "Antes da limpeza",
+                LocalDateTime.parse("2026-08-19T09:55:00")
+        );
+        String nova = mensagem(
+                conversaId,
+                outro,
+                "Durante a desconexao",
+                LocalDateTime.parse("2026-08-19T10:05:00")
+        );
+
+        autenticar(eu);
+        preferencias.limpar(
+                conversaId,
+                Instant.parse("2026-08-19T10:00:00Z")
+        );
+        preferencias.limpar(
+                conversaId,
+                Instant.parse("2026-08-19T10:00:00Z")
+        );
+        preferencias.limpar(
+                conversaId,
+                Instant.parse("2026-08-19T09:00:00Z")
+        );
+
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT limpo_ate
+                FROM conversa_preferencia_pessoal
+                WHERE conversa_id = ? AND colaborador_id = ?
+                """,
+                LocalDateTime.class,
+                conversaId,
+                eu
+        )).isEqualTo(LocalDateTime.parse("2026-08-19T10:00:00"));
+        assertThat(idsDoHistorico(conversaId))
+                .containsExactly(nova)
+                .doesNotContain(antiga);
+        assertThat(conversas.authorizationSnapshot().preferences())
+                .filteredOn(preference ->
+                        preference.conversationId().equals(conversaId)
+                )
+                .singleElement()
+                .extracting(preference -> preference.limpoAte())
+                .isEqualTo(Instant.parse("2026-08-19T10:00:00Z"));
+    }
+
+    @Test
     void reabrirOHistoricoDevolveOQueACortinaEscondia() {
         String eu = colaborador("Quem reabre");
         String conversaId = conversa(eu, "Assunto reaberto");
@@ -210,6 +284,267 @@ class PostgresqlConversaPreferenciaPessoalIT {
 
         autenticar(alfa);
         assertThat(idsDaLista(false)).contains(conversaId);
+    }
+
+    @Test
+    void snapshotAutorizadoIncluiTodaAListaEAGavetaSemLimite() {
+        String eu = colaborador("Quem sincroniza a caixa completa");
+        Set<String> autorizadas = new LinkedHashSet<>();
+        for (int indice = 0; indice < 101; indice++) {
+            String conversaId = conversa(eu, "Assunto " + indice);
+            participante(conversaId, eu, eu);
+            autorizadas.add(conversaId);
+        }
+        String arquivada = autorizadas.iterator().next();
+
+        autenticar(eu);
+        preferencias.arquivar(arquivada);
+
+        assertThat(idsDaLista(false)).doesNotContain(arquivada);
+        assertThat(conversas.authorizedConversationIds())
+                .hasSize(101)
+                .containsExactlyInAnyOrderElementsOf(autorizadas);
+    }
+
+    @Test
+    void snapshotAutorizadoExcluiAcessoRevogadoEConversaDeletada() {
+        String eu = colaborador("Quem perde dois acessos");
+        String revogada = conversa(eu, "Participação revogada");
+        participante(revogada, eu, eu);
+        String deletada = conversa(eu, "Conversa deletada");
+        participante(deletada, eu, eu);
+        jdbc.update("""
+                UPDATE conversa_participante
+                SET status = 'REMOVIDO',
+                    removido_em = CURRENT_TIMESTAMP(6),
+                    deletado_em = CURRENT_TIMESTAMP(6)
+                WHERE conversa_id = ? AND colaborador_id = ?
+                """, revogada, eu);
+        jdbc.update(
+                "UPDATE conversa SET deletado_em = CURRENT_TIMESTAMP(6) WHERE id = ?",
+                deletada
+        );
+
+        autenticar(eu);
+
+        assertThat(conversas.authorizedConversationIds())
+                .doesNotContain(revogada, deletada);
+    }
+
+    @Test
+    void snapshotDoAlfaPreservaPrivacidadeDaConversaDireta() {
+        String um = colaborador("Quem fala em particular");
+        String outro = colaborador("Quem recebe em particular");
+        String alfa = colaboradorAlfa("Quem administra sem ler particular");
+        String direta = conversaDireta(um, outro);
+        participante(direta, um, um);
+        participante(direta, outro, um);
+        String registro = conversa(um, "Registro operacional");
+        participante(registro, um, um);
+
+        autenticar(alfa);
+
+        assertThat(conversas.authorizedConversationIds())
+                .contains(registro)
+                .doesNotContain(direta);
+    }
+
+    @Test
+    void recriarConversaDiretaExistenteDevolveAMesmaConversa() {
+        String eu = colaborador("Quem inicia a conversa");
+        String outro = colaborador("Quem recebe a conversa");
+        autenticar(eu);
+
+        ConversationResponse criada = transactions.execute(status ->
+                conversas.create(
+                        conversaDiretaRequest(outro),
+                        MessagingAuditContext.online(eu, "primeira-direta")
+                )
+        );
+        ConversationResponse repetida = transactions.execute(status ->
+                conversas.create(
+                        conversaDiretaRequest(outro),
+                        MessagingAuditContext.online(eu, "replay-direta")
+                )
+        );
+
+        assertThat(repetida.id()).isEqualTo(criada.id());
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM conversa WHERE id = ?",
+                Integer.class,
+                criada.id()
+        )).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM conversa_participante WHERE conversa_id = ?",
+                Integer.class,
+                criada.id()
+        )).isEqualTo(2);
+    }
+
+    @Test
+    void repetirAMesmaCriacaoComOMesmoIdEhReplayExato() {
+        String eu = colaborador("Quem repete a criação");
+        String outro = colaborador("Participante da criação repetida");
+        autenticar(eu);
+        ConversationCreateRequest request = conversaDiretaRequest(outro);
+
+        ConversationResponse criada = transactions.execute(status ->
+                conversas.create(
+                        request,
+                        MessagingAuditContext.online(eu, "primeiro-envio")
+                )
+        );
+        ConversationResponse repetida = transactions.execute(status ->
+                conversas.create(
+                        request,
+                        MessagingAuditContext.online(eu, "replay-exato")
+                )
+        );
+
+        assertThat(repetida.id()).isEqualTo(criada.id());
+        assertThat(repetida.participantes())
+                .extracting(participante -> participante.colaboradorId())
+                .containsExactlyInAnyOrder(eu, outro);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM conversa WHERE id = ?",
+                Integer.class,
+                criada.id()
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void idDeOutraConversaNaoPodeRedirecionarUmaNovaConversaDireta() {
+        String eu = colaborador("Quem cria com id repetido");
+        String participanteOriginal = colaborador("Participante original");
+        String participantePretendido = colaborador("Participante pretendido");
+        autenticar(eu);
+
+        ConversationResponse existente = transactions.execute(status ->
+                conversas.create(
+                        conversaDiretaRequest(participanteOriginal),
+                        MessagingAuditContext.online(eu, "direta-original")
+                )
+        );
+        ConversationCreateRequest payloadDivergente =
+                new ConversationCreateRequest(
+                        existente.id(),
+                        "DIRETA",
+                        null,
+                        null,
+                        null,
+                        List.of(participantePretendido)
+                );
+
+        assertThatThrownBy(() -> transactions.execute(status ->
+                conversas.create(
+                        payloadDivergente,
+                        MessagingAuditContext.online(eu, "id-reutilizado")
+                )
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("409 CONFLICT");
+
+        assertThat(jdbc.queryForList(
+                """
+                SELECT colaborador_id
+                FROM conversa_participante
+                WHERE conversa_id = ? AND status = 'ATIVO'
+                """,
+                String.class,
+                existente.id()
+        )).containsExactlyInAnyOrder(eu, participanteOriginal);
+    }
+
+    @Test
+    void doisAparelhosCriamUmaUnicaPreferenciaSemAbortarATransacao()
+            throws Exception {
+        String eu = colaborador("Quem arquiva em dois aparelhos");
+        String conversaId = conversa(eu, "Assunto arquivado em paralelo");
+        participante(conversaId, eu, eu);
+
+        CountDownLatch updatesSemLinha = new CountDownLatch(2);
+        JdbcTemplate jdbcCoordenado = new PreferenceRaceJdbcTemplate(
+                jdbc.getDataSource(),
+                updatesSemLinha
+        );
+        CurrentUserService usuarioConcorrente = new CurrentUserService(
+                jdbcCoordenado,
+                new MockEnvironment(),
+                false
+        );
+        PreferenciaDeConversaService preferenciasConcorrentes =
+                new PreferenciaDeConversaService(
+                        jdbcCoordenado,
+                        usuarioConcorrente,
+                        new ConversaAccessPolicy(
+                                jdbcCoordenado,
+                                usuarioConcorrente
+                        )
+                );
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<?> primeira = executor.submit(() -> arquivarEmTransacao(
+                    preferenciasConcorrentes,
+                    eu,
+                    conversaId
+            ));
+            Future<?> segunda = executor.submit(() -> arquivarEmTransacao(
+                    preferenciasConcorrentes,
+                    eu,
+                    conversaId
+            ));
+
+            primeira.get(30, TimeUnit.SECONDS);
+            segunda.get(30, TimeUnit.SECONDS);
+        }
+
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM conversa_preferencia_pessoal
+                WHERE conversa_id = ? AND colaborador_id = ?
+                """,
+                Integer.class,
+                conversaId,
+                eu
+        )).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT arquivado_em IS NOT NULL
+                FROM conversa_preferencia_pessoal
+                WHERE conversa_id = ? AND colaborador_id = ?
+                """,
+                Boolean.class,
+                conversaId,
+                eu
+        )).isTrue();
+    }
+
+    private static void arquivarEmTransacao(
+            PreferenciaDeConversaService service,
+            String colaboradorId,
+            String conversaId
+    ) {
+        transactions.executeWithoutResult(status -> {
+            autenticar(colaboradorId);
+            try {
+                service.arquivar(conversaId);
+            } finally {
+                RequestContextHolder.resetRequestAttributes();
+            }
+        });
+    }
+
+    private static ConversationCreateRequest conversaDiretaRequest(
+            String participanteId
+    ) {
+        return new ConversationCreateRequest(
+                UUID.randomUUID().toString(),
+                "DIRETA",
+                null,
+                null,
+                null,
+                List.of(participanteId)
+        );
     }
 
     private static String colaboradorAlfa(String nome) {
@@ -290,6 +625,20 @@ class PostgresqlConversaPreferenciaPessoalIT {
             String autorId,
             String corpo
     ) {
+        return mensagem(
+                conversaId,
+                autorId,
+                corpo,
+                LocalDateTime.now(ZoneOffset.UTC)
+        );
+    }
+
+    private static String mensagem(
+            String conversaId,
+            String autorId,
+            String corpo,
+            LocalDateTime criadaEm
+    ) {
         String id = UUID.randomUUID().toString();
         jdbc.update("""
                 INSERT INTO mensagem (
@@ -302,8 +651,8 @@ class PostgresqlConversaPreferenciaPessoalIT {
                 autorId,
                 corpo,
                 UUID.randomUUID().toString(),
-                LocalDateTime.now(ZoneOffset.UTC),
-                LocalDateTime.now(ZoneOffset.UTC)
+                criadaEm,
+                criadaEm
         );
         return id;
     }
@@ -317,5 +666,43 @@ class PostgresqlConversaPreferenciaPessoalIT {
         RequestContextHolder.setRequestAttributes(
                 new ServletRequestAttributes(requisicao)
         );
+    }
+
+    private static final class PreferenceRaceJdbcTemplate
+            extends JdbcTemplate {
+
+        private final CountDownLatch updatesSemLinha;
+
+        private PreferenceRaceJdbcTemplate(
+                DataSource dataSource,
+                CountDownLatch updatesSemLinha
+        ) {
+            super(dataSource);
+            this.updatesSemLinha = updatesSemLinha;
+        }
+
+        @Override
+        public int update(String sql, Object... args) {
+            int alteradas = super.update(sql, args);
+            if (alteradas == 0 && sql.startsWith(
+                    "UPDATE conversa_preferencia_pessoal SET arquivado_em"
+            )) {
+                updatesSemLinha.countDown();
+                try {
+                    if (!updatesSemLinha.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException(
+                                "As duas gravações não alcançaram o INSERT."
+                        );
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(
+                            "A corrida de preferência foi interrompida.",
+                            exception
+                    );
+                }
+            }
+            return alteradas;
+        }
     }
 }

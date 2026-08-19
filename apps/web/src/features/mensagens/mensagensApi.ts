@@ -27,6 +27,16 @@ export interface ConversationApi {
   participantes: ParticipantApi[];
 }
 
+export interface ConversationPreferenceApi {
+  conversationId: string;
+  limpoAte: string | null;
+}
+
+export interface ConversationAuthorizationSnapshotApi {
+  authorizedConversationIds: string[];
+  preferences: ConversationPreferenceApi[];
+}
+
 export interface AttachmentApi {
   id: string;
   objetoId: string;
@@ -73,6 +83,91 @@ export async function listConversationsApi(
 }
 
 /**
+ * Snapshot completo das conversas que a sessão ainda pode ler.
+ *
+ * A listagem visual é paginada e separa ativas de arquivadas; por isso ela
+ * nunca pode ser usada como prova de revogação. Este endpoint pequeno traz só
+ * as identidades e é o único retrato apto a autorizar a poda do cache local.
+ */
+export async function listAuthorizedConversationIdsApi(): Promise<string[]> {
+  const body = await readJson<unknown>(
+    await apiFetch("/mensagens/conversas/autorizadas/ids"),
+  );
+  if (
+    !Array.isArray(body) ||
+    body.some((value) => typeof value !== "string" || !value.trim())
+  ) {
+    throw new Error("O retrato de conversas autorizadas veio incompleto.");
+  }
+  return [...new Set(body.map((value) => value.trim()))];
+}
+
+/** Gate completo de acesso e preferencias pessoais do mesmo snapshot. */
+export async function getConversationAuthorizationSnapshotApi(): Promise<
+  ConversationAuthorizationSnapshotApi
+> {
+  const body = await readJson<unknown>(
+    await apiFetch("/mensagens/conversas/autorizadas/snapshot"),
+  );
+  if (!body || typeof body !== "object") {
+    throw new Error("O retrato de preferencias pessoais veio incompleto.");
+  }
+  const candidate = body as Record<string, unknown>;
+  if (
+    !Array.isArray(candidate.authorizedConversationIds) ||
+    !Array.isArray(candidate.preferences)
+  ) {
+    throw new Error("O retrato de preferencias pessoais veio incompleto.");
+  }
+  const authorizedConversationIds = candidate.authorizedConversationIds;
+  if (
+    authorizedConversationIds.some(
+      (value) => typeof value !== "string" || !value.trim(),
+    )
+  ) {
+    throw new Error("O retrato de preferencias pessoais veio incompleto.");
+  }
+  const normalizedIds = [
+    ...new Set(authorizedConversationIds.map((value) => value.trim())),
+  ];
+  const preferences: ConversationPreferenceApi[] = [];
+  const preferenceIds = new Set<string>();
+  for (const raw of candidate.preferences) {
+    if (!raw || typeof raw !== "object") {
+      throw new Error("O retrato de preferencias pessoais veio incompleto.");
+    }
+    const preference = raw as Record<string, unknown>;
+    const conversationId = typeof preference.conversationId === "string"
+      ? preference.conversationId.trim()
+      : "";
+    const limpoAte = preference.limpoAte;
+    if (
+      !conversationId ||
+      preferenceIds.has(conversationId) ||
+      (
+        limpoAte !== null &&
+        (
+          typeof limpoAte !== "string" ||
+          !/(?:Z|[+-]\d{2}:\d{2})$/i.test(limpoAte) ||
+          !Number.isFinite(Date.parse(limpoAte))
+        )
+      )
+    ) {
+      throw new Error("O retrato de preferencias pessoais veio incompleto.");
+    }
+    preferenceIds.add(conversationId);
+    preferences.push({ conversationId, limpoAte });
+  }
+  if (
+    preferenceIds.size !== normalizedIds.length ||
+    normalizedIds.some((id) => !preferenceIds.has(id))
+  ) {
+    throw new Error("O retrato de preferencias pessoais veio incompleto.");
+  }
+  return { authorizedConversationIds: normalizedIds, preferences };
+}
+
+/**
  * Arruma a caixa de quem está pedindo — e só a dela.
  *
  * <p>Chamadas diretas, fora da fila do aparelho: são preferência de leitura,
@@ -104,11 +199,19 @@ export async function arquivarConversaApi(
 export async function limparConversaApi(
   conversationId: string,
   limpar: boolean,
+  limpoAte?: string,
 ): Promise<void> {
   const acao = limpar ? "limpar" : "reabrir-historico";
+  const options: RequestInit = limpar && limpoAte
+    ? {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limpoAte }),
+    }
+    : { method: "POST" };
   const resposta = await apiFetch(
     `/mensagens/conversas/${encodeURIComponent(conversationId)}/${acao}`,
-    { method: "POST" },
+    options,
   );
   if (!resposta.ok) {
     throw new Error(

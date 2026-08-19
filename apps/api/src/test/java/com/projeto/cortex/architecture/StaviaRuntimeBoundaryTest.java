@@ -92,16 +92,25 @@ class StaviaRuntimeBoundaryTest {
                     "base_url=\"https://cortex.portalstavias.com.br\"",
                     "CORTEX_SMOKE_RESOLVE=cortex.portalstavias.com.br:443:127.0.0.1 \\"),
             sourceReference(
+                    "scripts/deploy/configure-local-upstream-resolution.sh",
+                    "cortex.portalstavias.com.br",
+                    "hostname=\"cortex.portalstavias.com.br\""),
+            sourceReference(
                     "scripts/deploy/cutover-local-production.sh",
                     "cortex.portalstavias.com.br",
                     "or candidate.hostname != \"cortex.portalstavias.com.br\"",
                     "or public.hostname != \"cortex.portalstavias.com.br\"",
-                    "--resolve 'cortex.portalstavias.com.br:18443:127.0.0.1'"),
+                    "--resolve 'cortex.portalstavias.com.br:18443:127.0.0.1'",
+                    "curl_args+=(--resolve 'cortex.portalstavias.com.br:443:127.0.0.1')"),
             sourceReference(
                     "scripts/deploy/cutover-local-production.sh",
                     "cortex\\.portalstavias\\.com\\.br",
                     "r\"(?mi)^\\s*ProxyPass\\s+/\\s+https://cortex\\.portalstavias"
                             + "\\.com\\.br:18443/\",",
+                    "r\"(?mi)^\\s*ProxyPass\\s+/\\s+https://cortex\\.portalstavias"
+                            + "\\.com\\.br:18443/[^\\r\\n]*\\baddressttl=1(?:\\s|$)\",",
+                    "r\"(?mi)^\\s*ProxyPass\\s+/\\s+https://cortex\\.portalstavias"
+                            + "\\.com\\.br:18443/[^\\r\\n]*\\bdisablereuse=On(?:\\s|$)\",",
                     "r\"(?mi)^\\s*ProxyPassReverse\\s+/\\s+https://cortex"
                             + "\\.portalstavias\\.com\\.br:18443/\\s*$\","),
             sourceReference(
@@ -146,8 +155,57 @@ class StaviaRuntimeBoundaryTest {
                     "ProxyPassReverse / https://cortex.portalstavias.com.br:18443/",
                     "export CORTEX_CANDIDATE_BASE_URL=\"https://cortex.portalstavias.com.br:18443\"",
                     "export CORTEX_PUBLIC_BASE_URL=\"https://cortex.portalstavias.com.br\"",
+                    "&& \"$next_argument\" == \"cortex.portalstavias.com.br:443:127.0.0.1\""
+                            + " ]]; then",
                     "grep -Fq -- '--resolve cortex.portalstavias.com.br:18443:127.0.0.1'"
+                            + " \"$CORTEX_TEST_CURL_LOG\"",
+                    "grep -Fq -- '--resolve cortex.portalstavias.com.br:443:127.0.0.1'"
                             + " \"$CORTEX_TEST_CURL_LOG\""),
+            sourceReference(
+                    "scripts/deploy/update-local-production-release.sh",
+                    "stavias-sistema-cortex/digitalizacao-rdo-stavias",
+                    "image_repository='ghcr\\.io/stavias-sistema-cortex/"
+                            + "digitalizacao-rdo-stavias'"),
+            sourceReference(
+                    "scripts/deploy/update-local-production-release.sh",
+                    "cortex.portalstavias.com.br",
+                    "or candidate.hostname != \"cortex.portalstavias.com.br\"",
+                    "or public.hostname != \"cortex.portalstavias.com.br\"",
+                    "args+=(--cacert \"$CORTEX_CANDIDATE_CA_FILE\" --resolve "
+                            + "'cortex.portalstavias.com.br:18443:127.0.0.1')",
+                    "args+=(--resolve 'cortex.portalstavias.com.br:443:127.0.0.1')"),
+            sourceReference(
+                    "scripts/deploy/update-local-production-release.sh",
+                    "StaviasCortex",
+                    "local stem=\"StaviasCortex-before-"
+                            + "${CORTEX_EXPECTED_NEW_RELEASE_SHA:0:12}\""),
+            sourceReference(
+                    "scripts/deploy/test-update-local-production-release.sh",
+                    "stavias-sistema-cortex/digitalizacao-rdo-stavias",
+                    "image_repository=\"ghcr.io/stavias-sistema-cortex/"
+                            + "digitalizacao-rdo-stavias\""),
+            sourceReference(
+                    "scripts/deploy/test-update-local-production-release.sh",
+                    "cortex.portalstavias.com.br",
+                    "CORTEX_PUBLIC_ORIGIN=https://cortex.portalstavias.com.br",
+                    "CORTEX_AUTH_WEBAUTHN_RP_ID=cortex.portalstavias.com.br",
+                    "&& \"$*\" != *\"--resolve cortex.portalstavias.com.br:443:127.0.0.1\"*"
+                            + " ]]; then",
+                    "export CORTEX_CANDIDATE_BASE_URL="
+                            + "https://cortex.portalstavias.com.br:18443",
+                    "export CORTEX_PUBLIC_BASE_URL=https://cortex.portalstavias.com.br"),
+            sourceReference(
+                    "scripts/deploy/test-configure-local-upstream-resolution.sh",
+                    "cortex.portalstavias.com.br",
+                    "127.0.0.1 localhost\n"
+                            + "192.168.0.15 cortex.portalstavias.com.br"
+                            + " webserver # internal aliases\nHOSTS",
+                    "grep -Fxq '127.0.0.1 cortex.portalstavias.com.br"
+                            + " # cortex-local-upstream' \"$hosts\"",
+                    "[[ \"$(grep -c 'cortex.portalstavias.com.br' \"$hosts\")\" == \"1\" ]]",
+                    "grep -Fxq '192.168.0.15 cortex.portalstavias.com.br"
+                            + " webserver # internal aliases' \"$backup\"",
+                    "[[ \"$(grep -c 'cortex.portalstavias.com.br' \"$hosts\")\" == \"1\" ]]"),
             sourceReference(
                     "scripts/deploy/test-prepare-local-production.sh",
                     "Córtex Stavias",
@@ -847,6 +905,13 @@ class StaviaRuntimeBoundaryTest {
             "StaviasCortex|scripts/deploy/reconcile-neon-ownership.sql",
             "StaviasCortex|scripts/security/test-neon-migration-contract.sh",
             "StaviasCortex|scripts/security/test-neon-ownership-reconciliation.sh",
+            "cortex.portalstavias.com.br|scripts/deploy/cutover-local-production.sh",
+            "cortex.portalstavias.com.br|scripts/deploy/test-local-production-cutover.sh",
+            "stavias-sistema-cortex/digitalizacao-rdo-stavias|scripts/deploy/update-local-production-release.sh",
+            "cortex.portalstavias.com.br|scripts/deploy/update-local-production-release.sh",
+            "StaviasCortex|scripts/deploy/update-local-production-release.sh",
+            "stavias-sistema-cortex/digitalizacao-rdo-stavias|scripts/deploy/test-update-local-production-release.sh",
+            "cortex.portalstavias.com.br|scripts/deploy/test-update-local-production-release.sh",
             "dbstavias_acad|apps/api/src/main/java/com/projeto/cortex/colaboradores/AcademyCollaboratorIdentity.java",
             "dbstavias_acad|apps/api/src/main/java/com/projeto/cortex/config/PostgresqlRuntimeReadinessGuard.java",
             "dbstavias_acad|apps/api/src/test/java/com/projeto/cortex/config/PostgresqlRuntimeReadinessGuardTest.java",

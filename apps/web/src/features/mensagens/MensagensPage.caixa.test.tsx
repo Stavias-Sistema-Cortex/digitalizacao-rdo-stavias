@@ -23,7 +23,9 @@ const mocks = vi.hoisted(() => ({
   listObras: vi.fn(),
   listMessages: vi.fn(),
   gravar: vi.fn(),
+  confirmar: vi.fn(),
   listarPref: vi.fn(),
+  searchLocal: vi.fn(),
 }));
 
 vi.mock("../auth/authSession", async (importOriginal) => ({
@@ -48,6 +50,7 @@ vi.mock("./mensagensApi", () => ({
   arquivarConversaApi: mocks.arquivar,
   limparConversaApi: mocks.limpar,
   listConversationsApi: mocks.listar,
+  searchMessagesApi: vi.fn(),
 }));
 
 vi.mock("./mensagensHydration", () => ({
@@ -61,7 +64,11 @@ vi.mock("./mensagensRepository", () => ({
   listLocalMessages: mocks.listMessages,
   storeServerConversations: mocks.storeServer,
   gravarPreferenciaDaConversa: mocks.gravar,
+  confirmarPreferenciaDaConversaSincronizada: mocks.confirmar,
+  resolveLocalConversationId: vi.fn(async (id: string) => id),
   listarPreferenciasDeConversa: mocks.listarPref,
+  searchLocalMessages: mocks.searchLocal,
+  storeServerMessages: vi.fn(),
   MESSAGES_CHANGED_EVENT: "cortex:mensagens-alteradas",
 }));
 
@@ -111,6 +118,10 @@ const CONVERSA = {
 describe("arrumar a própria caixa de mensagens", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
     // jsdom não tem ResizeObserver, e a tela usa um para saber se o quadro
     // cabe as três colunas.
     vi.stubGlobal(
@@ -129,8 +140,26 @@ describe("arrumar a própria caixa de mensagens", () => {
     mocks.arquivar.mockResolvedValue(undefined);
     mocks.limpar.mockResolvedValue(undefined);
     mocks.listar.mockResolvedValue([]);
-    mocks.gravar.mockResolvedValue(undefined);
+    mocks.gravar.mockImplementation(async (
+      conversaId: string,
+      mudanca: { arquivadoEm?: string | null; limpoAte?: string | null },
+    ) => ({
+      conversaId,
+      arquivadoEm: mudanca.arquivadoEm ?? null,
+      limpoAte: mudanca.limpoAte ?? null,
+      arquivadoPendente: Object.prototype.hasOwnProperty.call(
+        mudanca,
+        "arquivadoEm",
+      ),
+      limpoPendente: Object.prototype.hasOwnProperty.call(
+        mudanca,
+        "limpoAte",
+      ),
+      pendente: true,
+    }));
+    mocks.confirmar.mockResolvedValue(true);
     mocks.listarPref.mockResolvedValue(new Map());
+    mocks.searchLocal.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -213,6 +242,59 @@ describe("arrumar a própria caixa de mensagens", () => {
         }),
       ),
     );
+    const cutoff = mocks.gravar.mock.calls[0][1].limpoAte;
+    expect(mocks.limpar).toHaveBeenCalledWith(
+      "conversa-1",
+      true,
+      cutoff,
+    );
+  });
+
+  it("limpar recalcula a busca visível sem esperar um evento externo", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    mocks.searchLocal
+      .mockResolvedValueOnce([{
+        id: "mensagem-antiga",
+        conversaId: CONVERSA.id,
+        autorId: "colaborador-1",
+        autorNome: "Operador",
+        corpo: "Corpo que a limpeza deve esconder",
+        status: "ATIVA",
+        clientMutationId: "mutacao-antiga",
+        criadaNoClienteEm: "2026-08-19T12:00:00.000Z",
+        criadaEm: "2026-08-19T12:00:00.000Z",
+        editadaEm: null,
+        deletadaEm: null,
+        versaoEntidade: 1,
+        syncStatus: "SINCRONIZADO",
+        ultimoErro: null,
+        updatedAt: "2026-08-19T12:00:00.000Z",
+        anexos: [],
+      }])
+      .mockResolvedValueOnce([]);
+    abrir();
+
+    fireEvent.change(
+      await screen.findByLabelText("Buscar no histórico"),
+      { target: { value: "corpo" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Buscar" }));
+    expect(
+      await screen.findByText("Corpo que a limpeza deve esconder"),
+    ).toBeVisible();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Limpar conversa" }),
+    );
+
+    await waitFor(() => expect(mocks.searchLocal).toHaveBeenCalledTimes(2));
+    expect(
+      screen.queryByText("Corpo que a limpeza deve esconder"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("0 resultado(s)")).toBeVisible();
   });
 
   /* Sem rede o gesto continua valendo aqui; desfazê-lo seria pior. */

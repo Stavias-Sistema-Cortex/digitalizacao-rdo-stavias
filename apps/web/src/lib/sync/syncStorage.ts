@@ -8,6 +8,8 @@ import type {
   CanonicalMutationResult,
   CanonicalOperationalEventRecord,
   CanonicalOutboxMutationRecord,
+  ConversaParticipanteLocal,
+  ConversaTipo,
   LocalRdoChildRecord,
   LocalRdoRecord,
   LocalSyncStatus,
@@ -16,6 +18,7 @@ import type {
   OperationalEntityRef,
   OperationalEventRecord,
   OutboxMutationRecord,
+  PreferenciaDeConversaLocal,
   ProcessedEventRecord,
   RdoCreationContextCacheRecord,
   RdoAttachmentRecord,
@@ -52,9 +55,99 @@ import {
   type SyncSessionGuard,
 } from "./syncSession";
 import { guardSyncTransaction } from "./guardedSyncTransaction";
+import { emitMessagesChanged } from "../../features/mensagens/mensagensEvents";
+import {
+  pendenciasDaPreferencia,
+  preferenciaComPendencias,
+} from "../../features/mensagens/mensagemPreferenciaPendente";
 
 function nowUtc(): string {
   return new Date().toISOString();
+}
+
+type ConversationPreferenceValueField = "arquivadoEm" | "limpoAte";
+type ConversationPreferenceOrderField =
+  | "arquivadoAtualizadoEm"
+  | "limpoAtualizadoEm";
+
+function validPreferenceOrder(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const epoch = Date.parse(value);
+  return Number.isFinite(epoch) ? epoch : null;
+}
+
+function newerConversationPreferenceField(
+  canonical: PreferenciaDeConversaLocal,
+  provisional: PreferenciaDeConversaLocal,
+  valueField: ConversationPreferenceValueField,
+  orderField: ConversationPreferenceOrderField,
+  pendingField: "arquivamento" | "limpeza",
+): {
+  value: string | null;
+  updatedAt: string | null | undefined;
+  pending: boolean;
+} {
+  const canonicalOrder = validPreferenceOrder(canonical[orderField]);
+  const provisionalOrder = validPreferenceOrder(provisional[orderField]);
+  // Empate de relógio escolhe o canônico, tornando a decisão estável mesmo
+  // quando dois gestos caem no mesmo milissegundo.
+  let selected = canonical;
+  if (
+    provisionalOrder !== null &&
+    (canonicalOrder === null || provisionalOrder > canonicalOrder)
+  ) {
+    selected = provisional;
+  } else if (canonicalOrder === null && provisionalOrder === null) {
+    const canonicalValue = canonical[valueField];
+    const provisionalValue = provisional[valueField];
+    if (
+      (canonicalValue === null && provisionalValue !== null) ||
+      (
+        canonicalValue !== null &&
+        provisionalValue !== null &&
+        Date.parse(provisionalValue) > Date.parse(canonicalValue)
+      )
+    ) {
+      selected = provisional;
+    }
+  }
+  return {
+    value: selected[valueField],
+    updatedAt: selected[orderField],
+    pending: pendenciasDaPreferencia(selected)[pendingField],
+  };
+}
+
+function mergeConversationPreferences(
+  canonical: PreferenciaDeConversaLocal,
+  provisional: PreferenciaDeConversaLocal,
+  canonicalConversationId: string,
+): PreferenciaDeConversaLocal {
+  const archive = newerConversationPreferenceField(
+    canonical,
+    provisional,
+    "arquivadoEm",
+    "arquivadoAtualizadoEm",
+    "arquivamento",
+  );
+  const history = newerConversationPreferenceField(
+    canonical,
+    provisional,
+    "limpoAte",
+    "limpoAtualizadoEm",
+    "limpeza",
+  );
+  return preferenciaComPendencias({
+    conversaId: canonicalConversationId,
+    arquivadoEm: archive.value,
+    arquivadoAtualizadoEm: archive.updatedAt,
+    limpoAte: history.value,
+    limpoAtualizadoEm: history.updatedAt,
+    pendente: archive.pending || history.pending,
+  }, {
+    arquivamento: archive.pending,
+    limpeza: history.pending,
+  });
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -489,6 +582,12 @@ const RDO_SYNC_TRANSACTION_STORES = [
   // onde ser gravada, então o registro local nunca saía do zero com que nasce.
   "teams",
   ...RDO_CHILD_STORE_NAMES,
+] as const;
+
+const PUSH_RESULT_TRANSACTION_STORES = [
+  ...RDO_SYNC_TRANSACTION_STORES,
+  "mensagem_conversas",
+  "mensagem_preferencias",
 ] as const;
 
 type ConvergentTarefaRecord = TarefaRecord;
@@ -3364,7 +3463,7 @@ export async function applyPushResultAtomically(
   assertSyncSession(guard);
 
   const guardedTransaction = guardSyncTransaction(
-    database.transaction(RDO_SYNC_TRANSACTION_STORES, "readwrite"),
+    database.transaction(PUSH_RESULT_TRANSACTION_STORES, "readwrite"),
     guard,
   );
   const transaction = guardedTransaction.transaction;
@@ -3374,6 +3473,12 @@ export async function applyPushResultAtomically(
   const rdoStore = transaction.objectStore("rdos");
   const taskStore = transaction.objectStore("tarefas");
   const messageStore = transaction.objectStore("mensagens");
+  const conversationStore = transaction.objectStore(
+    "mensagem_conversas",
+  );
+  const conversationPreferenceStore = transaction.objectStore(
+    "mensagem_preferencias",
+  );
   const obraStore = transaction.objectStore("obras");
   const teamStore = transaction.objectStore("teams");
 
@@ -3400,6 +3505,10 @@ export async function applyPushResultAtomically(
   const message =
     mutation.entidadeTipo === "MENSAGEM"
       ? await messageStore.get(mutation.entidadeId)
+      : undefined;
+  const conversation =
+    mutation.entidadeTipo === "CONVERSA"
+      ? await conversationStore.get(mutation.entidadeId)
       : undefined;
   const task = isTaskMutation(mutation)
     ? await taskStore.get(mutation.entidadeId)
@@ -3433,6 +3542,16 @@ export async function applyPushResultAtomically(
     typeof result.resultado?.numeroRdo === "string"
       ? result.resultado.numeroRdo.trim()
       : "";
+  const serverConversationId =
+    result.status === "APLICADA" &&
+      mutation.entidadeTipo === "CONVERSA" &&
+      mutation.operacao === "CRIAR_CONVERSA"
+      ? requireConversationResultIdentity(mutation, result)
+      : null;
+  const conversationAlias =
+    serverConversationId !== null &&
+    serverConversationId !== mutation.entidadeId;
+  let conversationChanged = false;
 
   if (result.status === "APLICADA") {
     await outboxStore.put({
@@ -3446,9 +3565,148 @@ export async function applyPushResultAtomically(
       blockedReason: null,
       ...(isIntegracaoMutation(mutation)
         ? { resultadoServidor: result.resultado ?? null }
-        : {}),
+        : conversationAlias
+          ? {
+            resultadoServidor: {
+              ...(result.resultado ?? {}),
+              id: serverConversationId,
+            },
+          }
+          : {}),
       updatedAt: timestamp,
     });
+
+    if (
+      mutation.entidadeTipo === "CONVERSA" &&
+      mutation.operacao === "CRIAR_CONVERSA"
+    ) {
+      if (!serverConversationId) {
+        transaction.abort();
+        throw new Error(
+          "O servidor não devolveu a identidade da conversa criada.",
+        );
+      }
+
+      const existingCanonicalConversation =
+        await conversationStore.get(serverConversationId);
+      const localConversation =
+        existingCanonicalConversation ?? conversation;
+      if (localConversation) {
+        const serverRecord = result.resultado ?? {};
+        const serverParticipants = conversationParticipants(
+          serverRecord.participantes,
+        );
+        await conversationStore.put({
+          ...localConversation,
+          id: serverConversationId,
+          tipo: conversationType(serverRecord.tipo) ?? localConversation.tipo,
+          titulo: nullableText(serverRecord, "titulo", localConversation.titulo),
+          obraId: nullableText(serverRecord, "obraId", localConversation.obraId),
+          equipeId: nullableText(
+            serverRecord,
+            "equipeId",
+            localConversation.equipeId,
+          ),
+          status:
+            typeof serverRecord.status === "string"
+              ? serverRecord.status
+              : localConversation.status,
+          participantes:
+            serverParticipants ?? localConversation.participantes,
+          criadaEm:
+            typeof serverRecord.criadaEm === "string"
+              ? serverRecord.criadaEm
+              : localConversation.criadaEm,
+          atualizadaEm:
+            typeof serverRecord.atualizadaEm === "string"
+              ? serverRecord.atualizadaEm
+              : timestamp,
+          versaoEntidade:
+            typeof serverRecord.versao === "number"
+              ? serverRecord.versao
+              : resultVersion,
+        });
+      }
+
+      if (serverConversationId !== mutation.entidadeId) {
+        await conversationStore.delete(mutation.entidadeId);
+
+        const preference = await conversationPreferenceStore.get(
+          mutation.entidadeId,
+        );
+        if (preference) {
+          const canonicalPreference =
+            await conversationPreferenceStore.get(serverConversationId);
+          await conversationPreferenceStore.put(
+            canonicalPreference
+              ? mergeConversationPreferences(
+                canonicalPreference,
+                preference,
+                serverConversationId,
+              )
+              : { ...preference, conversaId: serverConversationId },
+          );
+          await conversationPreferenceStore.delete(mutation.entidadeId);
+        }
+
+        const localMessages = await messageStore
+          .index("by-conversation-id")
+          .getAll(mutation.entidadeId);
+        for (const localMessage of localMessages) {
+          await messageStore.put({
+            ...localMessage,
+            conversaId: serverConversationId,
+            updatedAt: timestamp,
+          });
+        }
+
+        const localAttachments = await transaction
+          .objectStore("mensagem_anexos")
+          .index("by-conversation-id")
+          .getAll(mutation.entidadeId);
+        for (const localAttachment of localAttachments) {
+          await transaction.objectStore("mensagem_anexos").put({
+            ...localAttachment,
+            conversaId: serverConversationId,
+            updatedAt: timestamp,
+          });
+        }
+
+        for (const dependent of await outboxStore.getAll()) {
+          if (dependent.clientMutationId === mutation.clientMutationId) {
+            continue;
+          }
+          const pointsToConversation =
+            dependent.entidadeTipo === "CONVERSA" &&
+            dependent.entidadeId === mutation.entidadeId;
+          const payloadPointsToConversation =
+            dependent.payload.conversaId === mutation.entidadeId;
+          if (!pointsToConversation && !payloadPointsToConversation) {
+            continue;
+          }
+          if (isCanonicalOutboxMutation(dependent)) {
+            transaction.abort();
+            throw new Error(
+              "Uma mutação canônica não pode trocar a identidade da conversa.",
+            );
+          }
+          await outboxStore.put({
+            ...dependent,
+            entidadeId: pointsToConversation
+              ? serverConversationId
+              : dependent.entidadeId,
+            payload: payloadPointsToConversation
+              ? {
+                  ...dependent.payload,
+                  conversaId: serverConversationId,
+                }
+              : dependent.payload,
+            updatedAt: timestamp,
+          });
+        }
+      }
+      conversationChanged = true;
+    }
     await rebasePendingLegacyRdoDependents(
       outboxStore,
       mutation,
@@ -3994,6 +4252,104 @@ export async function applyPushResultAtomically(
   }
 
   await guardedTransaction.complete();
+  if (conversationChanged) {
+    if (conversationAlias && serverConversationId) {
+      emitMessagesChanged({
+        from: mutation.entidadeId,
+        to: serverConversationId,
+      });
+    } else {
+      emitMessagesChanged();
+    }
+  }
+}
+
+function conversationType(value: unknown): ConversaTipo | null {
+  return value === "DIRETA" ||
+      value === "GRUPO" ||
+      value === "EQUIPE" ||
+      value === "OBRA"
+    ? value
+    : null;
+}
+
+function requireConversationResultIdentity(
+  mutation: OutboxMutationRecord,
+  result: SyncPushMutationResult,
+): string {
+  const resultConversationId = textValue(result.resultado?.id);
+  const envelopeConversationId = textValue(result.entidadeId);
+  if (
+    resultConversationId &&
+    envelopeConversationId &&
+    resultConversationId !== envelopeConversationId
+  ) {
+    throw new Error(
+      "O servidor devolveu identidades divergentes para a conversa.",
+    );
+  }
+  const serverConversationId =
+    envelopeConversationId || resultConversationId;
+  if (!serverConversationId) {
+    throw new Error(
+      "O servidor não devolveu a identidade da conversa criada.",
+    );
+  }
+  if (
+    isCanonicalOutboxMutation(mutation) &&
+    serverConversationId !== mutation.entityId
+  ) {
+    throw new Error(
+      "Uma mutação canônica não pode trocar a identidade da conversa.",
+    );
+  }
+  return serverConversationId;
+}
+
+function nullableText(
+  record: Readonly<Record<string, unknown>>,
+  field: string,
+  fallback: string | null,
+): string | null {
+  if (!Object.prototype.hasOwnProperty.call(record, field)) {
+    return fallback;
+  }
+  const value = record[field];
+  return value === null || typeof value === "string" ? value : fallback;
+}
+
+function conversationParticipants(
+  value: unknown,
+): ConversaParticipanteLocal[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const participants: ConversaParticipanteLocal[] = [];
+  for (const item of value) {
+    const participant = objectValue(item);
+    const colaboradorId = textValue(participant.colaboradorId);
+    const nome = textValue(participant.nome);
+    const papel = participant.papel;
+    const status = participant.status;
+    const adicionadoEm = textValue(participant.adicionadoEm);
+    if (
+      !colaboradorId ||
+      !nome ||
+      (papel !== "ADMIN" && papel !== "MEMBRO") ||
+      (status !== "ATIVO" && status !== "REMOVIDO") ||
+      !adicionadoEm
+    ) {
+      return null;
+    }
+    participants.push({
+      colaboradorId,
+      nome,
+      papel,
+      status,
+      adicionadoEm,
+    });
+  }
+  return participants;
 }
 
 /**
@@ -5167,10 +5523,7 @@ export async function podarMutacoesJaAplicadas(): Promise<number> {
   const candidatas = todas.filter(
     (mutation) =>
       mutation.status === "SYNCED" &&
-      !(
-        (mutation.entidadeTipo as string) === "SOLICITACAO_INTEGRACAO" &&
-        (mutation as { resultadoServidor?: unknown }).resultadoServidor != null
-      ),
+      !hasDurableServerReceipt(mutation),
   );
   if (candidatas.length === 0) return 0;
 
@@ -5198,6 +5551,25 @@ export async function podarMutacoesJaAplicadas(): Promise<number> {
   }
   await transaction.done;
   return podaveis.length;
+}
+
+function hasDurableServerReceipt(
+  mutation: OutboxMutationRecord,
+): boolean {
+  if (
+    (mutation.entidadeTipo as string) === "SOLICITACAO_INTEGRACAO" &&
+    mutation.resultadoServidor != null
+  ) {
+    return true;
+  }
+  if (
+    mutation.entidadeTipo !== "CONVERSA" ||
+    mutation.operacao !== "CRIAR_CONVERSA"
+  ) {
+    return false;
+  }
+  const canonicalId = textValue(mutation.resultadoServidor?.id);
+  return Boolean(canonicalId && canonicalId !== mutation.entidadeId);
 }
 
 export async function returnMutationToPending(

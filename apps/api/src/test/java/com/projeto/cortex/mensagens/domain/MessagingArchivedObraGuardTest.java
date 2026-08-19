@@ -95,7 +95,7 @@ class MessagingArchivedObraGuardTest {
         @SuppressWarnings("unchecked")
         void exactConversationReplayRemainsAvailableAfterArchive() {
             ConversaService service = conversationService();
-            ConversationResponse existing = conversationResponse(OBRA);
+            ConversationResponse existing = exactObraConversationResponse();
             when(jdbc.queryForObject(
                     contains("FROM conversa WHERE id"),
                     eq(Integer.class),
@@ -115,6 +115,69 @@ class MessagingArchivedObraGuardTest {
             );
 
             assertThat(replay).isSameAs(existing);
+            verify(operabilityGuard, never()).requireWritable(anyString());
+            verify(jdbc, never()).update(anyString(), any(Object[].class));
+        }
+
+        @Test
+        @SuppressWarnings("unchecked")
+        void sameIdWithDivergentPayloadIsRejectedWithoutBypassingArchive() {
+            ConversaService service = conversationService();
+            when(jdbc.queryForObject(
+                    contains("FROM conversa WHERE id"),
+                    eq(Integer.class),
+                    eq(CONVERSATION)
+            )).thenReturn(1);
+            when(accessPolicy.requireAccess(CONVERSATION))
+                    .thenReturn(scope(OBRA));
+            when(jdbc.query(
+                    contains("SELECT * FROM conversa"),
+                    any(ResultSetExtractor.class),
+                    eq(CONVERSATION)
+            )).thenReturn(exactObraConversationResponse());
+
+            assertThatThrownBy(() -> service.create(
+                    new ConversationCreateRequest(
+                            CONVERSATION,
+                            "OBRA",
+                            "Outro assunto",
+                            OBRA,
+                            null,
+                            List.of()
+                    ),
+                    audit()
+            )).isInstanceOfSatisfying(
+                    ResponseStatusException.class,
+                    exception -> assertThat(exception.getStatusCode())
+                            .isEqualTo(HttpStatus.CONFLICT)
+            );
+
+            verify(operabilityGuard, never()).requireWritable(anyString());
+            verify(jdbc, never()).update(anyString(), any(Object[].class));
+        }
+
+        @Test
+        void exactReplayStillRequiresConversationAccess() {
+            ConversaService service = conversationService();
+            when(jdbc.queryForObject(
+                    contains("FROM conversa WHERE id"),
+                    eq(Integer.class),
+                    eq(CONVERSATION)
+            )).thenReturn(1);
+            doThrow(new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Sem acesso à conversa."
+            )).when(accessPolicy).requireAccess(CONVERSATION);
+
+            assertThatThrownBy(() -> service.create(
+                    obraConversationRequest(),
+                    audit()
+            )).isInstanceOfSatisfying(
+                    ResponseStatusException.class,
+                    exception -> assertThat(exception.getStatusCode())
+                            .isEqualTo(HttpStatus.FORBIDDEN)
+            );
+
             verify(operabilityGuard, never()).requireWritable(anyString());
             verify(jdbc, never()).update(anyString(), any(Object[].class));
         }
@@ -432,6 +495,28 @@ class MessagingArchivedObraGuardTest {
                 0L,
                 false,
                 List.of()
+        );
+    }
+
+    private ConversationResponse exactObraConversationResponse() {
+        return new ConversationResponse(
+                CONVERSATION,
+                "OBRA",
+                "Conversa da obra",
+                OBRA,
+                null,
+                "ATIVA",
+                LocalDateTime.of(2026, 7, 28, 12, 0),
+                LocalDateTime.of(2026, 7, 28, 12, 0),
+                0L,
+                false,
+                List.of(new ParticipantResponse(
+                        ACTOR,
+                        "Autora",
+                        "ADMIN",
+                        "ATIVO",
+                        LocalDateTime.of(2026, 7, 28, 12, 0)
+                ))
         );
     }
 

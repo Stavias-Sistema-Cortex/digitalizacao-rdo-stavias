@@ -102,6 +102,11 @@ vi.mock("../../features/mensagens/objectUploadSync", () => ({
 vi.mock("./pushOutbox", () => ({ pushOutbox: mocks.push }));
 vi.mock("./pullEvents", () => ({ pullEvents: mocks.pull }));
 vi.mock("../../features/mensagens/mensagensHydration", () => ({
+  flushPendingConversationPreferences: vi.fn(async () => ({
+    inspected: 0,
+    applied: 0,
+    errors: 0,
+  })),
   refreshMessagingAfterPull: mocks.refresh,
 }));
 vi.mock("./ackCursor", () => ({ acknowledgeCurrentCursor: mocks.ack }));

@@ -41,6 +41,7 @@ import {
   refreshConversationList,
 } from "./mensagensHydration";
 import {
+  confirmarPreferenciaDaConversaSincronizada,
   gravarPreferenciaDaConversa,
   listarPreferenciasDeConversa,
   localAttachmentBlob,
@@ -49,6 +50,8 @@ import {
   listLocalMessages,
   MESSAGES_CHANGED_EVENT,
   queueMessage,
+  reserveMessagingRequestOrdinal,
+  resolveLocalConversationId,
   retryMessage,
   searchLocalMessages,
   storeServerMessages,
@@ -61,6 +64,10 @@ import {
   conversationScope,
   type ConversationPreview,
 } from "./mensagensView";
+import {
+  conversationIdRemapFromEvent,
+  subscribeToMessagesChangedBroadcast,
+} from "./mensagensEvents";
 import "./MensagensPage.css";
 
 const INFO_COLLAPSED_KEY = "cortex.ui.mensagensContextoRecolhido";
@@ -103,10 +110,15 @@ export function MensagensPage() {
   );
   const [now, setNow] = useState(() => new Date());
   const frameRef = useRef<HTMLDivElement>(null);
+  const localLoadSequenceRef = useRef(0);
+  const messageLoadSequenceRef = useRef(0);
   const [wideFrame, setWideFrame] = useState(false);
   const { snapshot } = useSyncStatus();
 
-  const loadLocal = useCallback(async () => {
+  const loadLocal = useCallback(async (
+    preferredConversationId?: string | null,
+  ) => {
+    const sequence = ++localLoadSequenceRef.current;
     const [localConversations, localPreviews, localWorksites, preferencias] =
       await Promise.all([
         listLocalConversations(),
@@ -114,6 +126,9 @@ export function MensagensPage() {
         listObrasLocais({ includeArchived: true }),
         listarPreferenciasDeConversa(),
       ]);
+    if (sequence !== localLoadSequenceRef.current) {
+      return false;
+    }
     // Quem esta pessoa tirou da própria lista sai daqui, e não da resposta do
     // servidor: assim o gesto vale no aparelho, sem rede, e a conversa segue
     // inteira para quem estava junto.
@@ -125,6 +140,14 @@ export function MensagensPage() {
     setPreviews(localPreviews);
     setWorksites(localWorksites);
     setSelectedId((current) => {
+      if (
+        preferredConversationId &&
+        localConversations.some(
+          (conversation) => conversation.id === preferredConversationId,
+        )
+      ) {
+        return preferredConversationId;
+      }
       if (
         requestedConversationId &&
         localConversations.some(
@@ -138,22 +161,27 @@ export function MensagensPage() {
       }
       return localConversations[0]?.id ?? null;
     });
+    return true;
   }, [requestedConversationId]);
 
   const loadMessages = useCallback(async (conversationId: string | null) => {
-    setMessages(
-      conversationId ? await listLocalMessages(conversationId) : [],
-    );
+    const sequence = ++messageLoadSequenceRef.current;
+    const loaded = conversationId
+      ? await listLocalMessages(conversationId)
+      : [];
+    if (sequence === messageLoadSequenceRef.current) {
+      setMessages(loaded);
+    }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     async function start() {
       try {
-        await loadLocal();
+        if (!await loadLocal()) return;
         if (navigator.onLine && hasOnlineSession()) {
           await refreshConversationList();
-          await loadLocal();
+          if (!await loadLocal()) return;
         }
         if (!cancelled) {
           setConversationLoadState("ready");
@@ -168,6 +196,8 @@ export function MensagensPage() {
     void start();
     return () => {
       cancelled = true;
+      localLoadSequenceRef.current += 1;
+      messageLoadSequenceRef.current += 1;
     };
   }, [loadLocal]);
 
@@ -212,21 +242,76 @@ export function MensagensPage() {
   }, [loadMessages, selectedId]);
 
   useEffect(() => {
-    async function changed() {
+    async function changed(event: Event) {
+      // Uma leitura aberta antes da revogação não pode publicar depois dela.
+      // A nova leitura abaixo recebe outra sequência e passa a ser a única
+      // autorizada a alterar a timeline.
+      localLoadSequenceRef.current += 1;
+      messageLoadSequenceRef.current += 1;
+      const remap = conversationIdRemapFromEvent(event);
+      const activeSearchQuery = search.trim();
+      const shouldRefreshSearch = searchResults !== null;
+      const remapsSelectedConversation = remap !== null && (
+        selectedId === remap.from ||
+        (selectedId === null && requestedConversationId === remap.from)
+      );
+      const conversationIdToLoad = remapsSelectedConversation
+        ? remap.to
+        : selectedId;
+      if (remap) {
+        setDrafts((current) => {
+          if (!Object.prototype.hasOwnProperty.call(current, remap.from)) {
+            return current;
+          }
+          const next = {
+            ...current,
+            [remap.to]: current[remap.from],
+          };
+          delete next[remap.from];
+          return next;
+        });
+      }
+      if (remapsSelectedConversation) {
+        setSelectedId(remap.to);
+        const nextSearchParams = new URLSearchParams(searchParams);
+        nextSearchParams.set("conversa", remap.to);
+        setSearchParams(nextSearchParams, { replace: true });
+      }
       setConversationLoadState("loading");
       try {
-        await loadLocal();
-        await loadMessages(selectedId);
+        if (!await loadLocal(conversationIdToLoad)) return;
+        await loadMessages(conversationIdToLoad);
+        if (shouldRefreshSearch) {
+          setSearchResults(
+            activeSearchQuery
+              ? await searchLocalMessages(activeSearchQuery)
+              : null,
+          );
+        }
         setConversationLoadState("ready");
       } catch (cause: unknown) {
+        setSearchResults(null);
         setError(messageFrom(cause));
         setConversationLoadState("failed");
       }
     }
-    const handleChanged = () => void changed();
+    const handleChanged = (event: Event) => void changed(event);
     window.addEventListener(MESSAGES_CHANGED_EVENT, handleChanged);
-    return () => window.removeEventListener(MESSAGES_CHANGED_EVENT, handleChanged);
-  }, [loadLocal, loadMessages, selectedId]);
+    const unsubscribeBroadcast = subscribeToMessagesChangedBroadcast();
+    return () => {
+      window.removeEventListener(MESSAGES_CHANGED_EVENT, handleChanged);
+      unsubscribeBroadcast();
+    };
+  }, [
+    loadLocal,
+    loadMessages,
+    requestedConversationId,
+    search,
+    searchParams,
+    searchResults,
+    selectedId,
+    setSearchParams,
+  ]);
 
   const selected = useMemo(
     () => conversations.find((item) => item.id === selectedId) ?? null,
@@ -265,9 +350,17 @@ export function MensagensPage() {
         );
       }
       const summary = await syncNow();
+      const effectiveSelectedId = selectedId
+        ? await resolveLocalConversationId(selectedId)
+        : null;
       await refreshConversationList();
-      if (selectedId) await refreshConversationHistory(selectedId);
-      await Promise.all([loadLocal(), loadMessages(selectedId)]);
+      if (effectiveSelectedId) {
+        await refreshConversationHistory(effectiveSelectedId);
+      }
+      await Promise.all([
+        loadLocal(effectiveSelectedId),
+        loadMessages(effectiveSelectedId),
+      ]);
       if (summary.errors > 0 || summary.conflicts > 0) {
         setError(
           `${summary.errors + summary.conflicts} item(ns) ainda precisam de nova tentativa.`,
@@ -289,13 +382,21 @@ export function MensagensPage() {
     setSending(true);
     setError("");
     try {
-      await queueMessage({ conversaId: selectedId, corpo: body, files });
+      const queued = await queueMessage({
+        conversaId: selectedId,
+        corpo: body,
+        files,
+      });
       setDrafts((current) => ({ ...current, [selectedId]: "" }));
       setFiles([]);
-      await loadMessages(selectedId);
+      await loadMessages(queued.conversaId);
       if (navigator.onLine && hasOnlineSession()) {
         void syncNow()
-          .then(() => loadMessages(selectedId))
+          .then(async () => {
+            const effectiveConversationId =
+              await resolveLocalConversationId(queued.conversaId);
+            await loadMessages(effectiveConversationId);
+          })
           .catch((cause: unknown) => setError(messageFrom(cause)));
       }
     } catch (cause: unknown) {
@@ -334,8 +435,11 @@ export function MensagensPage() {
     try {
       let results = await searchLocalMessages(query);
       if (navigator.onLine && hasOnlineSession()) {
+        const requestOrdinal = await reserveMessagingRequestOrdinal();
         const serverResults = await searchMessagesApi(query);
-        await storeServerMessages(serverResults);
+        await storeServerMessages(serverResults, undefined, {
+          requestOrdinal,
+        });
         results = await searchLocalMessages(query);
       }
       setSearchResults(results);
@@ -433,7 +537,9 @@ export function MensagensPage() {
     async (
       conversaId: string,
       mudanca: Partial<Omit<PreferenciaDeConversaLocal, "conversaId">>,
-      enviar: () => Promise<void>,
+      enviar: (
+        preference: PreferenciaDeConversaLocal,
+      ) => Promise<void>,
       aviso: string,
     ) => {
       setArrumando(true);
@@ -442,15 +548,33 @@ export function MensagensPage() {
         // O aparelho obedece primeiro. A tela lê a preferência local, então o
         // efeito é imediato e vale no modo avião — que é onde metade do
         // Córtex vive.
-        await gravarPreferenciaDaConversa(conversaId, {
+        const pendingPreference = await gravarPreferenciaDaConversa(conversaId, {
           ...mudanca,
           pendente: true,
         });
         await loadLocal();
         await loadMessages(selectedId);
+        if (searchResults !== null) {
+          const activeSearchQuery = search.trim();
+          setSearchResults(
+            activeSearchQuery
+              ? await searchLocalMessages(activeSearchQuery)
+              : null,
+          );
+        }
         try {
-          await enviar();
-          await gravarPreferenciaDaConversa(conversaId, { pendente: false });
+          await enviar(pendingPreference);
+          const field = Object.prototype.hasOwnProperty.call(
+            mudanca,
+            "arquivadoEm",
+          )
+            ? "ARQUIVAMENTO" as const
+            : "LIMPEZA" as const;
+          await confirmarPreferenciaDaConversaSincronizada(
+            pendingPreference,
+            undefined,
+            [field],
+          );
         } catch (semRede: unknown) {
           // Sem rede o gesto continua valendo aqui e sobe na próxima
           // sincronização. Avisar é honesto; desfazer seria pior.
@@ -466,7 +590,7 @@ export function MensagensPage() {
         setArrumando(false);
       }
     },
-    [loadLocal, loadMessages, selectedId],
+    [loadLocal, loadMessages, search, searchResults, selectedId],
   );
 
   /*
@@ -519,7 +643,11 @@ export function MensagensPage() {
                     onClick={() => void arrumarCaixa(
                       selected.id,
                       { limpoAte: new Date().toISOString() },
-                      () => limparConversaApi(selected.id, true),
+                      (preference) => limparConversaApi(
+                        selected.id,
+                        true,
+                        preference.limpoAte ?? undefined,
+                      ),
                       "Não foi possível limpar a conversa.",
                     )}
                     title="Esconde o histórico anterior a agora só para você. Nada é apagado: quem estava junto continua vendo tudo."

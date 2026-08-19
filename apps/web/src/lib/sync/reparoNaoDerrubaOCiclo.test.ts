@@ -63,6 +63,11 @@ const mocks = vi.hoisted(() => ({
     pendente: false,
   })),
   refresh: vi.fn(async () => undefined),
+  flushPreferences: vi.fn(async () => ({
+    inspected: 0,
+    applied: 0,
+    errors: 0,
+  })),
   ack: vi.fn(async () => 0),
   runWithLease: vi.fn(
     async (
@@ -126,6 +131,7 @@ vi.mock("../../features/rdos/rdoPhotoSync", () => ({
 vi.mock("./pushOutbox", () => ({ pushOutbox: mocks.push }));
 vi.mock("./pullEvents", () => ({ pullEvents: mocks.pull }));
 vi.mock("../../features/mensagens/mensagensHydration", () => ({
+  flushPendingConversationPreferences: mocks.flushPreferences,
   refreshMessagingAfterPull: mocks.refresh,
 }));
 vi.mock("./ackCursor", () => ({ acknowledgeCurrentCursor: mocks.ack }));
@@ -142,6 +148,11 @@ describe("um reparo podre não derruba o ciclo", () => {
     vi.clearAllMocks();
     mocks.currentFingerprint = "session-a";
     mocks.contar.mockResolvedValue(1);
+    mocks.flushPreferences.mockResolvedValue({
+      inspected: 0,
+      applied: 0,
+      errors: 0,
+    });
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
 
@@ -157,6 +168,20 @@ describe("um reparo podre não derruba o ciclo", () => {
     // Os reparos seguintes ao que falhou continuam acontecendo.
     expect(mocks.queueErroredRetry).toHaveBeenCalledTimes(1);
     expect(resumo.reparosFalharam).toEqual(["referências de obra"]);
+  });
+
+  it("uma preferência de mensagem recusada não interrompe push nem pull", async () => {
+    mocks.flushPreferences.mockResolvedValueOnce({
+      inspected: 1,
+      applied: 0,
+      errors: 1,
+    });
+
+    const resumo = await syncNow();
+
+    expect(mocks.push).toHaveBeenCalledTimes(1);
+    expect(mocks.pull).toHaveBeenCalledTimes(1);
+    expect(resumo.reparosFalharam).toContain("preferências de mensagens");
   });
 
   /*

@@ -506,8 +506,31 @@ export interface PreferenciaDeConversaLocal {
   conversaId: string;
   arquivadoEm: string | null;
   limpoAte: string | null;
+  /** Ordem do último gesto local/remoto conhecido para este campo. */
+  arquivadoAtualizadoEm?: string | null;
+  /** Ordem do último gesto local/remoto conhecido para este campo. */
+  limpoAtualizadoEm?: string | null;
+  /** Somente o gesto de arquivar/devolver ainda precisa chegar ao servidor. */
+  arquivadoPendente?: boolean;
+  /** Somente o gesto de limpar o histórico ainda precisa chegar ao servidor. */
+  limpoPendente?: boolean;
   /** Verdadeiro enquanto o servidor não confirmou este gesto. */
   pendente: boolean;
+}
+
+/**
+ * Evidência durável de que o snapshot completo ainda autoriza a conversa.
+ *
+ * O registro reservado do snapshot usa o mesmo formato para guardar a época
+ * mais nova aplicada. Os demais registros usam o UUID da conversa como chave.
+ */
+export interface MensagemAutorizacaoLocalRecord {
+  id: string;
+  /**
+   * Ordem reservada por uma transação IndexedDB antes da requisição remota.
+   * Não depende do relógio e, portanto, também ordena abas concorrentes.
+   */
+  ordinal: number;
 }
 
 export interface MensagemLocalRecord {

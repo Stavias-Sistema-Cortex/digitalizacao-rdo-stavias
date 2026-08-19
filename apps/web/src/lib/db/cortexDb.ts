@@ -8,6 +8,7 @@ import {
 
 import type {
   PreferenciaDeConversaLocal,
+  MensagemAutorizacaoLocalRecord,
   ColaboradorLocalRecord,
   ConversaLocalRecord,
   LocalRdoControleGeometricoRecord,
@@ -43,7 +44,7 @@ import type {
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 23;
+export const CORTEX_DATABASE_VERSION = 24;
 const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
 export interface CortexDbSchema extends DBSchema {
@@ -204,6 +205,11 @@ export interface CortexDbSchema extends DBSchema {
   mensagem_preferencias: {
     key: string;
     value: PreferenciaDeConversaLocal;
+  };
+
+  mensagem_autorizacoes: {
+    key: string;
+    value: MensagemAutorizacaoLocalRecord;
   };
 
   mensagem_conversas: {
@@ -805,6 +811,12 @@ export async function getCortexDb(): Promise<
         if (!database.objectStoreNames.contains("mensagem_preferencias")) {
           database.createObjectStore("mensagem_preferencias", {
             keyPath: "conversaId",
+          });
+        }
+
+        if (!database.objectStoreNames.contains("mensagem_autorizacoes")) {
+          database.createObjectStore("mensagem_autorizacoes", {
+            keyPath: "id",
           });
         }
 

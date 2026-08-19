@@ -1,5 +1,6 @@
 package com.projeto.cortex.storage;
 
+import com.projeto.cortex.common.JdbcSavepointBoundary;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Optional;
@@ -46,8 +47,12 @@ public class JdbcStoredObjectRepository implements StoredObjectRepository {
 
     @Override
     public boolean reserve(StoredObjectRecord object) {
+        JdbcSavepointBoundary insertSavepoint = JdbcSavepointBoundary.begin(
+                jdbcTemplate,
+                "Não foi possível proteger a reserva do objeto."
+        );
         try {
-            return jdbcTemplate.update(
+            boolean reserved = jdbcTemplate.update(
                     """
                     INSERT INTO stored_object (
                         id, proprietario_id, obra_id, dedupe_key, sha256,
@@ -71,7 +76,14 @@ public class JdbcStoredObjectRepository implements StoredObjectRepository {
                     object.ownerId(),
                     object.createdAt()
             ) == 1;
+            insertSavepoint.release(
+                    "Não foi possível confirmar a reserva do objeto."
+            );
+            return reserved;
         } catch (DuplicateKeyException exception) {
+            insertSavepoint.rollbackAndRelease(
+                    "Não foi possível recuperar a reserva concorrente."
+            );
             return false;
         }
     }

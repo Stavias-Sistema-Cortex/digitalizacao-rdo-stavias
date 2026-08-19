@@ -209,6 +209,8 @@ describe("a gestão de obras", () => {
       expect(api.queueVinculoColaborador).toHaveBeenCalledWith(
         "obra-1",
         "colab-novo",
+        undefined,
+        undefined,
       ),
     );
     // O nome também está na lista de busca; a asserção é sobre a linha do
@@ -220,6 +222,58 @@ describe("a gestão de obras", () => {
           .some((linha) => linha.textContent?.includes("BENTO SOUZA")),
       ).toBe(true),
     );
+  });
+
+  it("revincula usando a identidade do vínculo histórico revogado", async () => {
+    const user = userEvent.setup();
+    const historico: VinculoApi = {
+      ...vinculo("vinculo-historico", "obra-1", "BENTO SOUZA"),
+      colaboradorId: "colab-revogado",
+      status: "REVOGADO",
+      revogadoEm: "2026-08-02T12:00:00.000Z",
+      revogadoPor: "alfa",
+    };
+    api.listarObrasAdmin.mockResolvedValue([
+      obra("obra-1", "Quarta intervenção"),
+    ]);
+    api.listarVinculos.mockResolvedValue([historico]);
+    api.listarColaboradores.mockResolvedValue([
+      colaborador("colab-revogado", "BENTO SOUZA"),
+    ]);
+    api.queueVinculoColaborador.mockResolvedValue({
+      ...historico,
+      status: "PENDENTE",
+      revogadoEm: null,
+      revogadoPor: null,
+      syncStatus: "PENDING_SYNC",
+      pendingMutationId: "mutacao-reativacao",
+    });
+
+    render(<GestaoObrasPage />);
+    await user.click(
+      await screen.findByRole("button", { name: /Quarta intervenção/ }),
+    );
+    await user.type(
+      screen.getByRole("searchbox", { name: "Buscar colaborador" }),
+      "BENTO{Enter}",
+    );
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Colaborador" }),
+      "colab-revogado",
+    );
+    await user.click(screen.getByRole("button", { name: "Vincular" }));
+
+    await waitFor(() =>
+      expect(api.queueVinculoColaborador).toHaveBeenCalledWith(
+        "obra-1",
+        "colab-revogado",
+        undefined,
+        "vinculo-historico",
+      ),
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Histórico de revogações" }),
+    ).toBeNull();
   });
 
   it("gera um código temporário individual sem criar perfil MySQL", async () => {

@@ -2,8 +2,10 @@ package com.projeto.cortex.obras;
 
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -18,6 +20,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Verifica que cada transição de vínculo gera evento ontológico e mantém a
@@ -116,6 +120,82 @@ class VinculoColaboradorObraServiceTest {
         verify(memory, never()).registrarEventoDetalhado(
                 any(), any(), any(), any(), any(), any(), any(), any(),
                 any(), any(), any(), any(), any(), any(), any()
+        );
+    }
+
+    @Test
+    void reativarRevogadoRecusaIdentificadorDiferenteAntesDeGravar() {
+        vinculoVigente(new VinculoColaboradorObraService.VinculoAtual(
+                "vinculo-historico", "REVOGADO", "OPERACIONAL"
+        ));
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> service.vincularComId(
+                        "vinculo-novo",
+                        "obra-1",
+                        "colab-1",
+                        "OPERACIONAL",
+                        "alfa"
+                )
+        );
+
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        verify(operabilityGuard, never()).requireWritable(anyString());
+        verify(jdbc, never()).update(
+                contains("UPDATE vinculo_colaborador_obra"),
+                any(), any(), any(), any()
+        );
+        verify(memory, never()).registrarEventoDetalhado(
+                any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any()
+        );
+    }
+
+    @Test
+    void reativarOnlineSemIdentificadorReutilizaOHistorico() {
+        colaboradorExiste();
+        vinculoVigente(new VinculoColaboradorObraService.VinculoAtual(
+                "vinc-1", "REVOGADO", "OPERACIONAL"
+        ));
+        carregaResposta();
+
+        VinculoColaboradorObraResponse response = service.vincular(
+                "obra-1",
+                "colab-1",
+                "OPERACIONAL",
+                "alfa"
+        );
+
+        assertEquals("vinc-1", response.id());
+        verify(operabilityGuard).requireWritable("obra-1");
+        verify(jdbc).update(
+                contains("UPDATE vinculo_colaborador_obra"),
+                any(), any(), any(), eq("vinc-1")
+        );
+    }
+
+    @Test
+    void reativarRevogadoPreservaOIdentificadorHistorico() {
+        colaboradorExiste();
+        vinculoVigente(new VinculoColaboradorObraService.VinculoAtual(
+                "vinc-1", "REVOGADO", "OPERACIONAL"
+        ));
+        carregaResposta();
+
+        VinculoColaboradorObraResponse response = service.vincularComId(
+                "vinc-1",
+                "obra-1",
+                "colab-1",
+                "OPERACIONAL",
+                "alfa"
+        );
+
+        assertEquals("vinc-1", response.id());
+        verify(operabilityGuard).requireWritable("obra-1");
+        verify(jdbc).update(
+                contains("UPDATE vinculo_colaborador_obra"),
+                any(), any(), any(), eq("vinc-1")
         );
     }
 

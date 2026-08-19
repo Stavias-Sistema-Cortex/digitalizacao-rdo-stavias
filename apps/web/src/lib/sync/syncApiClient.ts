@@ -144,6 +144,7 @@ export async function pushMutationsApi(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Cortex-Sync-Capabilities": "conversation-alias-remap-v1",
       },
       body: JSON.stringify(request),
     },

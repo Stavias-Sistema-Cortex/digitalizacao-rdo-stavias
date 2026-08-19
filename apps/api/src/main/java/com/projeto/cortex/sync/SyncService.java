@@ -44,6 +44,10 @@ public class SyncService {
     private static final int MAX_MUTACOES_POR_PUSH = 100;
     private static final int MAX_DEPENDENCIAS_POR_MUTACAO = 64;
     private static final int CANONICAL_SCHEMA_VERSION = 13;
+    static final String CLIENT_CAPABILITIES_HEADER =
+            "X-Cortex-Sync-Capabilities";
+    private static final String CONVERSATION_ALIAS_REMAP_CAPABILITY =
+            "conversation-alias-remap-v1";
     private static final Set<String> CANONICAL_ENTITY_TYPES = Set.of(
             "OBRA",
             "RDO",
@@ -453,6 +457,13 @@ public class SyncService {
     }
 
     public SyncPushResponse push(SyncPushRequest request) {
+        return push(request, null);
+    }
+
+    SyncPushResponse push(
+            SyncPushRequest request,
+            String clientCapabilities
+    ) {
         if (request == null) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -474,12 +485,17 @@ public class SyncService {
         }
 
         List<SyncPushResponse.ResultadoMutacao> resultados = new ArrayList<>();
+        boolean supportsConversationAliasRemap = supportsCapability(
+                clientCapabilities,
+                CONVERSATION_ALIAS_REMAP_CAPABILITY
+        );
 
         for (SyncPushRequest.MutacaoCliente mutacao : mutacoes) {
             resultados.add(processarMutacaoComSeguranca(
                     request.dispositivoId(),
                     currentUserId,
-                    mutacao
+                    mutacao,
+                    supportsConversationAliasRemap
             ));
         }
 
@@ -545,7 +561,8 @@ public class SyncService {
     private SyncPushResponse.ResultadoMutacao processarMutacaoComSeguranca(
             String dispositivoId,
             String currentUserId,
-            SyncPushRequest.MutacaoCliente mutacao
+            SyncPushRequest.MutacaoCliente mutacao,
+            boolean supportsConversationAliasRemap
     ) {
         try {
             /*
@@ -579,10 +596,18 @@ public class SyncService {
                 }
                 if ("ERRO".equals(existente.status())) {
                     return transactionTemplate.execute(
-                            status -> reprocessarMutacaoComErro(dispositivoId, mutacao)
+                            status -> reprocessarMutacaoComErro(
+                                    dispositivoId,
+                                    mutacao,
+                                    supportsConversationAliasRemap
+                            )
                     );
                 }
-                return existente;
+                return protegerAliasParaClienteCompativel(
+                        mutacao,
+                        existente,
+                        supportsConversationAliasRemap
+                );
             }
 
             validarRastroCanonicoParaAplicacao(
@@ -591,7 +616,11 @@ public class SyncService {
                     mutacao
             );
 
-            return transactionTemplate.execute(status -> processarMutacaoAplicavel(dispositivoId, mutacao));
+            return transactionTemplate.execute(status -> processarMutacaoAplicavel(
+                    dispositivoId,
+                    mutacao,
+                    supportsConversationAliasRemap
+            ));
         } catch (DuplicateKeyException exception) {
             SyncPushResponse.ResultadoMutacao existing = buscarResultadoMutacaoExistente(
                     dispositivoId,
@@ -607,7 +636,13 @@ public class SyncService {
                             currentUserId,
                             mutacao
                     );
-            return replayScopeFailure == null ? existing : replayScopeFailure;
+            return replayScopeFailure == null
+                    ? protegerAliasParaClienteCompativel(
+                            mutacao,
+                            existing,
+                            supportsConversationAliasRemap
+                    )
+                    : replayScopeFailure;
         } catch (SyncBaseVersionConflictException exception) {
             return registrarConflitoEmNovaTransacao(dispositivoId, mutacao, exception);
         } catch (SyncTraceRejectionException exception) {
@@ -651,6 +686,13 @@ public class SyncService {
                     exception.getMessage(),
                     "DEPENDENCY_NOT_APPLIED"
             );
+        } catch (SyncClientCapabilityRequiredException exception) {
+            return registrarErroEmNovaTransacao(
+                    dispositivoId,
+                    mutacao,
+                    exception.getMessage(),
+                    "CLIENT_CAPABILITY_REQUIRED"
+            );
         } catch (RuntimeException exception) {
             String erro = exception.getClass().getSimpleName() + ": " + primeiroNaoVazio(
                     exception.getMessage(),
@@ -682,20 +724,30 @@ public class SyncService {
 
     private SyncPushResponse.ResultadoMutacao processarMutacaoAplicavel(
             String dispositivoId,
-            SyncPushRequest.MutacaoCliente mutacao
+            SyncPushRequest.MutacaoCliente mutacao,
+            boolean supportsConversationAliasRemap
     ) {
         inserirMutacaoPendente(dispositivoId, mutacao);
         validarDependenciasAplicadas(mutacao);
-        return aplicarMutacaoRegistrada(dispositivoId, mutacao);
+        return aplicarMutacaoRegistrada(
+                dispositivoId,
+                mutacao,
+                supportsConversationAliasRemap
+        );
     }
 
     private SyncPushResponse.ResultadoMutacao reprocessarMutacaoComErro(
             String dispositivoId,
-            SyncPushRequest.MutacaoCliente mutacao
+            SyncPushRequest.MutacaoCliente mutacao,
+            boolean supportsConversationAliasRemap
     ) {
         validarDependenciasAplicadas(mutacao);
         reabrirMutacaoComErro(dispositivoId, mutacao);
-        return aplicarMutacaoRegistrada(dispositivoId, mutacao);
+        return aplicarMutacaoRegistrada(
+                dispositivoId,
+                mutacao,
+                supportsConversationAliasRemap
+        );
     }
 
     /**
@@ -791,7 +843,8 @@ public class SyncService {
 
     private SyncPushResponse.ResultadoMutacao aplicarMutacaoRegistrada(
             String dispositivoId,
-            SyncPushRequest.MutacaoCliente mutacao
+            SyncPushRequest.MutacaoCliente mutacao,
+            boolean supportsConversationAliasRemap
     ) {
         SyncOperationHandler handler = operationRegistry.require(
                 mutacao.operacao()
@@ -811,7 +864,12 @@ public class SyncService {
                     )
             );
         }
-        requireAppliedContract(handler, mutacao, applied);
+        requireAppliedContract(
+                handler,
+                mutacao,
+                applied,
+                supportsConversationAliasRemap
+        );
         long commitSeq = commitSeqEntidade(
                 applied.entityType(),
                 applied.entityId()
@@ -2060,20 +2118,102 @@ public class SyncService {
     private void requireAppliedContract(
             SyncOperationHandler handler,
             SyncPushRequest.MutacaoCliente mutation,
-            AppliedSyncMutation applied
+            AppliedSyncMutation applied,
+            boolean supportsConversationAliasRemap
     ) {
         if (applied == null
                 || !handler.entityType().equals(applied.entityType())
                 || applied.entityId() == null
-                || applied.entityId().isBlank()
-                || (isCanonical(mutation)
-                        && (!mutation.entityType().equals(applied.entityType())
-                                || !mutation.entityId().equals(applied.entityId())))) {
+                || applied.entityId().isBlank()) {
+            throw new IllegalStateException(
+                    "Handler de sync retornou uma aplicação inválida."
+            );
+        }
+        boolean conversationAlias = isConversationAlias(
+                mutation,
+                applied.entityType(),
+                applied.entityId()
+        );
+        if (conversationAlias && !supportsConversationAliasRemap) {
+            throw new SyncClientCapabilityRequiredException(
+                    "Atualize o Córtex para reconciliar esta conversa; "
+                            + "a alteração continua salva na fila."
+            );
+        }
+        if (isCanonical(mutation)
+                && (!mutation.entityType().equals(applied.entityType())
+                        || (!mutation.entityId().equals(applied.entityId())
+                                && !conversationAlias))) {
             throw new IllegalStateException(
                     "Handler de sync retornou uma aplicação inválida."
             );
         }
         validarEventoAutoritativo(applied.authoritativeEvent());
+    }
+
+    private SyncPushResponse.ResultadoMutacao protegerAliasParaClienteCompativel(
+            SyncPushRequest.MutacaoCliente mutation,
+            SyncPushResponse.ResultadoMutacao result,
+            boolean supportsConversationAliasRemap
+    ) {
+        if (supportsConversationAliasRemap
+                || !"APLICADA".equals(result.status())
+                || !isConversationAlias(
+                        mutation,
+                        result.entidadeTipo(),
+                        result.entidadeId()
+                )) {
+            return result;
+        }
+        ObjectNode compatibilityError = objectMapper.createObjectNode();
+        compatibilityError.put(
+                "categoria",
+                "CLIENT_CAPABILITY_REQUIRED"
+        );
+        return new SyncPushResponse.ResultadoMutacao(
+                mutation.clientMutationId(),
+                "ERRO",
+                mutation.entidadeTipo(),
+                mutation.entidadeId(),
+                mutation.operacao(),
+                null,
+                compatibilityError,
+                objectMapper.createObjectNode(),
+                "Atualize o Córtex para reconciliar esta conversa; "
+                        + "a alteração continua salva na fila."
+        );
+    }
+
+    private boolean isConversationAlias(
+            SyncPushRequest.MutacaoCliente mutation,
+            String appliedEntityType,
+            String appliedEntityId
+    ) {
+        return mutation != null
+                && !isCanonical(mutation)
+                && "CONVERSA".equals(mutation.entidadeTipo())
+                && "CRIAR_CONVERSA".equals(mutation.operacao())
+                && "CONVERSA".equals(appliedEntityType)
+                && appliedEntityId != null
+                && !appliedEntityId.isBlank()
+                && (mutation.entidadeId() == null
+                        || mutation.entidadeId().isBlank()
+                        || !mutation.entidadeId().equals(appliedEntityId));
+    }
+
+    private boolean supportsCapability(
+            String clientCapabilities,
+            String requiredCapability
+    ) {
+        if (clientCapabilities == null || clientCapabilities.isBlank()) {
+            return false;
+        }
+        for (String capability : clientCapabilities.split(",")) {
+            if (requiredCapability.equals(capability.trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void validarEventoAutoritativo(
@@ -2576,6 +2716,14 @@ public class SyncService {
 
     private static class SyncDependencyUnavailableException extends RuntimeException {
         private SyncDependencyUnavailableException(String message) {
+            super(message);
+        }
+    }
+
+    private static final class SyncClientCapabilityRequiredException
+            extends RuntimeException {
+
+        private SyncClientCapabilityRequiredException(String message) {
             super(message);
         }
     }

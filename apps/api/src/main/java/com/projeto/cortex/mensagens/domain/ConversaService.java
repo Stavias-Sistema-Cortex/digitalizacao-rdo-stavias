@@ -1,7 +1,10 @@
 package com.projeto.cortex.mensagens.domain;
 
+import com.projeto.cortex.common.JdbcSavepointBoundary;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.mensagens.api.ConversationAuthorizationSnapshotResponse;
 import com.projeto.cortex.mensagens.api.ConversationCreateRequest;
+import com.projeto.cortex.mensagens.api.ConversationPreferenceResponse;
 import com.projeto.cortex.mensagens.api.ConversationResponse;
 import com.projeto.cortex.mensagens.api.ParticipantChangeRequest;
 import com.projeto.cortex.mensagens.api.ParticipantResponse;
@@ -12,18 +15,21 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -76,8 +82,16 @@ public class ConversaService {
         );
 
         validateShape(type, title, obraId, teamId, participants);
-        if (conversationExists(id)) {
-            return get(id);
+        ConversationResponse replay = exactReplay(
+                id,
+                type,
+                title,
+                obraId,
+                teamId,
+                participants
+        );
+        if (replay != null) {
+            return replay;
         }
         validateScope(type, obraId, teamId, actorId);
         for (String participantId : participants) {
@@ -95,6 +109,12 @@ public class ConversaService {
         String directKey = type == ConversationType.DIRETA
                 ? directParticipantKey(participants)
                 : null;
+        JdbcSavepointBoundary insertSavepoint = directKey == null
+                ? null
+                : JdbcSavepointBoundary.begin(
+                        jdbcTemplate,
+                        "Não foi possível proteger a criação da conversa."
+                );
         try {
             jdbcTemplate.update(
                     """
@@ -111,7 +131,17 @@ public class ConversaService {
                     directKey,
                     actorId
             );
+            if (insertSavepoint != null) {
+                insertSavepoint.release(
+                        "Não foi possível concluir a criação da conversa."
+                );
+            }
         } catch (DuplicateKeyException exception) {
+            if (insertSavepoint != null) {
+                insertSavepoint.rollbackAndRelease(
+                        "Não foi possível recuperar a conversa já existente."
+                );
+            }
             if (directKey != null) {
                 String existingId = jdbcTemplate.query(
                         """
@@ -120,6 +150,7 @@ public class ConversaService {
                           AND status = 'ATIVA'
                           AND deletado_em IS NULL
                         LIMIT 1
+                        FOR UPDATE
                         """,
                         rs -> rs.next() ? rs.getString("id") : null,
                         directKey
@@ -159,6 +190,38 @@ public class ConversaService {
         return get(id);
     }
 
+    private ConversationResponse exactReplay(
+            String id,
+            ConversationType type,
+            String title,
+            String obraId,
+            String teamId,
+            Set<String> participants
+    ) {
+        if (!conversationExists(id)) {
+            return null;
+        }
+
+        ConversationResponse existing = get(id);
+        Set<String> existingParticipants = new LinkedHashSet<>();
+        if (existing.participantes() != null) {
+            existing.participantes().forEach(participant ->
+                    existingParticipants.add(participant.colaboradorId())
+            );
+        }
+        if (type.name().equals(existing.tipo())
+                && Objects.equals(title, existing.titulo())
+                && Objects.equals(obraId, existing.obraId())
+                && Objects.equals(teamId, existing.equipeId())
+                && participants.equals(existingParticipants)) {
+            return existing;
+        }
+        throw new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "O identificador já pertence a outra conversa."
+        );
+    }
+
     public List<ConversationResponse> list(int requestedLimit) {
         return list(requestedLimit, false);
     }
@@ -177,6 +240,86 @@ public class ConversaService {
     ) {
         String userId = currentUserService.requireUserId();
         int limit = normalizeLimit(requestedLimit);
+        AuthorizedConversationQuery authorized = authorizedQuery(
+                userId,
+                AuthorizedConversationProjection.FULL
+        );
+        String sql = authorized.sql();
+        List<Object> arguments = new ArrayList<>(authorized.arguments());
+        // O recorte pessoal entra na consulta, não depois dela: filtrar o
+        // resultado já cortado pelo LIMIT faria as conversas arquivadas
+        // gastarem vagas, e quem tivesse arquivado bastante abriria a tela
+        // vazia com conversas ativas esperando fora do corte.
+        sql += arquivadas ? RECORTE_ARQUIVADAS : RECORTE_ATIVAS;
+        arguments.add(userId);
+        sql += """
+                ORDER BY c.atualizado_em DESC, c.id
+                LIMIT ?
+                """;
+        arguments.add(limit);
+        Set<String> arquivadasDaPessoa = arquivadas
+                ? preferencias.conversasArquivadas()
+                : Set.<String>of();
+        return jdbcTemplate.query(
+                sql,
+                (rs, rowNum) -> mapConversation(rs, arquivadasDaPessoa),
+                arguments.toArray()
+        );
+    }
+
+    /**
+     * Identificadores de todas as conversas que a pessoa ainda pode ler.
+     *
+     * <p>Este é um snapshot de autorização, não uma página da caixa. Por isso
+     * inclui a gaveta pessoal e não aceita limite: o cliente offline usa a
+     * ausência daqui como revogação e não pode confundir paginação ou arquivo
+     * com exclusão.</p>
+     */
+    public List<String> authorizedConversationIds() {
+        String userId = currentUserService.requireUserId();
+        AuthorizedConversationQuery authorized = authorizedQuery(
+                userId,
+                AuthorizedConversationProjection.ID
+        );
+        return jdbcTemplate.query(
+                authorized.sql() + " ORDER BY c.id",
+                (rs, rowNum) -> rs.getString("id"),
+                authorized.arguments().toArray()
+        );
+    }
+
+    /**
+     * Gate de autorizacao e cortinas pessoais de uma unica fotografia.
+     *
+     * <p>O cliente usa ausencia no gate para apagar cache revogado. Ler as
+     * preferencias no mesmo snapshot impede combinar uma lista nova com uma
+     * cortina antiga (ou o inverso).</p>
+     */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public ConversationAuthorizationSnapshotResponse authorizationSnapshot() {
+        List<String> authorizedIds = authorizedConversationIds();
+        Map<String, LocalDateTime> curtains = preferencias.cortinasDaPessoa();
+        List<ConversationPreferenceResponse> personalPreferences =
+                authorizedIds.stream()
+                        .map(id -> new ConversationPreferenceResponse(
+                                id,
+                                curtains.get(id) == null
+                                        ? null
+                                        : curtains.get(id).toInstant(
+                                                ZoneOffset.UTC
+                                        )
+                        ))
+                        .toList();
+        return new ConversationAuthorizationSnapshotResponse(
+                authorizedIds,
+                personalPreferences
+        );
+    }
+
+    private AuthorizedConversationQuery authorizedQuery(
+            String userId,
+            AuthorizedConversationProjection projection
+    ) {
         String sql;
         List<Object> arguments = new ArrayList<>();
         if (currentUserService.isAlfa(userId)) {
@@ -187,7 +330,7 @@ public class ConversaService {
              * de mensagens de toda a empresa.
              */
             sql = """
-                    SELECT c.*
+                    SELECT %s
                     FROM conversa c
                     WHERE c.status = 'ATIVA' AND c.deletado_em IS NULL
                       AND (
@@ -201,11 +344,11 @@ public class ConversaService {
                               AND cp.deletado_em IS NULL
                         )
                       )
-                    """;
+                    """.formatted(projection.sql());
             arguments.add(userId);
         } else {
             sql = """
-                    SELECT DISTINCT c.*
+                    SELECT DISTINCT %s
                     FROM conversa c
                     JOIN conversa_participante cp
                       ON cp.conversa_id = c.id
@@ -240,31 +383,33 @@ public class ConversaService {
                               AND em.deletado_em IS NULL
                         ))
                       )
-                    """;
+                    """.formatted(projection.sql());
             arguments.add(userId);
             arguments.add(userId);
             arguments.add(userId);
             arguments.add(userId);
         }
-        // O recorte pessoal entra na consulta, não depois dela: filtrar o
-        // resultado já cortado pelo LIMIT faria as conversas arquivadas
-        // gastarem vagas, e quem tivesse arquivado bastante abriria a tela
-        // vazia com conversas ativas esperando fora do corte.
-        sql += arquivadas ? RECORTE_ARQUIVADAS : RECORTE_ATIVAS;
-        arguments.add(userId);
-        sql += """
-                ORDER BY c.atualizado_em DESC, c.id
-                LIMIT ?
-                """;
-        arguments.add(limit);
-        Set<String> arquivadasDaPessoa = arquivadas
-                ? preferencias.conversasArquivadas()
-                : Set.<String>of();
-        return jdbcTemplate.query(
-                sql,
-                (rs, rowNum) -> mapConversation(rs, arquivadasDaPessoa),
-                arguments.toArray()
-        );
+        return new AuthorizedConversationQuery(sql, List.copyOf(arguments));
+    }
+
+    private record AuthorizedConversationQuery(
+            String sql,
+            List<Object> arguments
+    ) { }
+
+    private enum AuthorizedConversationProjection {
+        FULL("c.*"),
+        ID("c.id");
+
+        private final String sql;
+
+        AuthorizedConversationProjection(String sql) {
+            this.sql = sql;
+        }
+
+        private String sql() {
+            return sql;
+        }
     }
 
     /** O que esta pessoa guardou na gaveta. */
