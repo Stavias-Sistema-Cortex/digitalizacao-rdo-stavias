@@ -284,28 +284,28 @@ git commit -m "ops: back up and restore local production"
 - Evidence only: server mode-600 deployment record outside the checkout.
 
 **Interfaces:**
-- Consumes: attested API/PWA images for `63f315df6bd0377b162851d22bdd4f644a938c2b` and current canary backups.
+- Consumes: attested API/PWA images for `3dea2fddd4179a38c5309ad9987e098c0d8711f3` and current canary backups.
 - Produces: local canary serving the same exact SHA while retaining its current Neon/R2 connections and a tested container-level rollback.
 
-- [ ] **Step 1: Regain SSH access from the Stavias LAN/VPN**
+- [x] **Step 1: Regain SSH access from the Stavias LAN/VPN**
 
 ```bash
 ssh -o ConnectTimeout=5 sistema@192.168.0.15 'hostname; date -Is'
 ```
 
-- [ ] **Step 2: Capture current server evidence and backup canary files**
+- [x] **Step 2: Capture current server evidence and backup canary files**
 
 Do not display secret values. Copy Compose/env/Apache configuration to timestamped mode-600 backups and record current image IDs, revisions, health, restart counts, disk space, and volume list.
 
-- [ ] **Step 3: Pull and attest the exact images**
+- [x] **Step 3: Pull and attest the exact images**
 
 Verify GHCR provenance against this repository, pull digest-pinned images, and compare each OCI revision label to the full SHA before changing Compose.
 
-- [ ] **Step 4: Update canary images only**
+- [x] **Step 4: Update canary images only**
 
 Keep database and storage settings unchanged. Run `docker compose config`, recreate API/PWA without builds, and automatically restore the previous image references if readiness fails.
 
-- [ ] **Step 5: Verify exact public runtime**
+- [x] **Step 5: Verify exact public runtime**
 
 Require 20 consecutive successful checks of `/healthz`, `/api/health`, `/api/readiness`, and `/api/wake`, with the expected full revision and no Apache 502, container restart, or OOM.
 

@@ -69,8 +69,9 @@ if [[ "$CORTEX_DATABASE_RELEASE_MARKER" != "$expected_marker" ]]; then
   exit 1
 fi
 
-api_pattern='^ghcr\.io/stavias-sistema-cortex/digitalizacao-rdo-stavias-api@sha256:[a-f0-9]{64}$'
-web_pattern='^ghcr\.io/stavias-sistema-cortex/digitalizacao-rdo-stavias-web@sha256:[a-f0-9]{64}$'
+image_repository_pattern='ghcr\.io/stavias-sistema-cortex/digitalizacao-rdo-stavias'
+api_pattern="^${image_repository_pattern}-api@sha256:[a-f0-9]{64}$"
+web_pattern="^${image_repository_pattern}-web@sha256:[a-f0-9]{64}$"
 if [[ ! "$CORTEX_API_IMAGE" =~ $api_pattern ]]; then
   echo "CORTEX_API_IMAGE must be the immutable Córtex API GHCR digest." >&2
   exit 1

@@ -11,6 +11,22 @@ require_one_line() {
   fi
 }
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -c '%a' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  return 1
+}
+
 for name in \
   CORTEX_BASE_URL \
   CORTEX_EXPECTED_RELEASE_SHA \
@@ -45,6 +61,23 @@ for path in "$CORTEX_COMPOSE_FILE" "$CORTEX_COMPOSE_ENV_FILE"; do
   fi
 done
 
+curl_transport_args=()
+if [[ -n "${CORTEX_SMOKE_CA_CERT:-}" ]]; then
+  if [[ "$CORTEX_SMOKE_CA_CERT" != /* || ! -f "$CORTEX_SMOKE_CA_CERT" \
+      || ! -r "$CORTEX_SMOKE_CA_CERT" || -L "$CORTEX_SMOKE_CA_CERT" ]]; then
+    echo "CORTEX_SMOKE_CA_CERT must be a readable absolute regular file." >&2
+    exit 1
+  fi
+  curl_transport_args+=(--cacert "$CORTEX_SMOKE_CA_CERT")
+fi
+if [[ -n "${CORTEX_SMOKE_RESOLVE:-}" ]]; then
+  if [[ ! "$CORTEX_SMOKE_RESOLVE" =~ ^[A-Za-z0-9.-]+:[0-9]{1,5}:(127\.0\.0\.1|::1)$ ]]; then
+    echo "CORTEX_SMOKE_RESOLVE must pin one HTTPS host and port to loopback." >&2
+    exit 1
+  fi
+  curl_transport_args+=(--resolve "$CORTEX_SMOKE_RESOLVE")
+fi
+
 for command_name in curl docker python3; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "$command_name is required to capture local cutover state." >&2
@@ -63,7 +96,10 @@ if [[ -L "$CORTEX_CUTOVER_EVIDENCE_FILE" ]]; then
   exit 1
 fi
 
-evidence_dir_mode="$(stat -f '%Lp' "$evidence_dir" 2>/dev/null || stat -c '%a' "$evidence_dir")"
+evidence_dir_mode="$(file_mode "$evidence_dir")" || {
+  echo "The evidence directory permissions could not be read safely." >&2
+  exit 1
+}
 if [[ ! "$evidence_dir_mode" =~ ^[0-7]{3,4}$ ]] \
     || (( (8#$evidence_dir_mode & 022) != 0 )); then
   echo "The evidence directory must not be writable by group or others." >&2
@@ -95,6 +131,7 @@ fetch() {
       --disable \
       --silent \
       --show-error \
+      "${curl_transport_args[@]}" \
       --connect-timeout 5 \
       --max-time 15 \
       --output "$destination" \
@@ -193,7 +230,7 @@ def container_evidence(path, label):
     revision = labels.get("org.opencontainers.image.revision")
     image_id = item.get("Image")
     health_state = (state.get("Health") or {}).get("Status")
-    restart_count = state.get("RestartCount")
+    restart_count = item.get("RestartCount")
     if (
         state.get("Status") != "running"
         or health_state != "healthy"

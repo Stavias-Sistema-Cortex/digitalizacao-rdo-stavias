@@ -2,6 +2,22 @@
 set -euo pipefail
 umask 077
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -c '%a' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  return 1
+}
+
 for name in \
   CORTEX_REMOTE_RETENTION \
   CORTEX_EXPECTED_RELEASE_SHA \
@@ -45,7 +61,10 @@ state_file="$CORTEX_APACHE_BACKUP_DIR/cutover-state.json"
   echo "Protected cutover state is missing." >&2
   exit 1
 }
-state_mode="$(stat -f '%Lp' "$state_file" 2>/dev/null || stat -c '%a' "$state_file")"
+state_mode="$(file_mode "$state_file")" || {
+  echo "Protected cutover state permissions could not be read safely." >&2
+  exit 1
+}
 [[ "$state_mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$state_mode & 077) == 0 )) || {
   echo "Protected cutover state must be owner-only." >&2
   exit 1

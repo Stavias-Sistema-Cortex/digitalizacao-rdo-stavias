@@ -172,10 +172,13 @@ mkdir "$contract_dir/evidence"
 chmod 700 "$contract_dir/evidence"
 
 rendered_file="$contract_dir/rendered.json"
+contract_image_repository='ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias'
 env \
-  CORTEX_API_IMAGE='ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
-  CORTEX_WEB_IMAGE='ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
+  CORTEX_API_IMAGE="${contract_image_repository}-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+  CORTEX_WEB_IMAGE="${contract_image_repository}-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
   CORTEX_RELEASE_SHA='63f315df6bd0377b162851d22bdd4f644a938c2b' \
+  CORTEX_RUNTIME_UID='10001' \
+  CORTEX_RUNTIME_GID='10001' \
   CORTEX_DATABASE_RELEASE_MARKER='igfgku3z2pPhpBClBEpnaMTZs8HLLhfa-vuAM6E269Q' \
   CORTEX_POSTGRES_DB='StaviasCortex' \
   CORTEX_POSTGRES_ADMIN_USER='cortex_admin' \

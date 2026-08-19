@@ -138,6 +138,14 @@ fi
 mkdir -p "$secret_dir" "$backup_dir" "$evidence_dir"
 chmod 700 "$runtime_dir" "$secret_dir" "$backup_dir" "$evidence_dir"
 
+runtime_uid="$(id -u)"
+runtime_gid="$(id -g)"
+if [[ ! "$runtime_uid" =~ ^[0-9]+$ || ! "$runtime_gid" =~ ^[0-9]+$ ]] \
+  || (( runtime_uid == 0 || runtime_gid == 0 )); then
+  echo "Production preparation must run as a non-root host account." >&2
+  exit 1
+fi
+
 require_text() {
   local variable_name="$1"
   local value="${!variable_name:-}"
@@ -169,7 +177,16 @@ install_secret_file() {
     echo "$variable_name must name a non-empty readable regular secret file." >&2
     exit 1
   fi
-  source_mode="$(stat -f '%Lp' "$source_path" 2>/dev/null || stat -c '%a' "$source_path")"
+  if source_mode="$(stat -c '%a' "$source_path" 2>/dev/null)" \
+    && [[ "$source_mode" =~ ^[0-7]{3,4}$ ]]; then
+    :
+  elif source_mode="$(stat -f '%Lp' "$source_path" 2>/dev/null)" \
+    && [[ "$source_mode" =~ ^[0-7]{3,4}$ ]]; then
+    :
+  else
+    echo "$variable_name permissions could not be read safely." >&2
+    exit 1
+  fi
   if [[ ! "$source_mode" =~ ^[0-7]{3,4}$ ]] ||
     (( (8#$source_mode & 077) != 0 )); then
     echo "$variable_name must not be readable or writable by group or others." >&2
@@ -351,6 +368,53 @@ capture_source_table_counts() {
   mv "$temporary" "$destination"
 }
 
+capture_source_sequence_exclusions() {
+  local destination="$1"
+  local snapshot_id="$2"
+  local temporary
+  local sequence_name
+  temporary="$(mktemp "$backup_dir/source-sequence-exclusions.txt.XXXXXX")"
+  if [[ -n "$source_password" ]]; then
+    {
+      printf 'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;\n'
+      printf "SET TRANSACTION SNAPSHOT '%s';\n" "$snapshot_id"
+      cat <<'SQL'
+SELECT namespace.nspname || '.' || relation.relname
+FROM pg_class relation
+JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+WHERE namespace.nspname = 'public'
+  AND relation.relkind = 'S'
+ORDER BY namespace.nspname, relation.relname;
+SQL
+      printf 'COMMIT;\n'
+    } | PGPASSWORD="$source_password" "${source_psql_args[@]}" > "$temporary"
+  else
+    {
+      printf 'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;\n'
+      printf "SET TRANSACTION SNAPSHOT '%s';\n" "$snapshot_id"
+      cat <<'SQL'
+SELECT namespace.nspname || '.' || relation.relname
+FROM pg_class relation
+JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+WHERE namespace.nspname = 'public'
+  AND relation.relkind = 'S'
+ORDER BY namespace.nspname, relation.relname;
+SQL
+      printf 'COMMIT;\n'
+    } | "${source_psql_args[@]}" > "$temporary"
+  fi
+  LC_ALL=C sort -u -o "$temporary" "$temporary"
+  while IFS= read -r sequence_name; do
+    [[ -z "$sequence_name" ]] && continue
+    if [[ ! "$sequence_name" =~ ^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      echo "The source contains a sequence name that cannot be exported safely." >&2
+      exit 1
+    fi
+  done < "$temporary"
+  chmod 600 "$temporary"
+  mv "$temporary" "$destination"
+}
+
 start_source_snapshot() {
   local snapshot_file
   local snapshot_error
@@ -382,7 +446,7 @@ SQL
   source_snapshot_pid=$!
 
   for _ in $(seq 1 100); do
-    source_snapshot="$(sed -n '/^[0-9][0-9]*-[0-9A-F][0-9A-F]*-[0-9][0-9]*$/p' "$snapshot_file" 2>/dev/null | head -n 1)"
+    source_snapshot="$(sed -n '/^[0-9A-Fa-f][0-9A-Fa-f]*-[0-9A-Fa-f][0-9A-Fa-f]*-[0-9][0-9]*$/p' "$snapshot_file" 2>/dev/null | head -n 1)"
     [[ -n "$source_snapshot" ]] && break
     if ! kill -0 "$source_snapshot_pid" 2>/dev/null; then
       echo "Unable to open a consistent read-only PostgreSQL source snapshot." >&2
@@ -424,6 +488,63 @@ capture_target_table_counts() {
   mv "$temporary" "$destination"
 }
 
+reset_restored_sequences() {
+  "${compose[@]}" exec -T cortex-postgres \
+    psql --no-psqlrc --quiet --set=ON_ERROR_STOP=1 \
+      --username=cortex_admin \
+      --dbname=StaviasCortex <<'SQL'
+DO $cortex_sequence_reset$
+DECLARE
+  item record;
+  aggregate_name text;
+  restored_value bigint;
+BEGIN
+  FOR item IN
+    SELECT
+      format('%I.%I', sequence_namespace.nspname, sequence_class.relname) AS sequence_name,
+      table_namespace.nspname AS table_schema,
+      table_class.relname AS table_name,
+      attribute.attname AS column_name,
+      sequence_parameters.seqstart AS sequence_start,
+      sequence_parameters.seqincrement AS sequence_increment
+    FROM pg_class sequence_class
+    JOIN pg_namespace sequence_namespace
+      ON sequence_namespace.oid = sequence_class.relnamespace
+    JOIN pg_sequence sequence_parameters
+      ON sequence_parameters.seqrelid = sequence_class.oid
+    JOIN pg_depend dependency
+      ON dependency.classid = 'pg_class'::regclass
+     AND dependency.objid = sequence_class.oid
+     AND dependency.refclassid = 'pg_class'::regclass
+     AND dependency.deptype IN ('a', 'i')
+    JOIN pg_class table_class ON table_class.oid = dependency.refobjid
+    JOIN pg_namespace table_namespace ON table_namespace.oid = table_class.relnamespace
+    JOIN pg_attribute attribute
+      ON attribute.attrelid = table_class.oid
+     AND attribute.attnum = dependency.refobjsubid
+    WHERE sequence_class.relkind = 'S'
+      AND sequence_namespace.nspname = 'public'
+    ORDER BY sequence_namespace.nspname, sequence_class.relname
+  LOOP
+    aggregate_name := CASE WHEN item.sequence_increment > 0 THEN 'max' ELSE 'min' END;
+    EXECUTE format(
+      'SELECT %s(%I)::bigint FROM %I.%I',
+      aggregate_name,
+      item.column_name,
+      item.table_schema,
+      item.table_name
+    ) INTO restored_value;
+    IF restored_value IS NULL THEN
+      PERFORM pg_catalog.setval(item.sequence_name::regclass, item.sequence_start, false);
+    ELSE
+      PERFORM pg_catalog.setval(item.sequence_name::regclass, restored_value, true);
+    END IF;
+  END LOOP;
+END
+$cortex_sequence_reset$;
+SQL
+}
+
 runtime_env_tmp="$(mktemp "$runtime_dir/production.env.XXXXXX")"
 {
   printf 'CORTEX_PRODUCTION_MODE=%s\n' "$release_mode"
@@ -432,6 +553,8 @@ runtime_env_tmp="$(mktemp "$runtime_dir/production.env.XXXXXX")"
   printf 'CORTEX_WEB_IMAGE=%s\n' "$release_web_image"
   printf 'CORTEX_RELEASE_SHA=%s\n' "$release_sha"
   printf 'CORTEX_DATABASE_RELEASE_MARKER=%s\n' "$release_database_marker"
+  printf 'CORTEX_RUNTIME_UID=%s\n' "$runtime_uid"
+  printf 'CORTEX_RUNTIME_GID=%s\n' "$runtime_gid"
   printf 'CORTEX_POSTGRES_DB=StaviasCortex\n'
   printf 'CORTEX_POSTGRES_ADMIN_USER=cortex_admin\n'
   printf 'CORTEX_POSTGRES_MIGRATOR_USER=cortex_migrator\n'
@@ -486,6 +609,7 @@ compose=(
 backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 backup_file="$backup_dir/StaviasCortex-$backup_stamp.dump"
 source_count_manifest="$backup_dir/$backup_stamp-source-table-counts.tsv"
+source_sequence_exclusion_manifest="$backup_dir/$backup_stamp-source-sequence-exclusions.txt"
 target_count_manifest="$backup_dir/$backup_stamp-target-table-counts.tsv"
 pg_restore_log="$backup_dir/$backup_stamp-pg-restore.log"
 source_password=""
@@ -504,6 +628,7 @@ dump_command=(
   --format=custom
   --no-owner
   --no-acl
+  --enable-row-security
   --host="$source_postgres_host"
   --port="$source_postgres_port"
   --username="$source_postgres_user"
@@ -512,6 +637,10 @@ dump_command=(
 )
 start_source_snapshot
 capture_source_table_counts "$source_count_manifest" "$source_snapshot"
+capture_source_sequence_exclusions "$source_sequence_exclusion_manifest" "$source_snapshot"
+while IFS= read -r sequence_name; do
+  [[ -z "$sequence_name" ]] || dump_command+=(--exclude-table-data="$sequence_name")
+done < "$source_sequence_exclusion_manifest"
 dump_command+=(--snapshot="$source_snapshot")
 if [[ -n "$source_password" ]]; then
   PGPASSWORD="$source_password" "${dump_command[@]}"
@@ -602,6 +731,7 @@ target_table_count="$(
     psql --username=cortex_admin --dbname=StaviasCortex --tuples-only --no-align \
       --command="SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';"
 )"
+restored_source=false
 if [[ "$target_table_count" == "0" ]]; then
   "${compose[@]}" exec -T cortex-postgres sh -ec '
     export PGPASSWORD="$(cat /run/secrets/postgres_migrator_password)"
@@ -613,11 +743,16 @@ if [[ "$target_table_count" == "0" ]]; then
       --username="$CORTEX_POSTGRES_MIGRATOR_USER" \
       --dbname="$POSTGRES_DB"
   ' < "$backup_file" > "$pg_restore_log" 2>&1
+  restored_source=true
 else
   echo "The isolated PostgreSQL already contains data; restore was skipped." >&2
   : > "$pg_restore_log"
 fi
 chmod 600 "$pg_restore_log"
+
+if [[ "$restored_source" == "true" ]]; then
+  reset_restored_sequences
+fi
 
 capture_target_table_counts "$target_count_manifest"
 if ! cmp -s "$source_count_manifest" "$target_count_manifest"; then
@@ -653,7 +788,11 @@ PY
 chmod 600 "$database_evidence_temp"
 mv -f "$database_evidence_temp" "$database_evidence"
 
-"${compose[@]}" up --force-recreate cortex-migrate
+"${compose[@]}" up \
+  --force-recreate \
+  --abort-on-container-exit \
+  --exit-code-from cortex-migrate \
+  cortex-migrate
 "${compose[@]}" up -d --force-recreate cortex-api cortex-web cortex-edge
 
 edge_container="$("${compose[@]}" ps -q cortex-edge)"

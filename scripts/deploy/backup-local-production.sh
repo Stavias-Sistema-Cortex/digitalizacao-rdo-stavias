@@ -11,6 +11,22 @@ require_line() {
   fi
 }
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -c '%a' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  return 1
+}
+
 for name in \
   CORTEX_REMOTE_RETENTION \
   CORTEX_EXPECTED_RELEASE_SHA \
@@ -64,7 +80,10 @@ destination="$(cd "$CORTEX_BACKUP_DESTINATION" && pwd -P)"
   echo "The backup destination path cannot contain a comma." >&2
   exit 1
 }
-destination_mode="$(stat -f '%Lp' "$destination" 2>/dev/null || stat -c '%a' "$destination")"
+destination_mode="$(file_mode "$destination")" || {
+  echo "The off-host backup destination permissions could not be read safely." >&2
+  exit 1
+}
 [[ "$destination_mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$destination_mode & 077) == 0 )) || {
   echo "The off-host backup destination must be owner-only." >&2
   exit 1
@@ -74,7 +93,10 @@ destination_mode="$(stat -f '%Lp' "$destination" 2>/dev/null || stat -c '%a' "$d
   echo "The age recipient file is missing or unsafe." >&2
   exit 1
 }
-recipient_mode="$(stat -f '%Lp' "$CORTEX_BACKUP_AGE_RECIPIENT_FILE" 2>/dev/null || stat -c '%a' "$CORTEX_BACKUP_AGE_RECIPIENT_FILE")"
+recipient_mode="$(file_mode "$CORTEX_BACKUP_AGE_RECIPIENT_FILE")" || {
+  echo "The age recipient file permissions could not be read safely." >&2
+  exit 1
+}
 [[ "$recipient_mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$recipient_mode & 077) == 0 )) || {
   echo "The age recipient file must be owner-only." >&2
   exit 1
@@ -135,8 +157,18 @@ done
 
 device_id() {
   local path="$1"
-  "$CORTEX_STAT_BIN" -f '%d' "$path" 2>/dev/null \
-    || "$CORTEX_STAT_BIN" -c '%d' "$path"
+  local identifier
+  if identifier="$("$CORTEX_STAT_BIN" -c '%d' "$path" 2>/dev/null)" \
+    && [[ "$identifier" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$identifier"
+    return
+  fi
+  if identifier="$("$CORTEX_STAT_BIN" -f '%d' "$path" 2>/dev/null)" \
+    && [[ "$identifier" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$identifier"
+    return
+  fi
+  return 1
 }
 destination_device="$(device_id "$destination")"
 postgres_device="$(device_id "$postgres_mount")"

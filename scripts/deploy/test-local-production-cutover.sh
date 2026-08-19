@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -c '%a' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+  elif mode="$(stat -f '%Lp' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+  else
+    return 1
+  fi
+}
+
 repo_root="$(git rev-parse --show-toplevel)"
 cutover_script="$repo_root/scripts/deploy/cutover-local-production.sh"
 rollback_script="$repo_root/scripts/deploy/rollback-local-production.sh"
@@ -259,7 +273,7 @@ prepare_case success
 run_cutover
 [[ "$(readlink "$current_link")" == "$candidate_config" ]]
 [[ -s "$cutover_evidence" && ! -L "$cutover_evidence" ]]
-[[ "$(stat -f '%Lp' "$cutover_evidence" 2>/dev/null || stat -c '%a' "$cutover_evidence")" == "600" ]]
+[[ "$(file_mode "$cutover_evidence")" == "600" ]]
 python3 - "$cutover_evidence" "$release_sha" "$current_config" "$candidate_config" <<'PY'
 import json, pathlib, sys
 document = json.loads(pathlib.Path(sys.argv[1]).read_text())

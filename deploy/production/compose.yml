@@ -5,6 +5,8 @@ services:
     image: postgres:18-alpine
     entrypoint:
       - /usr/local/bin/cortex-postgres-entrypoint.sh
+    command:
+      - postgres
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -42,8 +44,37 @@ services:
       retries: 20
       start_period: 15s
 
+  cortex-storage-init:
+    image: ${CORTEX_API_IMAGE:?Set the immutable API image digest}
+    user: "0:0"
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - |
+        chown -R 0:0 /var/lib/cortex/objects
+        find /var/lib/cortex/objects -type d -exec chmod 700 {} +
+        find /var/lib/cortex/objects -type f -exec chmod 600 {} +
+        chown -R "$${CORTEX_RUNTIME_UID}:$${CORTEX_RUNTIME_GID}" /var/lib/cortex/objects
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+    read_only: true
+    network_mode: none
+    environment:
+      CORTEX_RUNTIME_UID: ${CORTEX_RUNTIME_UID:?Set the non-root runtime UID}
+      CORTEX_RUNTIME_GID: ${CORTEX_RUNTIME_GID:?Set the non-root runtime GID}
+    volumes:
+      - cortex_object_data:/var/lib/cortex/objects
+
   cortex-migrate:
     image: ${CORTEX_API_IMAGE:-cortex-api:production}
+    user: "${CORTEX_RUNTIME_UID:?Set the non-root runtime UID}:${CORTEX_RUNTIME_GID:?Set the non-root runtime GID}"
     build:
       context: ../../apps/api
     restart: "no"
@@ -75,6 +106,7 @@ services:
 
   cortex-api:
     image: ${CORTEX_API_IMAGE:-cortex-api:production}
+    user: "${CORTEX_RUNTIME_UID:?Set the non-root runtime UID}:${CORTEX_RUNTIME_GID:?Set the non-root runtime GID}"
     build:
       context: ../../apps/api
     restart: unless-stopped
@@ -147,6 +179,8 @@ services:
         condition: service_healthy
       cortex-migrate:
         condition: service_completed_successfully
+      cortex-storage-init:
+        condition: service_completed_successfully
     networks:
       - cortex_private
       - cortex_source_egress
@@ -163,6 +197,7 @@ services:
     profiles:
       - object-migration
     image: ${CORTEX_API_IMAGE:?Set the immutable API image digest}
+    user: "${CORTEX_RUNTIME_UID:?Set the non-root runtime UID}:${CORTEX_RUNTIME_GID:?Set the non-root runtime GID}"
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -200,6 +235,8 @@ services:
       cortex-postgres:
         condition: service_healthy
       cortex-migrate:
+        condition: service_completed_successfully
+      cortex-storage-init:
         condition: service_completed_successfully
     networks:
       - cortex_private

@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -c '%a' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+  elif mode="$(stat -f '%Lp' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+  else
+    return 1
+  fi
+}
+
 repo_root="$(git rev-parse --show-toplevel)"
 backup_script="$repo_root/scripts/deploy/backup-local-production.sh"
 verify_script="$repo_root/scripts/deploy/verify-local-production-backup.sh"
@@ -224,7 +238,7 @@ if ! run_backup; then
 fi
 manifest="$(find "$destination" -maxdepth 1 -name 'cortex-*.manifest.json' -type f -print -quit)"
 [[ -n "$manifest" && -s "$manifest" ]]
-[[ "$(stat -f '%Lp' "$manifest" 2>/dev/null || stat -c '%a' "$manifest")" == "600" ]]
+[[ "$(file_mode "$manifest")" == "600" ]]
 [[ -z "$(find "$destination" -maxdepth 1 \( -name '*.partial' -o -name '.backup-work.*' \) -print -quit)" ]]
 python3 - "$manifest" "$release_sha" <<'PY'
 import json, pathlib, sys

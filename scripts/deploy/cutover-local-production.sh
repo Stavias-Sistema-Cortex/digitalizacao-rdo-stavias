@@ -11,6 +11,22 @@ require_line() {
   fi
 }
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -c '%a' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  return 1
+}
+
 for name in \
   CORTEX_CUTOVER_APPROVED \
   CORTEX_REMOTE_RETENTION \
@@ -109,7 +125,7 @@ secure_directory() {
   local path="$1"
   local mode
   [[ -d "$path" && ! -L "$path" ]] || return 1
-  mode="$(stat -f '%Lp' "$path" 2>/dev/null || stat -c '%a' "$path")"
+  mode="$(file_mode "$path")" || return 1
   [[ "$mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$mode & 022) == 0 ))
 }
 
@@ -128,7 +144,10 @@ secure_directory "$evidence_dir" || {
 }
 
 for config in "$CORTEX_APACHE_MAINTENANCE_CONFIG" "$CORTEX_APACHE_CANDIDATE_CONFIG"; do
-  config_mode="$(stat -f '%Lp' "$config" 2>/dev/null || stat -c '%a' "$config")"
+  config_mode="$(file_mode "$config")" || {
+    echo "Apache cutover config permissions could not be read safely." >&2
+    exit 1
+  }
   [[ "$config_mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$config_mode & 022) == 0 )) || {
     echo "Apache cutover configs must not be writable by group or others." >&2
     exit 1

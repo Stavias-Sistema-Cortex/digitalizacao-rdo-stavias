@@ -21,8 +21,17 @@ for required in \
   'CORTEX_AUTH_WEBAUTHN_RP_ID=%s' \
   'CORTEX_RELEASE_SHA=%s' \
   'CORTEX_DATABASE_RELEASE_MARKER=%s' \
+  'CORTEX_RUNTIME_UID=%s' \
+  'CORTEX_RUNTIME_GID=%s' \
   'pg_export_snapshot()' \
+  '/^[0-9A-Fa-f][0-9A-Fa-f]*-[0-9A-Fa-f][0-9A-Fa-f]*-[0-9][0-9]*$/' \
   '--snapshot="$source_snapshot"' \
+  'capture_source_sequence_exclusions()' \
+  '--exclude-table-data="$sequence_name"' \
+  '--enable-row-security' \
+  'reset_restored_sequences()' \
+  'pg_catalog.setval' \
+  '--exit-code-from cortex-migrate' \
   'source-table-counts.tsv' \
   'target-table-counts.tsv' \
   'cmp -s "$source_count_manifest" "$target_count_manifest"' \
@@ -51,6 +60,17 @@ for forbidden in \
 done
 
 grep -Fq 'CORTEX_POSTGRES_RELEASE_MARKER_WRITE_ENABLED: "true"' "$compose_file"
+[[ "$(grep -Fc 'user: "${CORTEX_RUNTIME_UID:?Set the non-root runtime UID}:${CORTEX_RUNTIME_GID:?Set the non-root runtime GID}"' "$compose_file")" -eq 3 ]]
+storage_init_block="$(sed -n '/^  cortex-storage-init:/,/^  cortex-migrate:/p' "$compose_file")"
+grep -Fq 'user: "0:0"' <<< "$storage_init_block"
+grep -Fq 'network_mode: none' <<< "$storage_init_block"
+grep -Fq -- '- CHOWN' <<< "$storage_init_block"
+grep -Fq -- '- DAC_OVERRIDE' <<< "$storage_init_block"
+grep -Fq 'chown -R "$${CORTEX_RUNTIME_UID}:$${CORTEX_RUNTIME_GID}" /var/lib/cortex/objects' <<< "$storage_init_block"
+[[ "$(grep -Fc 'cortex-storage-init:' "$compose_file")" -eq 3 ]]
+postgres_service_block="$(sed -n '/^  cortex-postgres:/,/^  cortex-migrate:/p' "$compose_file")"
+grep -Fq 'command:' <<< "$postgres_service_block"
+grep -Eq '^[[:space:]]+- postgres$' <<< "$postgres_service_block"
 grep -Fq 'CORTEX_RELEASE_REVISION: ${CORTEX_RELEASE_SHA:?Set the exact release revision}' "$compose_file"
 grep -Fq 'CORTEX_RELEASE_MARKER: ${CORTEX_DATABASE_RELEASE_MARKER:?Set the canonical release marker}' "$compose_file"
 grep -Fq 'RENDER_GIT_COMMIT: ${CORTEX_RELEASE_SHA:?Set the exact release revision}' "$compose_file"

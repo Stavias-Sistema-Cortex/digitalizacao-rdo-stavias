@@ -2,6 +2,22 @@
 set -euo pipefail
 umask 077
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -c '%a' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  return 1
+}
+
 [[ $# -eq 1 ]] || {
   echo "Usage: verify-local-production-backup.sh /absolute/backup.manifest.json" >&2
   exit 1
@@ -37,7 +53,10 @@ done
   echo "The age identity file is missing or unsafe." >&2
   exit 1
 }
-identity_mode="$(stat -f '%Lp' "$CORTEX_BACKUP_AGE_IDENTITY_FILE" 2>/dev/null || stat -c '%a' "$CORTEX_BACKUP_AGE_IDENTITY_FILE")"
+identity_mode="$(file_mode "$CORTEX_BACKUP_AGE_IDENTITY_FILE")" || {
+  echo "The age identity file permissions could not be read safely." >&2
+  exit 1
+}
 [[ "$identity_mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$identity_mode & 077) == 0 )) || {
   echo "The age identity file must be owner-only." >&2
   exit 1
@@ -50,7 +69,10 @@ identity_mode="$(stat -f '%Lp' "$CORTEX_BACKUP_AGE_IDENTITY_FILE" 2>/dev/null ||
   echo "The restore scratch path cannot contain a comma." >&2
   exit 1
 }
-scratch_mode="$(stat -f '%Lp' "$CORTEX_RESTORE_SCRATCH_ROOT" 2>/dev/null || stat -c '%a' "$CORTEX_RESTORE_SCRATCH_ROOT")"
+scratch_mode="$(file_mode "$CORTEX_RESTORE_SCRATCH_ROOT")" || {
+  echo "The restore scratch root permissions could not be read safely." >&2
+  exit 1
+}
 [[ "$scratch_mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$scratch_mode & 077) == 0 )) || {
   echo "The restore scratch root must be owner-only." >&2
   exit 1

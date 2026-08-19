@@ -152,14 +152,90 @@ const CORPORATE_SOURCE_LINES = new Map([
     ],
   ],
   [
+    "scripts/deploy/capture-local-cutover-state.sh",
+    [
+      "match = re.fullmatch(r\"jdbc:postgresql://([^/:?]+)(?::[0-9]+)?/StaviasCortex(?:\\?.*)?\", postgres_values[0])",
+    ],
+  ],
+  [
+    "scripts/deploy/cutover-local-production.sh",
+    [
+      "or candidate.hostname != \"cortex.portalstavias.com.br\"",
+      "or public.hostname != \"cortex.portalstavias.com.br\"",
+      "r\"(?mi)^\\s*ProxyPass\\s+/\\s+https://cortex\\.portalstavias\\.com\\.br:18443/\",",
+      "r\"(?mi)^\\s*ProxyPassReverse\\s+/\\s+https://cortex\\.portalstavias\\.com\\.br:18443/\\s*$\",",
+      "--resolve 'cortex.portalstavias.com.br:18443:127.0.0.1'",
+    ],
+  ],
+  [
     "scripts/deploy/prepare-local-production.sh",
     [
+      "CORTEX_PUBLIC_ORIGIN=\"${CORTEX_PUBLIC_ORIGIN:-https://cortex.portalstavias.com.br}\"",
+      "CORTEX_AUTH_WEBAUTHN_RP_ID=\"${CORTEX_AUTH_WEBAUTHN_RP_ID:-cortex.portalstavias.com.br}\"",
       "if [[ ! \"$CORTEX_POSTGRES_URL\" =~ ^jdbc:postgresql://([^/:?]+)(:([0-9]+))?/StaviasCortex(\\?.*)?$ ]]; then",
       "echo \"The source PostgreSQL URL must target StaviasCortex.\" >&2",
       "printf 'CORTEX_POSTGRES_DB=StaviasCortex\\n'",
-      "backup_file=\"$backup_dir/StaviasCortex-$(date -u +%Y%m%dT%H%M%SZ).dump\"",
-      "--dbname=StaviasCortex",
+      ...Array(2).fill("--dbname=StaviasCortex"),
+      "--dbname=StaviasCortex \\",
+      "--dbname=StaviasCortex <<'SQL'",
+      "backup_file=\"$backup_dir/StaviasCortex-$backup_stamp.dump\"",
       "psql --username=cortex_admin --dbname=StaviasCortex --tuples-only --no-align \\",
+    ],
+  ],
+  [
+    "scripts/deploy/test-capture-local-cutover-state.sh",
+    [
+      "[{\"Id\":\"api-container\",\"Image\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"RestartCount\":0,\"Config\":{\"Labels\":{\"org.opencontainers.image.revision\":\"$sha\"},\"Env\":[\"CORTEX_POSTGRES_URL=jdbc:postgresql://ep-example.aws.neon.tech/StaviasCortex?sslmode=verify-full\",\"CORTEX_POSTGRES_PASSWORD=must-never-appear\"]},\"State\":{\"Status\":\"running\",\"Health\":{\"Status\":\"healthy\"}}}]",
+      "base_url=\"https://cortex.portalstavias.com.br\"",
+      "CORTEX_SMOKE_RESOLVE=cortex.portalstavias.com.br:443:127.0.0.1 \\",
+    ],
+  ],
+  [
+    "scripts/deploy/test-local-production-cutover.sh",
+    [
+      "ProxyPass / https://cortex.portalstavias.com.br:18443/ retry=0",
+      "ProxyPassReverse / https://cortex.portalstavias.com.br:18443/",
+      "export CORTEX_CANDIDATE_BASE_URL=\"https://cortex.portalstavias.com.br:18443\"",
+      "export CORTEX_PUBLIC_BASE_URL=\"https://cortex.portalstavias.com.br\"",
+      "grep -Fq -- '--resolve cortex.portalstavias.com.br:18443:127.0.0.1' \"$CORTEX_TEST_CURL_LOG\"",
+    ],
+  ],
+  [
+    "scripts/deploy/test-prepare-local-production.sh",
+    [
+      "*/manifest.webmanifest) printf '{\"name\":\"Córtex Stavias\"}\\n' ;;",
+      ...Array(2).fill("CORTEX_BASE_URL='https://cortex.portalstavias.com.br:18444' \\"),
+      "CORTEX_SMOKE_RESOLVE='cortex.portalstavias.com.br:18444:127.0.0.1' \\",
+      "[[ \"$(grep -Fc -- '--resolve cortex.portalstavias.com.br:18444:127.0.0.1' \"$contract_dir/curl.log\")\" -eq 5 ]]",
+      "CORTEX_SMOKE_RESOLVE='cortex.portalstavias.com.br:18444:186.249.31.219' \\",
+    ],
+  ],
+  [
+    "scripts/deploy/test-validate-local-release-inputs.sh",
+    [
+      "image_repository='ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias'",
+      "CORTEX_PUBLIC_ORIGIN=\"${CORTEX_TEST_ORIGIN:-https://cortex.portalstavias.com.br}\" \\",
+      "CORTEX_AUTH_WEBAUTHN_RP_ID=\"${CORTEX_TEST_RP_ID:-cortex.portalstavias.com.br}\" \\",
+      "expect_rejected 'a noncanonical browser origin' CORTEX_TEST_ORIGIN=https://cortex-stavias.pages.dev",
+    ],
+  ],
+  [
+    "scripts/deploy/validate-local-release-inputs.sh",
+    [
+      "image_repository_pattern='ghcr\\.io/stavias-sistema-cortex/digitalizacao-rdo-stavias'",
+      "if [[ \"$CORTEX_PUBLIC_ORIGIN\" != \"https://cortex.portalstavias.com.br\" ]]; then",
+      "echo \"CORTEX_PUBLIC_ORIGIN must remain https://cortex.portalstavias.com.br.\" >&2",
+      "if [[ \"$CORTEX_AUTH_WEBAUTHN_RP_ID\" != \"cortex.portalstavias.com.br\" ]]; then",
+      "echo \"CORTEX_AUTH_WEBAUTHN_RP_ID must remain cortex.portalstavias.com.br.\" >&2",
+    ],
+  ],
+  [
+    "scripts/deploy/verify-local-production-backup.sh",
+    [
+      "-e POSTGRES_DB=StaviasCortex \\",
+      "if \"$CORTEX_DOCKER_BIN\" exec \"$container_name\" pg_isready -U postgres -d StaviasCortex >/dev/null 2>&1; then",
+      "pg_restore --exit-on-error --no-owner --no-acl -U postgres -d StaviasCortex < \"$database_dump\"",
+      "-U postgres -d StaviasCortex > \"$counts_file\" <<'SQL'",
     ],
   ],
   [
@@ -194,7 +270,10 @@ const CORPORATE_SOURCE_LINES = new Map([
   ],
   [
     "scripts/security/test-production-publication.sh",
-    ["CORTEX_POSTGRES_DB='StaviasCortex' \\"],
+    [
+      "contract_image_repository='ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias'",
+      "CORTEX_POSTGRES_DB='StaviasCortex' \\",
+    ],
   ],
   [
     "scripts/security/test-hosted-deployment-contract-regressions.sh",

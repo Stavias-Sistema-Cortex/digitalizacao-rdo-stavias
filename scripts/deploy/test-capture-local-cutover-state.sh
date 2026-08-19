@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -c '%a' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+  elif mode="$(stat -f '%Lp' "$path" 2>/dev/null)" \
+    && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+  else
+    return 1
+  fi
+}
+
 repo_root="$(git rev-parse --show-toplevel)"
 script="$repo_root/scripts/deploy/capture-local-cutover-state.sh"
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/cortex-local-cutover-capture-test.XXXXXX")"
@@ -21,13 +35,25 @@ set -euo pipefail
 
 output_file=""
 previous=""
+seen_ca=""
+seen_resolve=""
 for argument in "$@"; do
   if [[ "$previous" == "--output" ]]; then
     output_file="$argument"
+  elif [[ "$previous" == "--cacert" ]]; then
+    seen_ca="$argument"
+  elif [[ "$previous" == "--resolve" ]]; then
+    seen_resolve="$argument"
   fi
   previous="$argument"
 done
 [[ -n "$output_file" ]]
+if [[ -n "${CORTEX_SMOKE_CA_CERT:-}" ]]; then
+  [[ "$seen_ca" == "$CORTEX_SMOKE_CA_CERT" ]]
+fi
+if [[ -n "${CORTEX_SMOKE_RESOLVE:-}" ]]; then
+  [[ "$seen_resolve" == "$CORTEX_SMOKE_RESOLVE" ]]
+fi
 
 url="${!#}"
 sha="${CORTEX_TEST_RUNTIME_SHA:?}"
@@ -98,12 +124,12 @@ if [[ "$1" == "inspect" ]]; then
   case "$container_id" in
     api-container)
       cat <<JSON
-[{"Id":"api-container","Image":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Labels":{"org.opencontainers.image.revision":"$sha"},"Env":["CORTEX_POSTGRES_URL=jdbc:postgresql://ep-example.aws.neon.tech/StaviasCortex?sslmode=verify-full","CORTEX_POSTGRES_PASSWORD=must-never-appear"]},"State":{"Status":"running","RestartCount":0,"Health":{"Status":"healthy"}}}]
+[{"Id":"api-container","Image":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","RestartCount":0,"Config":{"Labels":{"org.opencontainers.image.revision":"$sha"},"Env":["CORTEX_POSTGRES_URL=jdbc:postgresql://ep-example.aws.neon.tech/StaviasCortex?sslmode=verify-full","CORTEX_POSTGRES_PASSWORD=must-never-appear"]},"State":{"Status":"running","Health":{"Status":"healthy"}}}]
 JSON
       ;;
     web-container)
       cat <<JSON
-[{"Id":"web-container","Image":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Config":{"Labels":{"org.opencontainers.image.revision":"$sha"},"Env":[]},"State":{"Status":"running","RestartCount":0,"Health":{"Status":"healthy"}}}]
+[{"Id":"web-container","Image":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","RestartCount":0,"Config":{"Labels":{"org.opencontainers.image.revision":"$sha"},"Env":[]},"State":{"Status":"running","Health":{"Status":"healthy"}}}]
 JSON
       ;;
     *) exit 2 ;;
@@ -121,9 +147,11 @@ other_sha="$(printf '2%.0s' {1..40})"
 base_url="https://cortex.portalstavias.com.br"
 compose_file="$fixture_root/compose.yml"
 env_file="$fixture_root/production.env"
+ca_file="$fixture_root/caddy-root.crt"
 printf 'services: {}\n' > "$compose_file"
 printf 'COMPOSE_PROJECT_NAME=cortex-production\n' > "$env_file"
-chmod 600 "$compose_file" "$env_file"
+printf '%s\n' 'test-only-caddy-root' > "$ca_file"
+chmod 600 "$compose_file" "$env_file" "$ca_file"
 
 run_capture() {
   local name="$1"
@@ -142,6 +170,8 @@ run_capture() {
     CORTEX_COMPOSE_FILE="$compose_file" \
     CORTEX_COMPOSE_ENV_FILE="$env_file" \
     CORTEX_COMPOSE_PROJECT_NAME=cortex-production \
+    CORTEX_SMOKE_CA_CERT="$ca_file" \
+    CORTEX_SMOKE_RESOLVE=cortex.portalstavias.com.br:443:127.0.0.1 \
     CORTEX_TEST_RUNTIME_SHA="$runtime_sha" \
     CORTEX_TEST_READINESS_MODE="$readiness_mode" \
     bash "$script"
@@ -149,7 +179,7 @@ run_capture() {
 
 run_capture success "$sha" "$sha"
 evidence_file="$fixture_root/success/evidence.json"
-[[ "$(stat -f '%Lp' "$evidence_file" 2>/dev/null || stat -c '%a' "$evidence_file")" == "600" ]]
+[[ "$(file_mode "$evidence_file")" == "600" ]]
 
 python3 - "$evidence_file" "$sha" "$base_url" <<'PY'
 import json
