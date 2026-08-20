@@ -4,7 +4,9 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 contract="$repo_root/scripts/security/test-production-workflow-contract.sh"
 workflow="$repo_root/.github/workflows/production.yml"
-fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/cortex-workflow-contract.XXXXXX")"
+keepwarm="$repo_root/.github/workflows/api-keepwarm.yml"
+keepwarm_deploy="$repo_root/.github/workflows/keepwarm-deploy.yml"
+fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/cortex-local-workflow.XXXXXX")"
 
 cleanup() {
   find "$fixture_root" -type f -delete 2>/dev/null || true
@@ -14,201 +16,108 @@ trap cleanup EXIT
 
 assert_rejected() {
   local case_name="$1"
-  local fixture="$fixture_root/$case_name.yml"
-  cp "$workflow" "$fixture"
+  local workflow_fixture="$fixture_root/$case_name-production.yml"
+  local keepwarm_fixture="$fixture_root/$case_name-keepwarm.yml"
+  local keepwarm_deploy_fixture="$fixture_root/$case_name-keepwarm-deploy.yml"
+  cp "$workflow" "$workflow_fixture"
+  cp "$keepwarm" "$keepwarm_fixture"
+  cp "$keepwarm_deploy" "$keepwarm_deploy_fixture"
 
-  python3 - "$fixture" "$case_name" <<'PY'
+  python3 - "$workflow_fixture" "$keepwarm_fixture" "$keepwarm_deploy_fixture" "$case_name" <<'PY'
 import pathlib
 import sys
 
-path = pathlib.Path(sys.argv[1])
-case_name = sys.argv[2]
-text = path.read_text()
+workflow = pathlib.Path(sys.argv[1])
+keepwarm = pathlib.Path(sys.argv[2])
+keepwarm_deploy = pathlib.Path(sys.argv[3])
+case_name = sys.argv[4]
+text = workflow.read_text()
+
 replacements = {
-    "environment": (
-        "environment: production",
-        "environment: preview",
-    ),
-    "tag-develop": (
+    "environment": ("environment: production", "environment: preview"),
+    "branch-condition": (
         "if: github.ref == 'refs/heads/develop'",
         "if: github.ref_name == 'develop'",
     ),
-    "shell-tag": (
-        'test "$GITHUB_REF" = refs/heads/develop',
-        'test "$GITHUB_REF_NAME" = develop',
-    ),
-    "boundary-command": (
-        "run: node scripts/verify-" + "sta" + "via-boundary.mjs",
-        'run: "true"',
-    ),
-    "mutable-image": (
-        "@${{ steps.api.outputs.digest }}",
-        ":production",
-    ),
-    "render-sha": (
-        "CORTEX_RELEASE_SHA: ${{ github.sha }}",
-        "CORTEX_RELEASE_SHA: develop",
-    ),
-    "api-id": (
-        "id: api",
-        "id: mutable-api",
-    ),
-    "api-retry-id": (
-        "id: api_publish_retry",
-        "id: missing_api_publish_retry",
-    ),
-    "api-action": (
-        "uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6",
-        "uses: docker/build-push-action@main",
-    ),
-    "unreviewed-action-sha": (
-        "uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5",
-        "uses: actions/checkout@0000000000000000000000000000000000000000 # v5",
-    ),
-    "api-context": (
-        "context: apps/api",
-        "context: .",
-    ),
-    "api-platforms": (
+    "api-push": ("push: true", "push: false"),
+    "api-platform": (
         "platforms: linux/amd64,linux/arm64",
         "platforms: linux/amd64",
     ),
-    "api-push": (
-        "push: true",
-        "push: false",
-    ),
-    "web-retry-id": (
-        "id: web_publish_retry",
-        "id: missing_web_publish_retry",
-    ),
-    "secret-file-command": (
-        "bash scripts/security/test-api-docker-secret-file-access.sh",
-        "true",
-    ),
-    "secret-file-digest": (
-        "CORTEX_API_IMAGE_DIGEST: ${{ steps.release.outputs.api_image }}@${{ steps.api.outputs.digest }}",
-        "CORTEX_API_IMAGE_DIGEST: cortex-api:production",
-    ),
-    "migration-command": (
-        "run: bash scripts/deploy/run-neon-flyway.sh",
+    "handoff-builder": (
+        "run: bash scripts/deploy/build-local-release-handoff.sh",
         'run: "true"',
     ),
-    "render-command": (
-        "run: bash scripts/deploy/trigger-and-wait-render.sh",
-        'run: "true"',
+    "mutable-handoff-api": (
+        "CORTEX_API_IMAGE: ${{ steps.release.outputs.api_image }}@${{ steps.api.outputs.digest }}",
+        "CORTEX_API_IMAGE: ${{ steps.release.outputs.api_image }}:production",
     ),
-    "capture-render-command": (
-        "run: bash scripts/deploy/capture-render-instance-fingerprint.sh",
-        'run: "true"',
+    "handoff-attestation": (
+        "subject-path: ${{ runner.temp }}/cortex-local-release-handoff.json",
+        "subject-path: ${{ runner.temp }}/different.json",
     ),
-    "capture-render-cold-start-window": (
-        'CORTEX_RENDER_CAPTURE_TIMEOUT_SECONDS: "300"',
-        'CORTEX_RENDER_CAPTURE_TIMEOUT_SECONDS: "90"',
+    "upload-pin": (
+        "uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "uses: actions/upload-artifact@v4",
     ),
-    "render-api-token": (
-        "          CORTEX_RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}",
-        "          CORTEX_RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}\n"
-        "          CORTEX_RENDER_API_TOKEN: ${{ secrets.RENDER_API_TOKEN }}",
-    ),
-    "render-instance-proof": (
-        "CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256: ${{ steps.render_before.outputs.previous_render_instance_sha256 }}",
-        "CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256: none",
-    ),
-    "deterministic-marker": (
-        "cortex-release-v1:%s",
-        "cortex-release-v2:%s",
-    ),
-    "release-evidence": (
-        "CORTEX_DATABASE_RELEASE_MARKER: ${{ steps.release.outputs.database_release_marker }}",
-        "CORTEX_DATABASE_RELEASE_MARKER: stale-marker",
-    ),
-    "offline-key-evidence": (
-        "CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${{ steps.release.outputs.offline_public_key_fingerprint }}",
-        "CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    ),
-    "pages-command": (
-        "run: bash scripts/deploy/deploy-and-verify-cloudflare-pages.sh",
-        'run: "true"',
-    ),
+    "retention": ("retention-days: 30", "retention-days: 1"),
 }
-if case_name == "reordered":
-    migration_start = text.index(
-        "      - name: Migrate Neon with the immutable API image"
-    )
-    render_start = text.index(
-        "      - name: Deploy and verify the exact Render revision",
-        migration_start,
-    )
-    render_end = text.index(
-        "      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5",
-        render_start,
-    )
-    migration = text[migration_start:render_start]
-    render = text[render_start:render_end]
-    path.write_text(text[:migration_start] + render + migration + text[render_end:])
-elif case_name in {
-    "pages-build-command",
-    "pages-build-directory",
-    "remote-head-images",
-}:
-    if case_name.startswith("remote-head-"):
-        suffix = case_name.removeprefix("remote-head-")
-        labels = {"images": "image publication"}
-        start = text.index(
-            "      - name: Confirm develop still points to the release before "
-            + labels[suffix]
-        )
-        end = text.index(
-            "      - name: Build and publish API",
-            start,
-        )
-        block = text[start:end]
-        before = 'test "$remote_sha" = "$GITHUB_SHA"'
-        if before not in block:
-            raise SystemExit(f"fixture setup failed for {case_name}")
-        block = block.replace(before, "true", 1)
-        path.write_text(text[:start] + block + text[end:])
-        raise SystemExit(0)
-    pages_start = text.index(
-        "      - name: Build production Cloudflare Pages artifact"
-    )
-    pages_end = text.index(
-        "      - name: Deploy and verify exact Cloudflare Pages revision",
-        pages_start,
-    )
-    pages = text[pages_start:pages_end]
-    before = (
-        "          npm run build:functions"
-        if case_name == "pages-build-command"
-        else "        working-directory: apps/web"
-    )
-    after = "          true" if case_name == "pages-build-command" else "        working-directory: ."
-    if before not in pages:
-        raise SystemExit(f"fixture setup failed for {case_name}")
-    pages = pages.replace(before, after, 1)
-    path.write_text(text[:pages_start] + pages + text[pages_end:])
-elif case_name == "late-remote-head":
-    mutation = "      - name: Migrate Neon with the immutable API image"
-    late_check = """      - name: Abort stale release after publication
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          remote_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/develop" --jq '.object.sha')"
-          test "$remote_sha" = "$GITHUB_SHA"
-"""
-    if mutation not in text:
-        raise SystemExit("fixture setup failed for late-remote-head")
-    path.write_text(text.replace(mutation, late_check + mutation, 1))
-else:
+
+if case_name in replacements:
     before, after = replacements[case_name]
     if before not in text:
         raise SystemExit(f"fixture setup failed for {case_name}")
-    count = -1 if case_name == "mutable-image" else 1
-    path.write_text(text.replace(before, after, count))
+    workflow.write_text(text.replace(before, after, 1))
+elif case_name == "neon-step":
+    marker = "      - name: Record local-server release evidence\n"
+    injected = """      - name: Migrate Neon again
+        env:
+          CORTEX_NEON_MIGRATION_URL: example
+        run: bash scripts/deploy/run-neon-flyway.sh
+"""
+    workflow.write_text(text.replace(marker, injected + marker, 1))
+elif case_name == "render-step":
+    marker = "      - name: Record local-server release evidence\n"
+    injected = """      - name: Deploy Render again
+        env:
+          CORTEX_RENDER_ORIGIN: https://example.invalid
+        run: bash scripts/deploy/trigger-and-wait-render.sh
+"""
+    workflow.write_text(text.replace(marker, injected + marker, 1))
+elif case_name == "cloudflare-step":
+    marker = "      - name: Record local-server release evidence\n"
+    injected = """      - name: Deploy Cloudflare again
+        env:
+          CLOUDFLARE_API_TOKEN: forbidden
+        run: bash scripts/deploy/deploy-and-verify-cloudflare-pages.sh
+"""
+    workflow.write_text(text.replace(marker, injected + marker, 1))
+elif case_name == "keepwarm-schedule":
+    keepwarm_text = keepwarm.read_text()
+    keepwarm.write_text(
+        keepwarm_text.replace(
+            "  workflow_dispatch:\n",
+            '  schedule:\n    - cron: "*/10 * * * *"\n  workflow_dispatch:\n',
+            1,
+        )
+    )
+elif case_name == "keepwarm-deploy-push":
+    keepwarm_text = keepwarm_deploy.read_text()
+    keepwarm_deploy.write_text(
+        keepwarm_text.replace(
+            "  workflow_dispatch:\n",
+            "  push:\n    branches: [develop]\n  workflow_dispatch:\n",
+            1,
+        )
+    )
+else:
+    raise SystemExit(f"unknown fixture {case_name}")
 PY
 
-  if CORTEX_PRODUCTION_WORKFLOW_FILE="$fixture" bash "$contract" >/dev/null 2>&1; then
+  if CORTEX_PRODUCTION_WORKFLOW_FILE="$workflow_fixture" \
+    CORTEX_KEEPWARM_WORKFLOW_FILE="$keepwarm_fixture" \
+    CORTEX_KEEPWARM_DEPLOY_WORKFLOW_FILE="$keepwarm_deploy_fixture" \
+    bash "$contract" >/dev/null 2>&1; then
     echo "production workflow contract accepted invalid fixture: $case_name" >&2
     exit 1
   fi
@@ -216,37 +125,20 @@ PY
 
 for case_name in \
   environment \
-  tag-develop \
-  shell-tag \
-  boundary-command \
-  mutable-image \
-  render-sha \
-  api-id \
-  api-retry-id \
-  api-action \
-  unreviewed-action-sha \
-  api-context \
-  api-platforms \
+  branch-condition \
   api-push \
-  web-retry-id \
-  secret-file-command \
-  secret-file-digest \
-  migration-command \
-  render-command \
-  capture-render-command \
-  capture-render-cold-start-window \
-  render-api-token \
-  render-instance-proof \
-  deterministic-marker \
-  release-evidence \
-  offline-key-evidence \
-  remote-head-images \
-  late-remote-head \
-  pages-command \
-  pages-build-directory \
-  pages-build-command \
-  reordered; do
+  api-platform \
+  handoff-builder \
+  mutable-handoff-api \
+  handoff-attestation \
+  upload-pin \
+  retention \
+  neon-step \
+  render-step \
+  cloudflare-step \
+  keepwarm-schedule \
+  keepwarm-deploy-push; do
   assert_rejected "$case_name"
 done
 
-echo "Production workflow negative regressions passed."
+echo "Production workflow local-server negative regressions passed."

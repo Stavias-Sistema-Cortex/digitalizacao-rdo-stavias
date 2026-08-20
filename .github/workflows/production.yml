@@ -76,11 +76,7 @@ jobs:
           VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
           VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES: "26214400"
         run: sh ./validate-docker-build-args.sh && npm run build
-      - name: Typecheck Cloudflare Pages Functions
-        run: npm run typecheck:functions
-      - name: Build Cloudflare Pages Functions
-        run: npm run build:functions
-      - name: Scan generated PWA and Functions for secrets
+      - name: Scan generated PWA for secrets
         run: bash ../../scripts/security/scan-cortex-secrets.sh
 
   deployment-gate:
@@ -104,10 +100,9 @@ jobs:
     runs-on: ubuntu-latest
     # As imagens são multi-arquitetura e a arm64 roda sob emulação; com o cache
     # frio, a da PWA sozinha consumia quase todo o orçamento e o job era morto
-    # no teto — antes de qualquer deploy acontecer. O release publicava a
-    # imagem da API e parava ali, com Render e Pages pulados: a revisão não
-    # chegava a lugar nenhum. A folga existe para que o corte, se vier, caia
-    # sobre um problema real e não sobre a emulação.
+    # no teto — antes de o handoff local ser assinado. A revisão ficava com só
+    # uma imagem publicada e sem coordenadas completas para o servidor. A folga
+    # existe para que uma falha represente um problema real, não a emulação.
     timeout-minutes: 120
     environment: production
     permissions:
@@ -292,7 +287,7 @@ jobs:
           set -euo pipefail
           echo "::warning::Três tentativas de atestação recusadas; conferindo se o digest já está atestado."
           gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "${GITHUB_REPOSITORY}"
-      - name: Verify Render secret-file access
+      - name: Verify API secret-file access
         shell: bash
         env:
           CORTEX_API_IMAGE_DIGEST: ${{ steps.release.outputs.api_image }}@${{ steps.api.outputs.digest }}
@@ -419,80 +414,40 @@ jobs:
           set -euo pipefail
           echo "::warning::Três tentativas de atestação recusadas; conferindo se o digest já está atestado."
           gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "${GITHUB_REPOSITORY}"
-      - name: Migrate Neon with the immutable API image
+      - name: Create local-server release handoff
         shell: bash
         env:
-          CORTEX_API_IMAGE_DIGEST: ${{ steps.release.outputs.api_image }}@${{ steps.api.outputs.digest }}
-          CORTEX_NEON_MIGRATION_URL: ${{ vars.CORTEX_NEON_MIGRATION_URL }}
-          CORTEX_NEON_MIGRATION_USER: ${{ vars.CORTEX_NEON_MIGRATION_USER }}
-          CORTEX_NEON_MIGRATION_PASSWORD: ${{ secrets.CORTEX_NEON_MIGRATION_PASSWORD }}
           CORTEX_RELEASE_SHA: ${{ github.sha }}
+          CORTEX_API_IMAGE: ${{ steps.release.outputs.api_image }}@${{ steps.api.outputs.digest }}
+          CORTEX_WEB_IMAGE: ${{ steps.release.outputs.web_image }}@${{ steps.web.outputs.digest }}
           CORTEX_DATABASE_RELEASE_MARKER: ${{ steps.release.outputs.database_release_marker }}
-        run: bash scripts/deploy/run-neon-flyway.sh
-      - name: Capture the current Render instance fingerprint
-        id: render_before
-        shell: bash
-        env:
-          CORTEX_RELEASE_SHA: ${{ github.sha }}
-          CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
-          CORTEX_RENDER_CAPTURE_TIMEOUT_SECONDS: "300"
-        run: bash scripts/deploy/capture-render-instance-fingerprint.sh
-      - name: Deploy and verify the exact Render revision
-        shell: bash
-        env:
-          CORTEX_RELEASE_SHA: ${{ github.sha }}
-          CORTEX_RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-          CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
-          CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256: ${{ steps.render_before.outputs.previous_render_instance_sha256 }}
           CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${{ steps.release.outputs.offline_public_key_fingerprint }}
-          CORTEX_DATABASE_RELEASE_MARKER: ${{ steps.release.outputs.database_release_marker }}
-        run: bash scripts/deploy/trigger-and-wait-render.sh
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+          CORTEX_SOURCE_REPOSITORY: ${{ github.repository }}
+          CORTEX_SOURCE_RUN_ID: ${{ github.run_id }}
+          CORTEX_LOCAL_RELEASE_HANDOFF: ${{ runner.temp }}/cortex-local-release-handoff.json
+        run: bash scripts/deploy/build-local-release-handoff.sh
+      - name: Attest local-server release handoff
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - name: Build production Cloudflare Pages artifact
-        working-directory: apps/web
-        shell: bash
-        env:
-          VITE_CORTEX_API_BASE_URL: /api
-          VITE_CORTEX_AUTH_MODE: postgresql
-          VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${{ steps.release.outputs.offline_public_key_fingerprint }}
-          VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES: "26214400"
-        run: |
-          set -euo pipefail
-          npm ci
-          sh ./validate-docker-build-args.sh
-          npm run build
-          npm run typecheck:functions
-          npm run build:functions
-          bash ../../scripts/security/scan-cortex-secrets.sh
-      - name: Deploy and verify exact Cloudflare Pages revision
-        shell: bash
-        env:
-          CORTEX_RELEASE_SHA: ${{ github.sha }}
-          CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
-          CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${{ steps.release.outputs.offline_public_key_fingerprint }}
-          CORTEX_DATABASE_RELEASE_MARKER: ${{ steps.release.outputs.database_release_marker }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
-        run: bash scripts/deploy/deploy-and-verify-cloudflare-pages.sh
-      - name: Record release evidence
+          subject-path: ${{ runner.temp }}/cortex-local-release-handoff.json
+      - name: Upload local-server release handoff
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cortex-local-release-${{ github.sha }}
+          path: ${{ runner.temp }}/cortex-local-release-handoff.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record local-server release evidence
         shell: bash
         run: |
           {
-            echo "## Córtex production"
+            echo "## Córtex local production handoff"
             echo
             echo "- Revision: \`${GITHUB_SHA}\`"
             echo "- API: \`${{ steps.release.outputs.api_image }}@${{ steps.api.outputs.digest }}\`"
             echo "- PWA: \`${{ steps.release.outputs.web_image }}@${{ steps.web.outputs.digest }}\`"
-            echo "- Render: revision \`${GITHUB_SHA}\` verified READY before Pages"
-            echo "- Cloudflare Pages: revision \`${GITHUB_SHA}\` uploaded from \`develop\`"
-            echo "- Offline key: public SHA-256 matched the key loaded by the API"
-            echo "- Database: deterministic release marker matched through readiness"
-            echo "- Object storage: reversible write/read/delete probe passed"
-            echo "- Canonical database: PostgreSQL \`StaviasCortex\`"
-            echo "- Authentication: CPF; passkey remains the alternative"
+            echo "- Database marker: \`${{ steps.release.outputs.database_release_marker }}\`"
+            echo "- Handoff: signed provenance plus artifact \`cortex-local-release-${GITHUB_SHA}\`"
+            echo "- Activation target: the Stavias local server, using the fail-closed updater"
+            echo "- Hosted rollback resources: retained unchanged and not contacted by this release"
           } >> "$GITHUB_STEP_SUMMARY"

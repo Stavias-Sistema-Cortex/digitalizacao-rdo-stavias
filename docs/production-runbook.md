@@ -156,6 +156,47 @@ abertura, reconexão, retorno ao foreground, mudança de sessão e timers soment
 enquanto a aplicação executa, está online e possui sessão online ativa; não há
 garantia universal de background sync com navegador ou PWA fechados.
 
+## Releases depois do corte local
+
+O workflow `production.yml` testa a revisão de `develop`, publica as imagens
+multi-arquitetura da API e da PWA no GHCR e atesta os respectivos digests. Ele
+não migra nem implanta nenhum provedor hospedado. Ao final, gera o artefato
+`cortex-local-release-<sha>` com um JSON de handoff também atestado. Os antigos
+serviços hospedados permanecem preservados como rollback e não são consultados
+nem alterados por esse workflow; manter esses recursos não os torna parte do
+caminho de publicação local. Uma rotina hospedada já provisionada pode continuar
+existindo até uma aposentadoria remota, posterior e explicitamente aprovada.
+
+Baixe o artefato de um run verde exato em um diretório protegido e verifique a
+atestação antes de aceitar as coordenadas:
+
+```bash
+umask 077
+mkdir -p /caminho/protegido/release
+gh run download RUN_ID \
+  --name "cortex-local-release-SHA_COMPLETO" \
+  --dir /caminho/protegido/release
+
+CORTEX_LOCAL_RELEASE_HANDOFF=/caminho/protegido/release/cortex-local-release-handoff.json \
+CORTEX_LOCAL_RELEASE_ENV_OUTPUT=/caminho/protegido/release/release.env \
+CORTEX_EXPECTED_SOURCE_REPOSITORY=Stavias-Sistema-Cortex/digitalizacao-rdo-stavias \
+  bash scripts/deploy/verify-local-release-handoff.sh
+```
+
+O verificador exige a proveniência do GitHub, confere SHA, repositório, digests
+imutáveis e o marcador determinístico do banco, e só então grava quatro
+variáveis em `release.env` com modo `600`. Combine esse arquivo com a
+configuração root-only do servidor e execute
+`update-local-production-release.sh stage-web`; depois de confirmar que o novo
+service worker controla o mesmo perfil, execute `activate`. O atualizador faz
+backup, Flyway no PostgreSQL local, troca atômica, probes pelo Apache e rollback
+fail-closed. Não copie credenciais hospedadas para o servidor e não execute os
+scripts históricos de migração ou implantação hospedada nesse fluxo.
+
+Os workflows de keep-warm permanecem manualmente visíveis apenas como registro
+de aposentadoria. Eles não possuem agenda, gatilho de push, ping nem implantação
+de worker. Isso não remove nem reconfigura um recurso hospedado já existente.
+
 ## Observabilidade operacional
 
 Alertar para:
