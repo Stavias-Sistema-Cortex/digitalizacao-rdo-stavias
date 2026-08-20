@@ -87,6 +87,10 @@ class StaviaRuntimeBoundaryTest {
                     "match = re.fullmatch(r\"jdbc:postgresql://([^/:?]+)"
                             + "(?::[0-9]+)?/StaviasCortex(?:\\?.*)?\", postgres_values[0])"),
             sourceReference(
+                    "scripts/deploy/db-view-bridge.sh",
+                    "StaviasCortex",
+                    "database_name=\"${CORTEX_POSTGRES_DB:-StaviasCortex}\""),
+            sourceReference(
                     "scripts/deploy/capture-local-cutover-state.sh",
                     "cortex.portalstavias.com.br",
                     "base_url=\"https://cortex.portalstavias.com.br\"",

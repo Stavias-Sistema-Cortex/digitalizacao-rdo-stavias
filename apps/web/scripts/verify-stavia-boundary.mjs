@@ -158,6 +158,10 @@ const CORPORATE_SOURCE_LINES = new Map([
     ],
   ],
   [
+    "scripts/deploy/db-view-bridge.sh",
+    ['database_name="${CORTEX_POSTGRES_DB:-StaviasCortex}"'],
+  ],
+  [
     "scripts/deploy/cutover-local-production.sh",
     [
       "or candidate.hostname != \"cortex.portalstavias.com.br\"",
