@@ -919,6 +919,29 @@ PY
     && "$old_web_image" =~ ^${image_repository}-web@sha256:[a-f0-9]{64}$ ]]
 }
 
+checkpoint_status_hint() {
+  require_regular "$CORTEX_UPDATE_CHECKPOINT_FILE" "Release-update checkpoint"
+  local checkpoint_mode
+  checkpoint_mode="$(file_mode "$CORTEX_UPDATE_CHECKPOINT_FILE")" || return 1
+  (( (8#$checkpoint_mode & 077) == 0 )) || {
+    echo "The release-update checkpoint must be owner-only." >&2
+    return 1
+  }
+  python3 - "$CORTEX_UPDATE_CHECKPOINT_FILE" <<'PY'
+import json, pathlib, sys
+try:
+    document = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError) as error:
+    raise SystemExit("The release-update checkpoint is invalid.") from error
+if document.get("version") != 1 or document.get("remoteRetention") != "PRESERVED":
+    raise SystemExit("The release-update checkpoint is incomplete.")
+status = document.get("status")
+if not isinstance(status, str) or "\n" in status or "\r" in status:
+    raise SystemExit("The release-update checkpoint has an invalid status.")
+print(status)
+PY
+}
+
 lock_dir="${CORTEX_RELEASE_UPDATE_LOCK_DIR:-$checkpoint_dir/.release-update.lock}"
 lock_held=false
 acquire_lock() {
@@ -1089,6 +1112,10 @@ for key in ("oldApiImage", "oldWebImage"):
         raise SystemExit("The activated checkpoint has an invalid rollback image.")
 root = pathlib.Path(checkpoint_dir).resolve()
 values = [
+    document.get("oldRevision", ""),
+    document.get("oldDatabaseMarker", ""),
+    document.get("oldApiImage", ""),
+    document.get("oldWebImage", ""),
     document.get("environmentBackup", ""),
     document.get("databaseDump", ""),
     document.get("databaseDumpList", ""),
@@ -1096,10 +1123,10 @@ values = [
 ]
 if any(not isinstance(value, str) or "\n" in value or "\r" in value for value in values):
     raise SystemExit("The activated checkpoint contains an invalid artifact field.")
-for value in values[:3]:
+for value in values[4:7]:
     if not value or pathlib.Path(value).resolve().parent != root:
         raise SystemExit("The activated checkpoint artifact is outside the protected directory.")
-if not re.fullmatch(r"[0-9a-f]{64}", values[3]):
+if not re.fullmatch(r"[0-9a-f]{64}", values[7]):
     raise SystemExit("The activated checkpoint has no verified database dump digest.")
 print("\n".join(values))
 PY
@@ -1107,10 +1134,15 @@ PY
     release_lock
     return 1
   }
-  environment_backup="$(printf '%s\n' "$payload" | sed -n '1p')"
-  database_dump="$(printf '%s\n' "$payload" | sed -n '2p')"
-  database_dump_list="$(printf '%s\n' "$payload" | sed -n '3p')"
-  database_dump_sha="$(printf '%s\n' "$payload" | sed -n '4p')"
+  local previous_revision previous_marker previous_api_image previous_web_image
+  previous_revision="$(printf '%s\n' "$payload" | sed -n '1p')"
+  previous_marker="$(printf '%s\n' "$payload" | sed -n '2p')"
+  previous_api_image="$(printf '%s\n' "$payload" | sed -n '3p')"
+  previous_web_image="$(printf '%s\n' "$payload" | sed -n '4p')"
+  environment_backup="$(printf '%s\n' "$payload" | sed -n '5p')"
+  database_dump="$(printf '%s\n' "$payload" | sed -n '6p')"
+  database_dump_list="$(printf '%s\n' "$payload" | sed -n '7p')"
+  database_dump_sha="$(printf '%s\n' "$payload" | sed -n '8p')"
   prove_old_release || {
     release_lock
     return 1
@@ -1119,6 +1151,32 @@ PY
     release_lock
     return 1
   }
+
+  if [[ -e "$CORTEX_STAGE_ENV_FILE" || -L "$CORTEX_STAGE_ENV_FILE" ]]; then
+    require_regular "$CORTEX_STAGE_ENV_FILE" "Previous staged production environment" || {
+      release_lock
+      return 1
+    }
+    local stage_mode
+    stage_mode="$(file_mode "$CORTEX_STAGE_ENV_FILE")" || {
+      release_lock
+      return 1
+    }
+    (( (8#$stage_mode & 077) == 0 )) || {
+      echo "The previous staged production environment must be owner-only." >&2
+      release_lock
+      return 1
+    }
+    verify_env_values "$CORTEX_STAGE_ENV_FILE" \
+      "$previous_revision" "$previous_marker" \
+      "$previous_api_image" "$old_web_image" || {
+      echo "The previous staged production environment does not match its ACTIVATED checkpoint." >&2
+      release_lock
+      return 1
+    }
+    rm -- "$CORTEX_STAGE_ENV_FILE"
+    fsync_directory "$runtime_env_dir"
+  fi
 
   archive="$checkpoint_dir/checkpoint.activated-$CORTEX_EXPECTED_OLD_RELEASE_SHA.json"
   python3 - "$CORTEX_UPDATE_CHECKPOINT_FILE" "$archive" "$checkpoint_dir" <<'PY'
@@ -1158,11 +1216,6 @@ restore_staging_to_old() {
 }
 
 stage_web() {
-  [[ ! -e "$CORTEX_STAGE_ENV_FILE" ]] || {
-    echo "The staged production environment already exists." >&2
-    exit 1
-  }
-
   old_marker="$(env_value "$CORTEX_RUNTIME_ENV_FILE" CORTEX_DATABASE_RELEASE_MARKER)"
   old_api_image="$(env_value "$CORTEX_RUNTIME_ENV_FILE" CORTEX_API_IMAGE)"
   old_web_image="$(env_value "$CORTEX_RUNTIME_ENV_FILE" CORTEX_WEB_IMAGE)"
@@ -1190,6 +1243,10 @@ stage_web() {
   verify_container_revision "$CORTEX_RUNTIME_ENV_FILE" "$old_compose_file" \
     cortex-api "$CORTEX_EXPECTED_OLD_RELEASE_SHA"
   retire_previous_activated_checkpoint
+  [[ ! -e "$CORTEX_STAGE_ENV_FILE" && ! -L "$CORTEX_STAGE_ENV_FILE" ]] || {
+    echo "An unverified staged production environment already exists." >&2
+    exit 1
+  }
   [[ ! -e "$CORTEX_UPDATE_CHECKPOINT_FILE" ]] || {
     echo "A release-update checkpoint already exists; activate or roll it back first." >&2
     exit 1
@@ -1517,6 +1574,9 @@ explicit_rollback() {
 
 recover_incomplete_update() {
   [[ -e "$CORTEX_UPDATE_CHECKPOINT_FILE" ]] || return 1
+  local status_hint
+  status_hint="$(checkpoint_status_hint)" || return 1
+  [[ "$status_hint" != ACTIVATED ]] || return 1
   load_checkpoint
   case "$checkpoint_status" in
     PREPARED|STAGING|RECOVERING_STAGE|ACTIVATING|RECOVERING_ACTIVATION|RECOVERED_OLD) ;;

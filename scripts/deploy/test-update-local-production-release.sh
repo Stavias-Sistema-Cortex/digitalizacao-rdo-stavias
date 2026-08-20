@@ -534,6 +534,36 @@ pathlib.Path(path).write_text(
 )
 PY
   chmod 600 "$checkpoint_file"
+
+  # A successful activation intentionally retains the prior PWA staging
+  # environment as rollback evidence.  The next release must prove and retire
+  # this file together with the ACTIVATED checkpoint before creating its own
+  # staging environment.
+  cp "$runtime_env" "$stage_env"
+  python3 - "$stage_env" \
+    "$previous_sha" "$previous_marker" "$previous_api" "$old_web" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+replacements = {
+    "CORTEX_RELEASE_SHA": sys.argv[2],
+    "CORTEX_DATABASE_RELEASE_MARKER": sys.argv[3],
+    "CORTEX_API_IMAGE": sys.argv[4],
+    "CORTEX_WEB_IMAGE": sys.argv[5],
+}
+lines = []
+seen = set()
+for line in path.read_text(encoding="utf-8").splitlines():
+    key = line.split("=", 1)[0]
+    if key in replacements:
+        lines.append(f"{key}={replacements[key]}")
+        seen.add(key)
+    else:
+        lines.append(line)
+if seen != replacements.keys():
+    raise SystemExit("test fixture is missing a required production value")
+path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+  chmod 600 "$stage_env"
 }
 
 # A proven ACTIVATED checkpoint belongs to the currently running old release.
@@ -546,10 +576,39 @@ previous_database_dump="$(json_value "$checkpoint_file" databaseDump)"
 previous_database_list="$(json_value "$checkpoint_file" databaseDumpList)"
 run_update stage-web
 [[ "$(json_value "$checkpoint_file" status)" == PWA_STAGED ]]
+[[ "$(env_value "$stage_env" CORTEX_RELEASE_SHA)" == "$old_sha" ]]
+[[ "$(env_value "$stage_env" CORTEX_DATABASE_RELEASE_MARKER)" == "$old_marker" ]]
+[[ "$(env_value "$stage_env" CORTEX_API_IMAGE)" == "$old_api" ]]
+[[ "$(env_value "$stage_env" CORTEX_WEB_IMAGE)" == "$new_web" ]]
+[[ "$(cat "$case_root/stderr")" != *"checkpoint does not match"* ]]
 previous_archive="$checkpoint_dir/checkpoint.activated-$old_sha.json"
 [[ -s "$previous_archive" && "$(mode_of "$previous_archive")" == 600 ]]
 [[ "$(json_value "$previous_archive" status)" == ACTIVATED ]]
 [[ -s "$previous_environment_backup" && -s "$previous_database_dump" && -s "$previous_database_list" ]]
+
+# A retained staging file is removable only when its immutable release tuple
+# matches the ACTIVATED checkpoint exactly.  Divergent residue is preserved for
+# operator review and may never be overwritten by the next release.
+prepare_case divergent-previous-stage
+write_previous_activated_checkpoint
+divergent_web="${image_repository}-web@sha256:$(printf '9%.0s' {1..64})"
+python3 - "$stage_env" "$old_web" "$divergent_web" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+text = text.replace(
+    f"CORTEX_WEB_IMAGE={sys.argv[2]}",
+    f"CORTEX_WEB_IMAGE={sys.argv[3]}",
+)
+path.write_text(text, encoding="utf-8")
+PY
+expect_rejected divergent-previous-stage run_update stage-web
+[[ "$(json_value "$checkpoint_file" status)" == ACTIVATED ]]
+[[ "$(env_value "$stage_env" CORTEX_WEB_IMAGE)" == "$divergent_web" ]]
+[[ ! -e "$checkpoint_dir/checkpoint.activated-$old_sha.json" ]]
+[[ "$(sed -n 's/^API_REVISION=//p' "$state_file")" == "$old_sha" ]]
+[[ "$(sed -n 's/^WEB_REVISION=//p' "$state_file")" == "$old_sha" ]]
+[[ "$(sed -n 's/^DATABASE_MARKER=//p' "$state_file")" == "$old_marker" ]]
 
 # A stale or forged ACTIVATED checkpoint must never be retired merely because
 # it has the right status label.
@@ -564,6 +623,7 @@ path.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\
 PY
 expect_rejected mismatched-activated-checkpoint run_update stage-web
 [[ "$(json_value "$checkpoint_file" status)" == ACTIVATED ]]
+[[ "$(env_value "$stage_env" CORTEX_RELEASE_SHA)" == "$(printf '0%.0s' {1..40})" ]]
 [[ ! -e "$checkpoint_dir/checkpoint.activated-$old_sha.json" ]]
 [[ ! -s "$action_log" ]]
 
