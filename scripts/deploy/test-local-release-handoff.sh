@@ -108,7 +108,15 @@ CORTEX_LOCAL_RELEASE_ENV_OUTPUT="$verified_env" \
 CORTEX_EXPECTED_SOURCE_REPOSITORY="$source_repository" \
   bash "$verifier"
 
-[[ "$(stat -f '%Lp' "$verified_env" 2>/dev/null || stat -c '%a' "$verified_env")" == "600" ]]
+python3 - "$verified_env" <<'PY'
+import pathlib
+import stat
+import sys
+
+mode = stat.S_IMODE(pathlib.Path(sys.argv[1]).stat().st_mode)
+if mode != 0o600:
+    raise SystemExit(f"verified environment mode must be 0600, got {mode:o}")
+PY
 expected_env="$fixture_root/expected.env"
 printf '%s\n' \
   "CORTEX_EXPECTED_NEW_RELEASE_SHA=$release_sha" \
