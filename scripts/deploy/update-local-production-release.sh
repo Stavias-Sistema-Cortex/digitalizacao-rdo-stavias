@@ -288,16 +288,66 @@ PY
 old_compose_file="$CORTEX_OLD_RELEASE_ROOT/deploy/production/compose.yml"
 new_compose_file="$CORTEX_NEW_RELEASE_ROOT/deploy/production/compose.yml"
 new_caddy_file="$CORTEX_NEW_RELEASE_ROOT/deploy/production/Caddyfile"
+old_migration_dir="$CORTEX_OLD_RELEASE_ROOT/apps/api/src/main/resources/db/migration-postgresql"
 new_migration_dir="$CORTEX_NEW_RELEASE_ROOT/apps/api/src/main/resources/db/migration-postgresql"
 require_regular "$old_compose_file" "Old production Compose file"
 require_regular "$new_compose_file" "New production Compose file"
 require_regular "$new_caddy_file" "New production Caddyfile"
+canonical_directory "$old_migration_dir" "Old PostgreSQL Flyway directory"
 canonical_directory "$new_migration_dir" "New PostgreSQL Flyway directory"
 require_owned_protected_tree "$CORTEX_OLD_RELEASE_ROOT/deploy/production" \
   "Old production release tree"
 require_owned_protected_tree "$CORTEX_NEW_RELEASE_ROOT/deploy/production" \
   "New production release tree"
+require_owned_protected_tree "$old_migration_dir" "Old PostgreSQL Flyway tree"
 require_owned_protected_tree "$new_migration_dir" "New PostgreSQL Flyway tree"
+
+flyway_trees_match() {
+  python3 - "$1" "$2" <<'PY'
+import os, pathlib, stat, sys
+
+old_root = pathlib.Path(sys.argv[1])
+new_root = pathlib.Path(sys.argv[2])
+
+def regular_files(root):
+    result = []
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        dirs.sort()
+        files.sort()
+        base = pathlib.Path(directory)
+        for name in files:
+            path = base / name
+            if path.is_symlink() or not stat.S_ISREG(path.lstat().st_mode):
+                raise SystemExit(2)
+            result.append(path.relative_to(root))
+    return result
+
+old_files = regular_files(old_root)
+new_files = regular_files(new_root)
+if old_files != new_files:
+    raise SystemExit(1)
+
+no_follow = getattr(os, "O_NOFOLLOW", 0)
+for relative in old_files:
+    descriptors = []
+    try:
+        for root in (old_root, new_root):
+            descriptor = os.open(root / relative, os.O_RDONLY | no_follow)
+            descriptors.append(descriptor)
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise SystemExit(2)
+        while True:
+            old_chunk = os.read(descriptors[0], 1024 * 1024)
+            new_chunk = os.read(descriptors[1], 1024 * 1024)
+            if old_chunk != new_chunk:
+                raise SystemExit(1)
+            if not old_chunk:
+                break
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+PY
+}
 
 safe_git() {
   env -i \
@@ -336,9 +386,7 @@ actual_new_sha="$(safe_git -C "$CORTEX_NEW_RELEASE_ROOT" rev-parse HEAD)"
   echo "The new release root must be clean before staging production." >&2
   exit 1
 }
-if ! safe_git -C "$CORTEX_NEW_RELEASE_ROOT" diff --quiet --no-ext-diff --no-textconv \
-  "$CORTEX_EXPECTED_OLD_RELEASE_SHA" "$CORTEX_EXPECTED_NEW_RELEASE_SHA" -- \
-  apps/api/src/main/resources/db/migration-postgresql; then
+if ! flyway_trees_match "$old_migration_dir" "$new_migration_dir"; then
   echo "The local release updater refuses any PostgreSQL Flyway delta." >&2
   exit 1
 fi

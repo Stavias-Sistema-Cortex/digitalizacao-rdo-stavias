@@ -183,9 +183,8 @@ if [[ "$*" == *"status --porcelain"* ]]; then
 elif [[ "$*" == *"rev-parse HEAD"* ]]; then
   cat "$work_tree/.git/expected-sha"
 elif [[ "$*" == *"diff --quiet"* ]]; then
-  cmp -s \
-    "$(dirname "$work_tree")/old/apps/api/src/main/resources/db/migration-postgresql/V1__baseline.sql" \
-    "$(dirname "$work_tree")/new/apps/api/src/main/resources/db/migration-postgresql/V1__baseline.sql"
+  echo "fatal: bad object from another immutable release repository" >&2
+  exit 128
 else
   exit 2
 fi
