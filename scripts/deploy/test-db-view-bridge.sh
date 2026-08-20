@@ -33,17 +33,29 @@ prepare_case() {
 set -euo pipefail
 printf '%s\n' "$*" >> "$CORTEX_TEST_DOCKER_LOG"
 all="$*"
-if [[ "$all" == "container inspect"*"--format {{.State.Status}}" ]]; then
-  [[ -f "$CORTEX_TEST_MARKERS/bridge-exists" ]] || exit 1
-  printf 'running\n'
+if [[ "$all" == "container inspect"*"PortBindings"* ]]; then
+  if [[ ! -f "$CORTEX_TEST_MARKERS/bridge-exists" ]]; then exit 1; fi
+  printf '%s\n' "${CORTEX_TEST_PUBLISHED_PORT:-15432}"
+elif [[ "$all" == "container inspect"*"--format {{.State.Status}}" ]]; then
+  if [[ ! -f "$CORTEX_TEST_MARKERS/bridge-exists" ]]; then exit 1; fi
+  printf '%s\n' "${CORTEX_TEST_BRIDGE_STATE:-running}"
 elif [[ "$all" == "container inspect"* ]]; then
   [[ -f "$CORTEX_TEST_MARKERS/bridge-exists" ]] || exit 1
 elif [[ "$all" == "ps --filter label=com.docker.compose.project="*"label=com.docker.compose.service=cortex-postgres"* ]]; then
   [[ -f "$CORTEX_TEST_MARKERS/no-postgres" ]] || printf 'postgres-container\n'
+elif [[ "$all" == "network inspect"*db_view_edge* ]]; then
+  if [[ ! -f "$CORTEX_TEST_MARKERS/view-network-exists" ]]; then exit 1; fi
+  printf 'cortex-production_db_view_edge\n'
 elif [[ "$all" == "network inspect"* ]]; then
   if [[ -f "$CORTEX_TEST_MARKERS/no-network" ]]; then exit 1; fi
   printf 'cortex-production_cortex_private\n'
+elif [[ "$all" == "network create"* ]]; then
+  if [[ -f "$CORTEX_TEST_MARKERS/network-create-fails" ]]; then exit 1; fi
+  printf 'cortex-production_db_view_edge\n'
+elif [[ "$all" == "network rm"* ]]; then
+  exit 0
 elif [[ "$all" == "run --detach"* ]]; then
+  if [[ -f "$CORTEX_TEST_MARKERS/run-fails" ]]; then exit 1; fi
   printf 'bridge-container\n'
 elif [[ "$all" == "network connect"* ]]; then
   if [[ -f "$CORTEX_TEST_MARKERS/connect-fails" ]]; then exit 1; fi
@@ -71,6 +83,8 @@ SH
     CORTEX_TEST_PSQL_SQL="$CORTEX_TEST_PSQL_SQL"
     CORTEX_TEST_PSQL_ENV="$CORTEX_TEST_PSQL_ENV"
     CORTEX_TEST_MARKERS="$CORTEX_TEST_MARKERS"
+    CORTEX_TEST_BRIDGE_STATE="${CORTEX_TEST_BRIDGE_STATE:-running}"
+    CORTEX_TEST_PUBLISHED_PORT="${CORTEX_TEST_PUBLISHED_PORT:-15432}"
     CORTEX_DOCKER_BIN="$case_root/bin/docker"
   )
 }
@@ -171,10 +185,21 @@ grep -q 'ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_user" IN SCHEMA public' "$
   || fail "future tables must be covered through the migrator default privileges"
 grep -q "default_transaction_read_only = on" "$CORTEX_TEST_PSQL_SQL" \
   || fail "the viewing role must default to read-only transactions"
-grep -q -- "--set=view_role=cortex_readonly" "$CORTEX_TEST_DOCKER_LOG" \
+grep -q -- "--set=view_role=cortex_readonly" "$CORTEX_TEST_PSQL_SQL" "$CORTEX_TEST_DOCKER_LOG" \
   || fail "the default viewing role name must be cortex_readonly"
-! grep -q "INSERT\|UPDATE\|DELETE\|TRUNCATE" "$CORTEX_TEST_PSQL_SQL" \
+grep -q "refusing_to_reconcile_a_privileged_existing_role" "$CORTEX_TEST_PSQL_SQL" \
+  || fail "the SQL must refuse to reconcile a pre-existing privileged role"
+grep -q "refusing_to_reconcile_a_role_with_memberships" "$CORTEX_TEST_PSQL_SQL" \
+  || fail "the SQL must refuse a viewing role that inherits other roles"
+! grep -Eq 'INSERT|UPDATE|DELETE|TRUNCATE|GRANT[[:space:]]+ALL|ALL[[:space:]]+PRIVILEGES|pg_write_all_data' \
+  "$CORTEX_TEST_PSQL_SQL" \
   || fail "the viewing role must never receive a write grant"
+# The blacklist above cannot name every spelling of a write grant, so every
+# GRANT the reconcile emits has to match the read-only allowlist as well.
+if grep -E '\bGRANT\b' "$CORTEX_TEST_PSQL_SQL" | grep -Evq \
+  '^[[:space:]]*GRANT (CONNECT ON DATABASE :"database_name"|USAGE ON SCHEMA public|SELECT ON ALL TABLES IN SCHEMA public|SELECT ON TABLES) TO :"view_role";$'; then
+  fail "only CONNECT, USAGE and SELECT may be granted to the viewing role"
+fi
 
 # --- start refuses unsafe configurations before touching Docker. ------------
 prepare_case start-invalid-port
@@ -196,10 +221,23 @@ expect_failure "does not exist; is the stack up?"
 ! grep -q "run --detach" "$CORTEX_TEST_DOCKER_LOG" \
   || fail "a missing network must be refused before any container starts"
 
-prepare_case start-already-present
+prepare_case start-already-running
 subcommand_under_test="start"
 touch "$CORTEX_TEST_MARKERS/bridge-exists"
-expect_failure "already exists; run stop first."
+expect_failure "is already running; run stop first."
+! grep -q "run --detach" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "a running bridge must never be replaced silently"
+
+# --- start recovers the stopped bridge a host reboot leaves behind. ---------
+prepare_case start-after-reboot
+subcommand_under_test="start"
+touch "$CORTEX_TEST_MARKERS/bridge-exists"
+run_bridge CORTEX_TEST_BRIDGE_STATE="exited" \
+  || fail "start must recover from the stopped bridge a reboot leaves behind"
+grep -q "rm -f cortex-db-view" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "the stopped bridge must be removed before starting a new one"
+grep -q "run --detach" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "start must build a new bridge after clearing the stopped one"
 
 # --- start builds the hardened loopback-only bridge. ------------------------
 prepare_case start-succeeds
@@ -212,6 +250,7 @@ for contract in \
   "--cap-drop ALL" \
   "--security-opt no-new-privileges:true" \
   "--publish 127.0.0.1:15432:5432" \
+  "--network cortex-production_db_view_edge" \
   "alpine/socat:" \
   "tcp-connect:cortex-postgres:5432"; do
   [[ "$run_line" == *"$contract"* ]] \
@@ -219,6 +258,10 @@ for contract in \
 done
 [[ "$run_line" != *"0.0.0.0"* ]] \
   || fail "the bridge must never publish outside the loopback interface"
+# The listener accepts any peer inside its own network, so sharing the
+# default bridge would expose PostgreSQL to every unrelated container.
+grep -q "network create cortex-production_db_view_edge" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "the bridge must get a dedicated network instead of the default bridge"
 grep -q "network connect cortex-production_cortex_private cortex-db-view" \
   "$CORTEX_TEST_DOCKER_LOG" \
   || fail "the bridge must join the internal Compose network after starting"
@@ -228,7 +271,14 @@ grep -q "exec cortex-db-view socat -u OPEN:/dev/null TCP:cortex-postgres:5432" \
 grep -q "127.0.0.1:15432" "$case_root/stdout.txt" \
   || fail "start must tell the operator where the bridge listens"
 
-# --- start removes the bridge when the probe fails. -------------------------
+prepare_case start-reuses-existing-view-network
+subcommand_under_test="start"
+touch "$CORTEX_TEST_MARKERS/view-network-exists"
+run_bridge || fail "start must reuse an existing dedicated network"
+! grep -q "network create" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "an existing dedicated network must not be recreated"
+
+# --- start removes every partial bridge it leaves behind. -------------------
 prepare_case start-probe-fails
 subcommand_under_test="start"
 touch "$CORTEX_TEST_MARKERS/probe-fails"
@@ -243,6 +293,22 @@ expect_failure "could not join 'cortex-production_cortex_private' and was remove
 grep -q "rm -f cortex-db-view" "$CORTEX_TEST_DOCKER_LOG" \
   || fail "a bridge that cannot join the internal network must be removed"
 
+prepare_case start-run-fails
+subcommand_under_test="start"
+touch "$CORTEX_TEST_MARKERS/run-fails"
+expect_failure "could not start and was removed."
+grep -q "rm -f cortex-db-view" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "a container left behind by a failed run must be removed"
+grep -q "network rm cortex-production_db_view_edge" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "a failed start must not leave its dedicated network behind"
+
+prepare_case start-network-create-fails
+subcommand_under_test="start"
+touch "$CORTEX_TEST_MARKERS/network-create-fails"
+expect_failure "bridge network 'cortex-production_db_view_edge' could not be created."
+! grep -q "run --detach" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "no container may start without its dedicated network"
+
 # --- status and stop report and clean up. -----------------------------------
 prepare_case status-running
 subcommand_under_test="status"
@@ -250,6 +316,25 @@ touch "$CORTEX_TEST_MARKERS/bridge-exists"
 run_bridge || fail "status must succeed for a healthy bridge"
 grep -q "PostgreSQL is reachable through the bridge." "$case_root/stdout.txt" \
   || fail "status must confirm connectivity for a healthy bridge"
+
+# The reported port comes from the container, so a shell without the
+# variable that started the bridge still names the port to tunnel to.
+prepare_case status-reports-the-published-port
+subcommand_under_test="status"
+touch "$CORTEX_TEST_MARKERS/bridge-exists"
+run_bridge CORTEX_TEST_PUBLISHED_PORT="25432" \
+  || fail "status must succeed for a healthy bridge on a custom port"
+grep -q "loopback port 25432." "$case_root/stdout.txt" \
+  || fail "status must report the port the bridge actually publishes"
+
+prepare_case status-stopped
+subcommand_under_test="status"
+touch "$CORTEX_TEST_MARKERS/bridge-exists"
+if run_bridge CORTEX_TEST_BRIDGE_STATE="exited"; then
+  fail "status must exit non-zero for a stopped bridge"
+fi
+grep -q "exists but is not running" "$case_root/stdout.txt" \
+  || fail "status must report a stopped bridge"
 
 prepare_case status-absent
 subcommand_under_test="status"
@@ -271,5 +356,7 @@ touch "$CORTEX_TEST_MARKERS/bridge-exists"
 run_bridge || fail "stop must remove an existing bridge"
 grep -q "rm -f cortex-db-view" "$CORTEX_TEST_DOCKER_LOG" \
   || fail "stop must remove the bridge container"
+grep -q "network rm cortex-production_db_view_edge" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "stop must remove the dedicated bridge network"
 
 echo "The database viewing bridge honors its loopback-only, read-only contract."

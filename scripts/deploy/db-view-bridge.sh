@@ -89,15 +89,20 @@ statement_timeout="${CORTEX_DB_VIEW_STATEMENT_TIMEOUT:-30s}"
 connection_limit="${CORTEX_DB_VIEW_CONNECTION_LIMIT:-10}"
 
 network_name="${project}_cortex_private"
+view_network="${project}_db_view_edge"
 postgres_service="cortex-postgres"
 
 resolve_postgres_container() {
   local resolved
+  # The explicit guard reports a broken Docker CLI as itself: errexit does
+  # not reach inside a command substitution, so a failed ps would otherwise
+  # be reported as a missing container.
   resolved="$("$docker_bin" ps \
     --filter "label=com.docker.compose.project=$project" \
     --filter "label=com.docker.compose.service=$postgres_service" \
     --filter status=running \
-    --format '{{.ID}}')"
+    --format '{{.ID}}')" \
+    || fail "'docker ps' failed; is the Docker daemon reachable?"
   [[ -n "$resolved" && "$resolved" != *$'\n'* ]] \
     || fail "Exactly one running $postgres_service container is required."
   printf '%s\n' "$resolved"
@@ -105,6 +110,16 @@ resolve_postgres_container() {
 
 bridge_exists() {
   "$docker_bin" container inspect "$bridge_container" >/dev/null 2>&1
+}
+
+bridge_state() {
+  "$docker_bin" container inspect "$bridge_container" \
+    --format '{{.State.Status}}'
+}
+
+remove_bridge_artifacts() {
+  "$docker_bin" rm -f "$bridge_container" >/dev/null 2>&1 || true
+  "$docker_bin" network rm "$view_network" >/dev/null 2>&1 || true
 }
 
 probe_bridge() {
@@ -167,6 +182,21 @@ create_role() {
 SELECT missing_view_role_password_environment_variable;
 \endif
 
+-- The reconcile below resets the password and attributes of whatever role
+-- it is pointed at, so refuse any pre-existing role that carries privileges
+-- or memberships: a viewing role owns nothing and inherits nothing.
+SELECT 'SELECT refusing_to_reconcile_a_privileged_existing_role'
+FROM pg_roles
+WHERE rolname = :'view_role'
+  AND (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls)
+\gexec
+
+SELECT 'SELECT refusing_to_reconcile_a_role_with_memberships'
+FROM pg_auth_members membership
+JOIN pg_roles member_role ON member_role.oid = membership.member
+WHERE member_role.rolname = :'view_role'
+\gexec
+
 SELECT format(
   'CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS',
   :'view_role',
@@ -208,19 +238,39 @@ SQL
 }
 
 start_bridge() {
-  "$docker_bin" network inspect "$network_name" --format '{{.Name}}' >/dev/null 2>&1 \
+  # Docker's own stderr is left visible here: an unreachable daemon must
+  # not be reported as a missing Compose network.
+  "$docker_bin" network inspect "$network_name" --format '{{.Name}}' >/dev/null \
     || fail "The Compose network '$network_name' does not exist; is the stack up?"
   resolve_postgres_container >/dev/null
   if bridge_exists; then
-    fail "The bridge container '$bridge_container' already exists; run stop first."
+    local existing_state
+    existing_state="$(bridge_state)" \
+      || fail "The state of '$bridge_container' could not be read."
+    [[ "$existing_state" != "running" ]] \
+      || fail "The bridge container '$bridge_container' is already running; run stop first."
+    # A stopped bridge is what a host reboot leaves behind, so clear it
+    # here instead of making the operator run stop first.
+    "$docker_bin" rm -f "$bridge_container" >/dev/null \
+      || fail "The stopped bridge container '$bridge_container' could not be removed."
   fi
 
-  # The bridge starts on the default bridge network so the loopback
-  # publish works, then joins the internal Compose network to reach
-  # PostgreSQL. It never publishes outside 127.0.0.1 and never restarts
-  # on its own after a reboot.
+  # The listener accepts any source inside its own network, so the bridge
+  # gets a dedicated one instead of the shared default bridge, where every
+  # unrelated container would otherwise be able to reach PostgreSQL. It
+  # then joins the internal Compose network, publishes nothing outside
+  # 127.0.0.1, and never restarts on its own after a reboot.
+  "$docker_bin" network inspect "$view_network" >/dev/null 2>&1 \
+    || "$docker_bin" network create "$view_network" >/dev/null \
+    || fail "The bridge network '$view_network' could not be created."
+
+  trap remove_bridge_artifacts EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
   "$docker_bin" run --detach \
     --name "$bridge_container" \
+    --network "$view_network" \
     --restart no \
     --read-only \
     --cap-drop ALL \
@@ -228,17 +278,16 @@ start_bridge() {
     --publish "127.0.0.1:${bridge_port}:5432" \
     "$socat_image" \
     "tcp-listen:5432,fork,reuseaddr" \
-    "tcp-connect:${postgres_service}:5432" >/dev/null
+    "tcp-connect:${postgres_service}:5432" >/dev/null \
+    || fail "The bridge container could not start and was removed."
 
-  if ! "$docker_bin" network connect "$network_name" "$bridge_container"; then
-    "$docker_bin" rm -f "$bridge_container" >/dev/null 2>&1 || true
-    fail "The bridge could not join '$network_name' and was removed."
-  fi
+  "$docker_bin" network connect "$network_name" "$bridge_container" \
+    || fail "The bridge could not join '$network_name' and was removed."
 
-  if ! probe_bridge; then
-    "$docker_bin" rm -f "$bridge_container" >/dev/null 2>&1 || true
-    fail "The bridge could not reach ${postgres_service}:5432 and was removed."
-  fi
+  probe_bridge \
+    || fail "The bridge could not reach ${postgres_service}:5432 and was removed."
+
+  trap - EXIT INT TERM
 
   echo "The viewing bridge is listening on 127.0.0.1:${bridge_port} (server loopback only)."
   echo "Tunnel from a workstation with: ssh -N -L ${bridge_port}:127.0.0.1:${bridge_port} <user>@<server>"
@@ -250,10 +299,15 @@ status_bridge() {
     echo "The viewing bridge '$bridge_container' is not present."
     return 1
   fi
-  local state
-  state="$("$docker_bin" container inspect "$bridge_container" \
-    --format '{{.State.Status}}')"
-  echo "Bridge container: $bridge_container ($state), loopback port $bridge_port."
+  local state published_port
+  state="$(bridge_state)" \
+    || fail "The state of '$bridge_container' could not be read."
+  # The published port is read back from the container: the environment of
+  # this shell may not be the one that started the bridge.
+  published_port="$("$docker_bin" container inspect "$bridge_container" \
+    --format '{{ with index .HostConfig.PortBindings "5432/tcp" }}{{ (index . 0).HostPort }}{{ end }}')" \
+    || published_port=""
+  echo "Bridge container: $bridge_container ($state), loopback port ${published_port:-unknown}."
   if [[ "$state" != "running" ]]; then
     echo "The bridge exists but is not running; run stop and then start again."
     return 1
@@ -269,9 +323,11 @@ status_bridge() {
 stop_bridge() {
   if ! bridge_exists; then
     echo "The viewing bridge '$bridge_container' is already absent."
+    "$docker_bin" network rm "$view_network" >/dev/null 2>&1 || true
     return 0
   fi
   "$docker_bin" rm -f "$bridge_container" >/dev/null
+  "$docker_bin" network rm "$view_network" >/dev/null 2>&1 || true
   echo "The viewing bridge '$bridge_container' was removed."
 }
 

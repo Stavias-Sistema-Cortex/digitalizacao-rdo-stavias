@@ -55,9 +55,10 @@ com:
 
 - `LOGIN` sem nenhum atributo administrativo (`NOSUPERUSER NOCREATEDB
   NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS`);
-- `default_transaction_read_only = on` e `statement_timeout = 30s`
-  (ajustáveis por `CORTEX_DB_VIEW_STATEMENT_TIMEOUT`), além de limite de
-  conexões e desconexão de transações ociosas;
+- `default_transaction_read_only = on` e `statement_timeout = 30s` (este
+  último ajustável por `CORTEX_DB_VIEW_STATEMENT_TIMEOUT`), além de limite
+  de conexões (`CORTEX_DB_VIEW_CONNECTION_LIMIT`, padrão 10) e desconexão
+  de transações ociosas;
 - `SELECT` nas tabelas existentes do schema `public`;
 - `ALTER DEFAULT PRIVILEGES FOR ROLE cortex_migrator … GRANT SELECT`, para
   que tabelas criadas por migrações futuras já nasçam legíveis. As migrações
@@ -81,13 +82,21 @@ sudo env CORTEX_DOCKER_BIN=/usr/bin/docker \
 A ponte é um container `socat` endurecido (`--read-only`, `--cap-drop ALL`,
 `no-new-privileges`) chamado `cortex-db-view`, que escuta **somente** em
 `127.0.0.1:15432` no servidor e encaminha para `cortex-postgres:5432` pela
-rede interna. O `start` valida a rede, sobe o container, conecta-o à rede
-interna e testa o caminho até o PostgreSQL; se algo falhar, remove a ponte.
+rede interna. O `start` valida a rede, sobe o container em uma rede Docker
+dedicada (`cortex-production_db_view_edge`), conecta-o à rede interna e
+testa o caminho até o PostgreSQL; se algo falhar, remove a ponte e a rede.
 
-- `status` mostra o estado e refaz o teste de conectividade.
-- `stop` remove a ponte.
+A rede dedicada é parte da proteção: o `socat` aceita qualquer origem
+dentro da própria rede, então deixá-lo na rede bridge padrão daria a
+qualquer outro container do servidor um caminho direto até o banco, sem
+SSH e sem passar pelo loopback.
+
+- `status` mostra o estado, a porta realmente publicada e refaz o teste de
+  conectividade.
+- `stop` remove a ponte e a rede dedicada.
 - Após um reboot do servidor a ponte **não** volta sozinha (`--restart no`,
-  proposital): suba-a de novo com `start` quando alguém precisar consultar.
+  proposital): o container fica parado (`Exited`) e o próximo `start`
+  remove esse resto e sobe uma ponte nova — basta rodar `start`.
 - No primeiro `start` o Docker baixa a imagem `alpine/socat` fixada no
   script.
 
@@ -198,9 +207,18 @@ ORDER BY total DESC;
 ```
 
 O role já abre toda transação como somente leitura, então um
-`UPDATE`/`DELETE` acidental é recusado pelo servidor. Consultas com mais de
-30 segundos são canceladas pelo `statement_timeout`; se um relatório
-legítimo precisar de mais, o administrador ajusta o role, e não a consulta.
+`UPDATE`/`DELETE` acidental é recusado. A garantia real contra escrita é a
+ausência de qualquer permissão de escrita: mesmo desligando o modo somente
+leitura da sessão, um `INSERT` continua recusado por falta de privilégio.
+
+Já `default_transaction_read_only`, `statement_timeout` (30s) e
+`idle_in_transaction_session_timeout` são **padrões de sessão**, não limites
+impostos pelo servidor: a própria sessão pode sobrescrevê-los com `SET`.
+Eles protegem contra acidentes, não contra uso deliberado — o único limite
+rígido é o `CONNECTION LIMIT`. Não use `SET` para esticar esses limites: se
+um relatório legítimo precisar de mais de 30 segundos, peça ao
+administrador para ajustar o role (`CORTEX_DB_VIEW_STATEMENT_TIMEOUT` e
+reexecutar o `create-role`).
 
 Consulta rápida sem interface gráfica, direto no servidor:
 
@@ -234,9 +252,13 @@ ponte e o túnel só existem para leitura humana.
   não está aberto (Parte 3), ou a ponte não está de pé no servidor
   (`… db-view-bridge.sh status`).
 - **`connection refused` no servidor após reboot** — comportamento esperado;
-  suba a ponte de novo com `start`.
+  rode `start` de novo (ele mesmo limpa o container parado que sobrou).
+- **`is already running; run stop first`** — já existe uma ponte de pé;
+  confira com `status` e use `stop` antes de subir outra.
 - **`port is already allocated` no `start`** — outra coisa ocupa a 15432 no
   servidor; escolha outra porta com `CORTEX_DB_VIEW_PORT` e ajuste o túnel.
+  Ao trocar a porta, exporte a mesma variável nas próximas chamadas ou use
+  o `status`, que lê a porta publicada direto do container.
 - **`The Compose network 'cortex-production_cortex_private' does not
   exist`** — o stack de produção não está de pé, ou roda com outro nome de
   projeto; confira com `docker network ls` e ajuste
