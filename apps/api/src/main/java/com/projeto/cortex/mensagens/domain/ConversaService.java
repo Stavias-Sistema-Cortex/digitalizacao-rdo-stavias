@@ -156,6 +156,7 @@ public class ConversaService {
                         directKey
                 );
                 if (existingId != null) {
+                    preferencias.reiniciarComoNovaSeArquivada(existingId);
                     return get(existingId);
                 }
             }

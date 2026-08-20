@@ -382,6 +382,92 @@ class PostgresqlConversaPreferenciaPessoalIT {
     }
 
     @Test
+    void novaDiretaArquivadaReutilizaAConversaComHistoricoVazioSoParaMim() {
+        String eu = colaborador("Quem começa de novo");
+        String outro = colaborador("Quem conserva o histórico");
+        autenticar(eu);
+
+        ConversationResponse criada = transactions.execute(status ->
+                conversas.create(
+                        conversaDiretaRequest(outro),
+                        MessagingAuditContext.online(eu, "direta-original")
+                )
+        );
+        String antiga = mensagem(
+                criada.id(),
+                outro,
+                "Mensagem da conversa anterior"
+        );
+        preferencias.arquivar(criada.id());
+
+        ConversationResponse reiniciada = transactions.execute(status ->
+                conversas.create(
+                        conversaDiretaRequest(outro),
+                        MessagingAuditContext.online(eu, "nova-direta")
+                )
+        );
+
+        assertThat(reiniciada.id()).isEqualTo(criada.id());
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM conversa WHERE id = ?",
+                Integer.class,
+                criada.id()
+        )).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM mensagem WHERE conversa_id = ?",
+                Integer.class,
+                criada.id()
+        )).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM conversa_preferencia_pessoal
+                WHERE conversa_id = ?
+                  AND colaborador_id = ?
+                  AND arquivado_em IS NULL
+                  AND limpo_ate IS NOT NULL
+                """,
+                Integer.class,
+                criada.id(),
+                eu
+        )).isEqualTo(1);
+        assertThat(idsDaLista(false)).contains(criada.id());
+        assertThat(idsDoHistorico(criada.id())).isEmpty();
+
+        autenticar(outro);
+        assertThat(idsDoHistorico(criada.id())).containsExactly(antiga);
+    }
+
+    @Test
+    void replayExatoNaoReiniciaConversaDiretaDepoisDeArquivada() {
+        String eu = colaborador("Quem apenas repete a operação");
+        String outro = colaborador("Quem não perde histórico por retry");
+        autenticar(eu);
+        ConversationCreateRequest request = conversaDiretaRequest(outro);
+
+        ConversationResponse criada = transactions.execute(status ->
+                conversas.create(
+                        request,
+                        MessagingAuditContext.online(eu, "direta-original")
+                )
+        );
+        String antiga = mensagem(criada.id(), outro, "Mensagem preservada");
+        preferencias.arquivar(criada.id());
+
+        ConversationResponse replay = transactions.execute(status ->
+                conversas.create(
+                        request,
+                        MessagingAuditContext.online(eu, "retry-tecnico")
+                )
+        );
+
+        assertThat(replay.id()).isEqualTo(criada.id());
+        assertThat(idsDaLista(false)).doesNotContain(criada.id());
+        assertThat(idsDaLista(true)).contains(criada.id());
+        assertThat(idsDoHistorico(criada.id())).containsExactly(antiga);
+    }
+
+    @Test
     void repetirAMesmaCriacaoComOMesmoIdEhReplayExato() {
         String eu = colaborador("Quem repete a criação");
         String outro = colaborador("Participante da criação repetida");

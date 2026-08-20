@@ -163,15 +163,84 @@ export async function queueConversation(
   });
   const database = await getCortexDb();
   const transaction = database.transaction(
-    ["mensagem_conversas", "outbox_mutations"],
+    ["mensagem_conversas", "mensagem_preferencias", "outbox_mutations"],
     "readwrite",
   );
+  if (plan.conversation.tipo === "DIRETA") {
+    const conversations = await transaction
+      .objectStore("mensagem_conversas")
+      .getAll();
+    const existing = conversations.find((conversation) =>
+      sameActiveDirectParticipants(
+        conversation,
+        plan.conversation.participantes.map(({ colaboradorId }) =>
+          colaboradorId
+        ),
+      )
+    );
+    if (existing) {
+      const preferenceStore = transaction.objectStore(
+        "mensagem_preferencias",
+      );
+      const preference = await preferenceStore.get(existing.id);
+      if (preference?.arquivadoEm) {
+        const reopenedAt = plan.conversation.criadaEm;
+        await preferenceStore.put(preferenciaComPendencias({
+          ...preference,
+          conversaId: existing.id,
+          arquivadoEm: null,
+          limpoAte: reopenedAt,
+          arquivadoAtualizadoEm: reopenedAt,
+          limpoAtualizadoEm: reopenedAt,
+        }, {
+          arquivamento: true,
+          limpeza: true,
+        }));
+      }
+      await transaction.done;
+      emitMessagesChanged();
+      anunciarEscritaLocal();
+      return existing;
+    }
+  }
   await transaction.objectStore("mensagem_conversas").add(plan.conversation);
   await transaction.objectStore("outbox_mutations").add(plan.mutation);
+  if (plan.conversation.tipo === "DIRETA") {
+    const startedAt = plan.conversation.criadaEm;
+    await transaction.objectStore("mensagem_preferencias").put(
+      preferenciaComPendencias({
+        conversaId: plan.conversation.id,
+        arquivadoEm: null,
+        limpoAte: startedAt,
+        arquivadoAtualizadoEm: startedAt,
+        limpoAtualizadoEm: startedAt,
+        pendente: true,
+      }, {
+        arquivamento: true,
+        limpeza: true,
+      }),
+    );
+  }
   await transaction.done;
   emitMessagesChanged();
   anunciarEscritaLocal();
   return plan.conversation;
+}
+
+function sameActiveDirectParticipants(
+  conversation: ConversaLocalRecord,
+  expectedParticipantIds: readonly string[],
+): boolean {
+  if (conversation.tipo !== "DIRETA" || conversation.status !== "ATIVA") {
+    return false;
+  }
+  const actual = conversation.participantes
+    .filter((participant) => participant.status === "ATIVO")
+    .map(({ colaboradorId }) => colaboradorId)
+    .sort();
+  const expected = [...new Set(expectedParticipantIds)].sort();
+  return actual.length === expected.length &&
+    actual.every((participantId, index) => participantId === expected[index]);
 }
 
 export async function queueMessage(input: {

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   refreshConversationList: vi.fn(),
   refreshConversationHistory: vi.fn(),
   resolveConversationId: vi.fn(),
+  queueConversation: vi.fn(),
   queueMessage: vi.fn(),
   syncNow: vi.fn(),
 }));
@@ -69,6 +70,7 @@ vi.mock("./mensagensRepository", () => ({
   listLocalConversationPreviews: mocks.listLocalConversationPreviews,
   listLocalConversations: mocks.listLocalConversations,
   listLocalMessages: mocks.listLocalMessages,
+  queueConversation: mocks.queueConversation,
   queueMessage: mocks.queueMessage,
   resolveLocalConversationId: mocks.resolveConversationId,
   retryMessage: vi.fn(),
@@ -129,6 +131,7 @@ beforeEach(() => {
   mocks.refreshConversationList.mockResolvedValue(undefined);
   mocks.refreshConversationHistory.mockResolvedValue(undefined);
   mocks.resolveConversationId.mockImplementation(async (id: string) => id);
+  mocks.queueConversation.mockResolvedValue(conversaNova);
   mocks.syncNow.mockResolvedValue({ errors: 0, conflicts: 0 });
 });
 
@@ -145,6 +148,37 @@ afterEach(() => {
  * "Not Found" — em inglês, em vermelho — sobre uma tela em que tudo funcionava.
  */
 describe("conversa que ainda não subiu", () => {
+  it("abre a conversa recém-criada em vez de voltar para a lista", async () => {
+    const user = userEvent.setup();
+    let created = false;
+    mocks.listLocalConversations.mockImplementation(async () =>
+      created ? [conversaNova] : [],
+    );
+    mocks.queueConversation.mockImplementation(async () => {
+      created = true;
+      return conversaNova;
+    });
+
+    renderPage();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Nova conversa" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Criar conversa" }),
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector(".mensagens-workspace")).toHaveClass(
+        "mensagens-workspace--thread",
+      );
+      expect(screen.getByTestId("location-search")).toHaveTextContent(
+        `?conversa=${encodeURIComponent(conversaNova.id)}`,
+      );
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("não acusa erro quando o servidor não conhece o histórico", async () => {
     mocks.refreshConversationHistory.mockRejectedValue(
       new ApiError("Not Found", 404, null),

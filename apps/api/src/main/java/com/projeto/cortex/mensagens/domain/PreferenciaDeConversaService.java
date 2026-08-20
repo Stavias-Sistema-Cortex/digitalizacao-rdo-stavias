@@ -75,6 +75,36 @@ public class PreferenciaDeConversaService {
     }
 
     /**
+     * Reabre uma conversa arquivada como se esta pessoa estivesse começando
+     * outra vez.
+     *
+     * <p>A conversa e as mensagens continuam sendo as mesmas no banco. Só a
+     * preferência de quem tomou esta iniciativa muda: ela volta para a caixa e
+     * a cortina avança para agora. Fazer a atualização apenas quando a linha
+     * ainda está arquivada também distingue uma nova intenção de um retry
+     * técnico do mesmo pedido.</p>
+     */
+    @Transactional
+    public boolean reiniciarComoNovaSeArquivada(String conversationId) {
+        ConversationScope escopo = accessPolicy.requireAccess(conversationId);
+        String userId = currentUserService.requireUserId();
+        LocalDateTime agora = LocalDateTime.now(ZoneOffset.UTC);
+        return jdbcTemplate.update(
+                """
+                UPDATE conversa_preferencia_pessoal
+                SET arquivado_em = NULL,
+                    limpo_ate = ?
+                WHERE conversa_id = ?
+                  AND colaborador_id = ?
+                  AND arquivado_em IS NOT NULL
+                """,
+                agora,
+                escopo.id(),
+                userId
+        ) == 1;
+    }
+
+    /**
      * Fecha a cortina sobre o que já passou.
      *
      * <p>O instante é o de agora: mensagem anterior a ele sai da minha vista, e

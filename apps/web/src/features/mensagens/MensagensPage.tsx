@@ -835,8 +835,8 @@ export function MensagensPage() {
               // Já está gravada no dispositivo: só relemos e abrimos. Guardá-la
               // como resposta do servidor a marcaria como confirmada por quem
               // ainda nem a viu.
-              await loadLocal();
-              setSelectedId(conversation.id);
+              await loadLocal(conversation.id);
+              chooseConversation(conversation.id);
               setShowCreate(false);
             }}
           />

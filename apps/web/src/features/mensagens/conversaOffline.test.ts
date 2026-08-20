@@ -21,6 +21,7 @@ vi.mock("../auth/authSession", () => ({
 const {
   gravarPreferenciaDaConversa,
   listLocalConversations,
+  listLocalMessages,
   queueConversation,
   queueMessage,
   storeServerConversations,
@@ -99,6 +100,131 @@ describe("conversa criada no dispositivo", () => {
       expect.objectContaining({ colaboradorId: COLEGA, papel: "MEMBRO" }),
     ]);
     expect(conversa.versaoEntidade).toBeNull();
+  });
+
+  it("reabre a direta arquivada como nova sem criar uma duplicata local", async () => {
+    const arquivada = await queueConversation({
+      tipo: "DIRETA",
+      titulo: null,
+      obraId: null,
+      equipeId: null,
+      participantes: [{ colaboradorId: COLEGA, nome: "Colega" }],
+    });
+    const database = await getCortexDb();
+    await database.put("mensagem_conversas", {
+      ...arquivada,
+      versaoEntidade: 1,
+    });
+    await database.delete("outbox_mutations", arquivada.id);
+    await gravarPreferenciaDaConversa(arquivada.id, {
+      arquivadoEm: "2026-08-19T16:00:00.000Z",
+      pendente: false,
+    });
+    await database.put("mensagens", {
+      id: "30000000-0000-4000-8000-000000000001",
+      conversaId: arquivada.id,
+      autorId: COLEGA,
+      autorNome: "Colega",
+      corpo: "Histórico da conversa arquivada",
+      status: "ATIVA",
+      clientMutationId: "30000000-0000-4000-8000-000000000001",
+      criadaNoClienteEm: "2026-08-19T15:00:00.000Z",
+      criadaEm: "2026-08-19T15:00:00.000Z",
+      editadaEm: null,
+      deletadaEm: null,
+      versaoEntidade: 1,
+      syncStatus: "SINCRONIZADO",
+      ultimoErro: null,
+      updatedAt: "2026-08-19T15:00:00.000Z",
+    });
+
+    const reiniciada = await queueConversation({
+      tipo: "DIRETA",
+      titulo: null,
+      obraId: null,
+      equipeId: null,
+      participantes: [{ colaboradorId: COLEGA, nome: "Colega" }],
+    });
+
+    expect(reiniciada.id).toBe(arquivada.id);
+    expect(await database.getAll("mensagem_conversas")).toHaveLength(1);
+    expect(
+      (await outbox()).filter(
+        (mutation) => mutation.operacao === "CRIAR_CONVERSA",
+      ),
+    ).toHaveLength(0);
+    expect(
+      await database.get("mensagem_preferencias", arquivada.id),
+    ).toMatchObject({
+      conversaId: arquivada.id,
+      arquivadoEm: null,
+      limpoAte: expect.any(String),
+      arquivadoPendente: true,
+      limpoPendente: true,
+      pendente: true,
+    });
+    expect(await listLocalMessages(arquivada.id)).toEqual([]);
+    expect(
+      await database.get(
+        "mensagens",
+        "30000000-0000-4000-8000-000000000001",
+      ),
+    ).toMatchObject({ corpo: "Histórico da conversa arquivada" });
+  });
+
+  it("leva a intenção de começar do zero ao id canônico descoberto no sync", async () => {
+    const conversa = await queueConversation({
+      tipo: "DIRETA",
+      titulo: null,
+      obraId: null,
+      equipeId: null,
+      participantes: [{ colaboradorId: COLEGA, nome: "Colega" }],
+    });
+    const database = await getCortexDb();
+    const conversaCanonicaId = "20000000-0000-4000-8000-000000000014";
+    await database.put("mensagem_preferencias", {
+      conversaId: conversaCanonicaId,
+      arquivadoEm: "2026-08-19T16:00:00.000Z",
+      limpoAte: null,
+      arquivadoAtualizadoEm: "2026-08-19T16:00:00.000Z",
+      limpoAtualizadoEm: null,
+      arquivadoPendente: false,
+      limpoPendente: false,
+      pendente: false,
+    });
+    const criacao = await database.get("outbox_mutations", conversa.id);
+    if (!criacao) throw new Error("Mutação de conversa ausente no teste.");
+    await markMutationAsSyncing(criacao);
+
+    await applyPushResultAtomically({
+      clientMutationId: conversa.id,
+      status: "APLICADA",
+      entidadeTipo: "CONVERSA",
+      entidadeId: conversaCanonicaId,
+      resultado: {
+        id: conversaCanonicaId,
+        tipo: "DIRETA",
+        titulo: null,
+        obraId: null,
+        equipeId: null,
+        status: "ATIVA",
+        participantes: conversa.participantes,
+        criadaEm: conversa.criadaEm,
+        atualizadaEm: conversa.atualizadaEm,
+        versao: 1,
+      },
+    });
+
+    expect(await database.get(
+      "mensagem_preferencias",
+      conversaCanonicaId,
+    )).toMatchObject({
+      arquivadoEm: null,
+      limpoAte: conversa.criadaEm,
+      arquivadoPendente: true,
+      limpoPendente: true,
+      pendente: true,
+    });
   });
 
   /**
