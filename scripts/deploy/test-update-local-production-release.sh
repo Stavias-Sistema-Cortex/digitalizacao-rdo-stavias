@@ -99,6 +99,7 @@ prepare_case() {
     "$new_root/apps/api/src/main/resources/db/migration-postgresql" \
     "$new_root/deploy/production" \
     "$runtime_dir" "$checkpoint_dir" "$apache_versions" "$bin_dir"
+  find "$old_root" "$new_root" -type d -exec chmod 700 {} +
   chmod 700 "$case_root" "$case_root/releases" "$old_root" "$new_root" \
     "$old_root/.git" "$new_root/.git" \
     "$runtime_dir" "$checkpoint_dir" "$apache_root" "$apache_versions" "$bin_dir"
@@ -127,6 +128,8 @@ Header always set Retry-After "300"
 RewriteRule ^ - [R=503,L]
 CONF
   chmod 600 "$apache_local" "$apache_maintenance" \
+    "$old_root/apps/api/src/main/resources/db/migration-postgresql/V1__baseline.sql" \
+    "$new_root/apps/api/src/main/resources/db/migration-postgresql/V1__baseline.sql" \
     "$old_root/deploy/production/compose.yml" "$new_root/deploy/production/compose.yml" \
     "$new_root/deploy/production/Caddyfile"
   ln -s "$apache_local" "$apache_link"
@@ -264,6 +267,7 @@ image_revision() {
 printf 'docker %s\n' "$*" >> "$CORTEX_TEST_ACTION_LOG"
 
 if [[ "$1" == pull ]]; then
+  [[ ! -f "$CORTEX_TEST_FAIL_IMAGE_PULL" ]] || exit 69
   exit 0
 fi
 if [[ "$1 $2" == "image inspect" ]]; then
@@ -456,6 +460,7 @@ SH
   export CORTEX_TEST_OLD_WEB="$old_web"
   export CORTEX_TEST_DIRTY_RELEASE="$case_root/dirty-release"
   export CORTEX_TEST_BAD_IMAGE_LABEL="$case_root/bad-image-label"
+  export CORTEX_TEST_FAIL_IMAGE_PULL="$case_root/fail-image-pull"
   export CORTEX_TEST_CRASH_DURING_STAGE="$case_root/crash-during-stage"
   export CORTEX_TEST_CRASH_DURING_ACTIVATION="$case_root/crash-during-activation"
   export CORTEX_TEST_FAIL_BEFORE_BACKUP="$case_root/fail-before-backup"
@@ -636,6 +641,21 @@ touch "$CORTEX_TEST_BAD_IMAGE_LABEL"
 expect_rejected image-label-mismatch run_update stage-web
 [[ "$(readlink "$apache_link")" == "$apache_local" ]]
 [[ ! -e "$checkpoint_file" ]]
+
+# A registry/authentication failure happens after PREPARED is journaled but
+# before any live mutation. The EXIT cleanup must prove the old release, clear
+# its transient checkpoint, release the lock, and preserve the original error
+# instead of failing on trap state that has gone out of scope.
+prepare_case image-pull-failure
+touch "$CORTEX_TEST_FAIL_IMAGE_PULL"
+expect_rejected image-pull-failure run_update stage-web
+[[ "$(readlink "$apache_link")" == "$apache_local" ]]
+[[ ! -e "$checkpoint_file" && ! -e "$stage_env" ]]
+[[ ! -s "$checkpoint_dir/.release-update.lock" ]]
+[[ "$(sed -n 's/^API_REVISION=//p' "$state_file")" == "$old_sha" ]]
+[[ "$(sed -n 's/^WEB_REVISION=//p' "$state_file")" == "$old_sha" ]]
+[[ "$(sed -n 's/^DATABASE_MARKER=//p' "$state_file")" == "$old_marker" ]]
+[[ "$(cat "$case_root/stderr")" != *"unbound variable"* ]]
 
 # A kill/power-loss boundary after the first live stage mutation must leave a
 # durable journal. The next stage invocation reclaims only the dead lock,

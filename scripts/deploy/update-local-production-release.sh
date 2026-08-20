@@ -29,12 +29,12 @@ file_mode() {
   if mode="$(stat -c '%a' "$path" 2>/dev/null)" \
     && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
     printf '%s\n' "$mode"
-    return
+    return 0
   fi
   if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" \
     && [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
     printf '%s\n' "$mode"
-    return
+    return 0
   fi
   return 1
 }
@@ -743,6 +743,15 @@ environment_backup=""
 database_dump=""
 database_dump_list=""
 database_dump_sha=""
+stage_started=false
+stage_complete=false
+stage_live_mutation=false
+activation_started=false
+activation_complete=false
+rollback_complete=false
+recovery_complete=false
+recovery_kind=""
+retry_complete=false
 
 write_checkpoint() {
   local status="$1"
@@ -1028,7 +1037,9 @@ stage_web() {
     cortex-api "$CORTEX_EXPECTED_OLD_RELEASE_SHA"
 
   acquire_lock
-  local stage_started=true stage_complete=false stage_live_mutation=false
+  stage_started=true
+  stage_complete=false
+  stage_live_mutation=false
   cleanup_stage() {
     local stage_status=$?
     if [[ "$stage_started" == true && "$stage_complete" != true ]]; then
@@ -1232,7 +1243,8 @@ activate_release() {
   }
   load_and_require_stage
   acquire_lock
-  local activation_started=false activation_complete=false
+  activation_started=false
+  activation_complete=false
   cleanup_activation() {
     local status=$?
     if [[ "$activation_started" == true && "$activation_complete" != true ]]; then
@@ -1323,7 +1335,7 @@ explicit_rollback() {
     exit 1
   }
   acquire_lock
-  local rollback_complete=false
+  rollback_complete=false
   cleanup_rollback() {
     local status=$?
     release_lock
@@ -1352,7 +1364,8 @@ recover_incomplete_update() {
   esac
 
   acquire_lock
-  local recovery_complete=false recovery_kind="$checkpoint_status"
+  recovery_complete=false
+  recovery_kind="$checkpoint_status"
   cleanup_recovery() {
     local recovery_status=$?
     release_lock
@@ -1406,7 +1419,7 @@ prepare_retry() {
   }
 
   acquire_lock
-  local retry_complete=false
+  retry_complete=false
   cleanup_retry() {
     local retry_status=$?
     release_lock
