@@ -309,7 +309,7 @@ status_bridge() {
     || published_port=""
   echo "Bridge container: $bridge_container ($state), loopback port ${published_port:-unknown}."
   if [[ "$state" != "running" ]]; then
-    echo "The bridge exists but is not running; run stop and then start again."
+    echo "The bridge exists but is not running; run start again to rebuild it."
     return 1
   fi
   if probe_bridge; then
