@@ -165,7 +165,9 @@ class StaviaRuntimeBoundaryTest {
                     "scripts/deploy/update-local-production-release.sh",
                     "stavias-sistema-cortex/digitalizacao-rdo-stavias",
                     "image_repository='ghcr\\.io/stavias-sistema-cortex/"
-                            + "digitalizacao-rdo-stavias'"),
+                            + "digitalizacao-rdo-stavias'",
+                    "image = r\"ghcr\\.io/stavias-sistema-cortex/"
+                            + "digitalizacao-rdo-stavias-(?:api|web)@sha256:[0-9a-f]{64}\""),
             sourceReference(
                     "scripts/deploy/update-local-production-release.sh",
                     "cortex.portalstavias.com.br",
@@ -194,6 +196,30 @@ class StaviaRuntimeBoundaryTest {
                     "export CORTEX_CANDIDATE_BASE_URL="
                             + "https://cortex.portalstavias.com.br:18443",
                     "export CORTEX_PUBLIC_BASE_URL=https://cortex.portalstavias.com.br"),
+            sourceReference(
+                    "scripts/deploy/cortex-local-release-agent.sh",
+                    "Stavias-Sistema-Cortex/digitalizacao-rdo-stavias",
+                    "repository=\"${CORTEX_GITHUB_REPOSITORY:-Stavias-Sistema-Cortex/"
+                            + "digitalizacao-rdo-stavias}\""),
+            sourceReference(
+                    "scripts/deploy/cortex-local-release-agent.sh",
+                    "cortex.portalstavias.com.br",
+                    "CORTEX_CANDIDATE_BASE_URL=https://cortex.portalstavias.com.br:18443 \\",
+                    "CORTEX_PUBLIC_BASE_URL=https://cortex.portalstavias.com.br \\"),
+            sourceReference(
+                    "scripts/deploy/install-cortex-local-release-agent.sh",
+                    "Stavias-Sistema-Cortex/digitalizacao-rdo-stavias",
+                    "CORTEX_GITHUB_REPOSITORY=Stavias-Sistema-Cortex/"
+                            + "digitalizacao-rdo-stavias"),
+            sourceReference(
+                    "scripts/deploy/test-local-release-agent.sh",
+                    "Stavias-Sistema-Cortex/digitalizacao-rdo-stavias",
+                    "repository=\"Stavias-Sistema-Cortex/digitalizacao-rdo-stavias\""),
+            sourceReference(
+                    "scripts/deploy/test-local-release-agent.sh",
+                    "stavias-sistema-cortex/digitalizacao-rdo-stavias",
+                    "image_base=\"ghcr.io/stavias-sistema-cortex/"
+                            + "digitalizacao-rdo-stavias\""),
             sourceReference(
                     "scripts/deploy/test-configure-local-upstream-resolution.sh",
                     "cortex.portalstavias.com.br",

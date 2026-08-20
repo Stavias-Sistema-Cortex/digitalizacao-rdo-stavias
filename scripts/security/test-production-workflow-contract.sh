@@ -133,10 +133,18 @@ expected_handoff_env = {
   "CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256" => "${{ steps.release.outputs.offline_public_key_fingerprint }}",
   "CORTEX_SOURCE_REPOSITORY" => "${{ github.repository }}",
   "CORTEX_SOURCE_RUN_ID" => "${{ github.run_id }}",
+  "CORTEX_SOURCE_BUNDLE" => "${{ runner.temp }}/cortex-source.bundle",
   "CORTEX_LOCAL_RELEASE_HANDOFF" => "${{ runner.temp }}/cortex-local-release-handoff.json"
 }
 fail_contract("local handoff environment is incomplete or mutable") unless handoff.fetch("env") == expected_handoff_env
-fail_contract("local handoff must use the reviewed builder") unless handoff.fetch("run") == "bash scripts/deploy/build-local-release-handoff.sh"
+handoff_run = handoff.fetch("run")
+for required in [
+  'git bundle create "$CORTEX_SOURCE_BUNDLE" HEAD',
+  'chmod 600 "$CORTEX_SOURCE_BUNDLE"',
+  'bash scripts/deploy/build-local-release-handoff.sh'
+]
+  fail_contract("local handoff must bind the exact source bundle") unless handoff_run.include?(required)
+end
 
 attestation = by_name.fetch("Attest local-server release handoff")
 fail_contract("local handoff attestation must be pinned") unless attestation["uses"] == "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be"
@@ -146,7 +154,7 @@ upload = by_name.fetch("Upload local-server release handoff")
 fail_contract("local handoff upload must be pinned") unless upload["uses"] == "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
 expected_upload = {
   "name" => "cortex-local-release-${{ github.sha }}",
-  "path" => "${{ runner.temp }}/cortex-local-release-handoff.json",
+  "path" => "${{ runner.temp }}/cortex-local-release-handoff.json\n${{ runner.temp }}/cortex-source.bundle\n",
   "if-no-files-found" => "error",
   "retention-days" => 30
 }

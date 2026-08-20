@@ -119,6 +119,50 @@ Automatize o primeiro comando com um timer `systemd` diário usando um
 esteja montado (`RequiresMountsFor=`) e nunca carregar a identidade privada de
 restore no job diário.
 
+## Atualização automática do servidor local
+
+O workflow de produção publica somente imagens imutáveis no GHCR e o artefato
+`cortex-local-release-<sha>`. O handoff JSON é atestado pelo GitHub e vincula o
+SHA, os dois digests OCI, o marker do banco e o SHA-256 de um Git bundle com o
+código exato. Neon, Render e Cloudflare não participam desse caminho.
+
+Instale uma única vez, a partir de uma release já conferida no servidor:
+
+```bash
+sudo bash scripts/deploy/install-cortex-local-release-agent.sh
+```
+
+O instalador fixa e verifica o GitHub CLI, copia o verificador e instala
+`cortex-local-release-update.service` e `.timer`. A cada cinco minutos o host:
+
+1. consulta o último `production.yml` verde de `develop`;
+2. baixa o artefato exato usando a credencial privada já usada pelo GHCR;
+3. verifica a atestação, o SHA do bundle, o commit e os digests das imagens;
+4. materializa uma árvore Git root-only e executa o atualizador fail-closed;
+5. preserva dump PostgreSQL, environment anterior e todos os volumes;
+6. exige health/readiness, marker, storage e revisão exatos;
+7. restaura automaticamente a release anterior se a ativação falhar.
+
+O journal do updater impede duas atualizações simultâneas e recupera quedas de
+energia. Um checkpoint `ACTIVATED` anterior só é arquivado quando a release
+atual, seus volumes e seus backups são novamente provados. Consulte sem expor
+credenciais:
+
+```bash
+systemctl status cortex-local-release-update.timer
+journalctl -u cortex-local-release-update.service --since today
+```
+
+O push pode ser feito fora da rede Stavias. A rede interna continua necessária
+somente para instalar, auditar ou reparar o serviço por SSH; o próprio servidor
+consulta GitHub e GHCR pela Internet.
+
+Essa automação pertence ao único WebServerLinux, não ao computador de quem fez
+o push. Depois de instalada, qualquer colaborador autorizado continua usando a
+mesma URL canônica em qualquer máquina Stavias compatível. Clientes que ainda
+estão com um bundle anterior permanecem fail-closed e tentam novamente após a
+atualização, sem precisar eleger um navegador como aprovador da release.
+
 ## Publicação no GitHub
 
 O Environment pode ser recriado de forma idempotente por um administrador:

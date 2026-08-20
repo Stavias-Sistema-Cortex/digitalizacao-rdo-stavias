@@ -1,0 +1,29 @@
+[Unit]
+Description=Cortex signed local production release updater
+After=network-online.target docker.service apache2.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+EnvironmentFile=/etc/cortex/local-release-agent.env
+Environment=HOME=/srv/cortex/runtime/local-release-agent/home
+ExecStart=/usr/local/libexec/cortex/cortex-local-release-agent.sh
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/sistema/cortex/releases /srv/cortex/runtime /etc/apache2 /run/apache2
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+TimeoutStartSec=30min
+
+[Install]
+WantedBy=multi-user.target

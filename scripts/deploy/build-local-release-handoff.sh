@@ -10,6 +10,7 @@ required_variables=(
   CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256
   CORTEX_SOURCE_REPOSITORY
   CORTEX_SOURCE_RUN_ID
+  CORTEX_SOURCE_BUNDLE
   CORTEX_LOCAL_RELEASE_HANDOFF
 )
 for variable_name in "${required_variables[@]}"; do
@@ -35,6 +36,14 @@ done
   echo "CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256 is invalid." >&2
   exit 1
 }
+[[ -f "$CORTEX_SOURCE_BUNDLE" && -r "$CORTEX_SOURCE_BUNDLE" && ! -L "$CORTEX_SOURCE_BUNDLE" \
+  && "$(basename "$CORTEX_SOURCE_BUNDLE")" == cortex-source.bundle ]] || {
+  echo "CORTEX_SOURCE_BUNDLE must be the readable cortex-source.bundle regular file." >&2
+  exit 1
+}
+source_bundle_sha256="$(openssl dgst -sha256 "$CORTEX_SOURCE_BUNDLE" | awk '{print $NF}')"
+[[ "$source_bundle_sha256" =~ ^[0-9a-f]{64}$ ]] || exit 1
+export CORTEX_SOURCE_BUNDLE_SHA256="$source_bundle_sha256"
 
 repository_lower="$(printf '%s' "$CORTEX_SOURCE_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
 api_prefix="ghcr.io/${repository_lower}-api@sha256:"
@@ -75,11 +84,14 @@ if target.is_symlink():
     raise SystemExit("The local release handoff destination must not be a symlink.")
 
 document = {
+    "automaticActivationContract": "pwa-backward-compatible-v1",
     "apiImage": os.environ["CORTEX_API_IMAGE"],
     "databaseReleaseMarker": os.environ["CORTEX_DATABASE_RELEASE_MARKER"],
     "offlineGrantPublicKeySha256": os.environ["CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256"],
     "releaseSha": os.environ["CORTEX_RELEASE_SHA"],
-    "schemaVersion": 1,
+    "schemaVersion": 2,
+    "sourceBundleName": "cortex-source.bundle",
+    "sourceBundleSha256": os.environ["CORTEX_SOURCE_BUNDLE_SHA256"],
     "sourceRepository": os.environ["CORTEX_SOURCE_REPOSITORY"],
     "sourceRunId": os.environ["CORTEX_SOURCE_RUN_ID"],
     "webImage": os.environ["CORTEX_WEB_IMAGE"],

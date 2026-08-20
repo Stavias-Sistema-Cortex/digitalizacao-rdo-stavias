@@ -424,8 +424,13 @@ jobs:
           CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${{ steps.release.outputs.offline_public_key_fingerprint }}
           CORTEX_SOURCE_REPOSITORY: ${{ github.repository }}
           CORTEX_SOURCE_RUN_ID: ${{ github.run_id }}
+          CORTEX_SOURCE_BUNDLE: ${{ runner.temp }}/cortex-source.bundle
           CORTEX_LOCAL_RELEASE_HANDOFF: ${{ runner.temp }}/cortex-local-release-handoff.json
-        run: bash scripts/deploy/build-local-release-handoff.sh
+        run: |
+          set -euo pipefail
+          git bundle create "$CORTEX_SOURCE_BUNDLE" HEAD
+          chmod 600 "$CORTEX_SOURCE_BUNDLE"
+          bash scripts/deploy/build-local-release-handoff.sh
       - name: Attest local-server release handoff
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
@@ -434,7 +439,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cortex-local-release-${{ github.sha }}
-          path: ${{ runner.temp }}/cortex-local-release-handoff.json
+          path: |
+            ${{ runner.temp }}/cortex-local-release-handoff.json
+            ${{ runner.temp }}/cortex-source.bundle
           if-no-files-found: error
           retention-days: 30
       - name: Record local-server release evidence

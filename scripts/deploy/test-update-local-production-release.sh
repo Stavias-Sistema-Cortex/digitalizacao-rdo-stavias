@@ -468,11 +468,105 @@ SH
   export CORTEX_TEST_FAIL_OLD_VERIFY="$case_root/fail-old-verify"
   export CORTEX_TEST_PROXY_REMOTE_REVISION="$new_sha"
   unset CORTEX_PWA_UPDATE_VERIFIED
+  unset CORTEX_AUTOMATIC_ACTIVATION_CONTRACT
 }
 
 run_update() {
   bash "$update_script" "$1" > "$case_root/stdout" 2> "$case_root/stderr"
 }
+
+write_previous_activated_checkpoint() {
+  local previous_sha previous_marker previous_api previous_web
+  previous_sha="$(printf '0%.0s' {1..40})"
+  previous_marker="$(marker_for "$previous_sha")"
+  previous_api="${image_repository}-api@sha256:$(printf 'e%.0s' {1..64})"
+  previous_web="${image_repository}-web@sha256:$(printf 'f%.0s' {1..64})"
+  local environment_backup="$checkpoint_dir/previous-production.env"
+  local database_dump="$checkpoint_dir/previous-database.dump"
+  local database_list="$checkpoint_dir/previous-database.list"
+  printf '%s\n' previous-environment > "$environment_backup"
+  printf '%s\n' previous-database > "$database_dump"
+  printf '%s\n' previous-list > "$database_list"
+  chmod 600 "$environment_backup" "$database_dump" "$database_list"
+  local database_sha
+  database_sha="$(openssl dgst -sha256 "$database_dump" | awk '{print $NF}')"
+  python3 - "$checkpoint_file" \
+    "$previous_sha" "$old_sha" "$previous_marker" "$old_marker" \
+    "$previous_api" "$previous_web" "$old_api" "$old_web" \
+    "$old_root" "$apache_local" \
+    'cortex-production_cortex_postgres_data|cortex-production_cortex_object_data|cortex-production_cortex_caddy_data|cortex-production_cortex_caddy_config' \
+    "$environment_backup" "$database_dump" "$database_list" "$database_sha" <<'PY'
+import json, pathlib, sys
+(path, previous_sha, current_sha, previous_marker, current_marker,
+ previous_api, previous_web, current_api, current_web, current_root,
+ apache_target, volumes, environment_backup, database_dump,
+ database_list, database_sha) = sys.argv[1:]
+postgres, objects, caddy_data, caddy_config = volumes.split("|")
+document = {
+    "version": 1,
+    "status": "ACTIVATED",
+    "updatedAt": "2026-08-20T12:46:06Z",
+    "oldRevision": previous_sha,
+    "newRevision": current_sha,
+    "oldDatabaseMarker": previous_marker,
+    "newDatabaseMarker": current_marker,
+    "oldApiImage": previous_api,
+    "oldWebImage": previous_web,
+    "newApiImage": current_api,
+    "newWebImage": current_web,
+    "oldReleaseRoot": current_root,
+    "newReleaseRoot": current_root,
+    "apacheLocalTarget": apache_target,
+    "volumes": {
+        "postgres": postgres,
+        "objects": objects,
+        "caddyData": caddy_data,
+        "caddyConfig": caddy_config,
+    },
+    "environmentBackup": environment_backup,
+    "databaseDump": database_dump,
+    "databaseDumpList": database_list,
+    "databaseDumpSha256": database_sha,
+    "remoteRetention": "PRESERVED",
+}
+pathlib.Path(path).write_text(
+    json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
+    encoding="utf-8",
+)
+PY
+  chmod 600 "$checkpoint_file"
+}
+
+# A proven ACTIVATED checkpoint belongs to the currently running old release.
+# The next stage must archive that rollback evidence without discarding its
+# backups, then create the next release checkpoint normally.
+prepare_case sequential-release
+write_previous_activated_checkpoint
+previous_environment_backup="$(json_value "$checkpoint_file" environmentBackup)"
+previous_database_dump="$(json_value "$checkpoint_file" databaseDump)"
+previous_database_list="$(json_value "$checkpoint_file" databaseDumpList)"
+run_update stage-web
+[[ "$(json_value "$checkpoint_file" status)" == PWA_STAGED ]]
+previous_archive="$checkpoint_dir/checkpoint.activated-$old_sha.json"
+[[ -s "$previous_archive" && "$(mode_of "$previous_archive")" == 600 ]]
+[[ "$(json_value "$previous_archive" status)" == ACTIVATED ]]
+[[ -s "$previous_environment_backup" && -s "$previous_database_dump" && -s "$previous_database_list" ]]
+
+# A stale or forged ACTIVATED checkpoint must never be retired merely because
+# it has the right status label.
+prepare_case mismatched-sequential-release
+write_previous_activated_checkpoint
+python3 - "$checkpoint_file" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+document = json.loads(path.read_text(encoding="utf-8"))
+document["newRevision"] = "9" * 40
+path.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n")
+PY
+expect_rejected mismatched-activated-checkpoint run_update stage-web
+[[ "$(json_value "$checkpoint_file" status)" == ACTIVATED ]]
+[[ ! -e "$checkpoint_dir/checkpoint.activated-$old_sha.json" ]]
+[[ ! -s "$action_log" ]]
 
 # A new web bundle must be staged without replacing the old API or database marker.
 prepare_case happy-path
@@ -505,9 +599,17 @@ expect_rejected staged-not-retryable run_update prepare-retry
 [[ "$(json_value "$checkpoint_file" status)" == PWA_STAGED ]]
 [[ -s "$stage_env" ]]
 
-# Activation must be explicit, dump the local canonical DB, migrate once, and
-# stop/start only edge, web, and API in the controlled order.
-export CORTEX_PWA_UPDATE_VERIFIED=true
+# Activation without either approval contract must remain fail-closed.
+expect_rejected missing-activation-contract run_update activate
+[[ "$(json_value "$checkpoint_file" status)" == PWA_STAGED ]]
+export CORTEX_AUTOMATIC_ACTIVATION_CONTRACT=invalid
+expect_rejected invalid-activation-contract run_update activate
+[[ "$(json_value "$checkpoint_file" status)" == PWA_STAGED ]]
+
+# The signed backward-compatible contract activates without depending on one
+# browser, dumps the local canonical DB, migrates once, and stops/starts only
+# edge, web, and API in the controlled order.
+export CORTEX_AUTOMATIC_ACTIVATION_CONTRACT=pwa-backward-compatible-v1
 : > "$action_log"
 run_update activate
 [[ "$(json_value "$checkpoint_file" status)" == ACTIVATED ]]

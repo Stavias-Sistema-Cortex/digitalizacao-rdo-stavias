@@ -986,6 +986,116 @@ prove_old_release() {
     "$CORTEX_EXPECTED_OLD_RELEASE_SHA" "$old_marker" public
 }
 
+retire_previous_activated_checkpoint() {
+  [[ -e "$CORTEX_UPDATE_CHECKPOINT_FILE" ]] || return 0
+  require_regular "$CORTEX_UPDATE_CHECKPOINT_FILE" "Previous activated release checkpoint"
+  local checkpoint_mode payload archive
+  checkpoint_mode="$(file_mode "$CORTEX_UPDATE_CHECKPOINT_FILE")" || return 1
+  (( (8#$checkpoint_mode & 077) == 0 )) || {
+    echo "The previous activated release checkpoint must be owner-only." >&2
+    return 1
+  }
+
+  acquire_lock
+  payload="$(python3 - "$CORTEX_UPDATE_CHECKPOINT_FILE" \
+    "$CORTEX_EXPECTED_OLD_RELEASE_SHA" "$old_marker" \
+    "$old_api_image" "$old_web_image" "$CORTEX_OLD_RELEASE_ROOT" \
+    "$local_target" "$baseline_volumes" "$checkpoint_dir" <<'PY'
+import json, pathlib, re, sys
+(path, current_sha, current_marker, current_api, current_web,
+ current_root, apache_target, current_volumes, checkpoint_dir) = sys.argv[1:]
+try:
+    document = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError) as error:
+    raise SystemExit("The previous release checkpoint is invalid.") from error
+if (
+    document.get("version") != 1
+    or document.get("status") != "ACTIVATED"
+    or document.get("remoteRetention") != "PRESERVED"
+):
+    raise SystemExit("Only a proven ACTIVATED checkpoint can be retired.")
+expected = {
+    "newRevision": current_sha,
+    "newDatabaseMarker": current_marker,
+    "newApiImage": current_api,
+    "newWebImage": current_web,
+    "newReleaseRoot": current_root,
+    "apacheLocalTarget": apache_target,
+}
+if any(document.get(key) != value for key, value in expected.items()):
+    raise SystemExit("The activated checkpoint does not describe the current release.")
+volumes = document.get("volumes") or {}
+checkpoint_volumes = "|".join(
+    str(volumes.get(key, ""))
+    for key in ("postgres", "objects", "caddyData", "caddyConfig")
+)
+if checkpoint_volumes != current_volumes:
+    raise SystemExit("The activated checkpoint does not describe the current volumes.")
+if not re.fullmatch(r"[0-9a-f]{40}", str(document.get("oldRevision", ""))):
+    raise SystemExit("The activated checkpoint has an invalid rollback revision.")
+if not re.fullmatch(r"[A-Za-z0-9_-]{43}", str(document.get("oldDatabaseMarker", ""))):
+    raise SystemExit("The activated checkpoint has an invalid rollback marker.")
+image = r"ghcr\.io/stavias-sistema-cortex/digitalizacao-rdo-stavias-(?:api|web)@sha256:[0-9a-f]{64}"
+for key in ("oldApiImage", "oldWebImage"):
+    if not re.fullmatch(image, str(document.get(key, ""))):
+        raise SystemExit("The activated checkpoint has an invalid rollback image.")
+root = pathlib.Path(checkpoint_dir).resolve()
+values = [
+    document.get("environmentBackup", ""),
+    document.get("databaseDump", ""),
+    document.get("databaseDumpList", ""),
+    document.get("databaseDumpSha256", ""),
+]
+if any(not isinstance(value, str) or "\n" in value or "\r" in value for value in values):
+    raise SystemExit("The activated checkpoint contains an invalid artifact field.")
+for value in values[:3]:
+    if not value or pathlib.Path(value).resolve().parent != root:
+        raise SystemExit("The activated checkpoint artifact is outside the protected directory.")
+if not re.fullmatch(r"[0-9a-f]{64}", values[3]):
+    raise SystemExit("The activated checkpoint has no verified database dump digest.")
+print("\n".join(values))
+PY
+)" || {
+    release_lock
+    return 1
+  }
+  environment_backup="$(printf '%s\n' "$payload" | sed -n '1p')"
+  database_dump="$(printf '%s\n' "$payload" | sed -n '2p')"
+  database_dump_list="$(printf '%s\n' "$payload" | sed -n '3p')"
+  database_dump_sha="$(printf '%s\n' "$payload" | sed -n '4p')"
+  prove_old_release || {
+    release_lock
+    return 1
+  }
+  validate_preserved_checkpoint_artifacts || {
+    release_lock
+    return 1
+  }
+
+  archive="$checkpoint_dir/checkpoint.activated-$CORTEX_EXPECTED_OLD_RELEASE_SHA.json"
+  python3 - "$CORTEX_UPDATE_CHECKPOINT_FILE" "$archive" "$checkpoint_dir" <<'PY'
+import os, pathlib, stat, sys
+source, destination, directory = map(pathlib.Path, sys.argv[1:])
+if source.is_symlink() or not source.is_file():
+    raise SystemExit("The activated checkpoint source is unsafe.")
+if destination.exists() or destination.is_symlink():
+    raise SystemExit("The activated checkpoint archive already exists.")
+info = source.stat()
+if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
+    raise SystemExit("The activated checkpoint source is not owner-only.")
+os.link(source, destination, follow_symlinks=False)
+os.chmod(destination, 0o600, follow_symlinks=False)
+os.unlink(source)
+descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
+  release_lock
+  echo "Previous activated release checkpoint archived after proving the current local release."
+}
+
 restore_staging_to_old() {
   activate_maintenance
   compose_call "$CORTEX_RUNTIME_ENV_FILE" "$old_compose_file" \
@@ -1000,10 +1110,6 @@ restore_staging_to_old() {
 }
 
 stage_web() {
-  [[ ! -e "$CORTEX_UPDATE_CHECKPOINT_FILE" ]] || {
-    echo "A release-update checkpoint already exists; activate or roll it back first." >&2
-    exit 1
-  }
   [[ ! -e "$CORTEX_STAGE_ENV_FILE" ]] || {
     echo "The staged production environment already exists." >&2
     exit 1
@@ -1035,6 +1141,11 @@ stage_web() {
   verify_image_revision "$old_web_image" "$CORTEX_EXPECTED_OLD_RELEASE_SHA"
   verify_container_revision "$CORTEX_RUNTIME_ENV_FILE" "$old_compose_file" \
     cortex-api "$CORTEX_EXPECTED_OLD_RELEASE_SHA"
+  retire_previous_activated_checkpoint
+  [[ ! -e "$CORTEX_UPDATE_CHECKPOINT_FILE" ]] || {
+    echo "A release-update checkpoint already exists; activate or roll it back first." >&2
+    exit 1
+  }
 
   acquire_lock
   stage_started=true
@@ -1237,8 +1348,9 @@ rollback_to_old() {
 }
 
 activate_release() {
-  [[ "${CORTEX_PWA_UPDATE_VERIFIED:-}" == true ]] || {
-    echo "Set CORTEX_PWA_UPDATE_VERIFIED=true only after the controlled browser runs the staged PWA." >&2
+  [[ "${CORTEX_PWA_UPDATE_VERIFIED:-}" == true \
+    || "${CORTEX_AUTOMATIC_ACTIVATION_CONTRACT:-}" == pwa-backward-compatible-v1 ]] || {
+    echo "Activation requires either a controlled PWA verification or the signed backward-compatible automatic activation contract." >&2
     exit 1
   }
   load_and_require_stage

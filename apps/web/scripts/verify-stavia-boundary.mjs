@@ -222,11 +222,33 @@ const CORPORATE_SOURCE_LINES = new Map([
     "scripts/deploy/update-local-production-release.sh",
     [
       "image_repository='ghcr\\.io/stavias-sistema-cortex/digitalizacao-rdo-stavias'",
+      'image = r"ghcr\\.io/stavias-sistema-cortex/digitalizacao-rdo-stavias-(?:api|web)@sha256:[0-9a-f]{64}"',
       'or candidate.hostname != "cortex.portalstavias.com.br"',
       'or public.hostname != "cortex.portalstavias.com.br"',
       'args+=(--cacert "$CORTEX_CANDIDATE_CA_FILE" --resolve \'cortex.portalstavias.com.br:18443:127.0.0.1\')',
       "args+=(--resolve 'cortex.portalstavias.com.br:443:127.0.0.1')",
       'local stem="StaviasCortex-before-${CORTEX_EXPECTED_NEW_RELEASE_SHA:0:12}"',
+    ],
+  ],
+  [
+    "scripts/deploy/cortex-local-release-agent.sh",
+    [
+      'repository="${CORTEX_GITHUB_REPOSITORY:-Stavias-Sistema-Cortex/digitalizacao-rdo-stavias}"',
+      "CORTEX_CANDIDATE_BASE_URL=https://cortex.portalstavias.com.br:18443 \\",
+      "CORTEX_PUBLIC_BASE_URL=https://cortex.portalstavias.com.br \\",
+    ],
+  ],
+  [
+    "scripts/deploy/install-cortex-local-release-agent.sh",
+    [
+      "CORTEX_GITHUB_REPOSITORY=Stavias-Sistema-Cortex/digitalizacao-rdo-stavias",
+    ],
+  ],
+  [
+    "scripts/deploy/test-local-release-agent.sh",
+    [
+      'repository="Stavias-Sistema-Cortex/digitalizacao-rdo-stavias"',
+      'image_base="ghcr.io/stavias-sistema-cortex/digitalizacao-rdo-stavias"',
     ],
   ],
   [

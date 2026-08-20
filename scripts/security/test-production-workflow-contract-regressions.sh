@@ -45,8 +45,8 @@ replacements = {
         "platforms: linux/amd64",
     ),
     "handoff-builder": (
-        "run: bash scripts/deploy/build-local-release-handoff.sh",
-        'run: "true"',
+        "bash scripts/deploy/build-local-release-handoff.sh",
+        'echo "builder removed"',
     ),
     "mutable-handoff-api": (
         "CORTEX_API_IMAGE: ${{ steps.release.outputs.api_image }}@${{ steps.api.outputs.digest }}",

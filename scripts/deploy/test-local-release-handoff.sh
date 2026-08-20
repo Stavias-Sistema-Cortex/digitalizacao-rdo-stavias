@@ -40,6 +40,10 @@ release_marker="$(
 )"
 handoff="$fixture_root/cortex-local-release-handoff.json"
 verified_env="$fixture_root/release.env"
+source_bundle="$fixture_root/cortex-source.bundle"
+printf '%s\n' "signed source bundle for $release_sha" > "$source_bundle"
+chmod 600 "$source_bundle"
+source_bundle_sha="$(openssl dgst -sha256 "$source_bundle" | awk '{print $NF}')"
 
 CORTEX_RELEASE_SHA="$release_sha" \
 CORTEX_API_IMAGE="$api_image" \
@@ -48,6 +52,7 @@ CORTEX_DATABASE_RELEASE_MARKER="$release_marker" \
 CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256="$offline_fingerprint" \
 CORTEX_SOURCE_REPOSITORY="$source_repository" \
 CORTEX_SOURCE_RUN_ID="$source_run_id" \
+CORTEX_SOURCE_BUNDLE="$source_bundle" \
 CORTEX_LOCAL_RELEASE_HANDOFF="$handoff" \
   bash "$builder"
 
@@ -58,6 +63,7 @@ if CORTEX_RELEASE_SHA="$release_sha" \
   CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256="$offline_fingerprint" \
   CORTEX_SOURCE_REPOSITORY="$source_repository" \
   CORTEX_SOURCE_RUN_ID="$source_run_id" \
+  CORTEX_SOURCE_BUNDLE="$source_bundle" \
   CORTEX_LOCAL_RELEASE_HANDOFF="$fixture_root/wrong-repository.json" \
   bash "$builder" >/dev/null 2>&1; then
   echo "local release builder accepted an image from another repository" >&2
@@ -65,7 +71,8 @@ if CORTEX_RELEASE_SHA="$release_sha" \
 fi
 
 python3 - "$handoff" "$release_sha" "$api_image" "$web_image" \
-  "$release_marker" "$offline_fingerprint" "$source_repository" "$source_run_id" <<'PY'
+  "$release_marker" "$offline_fingerprint" "$source_repository" "$source_run_id" \
+  "$source_bundle_sha" <<'PY'
 import json
 import pathlib
 import sys
@@ -73,11 +80,14 @@ import sys
 path = pathlib.Path(sys.argv[1])
 actual = json.loads(path.read_text(encoding="utf-8"))
 expected = {
+    "automaticActivationContract": "pwa-backward-compatible-v1",
     "apiImage": sys.argv[3],
     "databaseReleaseMarker": sys.argv[5],
     "offlineGrantPublicKeySha256": sys.argv[6],
     "releaseSha": sys.argv[2],
-    "schemaVersion": 1,
+    "schemaVersion": 2,
+    "sourceBundleName": "cortex-source.bundle",
+    "sourceBundleSha256": sys.argv[9],
     "sourceRepository": sys.argv[7],
     "sourceRunId": sys.argv[8],
     "webImage": sys.argv[4],
@@ -102,10 +112,22 @@ printf '%s\n' \
   > "$fake_gh"
 chmod 700 "$fake_gh"
 
+fake_git="$fixture_root/bin/git"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'set -euo pipefail' \
+  '[[ "$1 $2" == "bundle list-heads" ]]' \
+  '[[ "$3" == "$CORTEX_LOCAL_RELEASE_SOURCE_BUNDLE" ]]' \
+  'printf "%s HEAD\\n" "$CORTEX_TEST_RELEASE_SHA"' \
+  > "$fake_git"
+chmod 700 "$fake_git"
+
 PATH="$fixture_root/bin:$PATH" \
 CORTEX_LOCAL_RELEASE_HANDOFF="$handoff" \
+CORTEX_LOCAL_RELEASE_SOURCE_BUNDLE="$source_bundle" \
 CORTEX_LOCAL_RELEASE_ENV_OUTPUT="$verified_env" \
 CORTEX_EXPECTED_SOURCE_REPOSITORY="$source_repository" \
+CORTEX_TEST_RELEASE_SHA="$release_sha" \
   bash "$verifier"
 
 python3 - "$verified_env" <<'PY'
@@ -119,10 +141,12 @@ if mode != 0o600:
 PY
 expected_env="$fixture_root/expected.env"
 printf '%s\n' \
+  "CORTEX_AUTOMATIC_ACTIVATION_CONTRACT=pwa-backward-compatible-v1" \
   "CORTEX_EXPECTED_NEW_RELEASE_SHA=$release_sha" \
   "CORTEX_NEW_API_IMAGE=$api_image" \
   "CORTEX_NEW_WEB_IMAGE=$web_image" \
   "CORTEX_NEW_DATABASE_RELEASE_MARKER=$release_marker" \
+  "CORTEX_SOURCE_BUNDLE_SHA256=$source_bundle_sha" \
   > "$expected_env"
 cmp -s "$expected_env" "$verified_env"
 
@@ -138,8 +162,10 @@ path.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\
 PY
 if PATH="$fixture_root/bin:$PATH" \
   CORTEX_LOCAL_RELEASE_HANDOFF="$handoff" \
+  CORTEX_LOCAL_RELEASE_SOURCE_BUNDLE="$source_bundle" \
   CORTEX_LOCAL_RELEASE_ENV_OUTPUT="$verified_env" \
   CORTEX_EXPECTED_SOURCE_REPOSITORY="$source_repository" \
+  CORTEX_TEST_RELEASE_SHA="$release_sha" \
   bash "$verifier" >/dev/null 2>&1; then
   echo "local release verifier accepted a tampered release marker" >&2
   exit 1
