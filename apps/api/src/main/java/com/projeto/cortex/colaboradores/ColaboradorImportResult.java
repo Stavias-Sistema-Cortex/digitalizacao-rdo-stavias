@@ -9,6 +9,6 @@ public record ColaboradorImportResult(
         int registrosProcessados,
         int registrosInseridos,
         int registrosAtualizados,
-        int registrosDesativados,
+        int registrosDesativados, // Número de registros desativados para o banco de dados de destino
         String mensagemErro
 ) {}
