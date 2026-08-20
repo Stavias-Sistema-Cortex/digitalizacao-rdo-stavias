@@ -157,7 +157,18 @@ url="${args[$((${#args[@]} - 1))]}"
 printf 'curl %s\n' "$url" >> "$CORTEX_TEST_AGENT_ACTIONS"
 case "$url" in
   */actions/workflows/production.yml/runs*)
-    printf '{"workflow_runs":[{"id":12345,"head_sha":"%s","status":"completed","conclusion":"success","event":"push","head_branch":"develop"}]}\n' "$CORTEX_TEST_NEW_SHA"
+    python3 - "$CORTEX_TEST_NEW_SHA" <<'PY'
+import json, sys
+print(json.dumps({"workflow_runs":[{
+    "id":12345,
+    "head_sha":sys.argv[1],
+    "status":"completed",
+    "conclusion":"success",
+    "event":"push",
+    "head_branch":"develop",
+    "irrelevant_payload":"x" * (3 * 1024 * 1024),
+}]}))
+PY
     ;;
   */actions/runs/12345/artifacts*)
     printf '{"artifacts":[{"id":67890,"name":"cortex-local-release-%s","expired":false}]}\n' "$CORTEX_TEST_NEW_SHA"

@@ -72,12 +72,20 @@ fi
 
 attempt_dir=""
 github_headers=""
+runs_response=""
+artifacts_response=""
 cleanup_agent_files() {
   if [[ -n "$github_headers" && "$github_headers" == "$state_dir"/.github-headers.* ]]; then
     rm -f -- "$github_headers"
   fi
   if [[ -n "$attempt_dir" && "$attempt_dir" == "$state_dir"/.attempt-* ]]; then
     rm -rf -- "$attempt_dir"
+  fi
+  if [[ -n "$runs_response" && "$runs_response" == "$state_dir"/.github-runs.* ]]; then
+    rm -f -- "$runs_response"
+  fi
+  if [[ -n "$artifacts_response" && "$artifacts_response" == "$state_dir"/.github-artifacts.* ]]; then
+    rm -f -- "$artifacts_response"
   fi
 }
 trap cleanup_agent_files EXIT
@@ -123,12 +131,15 @@ api_get() {
     "$1"
 }
 
-runs_json="$(api_get "$api_base/actions/workflows/$workflow/runs?branch=$branch&event=push&status=success&per_page=10")"
-run_payload="$(python3 - "$runs_json" "$branch" <<'PY'
-import json, re, sys
+runs_response="$(mktemp "$state_dir/.github-runs.XXXXXX")"
+chmod 600 "$runs_response"
+api_get "$api_base/actions/workflows/$workflow/runs?branch=$branch&event=push&status=success&per_page=10" > "$runs_response"
+require_regular "$runs_response" "GitHub workflow-run response"
+run_payload="$(python3 - "$runs_response" "$branch" <<'PY'
+import json, pathlib, re, sys
 try:
-    runs = json.loads(sys.argv[1]).get("workflow_runs", [])
-except json.JSONDecodeError as error:
+    runs = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get("workflow_runs", [])
+except (OSError, UnicodeError, json.JSONDecodeError) as error:
     raise SystemExit("GitHub returned an invalid workflow-run response.") from error
 matches = [run for run in runs if (
     run.get("status") == "completed"
@@ -162,12 +173,15 @@ if [[ "$release_sha" == "$current_sha" ]]; then
   exit 0
 fi
 
-artifacts_json="$(api_get "$api_base/actions/runs/$run_id/artifacts?per_page=100")"
-artifact_id="$(python3 - "$artifacts_json" "cortex-local-release-$release_sha" <<'PY'
-import json, sys
+artifacts_response="$(mktemp "$state_dir/.github-artifacts.XXXXXX")"
+chmod 600 "$artifacts_response"
+api_get "$api_base/actions/runs/$run_id/artifacts?per_page=100" > "$artifacts_response"
+require_regular "$artifacts_response" "GitHub artifact response"
+artifact_id="$(python3 - "$artifacts_response" "cortex-local-release-$release_sha" <<'PY'
+import json, pathlib, sys
 try:
-    artifacts=json.loads(sys.argv[1]).get("artifacts", [])
-except json.JSONDecodeError as error:
+    artifacts=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get("artifacts", [])
+except (OSError, UnicodeError, json.JSONDecodeError) as error:
     raise SystemExit("GitHub returned an invalid artifact response.") from error
 matches=[a for a in artifacts if a.get("name") == sys.argv[2] and a.get("expired") is False and isinstance(a.get("id"), int)]
 if len(matches) != 1:
