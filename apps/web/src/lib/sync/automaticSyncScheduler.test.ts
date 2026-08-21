@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  AUTOMATIC_SYNC_HIDDEN_INTERVAL_MS,
+  AUTOMATIC_SYNC_INTERVAL_MS,
   createAutomaticSyncScheduler,
   type AutomaticSyncTrigger,
 } from "./automaticSyncScheduler";
@@ -178,6 +180,58 @@ describe("automatic sync scheduler", () => {
 
     expect(syncNow).toHaveBeenCalledTimes(2);
     expect(triggers).toContain("RETRY");
+    scheduler.dispose();
+    vi.useRealTimers();
+  });
+
+  /**
+   * A cadência visível é o teto da propagação entre aparelhos: sem canal de
+   * tempo real, o que outro dispositivo apagou só some daqui no próximo pull.
+   * Dez segundos com gente olhando; oculta, a aba desacelera — e a volta ao
+   * primeiro plano dispara uma rodada na hora, sem esperar intervalo nenhum.
+   */
+  it("polls fast while visible and slows down when the tab hides", async () => {
+    vi.useFakeTimers();
+    const target = new EventTarget();
+    let visibility: DocumentVisibilityState = "visible";
+    const syncNow = vi.fn(async () => undefined);
+    const scheduler = createAutomaticSyncScheduler({
+      syncNow,
+      hasOnlineSession: () => true,
+      isOnline: () => true,
+      eventTarget: target,
+      visibilityTarget: target,
+      getVisibilityState: () => visibility,
+      loadNextRetryAt: async () => null,
+    });
+
+    scheduler.start();
+    await flush();
+    expect(syncNow).toHaveBeenCalledTimes(1); // STARTUP
+
+    await vi.advanceTimersByTimeAsync(AUTOMATIC_SYNC_INTERVAL_MS);
+    await flush();
+    expect(syncNow).toHaveBeenCalledTimes(2); // INTERVAL visível
+
+    visibility = "hidden";
+    target.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(AUTOMATIC_SYNC_HIDDEN_INTERVAL_MS - 1);
+    await flush();
+    expect(syncNow).toHaveBeenCalledTimes(2); // nada na cadência visível
+
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
+    expect(syncNow).toHaveBeenCalledTimes(3); // INTERVAL oculto
+
+    visibility = "visible";
+    target.dispatchEvent(new Event("visibilitychange"));
+    await flush();
+    expect(syncNow).toHaveBeenCalledTimes(4); // VISIBILITY imediato
+
+    await vi.advanceTimersByTimeAsync(AUTOMATIC_SYNC_INTERVAL_MS);
+    await flush();
+    expect(syncNow).toHaveBeenCalledTimes(5); // cadência rápida de volta
+
     scheduler.dispose();
     vi.useRealTimers();
   });

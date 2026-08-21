@@ -4,6 +4,7 @@ import { hasOnlineSession } from "../../features/auth/authSession";
 import { loadEarliestAutomaticRetryAt } from "./automaticSyncRetryStorage";
 import { createAutomaticSyncScheduler } from "./automaticSyncScheduler";
 import { syncNow } from "./syncEngine";
+import { subscribeToSyncCompletedBroadcast } from "./syncEvents";
 
 /**
  * A janela terminou em dia, ou terminou cheia?
@@ -24,6 +25,9 @@ export function useAutomaticSync(enabled = true): void {
 
   useEffect(() => {
     if (!enabled) return;
+    // Só uma aba executa o ciclo (lease); as demais ficam sabendo por aqui e
+    // reapresentam suas telas na hora, em vez de esperar o próprio intervalo.
+    const unsubscribeBroadcast = subscribeToSyncCompletedBroadcast();
     const scheduler = createAutomaticSyncScheduler({
       syncNow,
       hasOnlineSession,
@@ -50,6 +54,9 @@ export function useAutomaticSync(enabled = true): void {
       },
     });
     scheduler.start();
-    return () => scheduler.dispose();
+    return () => {
+      scheduler.dispose();
+      unsubscribeBroadcast();
+    };
   }, [enabled]);
 }

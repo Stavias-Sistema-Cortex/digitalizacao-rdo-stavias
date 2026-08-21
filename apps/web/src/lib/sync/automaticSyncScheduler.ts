@@ -2,7 +2,24 @@ import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { LOCAL_MUTATION_QUEUED_EVENT } from "./localMutationCoordinator";
 import { isSyncLeaseContentionError } from "./syncLeaseContention";
 
-export const AUTOMATIC_SYNC_INTERVAL_MS = 30_000;
+/**
+ * Cadência da aba visível.
+ *
+ * <p>É este número que define quanto tempo uma remoção feita em outro aparelho
+ * demora para sumir da tela de quem está olhando: não há canal de tempo real,
+ * então a propagação anda no passo do pull. Trinta segundos eram longos o
+ * bastante para parecer defeito — o trecho apagado numa máquina seguia desenhado
+ * na outra por meio minuto. Dez segundos custam pouco: o ciclo ocioso
+ * curto-circuita o push com a fila vazia e o ack com o cursor em dia, sobrando
+ * um GET de pull.
+ */
+export const AUTOMATIC_SYNC_INTERVAL_MS = 10_000;
+/**
+ * Cadência da aba oculta. Ninguém está olhando: o ritmo cai para não
+ * multiplicar requisições por aba esquecida — a volta ao primeiro plano já
+ * dispara uma rodada imediata pelo evento de visibilidade.
+ */
+export const AUTOMATIC_SYNC_HIDDEN_INTERVAL_MS = 60_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export type AutomaticSyncTrigger =
@@ -39,6 +56,8 @@ export interface AutomaticSyncSchedulerOptions {
   visibilityTarget?: SchedulerEventTarget;
   getVisibilityState?: () => DocumentVisibilityState;
   intervalMs?: number;
+  /** Cadência com a aba oculta; sem ela, vale o intervalo visível dado. */
+  hiddenIntervalMs?: number;
   onRun?: (trigger: AutomaticSyncTrigger) => void;
   onSuccess?: (trigger: AutomaticSyncTrigger, result: unknown) => void;
   onError?: (trigger: AutomaticSyncTrigger, error: unknown) => void;
@@ -58,9 +77,19 @@ export function createAutomaticSyncScheduler(
   const timers = options.timers ?? browserTimers();
   const now = options.now ?? Date.now;
   const isOnline = options.isOnline ?? (() => navigator.onLine);
+  // Sem `document` (testes em Node), a aba conta como visível: é o único
+  // estado seguro para uma cadência que agora é consultada já no start().
   const getVisibilityState =
-    options.getVisibilityState ?? (() => document.visibilityState);
+    options.getVisibilityState ??
+    (() =>
+      typeof document === "undefined" ? "visible" : document.visibilityState);
   const intervalMs = options.intervalMs ?? AUTOMATIC_SYNC_INTERVAL_MS;
+  // Quem fixa o intervalo visível fixa os dois: um teste (ou chamador) que
+  // pediu uma cadência não pode ganhar outra ao esconder a aba.
+  const hiddenIntervalMs =
+    options.hiddenIntervalMs ??
+    options.intervalMs ??
+    AUTOMATIC_SYNC_HIDDEN_INTERVAL_MS;
 
   let started = false;
   let disposed = false;
@@ -151,7 +180,21 @@ export function createAutomaticSyncScheduler(
     clearRetryTimer();
     request("AUTH_SESSION");
   };
+  /**
+   * (Re)arma o intervalo com a cadência da visibilidade atual: rápida com
+   * gente olhando, lenta com a aba oculta. É a cadência visível que dita
+   * quanto tempo uma alteração feita em outro aparelho demora a aparecer.
+   */
+  function armInterval(): void {
+    if (intervalId !== null) timers.clearInterval(intervalId);
+    intervalId = timers.setInterval(
+      () => request("INTERVAL"),
+      getVisibilityState() === "visible" ? intervalMs : hiddenIntervalMs,
+    );
+  }
+
   const onVisibility: EventListener = () => {
+    armInterval();
     if (getVisibilityState() === "visible") request("VISIBILITY");
   };
 
@@ -162,7 +205,7 @@ export function createAutomaticSyncScheduler(
     eventTarget.addEventListener("online", onOnline);
     eventTarget.addEventListener(AUTH_SESSION_CHANGED_EVENT, onAuthSession);
     visibilityTarget.addEventListener("visibilitychange", onVisibility);
-    intervalId = timers.setInterval(() => request("INTERVAL"), intervalMs);
+    armInterval();
     request("STARTUP");
     void refreshRetryTimer();
   }
