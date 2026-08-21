@@ -365,6 +365,19 @@ contagens de todas as tabelas públicas e apaga somente o container, o volume e
 o plaintext descartáveis. Preserve o `.restore.json` junto ao backup e remova a
 identidade do servidor ao terminar.
 
+## Relógio da operação
+
+O relógio civil do Córtex é o de Brasília (`America/Sao_Paulo`), e a imagem da
+API já sobe com ele fixado (`ENV TZ` + `-Duser.timezone`). Os carimbos civis —
+memória operacional de geração 1, `atualizado_em`, vigências de geometria e o
+`CURRENT_TIMESTAMP` das sessões JDBC — são gravados sem fuso, e todos os
+leitores (a interpretação `AT TIME ZONE 'America/Sao_Paulo'` da Memória e a
+preservação de dígitos na PWA) assumem que nasceram nesse relógio. Não rode o
+contêiner da API com o fuso zerado: em UTC, cada tela civil passa a mostrar um
+horário três horas adiantado. Eventos gravados enquanto o servidor local rodou
+em UTC permanecem com esse desvio no histórico; os novos saem certos a partir
+da release com o fuso fixado.
+
 ## Acesso humano às tabelas
 
 O PostgreSQL canônico não publica porta; a inspeção humana das tabelas usa

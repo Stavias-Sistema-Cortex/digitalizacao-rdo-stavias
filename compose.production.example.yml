@@ -11,6 +11,12 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
     environment:
+      # Relógio civil da operação. A imagem já nasce com este valor; ele fica
+      # declarado aqui para a operação enxergar (e sobrepor conscientemente,
+      # se um dia a obra mudar de fuso). Sem ele a JVM subiria em UTC e todo
+      # carimbo civil — memória operacional, "atualizado em", vigências —
+      # mentiria três horas nas telas.
+      TZ: ${CORTEX_TZ:-America/Sao_Paulo}
       SPRING_PROFILES_ACTIVE: production,postgresql
       # Load the database password from the mounted secret without copying it
       # into the container environment or command line.

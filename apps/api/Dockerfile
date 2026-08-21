@@ -26,6 +26,18 @@ RUN apk add --no-cache wget \
 # A container without an explicit override must start in the fail-closed mode.
 ENV SPRING_PROFILES_ACTIVE=production
 
+# O relógio da operação é o de Brasília, e o código conta com isso.
+#
+# Os carimbos civis (`LocalDateTime.now()`, `CURRENT_TIMESTAMP` via JDBC) são
+# gravados sem fuso, e todo leitor — a Memória operacional interpreta as
+# gerações civis com `AT TIME ZONE 'America/Sao_Paulo'`, e a PWA preserva os
+# dígitos dessas gerações como relógio de parede — assume que eles nasceram no
+# relógio de Brasília. No contêiner sem TZ a JVM sobe em UTC e cada carimbo
+# passa a mentir três horas: foi assim que a ontologia da obra exibiu o
+# relógio de UTC depois da mudança para o servidor local. O fuso é fixado na
+# imagem para não depender de configuração de máquina.
+ENV TZ=America/Sao_Paulo
+
 # O jar aninhado é desmontado em jar fino mais `lib/`.
 #
 # Não é arrumação: é o que torna o arquivo de classes abaixo possível. Dentro do
@@ -101,4 +113,8 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=5 \
 # desmontado e não há mais um lançador para receber `-Dloader.main`. Ele não usa
 # o arquivo de classes: é tarefa de uma execução só, onde arranque não importa,
 # e o classpath difere do que foi gravado no treino.
-ENTRYPOINT ["sh", "-c", "set -- -XX:MaxRAMPercentage=70.0 -XX:+UseSerialGC -Dserver.port=${PORT:-8080} ${CORTEX_JAVA_OPTS:-}; if [ -n \"${CORTEX_MAIN_CLASS:-}\" ]; then exec java \"$@\" -cp '/app/app.jar:/app/lib/*' \"${CORTEX_MAIN_CLASS}\"; fi; exec java \"$@\" -XX:SharedArchiveFile=/app/cortex.jsa -jar /app/app.jar"]
+# -Duser.timezone repete o TZ acima de propósito: se a operação zerar o TZ do
+# ambiente, a JVM não pode voltar em silêncio para UTC — os carimbos civis
+# gravariam o relógio errado (ver o comentário do ENV TZ). Continua antes de
+# CORTEX_JAVA_OPTS, então a operação ainda pode sobrepor conscientemente.
+ENTRYPOINT ["sh", "-c", "set -- -XX:MaxRAMPercentage=70.0 -XX:+UseSerialGC -Duser.timezone=${TZ:-America/Sao_Paulo} -Dserver.port=${PORT:-8080} ${CORTEX_JAVA_OPTS:-}; if [ -n \"${CORTEX_MAIN_CLASS:-}\" ]; then exec java \"$@\" -cp '/app/app.jar:/app/lib/*' \"${CORTEX_MAIN_CLASS}\"; fi; exec java \"$@\" -XX:SharedArchiveFile=/app/cortex.jsa -jar /app/app.jar"]
