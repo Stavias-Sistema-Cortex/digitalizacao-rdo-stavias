@@ -34,6 +34,38 @@ function monthOf(dataReferencia: string): string | null {
   return match ? `${match[1]}-${match[2]}` : null;
 }
 
+/**
+ * A receita prevista só entra no gráfico com base canônica completa: cálculo
+ * concluído, evidência aceita presente. É a mesma régua do painel PDOR.
+ */
+function elegivelParaReceita(
+  snapshot: PrevisaoSnapshotRecord,
+): boolean {
+  return (
+    snapshot.statusExecucao === "SUCCESS" &&
+    snapshot.evidenceIds?.length !== 0 &&
+    snapshot.coverageCode !== "NO_ACCEPTED_EVIDENCE"
+  );
+}
+
+/**
+ * As linhas de produção não dependem da receita ter saído.
+ *
+ * <p>Avanço físico e produção apontada são quantidades dos RDOs e da
+ * programação; a receita exige preço e evidência aceita. Quando o mês inteiro
+ * era descartado por o PDOR não ter fechado a receita, a obra nova — com
+ * apontamento em dia e catálogo ainda vazio — abria um gráfico em branco que
+ * prometia três séries na legenda e não desenhava nenhuma.</p>
+ */
+function temProducao(snapshot: PrevisaoSnapshotRecord): boolean {
+  return (
+    snapshot.producaoPlanejada !== null &&
+    snapshot.producaoPlanejada > 0 &&
+    (snapshot.producaoRealizada !== null ||
+      snapshot.producaoApontada !== null)
+  );
+}
+
 export function buildMonthlySeries(
   snapshots: PrevisaoSnapshotRecord[],
   valorContratual: number | null,
@@ -48,9 +80,7 @@ export function buildMonthlySeries(
       snapshot.current !== true ||
       snapshot.stale !== false ||
       !isSupportedPdorRevenueContract(snapshot) ||
-      snapshot.evidenceIds?.length === 0 ||
-      snapshot.coverageCode === "NO_ACCEPTED_EVIDENCE" ||
-      snapshot.statusExecucao !== "SUCCESS"
+      (!elegivelParaReceita(snapshot) && !temProducao(snapshot))
     ) {
       continue;
     }
@@ -86,10 +116,14 @@ export function buildMonthlySeries(
         snapshot.producaoApontada,
         snapshot.producaoPlanejada,
       ),
-      pdorPct: ratioPct(
-        snapshot.receitaPrevistaFinal,
-        valorContratual,
-      ),
+      // Nulo quando a receita daquele mês não tem base canônica: a linha
+      // amarela abre um buraco em vez de desenhar um número descartado.
+      pdorPct: elegivelParaReceita(snapshot)
+        ? ratioPct(
+            snapshot.receitaPrevistaFinal,
+            valorContratual,
+          )
+        : null,
     }));
 }
 

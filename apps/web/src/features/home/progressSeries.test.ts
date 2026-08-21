@@ -76,7 +76,7 @@ describe("buildMonthlySeries", () => {
     expect(points).toEqual([]);
   });
 
-  it("um atual insuficiente suprime o SUCCESS antigo baseado no RDO cancelado", () => {
+  it("um atual insuficiente suprime a receita do SUCCESS antigo sem calar a produção", () => {
     const points = buildMonthlySeries(
       [
         snapshot({
@@ -99,10 +99,62 @@ describe("buildMonthlySeries", () => {
       1000,
     );
 
+    // A receita do snapshot velho — apoiada no RDO cancelado — não volta;
+    // a produção recém-recalculada do snapshot atual continua na tela.
+    expect(points).toHaveLength(1);
+    expect(points[0].pdorPct).toBeNull();
+    expect(points[0].fisicoPct).toBe(48);
+    expect(points[0].apontadaPct).toBe(80);
+  });
+
+  it("obra sem receita fechada ainda desenha avanço e produção apontada", () => {
+    const points = buildMonthlySeries(
+      [
+        snapshot({
+          statusExecucao: "INSUFFICIENT_DATA",
+          receitaPrevistaFinal: null,
+          evidenceIds: [],
+          coverageCode: "NO_ACCEPTED_EVIDENCE",
+          producaoPlanejada: 500,
+          producaoRealizada: 100,
+          producaoApontada: 350,
+        }),
+      ],
+      1000,
+    );
+
+    expect(points).toHaveLength(1);
+    expect(points[0].fisicoPct).toBe(20);
+    expect(points[0].apontadaPct).toBe(70);
+    expect(points[0].pdorPct).toBeNull();
+  });
+
+  it("sem receita e sem produção utilizável o mês continua fora", () => {
+    const points = buildMonthlySeries(
+      [
+        snapshot({
+          statusExecucao: "INSUFFICIENT_DATA",
+          receitaPrevistaFinal: null,
+          producaoPlanejada: null,
+          producaoRealizada: null,
+          producaoApontada: 350,
+        }),
+        snapshot({
+          dataReferencia: "2026-07-10",
+          statusExecucao: "INSUFFICIENT_DATA",
+          receitaPrevistaFinal: null,
+          producaoPlanejada: 500,
+          producaoRealizada: null,
+          producaoApontada: null,
+        }),
+      ],
+      1000,
+    );
+
     expect(points).toEqual([]);
   });
 
-  it("usa o último snapshot de cada mês, ignora não calculados e ordena", () => {
+  it("usa o último snapshot de cada mês e ordena", () => {
     const points = buildMonthlySeries(
       [
         snapshot({
@@ -128,9 +180,13 @@ describe("buildMonthlySeries", () => {
     expect(points.map((p) => p.month)).toEqual([
       "2026-05",
       "2026-06",
+      "2026-07",
     ]);
     expect(points[1].fisicoPct).toBe(48);
     expect(points[1].pdorPct).toBe(12);
+    // O mês sem receita fechada entra pela produção, com a receita em branco.
+    expect(points[2].fisicoPct).toBe(48);
+    expect(points[2].pdorPct).toBeNull();
     expect(points[1]).not.toHaveProperty("custoPct");
   });
 

@@ -206,8 +206,12 @@ export function ProgressChart({
       </div>
 
       {points.length === 0 ? (
+        // O vazio diz de onde os pontos nascem: sem isso, uma obra nova com
+        // RDO em dia abria esta tela e ninguém sabia o que faltava.
         <p className="progress-chart-empty">
-          Sem histórico de previsão ainda.
+          Sem histórico para desenhar ainda. As linhas nascem dos cálculos
+          mensais da obra: produção precisa de programação e apontamentos, e
+          a receita precisa de preços com evidência aceita.
         </p>
       ) : (
         <div className="progress-chart-plot">
