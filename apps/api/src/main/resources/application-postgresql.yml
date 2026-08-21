@@ -6,6 +6,23 @@ spring:
     web-application-type: servlet
   flyway:
     enabled: false
+  datasource:
+    hikari:
+      # Guardas de sessão do runtime — e só do runtime: o perfil de migração
+      # não passa por aqui, e um DDL do Flyway pode legitimamente esperar mais.
+      #
+      # Todo evento da memória operacional passa pela linha única de
+      # commit_seq, segurada da alocação até o commit. Uma transação
+      # abandonada — o cliente que morreu no meio do push, a conexão que a
+      # rede engoliu — ficaria com essa trava até o TCP perceber o defunto,
+      # congelando a sincronização de todas as obras de uma vez. O timeout de
+      # transação ociosa derruba a sessão abandonada em um minuto; o
+      # lock_timeout converte uma fila comprida demais em erro que a PWA já
+      # sabe retentar com espera escalonada, em vez de esgotar o pool
+      # esperando sem prazo.
+      connection-init-sql: >-
+        SET idle_in_transaction_session_timeout = '60s';
+        SET lock_timeout = '30s'
 
 cortex:
   postgresql:
