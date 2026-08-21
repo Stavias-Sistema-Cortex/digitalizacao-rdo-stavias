@@ -149,12 +149,23 @@ grep -q -- "--set=editor_role=cortex_editor" "$CORTEX_TEST_DOCKER_LOG" \
 
 for expected in \
   'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"editor_role";' \
-  'GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO :"editor_role";' \
+  'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"editor_role";' \
   'ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_user" IN SCHEMA public' \
   'REVOKE CREATE ON SCHEMA public FROM :"editor_role";'; do
   grep -qF "$expected" "$CORTEX_TEST_PSQL_SQL" \
     || fail "the reconcile must contain: $expected"
 done
+
+# The blanket table grant reaches the two tables that govern which schema and
+# which release are live; data correction must never rewrite either.
+grep -qF "REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE" "$CORTEX_TEST_PSQL_SQL" \
+  || fail "the deployment control tables must be put back to read-only"
+for control_table in flyway_schema_history cortex_release_marker; do
+  grep -qF "'$control_table'" "$CORTEX_TEST_PSQL_SQL" \
+    || fail "$control_table must be excluded from write access"
+done
+! grep -qE 'GRANT[^;]*UPDATE[^;]*ON ALL SEQUENCES' "$CORTEX_TEST_PSQL_SQL" \
+  || fail "the editing role must not receive setval() on the sequences"
 
 # The whole point of this role is that it stops at data.
 for forbidden in \
@@ -178,7 +189,7 @@ done
 
 # Every GRANT the reconcile emits has to match the data-only allowlist.
 if grep -E '\bGRANT\b' "$CORTEX_TEST_PSQL_SQL" | grep -Evq \
-  '^[[:space:]]*GRANT (CONNECT ON DATABASE :"database_name"|USAGE ON SCHEMA public|SELECT, INSERT, UPDATE, DELETE ON (ALL TABLES IN SCHEMA public|TABLES)|USAGE, SELECT, UPDATE ON (ALL SEQUENCES IN SCHEMA public|SEQUENCES)) TO :"editor_role";$'; then
+  '^[[:space:]]*GRANT (CONNECT ON DATABASE :"database_name"|USAGE ON SCHEMA public|SELECT, INSERT, UPDATE, DELETE ON (ALL TABLES IN SCHEMA public|TABLES)|USAGE, SELECT ON (ALL SEQUENCES IN SCHEMA public|SEQUENCES)) TO :"editor_role";$'; then
   fail "only CONNECT, USAGE and row-level rights may be granted to the editing role"
 fi
 
@@ -193,6 +204,12 @@ grep -q "refusing_to_reconcile_a_role_that_owns_objects" "$CORTEX_TEST_PSQL_SQL"
 prepare_case revoked
 subcommand_under_test="revoke"
 run_editor || fail "revoke must succeed against a running stack"
+grep -q "exec -i postgres-container psql -X --set=ON_ERROR_STOP=1" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "revoke must reach psql through exec with ON_ERROR_STOP"
+grep -q -- "--set=editor_role=cortex_editor" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "revoke must name the role it is closing"
+grep -q "the_editing_role_does_not_exist" "$CORTEX_TEST_PSQL_SQL" \
+  || fail "revoke must refuse a role that was never provisioned"
 grep -q "ALTER ROLE %I NOLOGIN" "$CORTEX_TEST_PSQL_SQL" \
   || fail "revoke must take the login away"
 grep -q 'REVOKE CONNECT ON DATABASE :"database_name" FROM :"editor_role";' "$CORTEX_TEST_PSQL_SQL" \

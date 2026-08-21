@@ -275,14 +275,21 @@ que muda são as permissões.
 
 ### O que ele pode e o que não pode
 
-- **Pode**: `SELECT`, `INSERT`, `UPDATE` e `DELETE` em todas as tabelas do
-  schema `public`, além de usar as sequências. Tabelas criadas por migrações
-  futuras já nascem acessíveis, pelo mesmo mecanismo de privilégios padrão do
-  runtime.
+- **Pode**: `SELECT`, `INSERT`, `UPDATE` e `DELETE` nas tabelas de dados do
+  schema `public`, e usar as sequências para inserir. Tabelas criadas por
+  migrações futuras já nascem acessíveis, pelo mesmo mecanismo de
+  privilégios padrão do runtime.
 - **Não pode**: criar, alterar ou remover tabela, índice ou coluna; ser dono
-  de objeto; virar superusuário; criar outros roles. Mudança de schema
-  continua exclusivamente com o Flyway, para que o banco nunca divirja do
-  histórico de migrações.
+  de objeto; virar superusuário no PostgreSQL; criar outros roles. Mudança
+  de schema continua exclusivamente com o Flyway.
+- **Não pode escrever nas tabelas de controle do deploy**: o histórico de
+  migrações (`flyway_schema_history`) e o marcador de release
+  (`cortex_release_marker`) ficam somente leitura para ele. São os dois
+  registros que dizem qual schema e qual release estão no ar; correção de
+  dado nunca deve poder reescrevê-los.
+- **Não pode rebobinar sequência**: recebe `USAGE` para inserir, mas não
+  `UPDATE`, então `setval()` está fora de alcance — evitar colisão de
+  identificadores com o que a aplicação vai alocar em seguida.
 
 ### O que o role não protege
 
@@ -291,17 +298,28 @@ não como acesso padrão:
 
 - **Regra de negócio é da aplicação, não do banco.** Um `UPDATE` manual não
   passa pelas validações da API, então consegue produzir estados que o
-  sistema nunca criaria — um RDO aprovado sem execução, por exemplo.
-- **Rastreio e sincronização.** O Córtex mantém trilha canônica de mutação e
-  controle de versão de linha (`versao_linha`) para o sincronismo offline.
-  Escrita direta não gera os eventos correspondentes e pode confundir a
-  reconciliação de um dispositivo que estava offline.
+  sistema nunca criaria — um RDO aprovado sem execução, por exemplo. Dentro
+  do produto, quem edita direto no banco não tem limite: pode conceder a si
+  mesmo qualquer papel de aplicação, e isso não deixa rastro de auditoria.
+- **Rastreio e sincronização.** O Córtex mantém trilha canônica de mutação e,
+  para o sincronismo offline, a versão da entidade em
+  `cortex_estado_entidade.versao_entidade`. Escrita direta não gera os
+  eventos correspondentes nem avança essa versão — então uma mutação que
+  estava na fila de um dispositivo offline pode sobrescrever silenciosamente
+  a sua correção quando o aparelho reconectar.
+- **Campo livre não é validado pelo banco.** `rdo.status`, por exemplo, não
+  tem restrição de valor: um erro de digitação grava um status inexistente,
+  que trava o RDO e contamina qualquer fila que já o contenha. Copie o valor
+  de uma linha existente em vez de digitar.
 - **Não há desfazer.** Não existe rollback de um `UPDATE` já confirmado; a
   recuperação é restaurar backup, o que descarta tudo que veio depois.
 
 ### Prática obrigatória ao editar
 
-1. Faça um backup antes (`scripts/deploy/backup-local-production.sh`).
+1. Faça um backup antes. O `scripts/deploy/backup-local-production.sh` exige
+   um conjunto de variáveis de ambiente descrito em
+   [`docs/production-runbook.md`](../production-runbook.md); não é um comando
+   de uma linha. Se não houver backup recente e verificado, não edite.
 2. Trabalhe dentro de transação e confira antes de confirmar:
 
    ```sql
@@ -332,7 +350,15 @@ tenha privilégios, heranças ou objetos próprios, e recusa reutilizar
 
 Ajustes opcionais: `CORTEX_DB_EDITOR_ROLE` (nome, padrão `cortex_editor`),
 `CORTEX_DB_EDITOR_STATEMENT_TIMEOUT` (padrão `60s`),
+`CORTEX_DB_EDITOR_IDLE_TIMEOUT` (padrão `15min`, dimensionado para a
+conferência dentro da transação exigida acima) e
 `CORTEX_DB_EDITOR_CONNECTION_LIMIT` (padrão `4`).
+
+Dois efeitos que valem saber antes da primeira edição. Uma transação aberta
+segura bloqueios contra a aplicação em produção enquanto você confere — por
+isso confira rápido e feche. E, se o `statement_timeout` cancelar um comando
+no meio, a sessão fica em estado de transação abortada: todo comando seguinte
+é recusado até um `ROLLBACK`; nenhuma linha fica pela metade.
 
 ### Retirar o acesso
 
@@ -374,6 +400,13 @@ ninguém escreve por engano achando que está na sessão somente leitura.
   `15432`; o administrador pode redefinir a senha reexecutando o
   `create-role` com um novo arquivo de senha.
 - **Sessão derrubada no meio de uma transação parada** — proteção
-  intencional (`idle_in_transaction_session_timeout = 5min`); reconecte.
+  intencional (`idle_in_transaction_session_timeout`: 5min na consulta,
+  15min na edição); reconecte. Na edição, o que estava aberto foi desfeito.
+- **`permission denied for table flyway_schema_history` (ou
+  `cortex_release_marker`)** — esperado: o role de edição só lê as tabelas
+  de controle do deploy. Se precisar mexer nelas, é um problema de release,
+  não de dado — trate pelo runbook de produção.
+- **`current transaction is aborted`** — algum comando foi recusado ou
+  cancelado antes; dê `ROLLBACK` e recomece a transação.
 - **Verificação de contrato** — `bash scripts/deploy/test-db-view-bridge.sh`
   valida o script da ponte sem tocar em Docker ou banco reais.

@@ -75,7 +75,9 @@ runtime_user="${CORTEX_POSTGRES_USER:-cortex_runtime}"
 view_role="${CORTEX_DB_VIEW_ROLE:-cortex_readonly}"
 editor_role="${CORTEX_DB_EDITOR_ROLE:-cortex_editor}"
 statement_timeout="${CORTEX_DB_EDITOR_STATEMENT_TIMEOUT:-60s}"
-idle_timeout="${CORTEX_DB_EDITOR_IDLE_TIMEOUT:-5min}"
+# The runbook makes review-then-COMMIT mandatory, so the idle ceiling has to
+# leave room for a human to read the result of an open transaction.
+idle_timeout="${CORTEX_DB_EDITOR_IDLE_TIMEOUT:-15min}"
 connection_limit="${CORTEX_DB_EDITOR_CONNECTION_LIMIT:-4}"
 
 postgres_service="cortex-postgres"
@@ -208,12 +210,29 @@ SELECT format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', :'ed
 GRANT CONNECT ON DATABASE :"database_name" TO :"editor_role";
 GRANT USAGE ON SCHEMA public TO :"editor_role";
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"editor_role";
-GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO :"editor_role";
+-- USAGE alone already covers nextval(); withholding UPDATE keeps setval()
+-- out of reach, so a hand edit cannot rewind a sequence and collide with
+-- every identifier the application allocates next.
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"editor_role";
 
 ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_user" IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"editor_role";
 ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_user" IN SCHEMA public
-  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO :"editor_role";
+  GRANT USAGE, SELECT ON SEQUENCES TO :"editor_role";
+
+-- The blanket grant above reaches every table in the schema, including the
+-- two that govern deployment integrity: Flyway's migration history and the
+-- release marker the runtime checks at boot. Data correction must never be
+-- able to rewrite the record of which schema and which release are live, so
+-- both are put back to read-only for this role.
+SELECT format(
+  'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE %I.%I FROM %I',
+  schemaname, tablename, :'editor_role'
+)
+FROM pg_tables
+WHERE schemaname = 'public'
+  AND tablename IN ('flyway_schema_history', 'cortex_release_marker')
+\gexec
 
 -- Data only: creating objects in the schema stays with the migrator, so a
 -- hand-made table can never drift from the Flyway history.
