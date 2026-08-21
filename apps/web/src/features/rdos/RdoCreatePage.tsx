@@ -15,6 +15,11 @@ import {
 } from "../../components/institutional/InstitutionalStatus";
 import { getSession, isAlfa } from "../auth/authSession";
 import {
+  listLocalServiceCatalog,
+  type LocalServiceCatalogRow,
+} from "../financeiro/servicePriceRepository";
+import { valorLocalDosMateriais } from "./precoDosMateriais";
+import {
   listRdoAttachments,
   markRdoAttachmentRemoved,
   putRdoAttachment,
@@ -743,6 +748,37 @@ export function RdoCreatePage({
       cancelado = true;
     };
   }, [draft.obraId, draft.dataRdo, draft.id]);
+
+  /*
+   * Catálogo local de preços, para o valor dos materiais.
+   *
+   * É leitura do que a sincronização já trouxe ao aparelho — nada vai à rede,
+   * e o formulário continua offline-first. Sem catálogo (obra sem preço, ou
+   * acesso sem o financeiro liberado) a lista fica vazia e o bloco de valor
+   * diz isso, em vez de fingir um zero.
+   */
+  const [catalogoLocal, setCatalogoLocal] = useState<
+    LocalServiceCatalogRow[]
+  >([]);
+  useEffect(() => {
+    let cancelado = false;
+    listLocalServiceCatalog(draft.obraId)
+      .then((linhas) => {
+        if (!cancelado) setCatalogoLocal(linhas);
+      })
+      .catch(() => {
+        // Obra sem UUID canônico ou store ilegível: segue sem valorar.
+        if (!cancelado) setCatalogoLocal([]);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [draft.obraId]);
+
+  const valorDosMateriais = useMemo(
+    () => valorLocalDosMateriais(draft.materiais, catalogoLocal),
+    [draft.materiais, catalogoLocal],
+  );
 
   const photoCount = draft.attachments.filter(
     (attachment) => attachment.removedAt === null,
@@ -2372,6 +2408,44 @@ export function RdoCreatePage({
             ),
           )}
         </div>
+
+        {/*
+          O valor dos materiais ao preço do catálogo local — o mesmo casamento
+          por nome e unidade do painel de usinados da obra. Só aparece quando
+          há material preenchido; sem preço casado, a nota diz o porquê em vez
+          de exibir um zero que ninguém apurou.
+        */}
+        {draft.materiais.some((item) => item.materialNome.trim()) ? (
+          valorDosMateriais.materiaisComPreco > 0 ? (
+            <>
+              <div className="computed-grid">
+                <CalculatedMetric
+                  label="Valor aplicado (catálogo)"
+                  value={formatCurrencyBRL(
+                    valorDosMateriais.valorAplicado,
+                  )}
+                />
+                <CalculatedMetric
+                  label="Valor da sobra"
+                  value={formatCurrencyBRL(valorDosMateriais.valorSobra)}
+                />
+              </div>
+              {valorDosMateriais.materiaisSemPreco > 0 ? (
+                <p className="lookup-state">
+                  {valorDosMateriais.materiaisSemPreco === 1
+                    ? "1 material sem preço único no catálogo da obra ficou fora do valor."
+                    : `${valorDosMateriais.materiaisSemPreco} materiais sem preço único no catálogo da obra ficaram fora do valor.`}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="lookup-state">
+              Sem preço no catálogo da obra para valorar estes materiais —
+              cadastre o serviço com o mesmo nome e unidade no Financeiro
+              para o valor aparecer aqui e no painel de usinados.
+            </p>
+          )
+        ) : null}
       </section>
 
 
@@ -2496,6 +2570,15 @@ interface CalculatedMetricProps {
   value: string;
   /** A medida que a unidade do contrato cobra, e que vira a medição. */
   quantidade?: boolean;
+}
+
+/** Real com centavos; o traço declara "sem número apurado", nunca R$ 0,00. */
+function formatCurrencyBRL(value: number | null): string {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
 }
 
 function CalculatedMetric({
