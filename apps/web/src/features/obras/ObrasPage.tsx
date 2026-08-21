@@ -42,6 +42,11 @@ import {
 import { ObraAccessibleDialog } from "./ObraAccessibleDialog";
 import { RateioMaoDeObraPanel } from "./rateio/RateioMaoDeObraPanel";
 import { ObraTrechoSection } from "./trecho/ObraTrechoSection";
+import { UsinadosPanel } from "./usinados/UsinadosPanel";
+import {
+  buscarUsinadosObra,
+  type ObraUsinados,
+} from "./usinados/usinadosApi";
 import {
   compararCarimbosEmBrasilia,
   formatarCarimboEmBrasilia,
@@ -243,6 +248,12 @@ export function ObrasPage() {
   const [pdorError, setPdorError] =
     useState<string | null>(null);
   const [isPdorLoading, setIsPdorLoading] =
+    useState(false);
+  const [usinados, setUsinados] =
+    useState<ObraUsinados | null>(null);
+  const [usinadosError, setUsinadosError] =
+    useState<string | null>(null);
+  const [isUsinadosLoading, setIsUsinadosLoading] =
     useState(false);
   const [showCreateWorksite, setShowCreateWorksite] =
     useState(false);
@@ -476,6 +487,58 @@ export function ObrasPage() {
       .finally(() => {
         if (!cancelled) {
           setIsPdorLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [focusedObraId]);
+
+  // Os totais de usinagem acompanham a obra em foco, como o PDOR acima: o
+  // seletor de obra é o filtro. A consulta é do servidor — é ele quem vê
+  // todos os RDOs da obra e o catálogo de preços.
+  useEffect(() => {
+    let cancelled = false;
+    if (!focusedObraId) {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setUsinados(null);
+          setUsinadosError(null);
+          setIsUsinadosLoading(false);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setIsUsinadosLoading(true);
+        setUsinadosError(null);
+      }
+    });
+
+    buscarUsinadosObra(focusedObraId)
+      .then((result) => {
+        if (!cancelled) {
+          setUsinados(result);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setUsinados(null);
+          setUsinadosError(
+            error instanceof Error
+              ? error.message
+              : "Totais de usinagem indisponíveis.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsUsinadosLoading(false);
         }
       });
 
@@ -993,6 +1056,12 @@ export function ObrasPage() {
                   pdor={pdor}
                   loading={isPdorLoading}
                   error={pdorError}
+                />
+
+                <UsinadosPanel
+                  usinados={usinados}
+                  loading={isUsinadosLoading}
+                  error={usinadosError}
                 />
 
                 <div className="obras-ontology">

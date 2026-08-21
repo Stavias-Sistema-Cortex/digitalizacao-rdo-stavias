@@ -1,0 +1,132 @@
+/*
+ * Painel de serviços usinados — a mesma linguagem das seções vizinhas.
+ *
+ * Cabeçalho com eyebrow como o trecho e o mapa; botão de traço fino, canto
+ * quase reto e foco amarelo como os botões do mapa; tabela com cabeçalho em
+ * canvas e números tabulares como a do rastreio de receita. A tabela rola
+ * dentro do próprio painel — a página nunca ganha rolagem horizontal.
+ */
+.obras-usinados {
+  min-width: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 18px;
+  margin-bottom: 18px;
+}
+
+.obras-usinados-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.obras-usinados-header h3 {
+  margin: 0 0 3px;
+  font-size: 0.92rem;
+}
+
+.obras-usinados-header > div > span {
+  color: var(--color-muted);
+  font-size: 0.7rem;
+}
+
+.obras-usinados-exportar {
+  border: 1px solid var(--color-ink);
+  border-radius: 2px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background var(--transition-functional),
+    color var(--transition-functional);
+}
+
+.obras-usinados-exportar:hover {
+  background: var(--color-canvas);
+}
+
+.obras-usinados-exportar:focus-visible {
+  outline: 3px solid var(--color-brand-yellow);
+  outline-offset: 2px;
+}
+
+.obras-usinados-note {
+  margin: 10px 0 0;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.obras-usinados-tabela-scroll {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.obras-usinados-tabela {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.obras-usinados-tabela thead th {
+  text-align: right;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  background: var(--color-canvas);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border-strong);
+  white-space: nowrap;
+}
+
+.obras-usinados-tabela thead th:first-child {
+  text-align: left;
+}
+
+.obras-usinados-tabela td,
+.obras-usinados-tabela tbody th,
+.obras-usinados-tabela tfoot th,
+.obras-usinados-tabela tfoot td {
+  font-size: 0.78rem;
+  color: var(--color-ink);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.obras-usinados-tabela td {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.obras-usinados-tabela tbody th,
+.obras-usinados-tabela tfoot th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.obras-usinados-tabela tbody th small,
+.obras-usinados-tabela td small,
+.obras-usinados-tabela tfoot th small {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-muted);
+  font-weight: 400;
+  font-size: 0.64rem;
+}
+
+.obras-usinados-sem-preco {
+  color: var(--color-muted);
+  font-style: italic;
+  text-align: center;
+  white-space: normal;
+}
+
+.obras-usinados-tabela tfoot th,
+.obras-usinados-tabela tfoot td {
+  border-bottom: 0;
+  border-top: 1px solid var(--color-border-strong);
+}
