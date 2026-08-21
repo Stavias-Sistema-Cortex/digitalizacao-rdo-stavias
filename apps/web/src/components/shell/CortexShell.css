@@ -1,5 +1,5 @@
 .cortex-shell {
-  --cortex-shell-chrome-surface: #de7d28;
+  --cortex-shell-chrome-surface: #35514d;
   --cortex-sidebar-edge: var(--sidebar-width, 248px);
   position: relative;
   display: grid;
