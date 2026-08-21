@@ -80,6 +80,12 @@ socat_image="${CORTEX_DB_VIEW_SOCAT_IMAGE:-alpine/socat:1.8.1.3}"
 [[ "$socat_image" =~ ^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+(@sha256:[a-f0-9]{64})?$ ]] \
   || fail "CORTEX_DB_VIEW_SOCAT_IMAGE must be an explicitly tagged image reference."
 
+# A bridge that survives a reboot turns viewing into self-service; the
+# default stays off so that leaving it up is a deliberate, recorded choice.
+restart_policy="${CORTEX_DB_VIEW_RESTART_POLICY:-no}"
+[[ "$restart_policy" == "no" || "$restart_policy" == "unless-stopped" ]] \
+  || fail "CORTEX_DB_VIEW_RESTART_POLICY must be 'no' or 'unless-stopped'."
+
 database_name="${CORTEX_POSTGRES_DB:-StaviasCortex}"
 admin_user="${CORTEX_POSTGRES_ADMIN_USER:-cortex_admin}"
 migrator_user="${CORTEX_POSTGRES_MIGRATOR_USER:-cortex_migrator}"
@@ -259,7 +265,8 @@ start_bridge() {
   # gets a dedicated one instead of the shared default bridge, where every
   # unrelated container would otherwise be able to reach PostgreSQL. It
   # then joins the internal Compose network, publishes nothing outside
-  # 127.0.0.1, and never restarts on its own after a reboot.
+  # 127.0.0.1, and only comes back after a reboot when the operator asked
+  # for it through CORTEX_DB_VIEW_RESTART_POLICY.
   "$docker_bin" network inspect "$view_network" >/dev/null 2>&1 \
     || "$docker_bin" network create "$view_network" >/dev/null \
     || fail "The bridge network '$view_network' could not be created."
@@ -271,7 +278,7 @@ start_bridge() {
   "$docker_bin" run --detach \
     --name "$bridge_container" \
     --network "$view_network" \
-    --restart no \
+    --restart "$restart_policy" \
     --read-only \
     --cap-drop ALL \
     --security-opt no-new-privileges:true \

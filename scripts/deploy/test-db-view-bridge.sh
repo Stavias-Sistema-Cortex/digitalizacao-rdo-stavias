@@ -271,6 +271,21 @@ grep -q "exec cortex-db-view socat -u OPEN:/dev/null TCP:cortex-postgres:5432" \
 grep -q "127.0.0.1:15432" "$case_root/stdout.txt" \
   || fail "start must tell the operator where the bridge listens"
 
+# --- the bridge only survives a reboot when asked to. -----------------------
+prepare_case start-persistent
+subcommand_under_test="start"
+run_bridge CORTEX_DB_VIEW_RESTART_POLICY="unless-stopped" \
+  || fail "start must accept the self-service restart policy"
+grep -q "restart unless-stopped" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "the requested restart policy must reach the container"
+
+prepare_case start-invalid-restart-policy
+subcommand_under_test="start"
+expect_failure "CORTEX_DB_VIEW_RESTART_POLICY must be 'no' or 'unless-stopped'." \
+  CORTEX_DB_VIEW_RESTART_POLICY="always"
+! grep -q "run --detach" "$CORTEX_TEST_DOCKER_LOG" \
+  || fail "an unknown restart policy must be refused before any container starts"
+
 prepare_case start-reuses-existing-view-network
 subcommand_under_test="start"
 touch "$CORTEX_TEST_MARKERS/view-network-exists"

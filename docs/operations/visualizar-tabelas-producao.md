@@ -101,6 +101,25 @@ SSH e sem passar pelo loopback.
 - No primeiro `start` o Docker baixa a imagem `alpine/socat` fixada no
   script.
 
+### Modo self-service (ponte permanente)
+
+Quando a consulta deixa de ser pontual e vira rotina de várias pessoas,
+exigir que um administrador suba a ponte a cada reboot transforma o
+administrador em gargalo. Para esse caso, suba a ponte pedindo que ela
+volte sozinha:
+
+```bash
+sudo env CORTEX_DOCKER_BIN=/usr/bin/docker \
+  CORTEX_DB_VIEW_RESTART_POLICY=unless-stopped \
+  bash scripts/deploy/db-view-bridge.sh start
+```
+
+O Docker passa a reerguer a ponte junto com o restante do stack. O que muda
+de fato: o caminho até o banco fica sempre disponível **no loopback do
+servidor**, ou seja, para quem já tem login SSH nele. Continua valendo tudo
+o mais — nada é publicado na rede, e cada pessoa ainda precisa da senha do
+role para autenticar no PostgreSQL. Um `stop` desfaz a permanência.
+
 ## Parte 3 — abrir o túnel no computador do colaborador
 
 Pré-requisitos: uma conta SSH no servidor (ex.: `sistema@192.168.0.15`) e o
