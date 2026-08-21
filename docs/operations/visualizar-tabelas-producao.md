@@ -26,8 +26,9 @@ PostgreSQL Docker do Córtex (rede interna)
 - Nunca publique a porta 5432 (ou a ponte) em `0.0.0.0` ou no IP externo do
   servidor. A ponte versionada só aceita loopback.
 - Nunca use `cortex_admin`, `cortex_migrator` ou `cortex_runtime` em uma
-  ferramenta gráfica. A navegação humana usa somente o role de consulta
-  `cortex_readonly`, que é `SELECT`-only.
+  ferramenta gráfica. A navegação humana usa `cortex_readonly`, que é
+  `SELECT`-only, ou — quando a correção manual for autorizada — o role de
+  edição `cortex_editor` descrito na Parte 7.
 - Não use MySQL Workbench nem a porta 3306 para o Córtex: MySQL pertence às
   origens Academy/Zeladoria (fonte de leitura), não ao banco canônico.
 - A senha do `cortex_readonly` vive em um arquivo `600` no servidor, como os
@@ -245,6 +246,93 @@ sudo docker exec -it cortex-production-cortex-postgres-1 \
 
 O Córtex continua funcionando normalmente durante e depois de tudo isso; a
 ponte e o túnel só existem para leitura humana.
+
+## Parte 7 — acesso de edição (`cortex_editor`)
+
+Quando um operador autorizado precisa **corrigir dados** e não apenas
+consultá-los, existe um segundo role, provisionado por
+`scripts/deploy/db-editor-role.sh`. Ele usa a mesma ponte e o mesmo túnel; o
+que muda são as permissões.
+
+### O que ele pode e o que não pode
+
+- **Pode**: `SELECT`, `INSERT`, `UPDATE` e `DELETE` em todas as tabelas do
+  schema `public`, além de usar as sequências. Tabelas criadas por migrações
+  futuras já nascem acessíveis, pelo mesmo mecanismo de privilégios padrão do
+  runtime.
+- **Não pode**: criar, alterar ou remover tabela, índice ou coluna; ser dono
+  de objeto; virar superusuário; criar outros roles. Mudança de schema
+  continua exclusivamente com o Flyway, para que o banco nunca divirja do
+  histórico de migrações.
+
+### O que o role não protege
+
+Estas são as razões pelas quais ele é entregue sob autorização explícita, e
+não como acesso padrão:
+
+- **Regra de negócio é da aplicação, não do banco.** Um `UPDATE` manual não
+  passa pelas validações da API, então consegue produzir estados que o
+  sistema nunca criaria — um RDO aprovado sem execução, por exemplo.
+- **Rastreio e sincronização.** O Córtex mantém trilha canônica de mutação e
+  controle de versão de linha (`versao_linha`) para o sincronismo offline.
+  Escrita direta não gera os eventos correspondentes e pode confundir a
+  reconciliação de um dispositivo que estava offline.
+- **Não há desfazer.** Não existe rollback de um `UPDATE` já confirmado; a
+  recuperação é restaurar backup, o que descarta tudo que veio depois.
+
+### Prática obrigatória ao editar
+
+1. Faça um backup antes (`scripts/deploy/backup-local-production.sh`).
+2. Trabalhe dentro de transação e confira antes de confirmar:
+
+   ```sql
+   BEGIN;
+   UPDATE rdo SET status = 'RASCUNHO' WHERE id = '...';
+   SELECT id, numero_rdo, status FROM rdo WHERE id = '...';
+   -- confira o resultado; então COMMIT; ou ROLLBACK;
+   ```
+
+3. Sempre com `WHERE` por chave primária. Nunca `UPDATE`/`DELETE` sem `WHERE`.
+4. Prefira corrigir pela aplicação quando houver caminho por ela.
+
+### Provisionar
+
+```bash
+sudo sh -c 'umask 077; openssl rand -base64 24 \
+  > /srv/cortex/secrets/cortex-editor-password'
+
+sudo env CORTEX_DOCKER_BIN=/usr/bin/docker \
+  CORTEX_DB_EDITOR_ROLE_PASSWORD_FILE=/srv/cortex/secrets/cortex-editor-password \
+  bash scripts/deploy/db-editor-role.sh create-role
+```
+
+O comando é idempotente: reexecutá-lo com um novo arquivo troca a senha e
+reconcilia as permissões. Ele recusa apontar para um role já existente que
+tenha privilégios, heranças ou objetos próprios, e recusa reutilizar
+`cortex_admin`, `cortex_migrator`, `cortex_runtime` ou `cortex_readonly`.
+
+Ajustes opcionais: `CORTEX_DB_EDITOR_ROLE` (nome, padrão `cortex_editor`),
+`CORTEX_DB_EDITOR_STATEMENT_TIMEOUT` (padrão `60s`),
+`CORTEX_DB_EDITOR_CONNECTION_LIMIT` (padrão `4`).
+
+### Retirar o acesso
+
+```bash
+sudo env CORTEX_DOCKER_BIN=/usr/bin/docker \
+  bash scripts/deploy/db-editor-role.sh revoke
+```
+
+Tira o login, remove o `CONNECT` e encerra as sessões abertas, sem apagar o
+role. Use ao fim de uma janela de manutenção ou quando a pessoa deixar a
+função; para devolver o acesso, rode `create-role` de novo com uma senha
+nova.
+
+### No pgAdmin
+
+Mesma conexão da Parte 4, trocando o usuário para `cortex_editor` e a senha.
+Vale cadastrar como um **servidor separado**, com nome explícito (por
+exemplo `Córtex — EDIÇÃO`), em vez de editar a conexão de leitura: assim
+ninguém escreve por engano achando que está na sessão somente leitura.
 
 ## Solução de problemas
 

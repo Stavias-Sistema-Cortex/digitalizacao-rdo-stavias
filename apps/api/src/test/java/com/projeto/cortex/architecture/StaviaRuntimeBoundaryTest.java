@@ -91,6 +91,10 @@ class StaviaRuntimeBoundaryTest {
                     "StaviasCortex",
                     "database_name=\"${CORTEX_POSTGRES_DB:-StaviasCortex}\""),
             sourceReference(
+                    "scripts/deploy/db-editor-role.sh",
+                    "StaviasCortex",
+                    "database_name=\"${CORTEX_POSTGRES_DB:-StaviasCortex}\""),
+            sourceReference(
                     "scripts/deploy/capture-local-cutover-state.sh",
                     "cortex.portalstavias.com.br",
                     "base_url=\"https://cortex.portalstavias.com.br\"",
