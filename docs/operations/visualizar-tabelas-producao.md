@@ -1,8 +1,14 @@
-# Visualizar tabelas do Córtex em produção (somente leitura)
+# Acesso humano às tabelas do Córtex em produção
 
-Este runbook descreve como um colaborador autorizado da Stavias inspeciona as
+Este runbook descreve como um colaborador autorizado da Stavias alcança as
 tabelas do banco canônico `StaviasCortex` com uma ferramenta gráfica
-(pgAdmin 4 ou DBeaver), sem alterar dados e sem expor o PostgreSQL à rede.
+(pgAdmin 4 ou DBeaver), sem expor o PostgreSQL à rede.
+
+O caminho padrão é **somente leitura** e é o que as Partes 1 a 6 descrevem:
+role `cortex_readonly`, sem qualquer permissão de escrita. A **Parte 7**
+trata do caso separado e sob autorização explícita em que um operador
+precisa corrigir dados à mão, com o role `cortex_editor`. As duas usam a
+mesma ponte e o mesmo túnel; o que muda são as permissões do role.
 
 O PostgreSQL do Córtex roda no container `cortex-postgres` sobre a rede
 Compose `cortex_private`, que é `internal: true` e não publica porta alguma.
@@ -335,6 +341,7 @@ não como acesso padrão:
 ### Provisionar
 
 ```bash
+sudo install -d -m 700 /srv/cortex/secrets
 sudo sh -c 'umask 077; openssl rand -base64 24 \
   > /srv/cortex/secrets/cortex-editor-password'
 

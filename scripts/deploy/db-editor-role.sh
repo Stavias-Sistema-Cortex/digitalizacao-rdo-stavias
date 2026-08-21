@@ -175,10 +175,29 @@ JOIN pg_roles member_role ON member_role.oid = membership.member
 WHERE member_role.rolname = :'editor_role'
 \gexec
 
+-- Ownership is checked across relations, schemas and routines, ignoring the
+-- temporary objects a live session of the same name would own: a role that
+-- owns anything is somebody else's role, not a fresh editing role.
 SELECT 'SELECT refusing_to_reconcile_a_role_that_owns_objects'
-FROM pg_class owned
-JOIN pg_roles owner_role ON owner_role.oid = owned.relowner
-WHERE owner_role.rolname = :'editor_role'
+WHERE EXISTS (
+  SELECT 1
+  FROM pg_class owned
+  JOIN pg_roles owner_role ON owner_role.oid = owned.relowner
+  JOIN pg_namespace owned_schema ON owned_schema.oid = owned.relnamespace
+  WHERE owner_role.rolname = :'editor_role'
+    AND owned_schema.nspname NOT LIKE 'pg_temp%'
+    AND owned_schema.nspname NOT LIKE 'pg_toast%'
+) OR EXISTS (
+  SELECT 1
+  FROM pg_namespace owned_schema
+  JOIN pg_roles owner_role ON owner_role.oid = owned_schema.nspowner
+  WHERE owner_role.rolname = :'editor_role'
+) OR EXISTS (
+  SELECT 1
+  FROM pg_proc owned_routine
+  JOIN pg_roles owner_role ON owner_role.oid = owned_routine.proowner
+  WHERE owner_role.rolname = :'editor_role'
+)
 \gexec
 
 SELECT format(

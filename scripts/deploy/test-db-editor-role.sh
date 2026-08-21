@@ -140,6 +140,8 @@ grep -q "exec -i -e CORTEX_DB_EDITOR_ROLE_PASSWORD postgres-container psql -X --
   || fail "psql must run through exec with the password delivered by environment"
 ! grep -q "senha-de-teste-nao-real" "$CORTEX_TEST_DOCKER_LOG" \
   || fail "the role password must never appear in command arguments"
+! grep -q "senha-de-teste-nao-real" "$CORTEX_TEST_PSQL_SQL" \
+  || fail "the role password must never be inlined into the SQL text"
 [[ "$(cat "$CORTEX_TEST_PSQL_ENV")" == "senha-de-teste-nao-real" ]] \
   || fail "the role password must reach psql through the exec environment"
 grep -q '\\getenv editor_role_password CORTEX_DB_EDITOR_ROLE_PASSWORD' "$CORTEX_TEST_PSQL_SQL" \
@@ -186,6 +188,15 @@ done
   || fail "the editing role must never receive CREATE on the schema"
 ! grep -q "default_transaction_read_only" "$CORTEX_TEST_PSQL_SQL" \
   || fail "the editing role is deliberately not read-only"
+
+# The schema reset only holds if USAGE is restored after it: swapping the two
+# would leave the role authenticated but unable to see a single table.
+revoke_line="$(grep -n 'REVOKE ALL ON SCHEMA public' "$CORTEX_TEST_PSQL_SQL" | tail -1 | cut -d: -f1)"
+usage_line="$(grep -n 'GRANT USAGE ON SCHEMA public' "$CORTEX_TEST_PSQL_SQL" | tail -1 | cut -d: -f1)"
+[[ -n "$revoke_line" && -n "$usage_line" ]] \
+  || fail "the schema reset and the USAGE grant must both be present"
+((usage_line > revoke_line)) \
+  || fail "USAGE on the schema must be granted after the schema reset"
 
 # Every GRANT the reconcile emits has to match the data-only allowlist.
 if grep -E '\bGRANT\b' "$CORTEX_TEST_PSQL_SQL" | grep -Evq \

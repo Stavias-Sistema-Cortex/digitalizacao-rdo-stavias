@@ -365,16 +365,23 @@ contagens de todas as tabelas públicas e apaga somente o container, o volume e
 o plaintext descartáveis. Preserve o `.restore.json` junto ao backup e remova a
 identidade do servidor ao terminar.
 
-## Visualização somente leitura das tabelas
+## Acesso humano às tabelas
 
-O PostgreSQL canônico não publica porta; a inspeção humana das tabelas usa o
-role `SELECT`-only `cortex_readonly` e uma ponte de loopback no servidor,
-acessada por túnel SSH e pgAdmin/DBeaver. O procedimento completo —
-preparação única do role, ponte `scripts/deploy/db-view-bridge.sh` e o passo
-a passo para colaboradores — está em
+O PostgreSQL canônico não publica porta; a inspeção humana das tabelas usa
+uma ponte de loopback no servidor (`scripts/deploy/db-view-bridge.sh`),
+acessada por túnel SSH e pgAdmin/DBeaver. São dois roles distintos:
+
+- `cortex_readonly` — `SELECT`-only, é o acesso padrão;
+- `cortex_editor` — correção manual de dados sob autorização explícita,
+  provisionado por `scripts/deploy/db-editor-role.sh`. Ele altera linhas,
+  mas não o schema, e não escreve no histórico Flyway nem no marcador de
+  release.
+
+O procedimento completo dos dois — preparação, ponte, passo a passo para
+colaboradores e as práticas obrigatórias ao editar — está em
 [`docs/operations/visualizar-tabelas-producao.md`](operations/visualizar-tabelas-producao.md).
-Nunca publique 5432 externamente nem use `cortex_admin` em ferramenta
-gráfica.
+Nunca publique 5432 externamente nem use `cortex_admin`, `cortex_migrator`
+ou `cortex_runtime` em ferramenta gráfica.
 
 ## Incidentes
 
